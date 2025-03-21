@@ -674,6 +674,9 @@ export class CrawlerQueue {
    */
   private async startTrainingJob(job: CrawlerJob, datasetPath: string): Promise<void> {
     try {
+      // Import the ML functions
+      const { trainModelWithCrawlerData } = await import('@kai/ml');
+      
       // Generate a training job ID
       const trainingJobId = `crawler-train-${job.id}`;
       
@@ -686,7 +689,8 @@ export class CrawlerQueue {
           message: `Starting training with crawler data from ${job.config.url}`,
           modelType: job.config.trainingConfig?.modelType || 'hybrid',
           sourceJob: job.id,
-          sourceType: 'crawler'
+          sourceType: 'crawler',
+          dataProvenance: 'crawler'
         }
       });
       
@@ -695,29 +699,92 @@ export class CrawlerQueue {
       
       logger.info(`Started training job ${trainingJobId} for crawler job ${job.id}`);
       
-      // In a real implementation, we would call the training API here
-      // For now, simulate training with a timeout
-      setTimeout(() => {
+      // Create the output directory for the trained model
+      const outputDir = path.join(process.cwd(), 'data', 'models', trainingJobId);
+      fs.mkdirSync(outputDir, { recursive: true });
+      
+      // Define the progress callback
+      const progressCallback = (progress: number, message: string) => {
+        trainingProgressService.updateProgress({
+          jobId: trainingJobId,
+          type: 'progress',
+          timestamp: Date.now(),
+          data: {
+            message,
+            progress,
+            sourceJob: job.id,
+            sourceType: 'crawler'
+          }
+        }).catch(err => {
+          logger.error(`Failed to update training progress for job ${trainingJobId}: ${err}`);
+        });
+      };
+      
+      // Call the ML training function with crawler data
+      trainModelWithCrawlerData({
+        datasetPath,
+        outputDir,
+        modelType: job.config.trainingConfig?.modelType || 'hybrid',
+        epochs: job.config.trainingConfig?.epochs || 10,
+        batchSize: job.config.trainingConfig?.batchSize || 32,
+        learningRate: job.config.trainingConfig?.learningRate || 0.001,
+        progressCallback
+      })
+      .then(result => {
+        // Update job with training results
+        const updatedJob = this.jobs.get(job.id);
+        if (updatedJob) {
+          updatedJob.status = 'completed';
+          this.saveQueue();
+        }
+        
+        // Record the results in training progress
         trainingProgressService.updateProgress({
           jobId: trainingJobId,
           type: 'complete',
           timestamp: Date.now(),
           data: {
             message: 'Training completed successfully',
-            accuracy: 0.85,
-            loss: 0.12
+            accuracy: result.final_accuracy,
+            modelPath: result.model_path,
+            numClasses: result.num_classes,
+            trainingTime: result.training_time,
+            dataProvenance: 'crawler',
+            sourceJob: job.id,
+            sourceType: 'crawler'
           }
         }).catch(err => {
-          logger.error(`Failed to update training progress for job ${trainingJobId}: ${err}`);
+          logger.error(`Failed to update final training progress for job ${trainingJobId}: ${err}`);
         });
         
+        logger.info(`Training job ${trainingJobId} completed successfully`);
+      })
+      .catch(error => {
         // Update job status
         const updatedJob = this.jobs.get(job.id);
         if (updatedJob) {
-          updatedJob.status = 'completed';
+          updatedJob.status = 'failed';
+          updatedJob.error = `Training failed: ${error.message}`;
           this.saveQueue();
         }
-      }, 10000); // Simulate 10 second training time
+        
+        // Update training progress with failure
+        trainingProgressService.updateProgress({
+          jobId: trainingJobId,
+          type: 'error',
+          timestamp: Date.now(),
+          data: {
+            message: `Training failed: ${error.message}`,
+            error: error.message,
+            sourceJob: job.id,
+            sourceType: 'crawler'
+          }
+        }).catch(err => {
+          logger.error(`Failed to update error training progress for job ${trainingJobId}: ${err}`);
+        });
+        
+        logger.error(`Training job ${trainingJobId} failed: ${error}`);
+      });
     } catch (err) {
       logger.error(`Failed to start training job for crawler job ${job.id}: ${err}`);
       throw err;

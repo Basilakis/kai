@@ -8,6 +8,10 @@
  * - Material recognition using feature-based and ML-based approaches
  * - Vector embedding generation for similarity search
  * - Model training and evaluation
+ * - Image segmentation for multiple tile detection
+ * - Feedback loop for improving recognition over time
+ * - Performance optimization for faster recognition
+ * - Crawler data integration for training
  */
 
 import { spawn } from 'child_process';
@@ -17,6 +21,72 @@ import * as os from 'os';
 
 // Define the path to the Python scripts
 const PYTHON_SCRIPTS_DIR = path.join(__dirname, '../python');
+
+/**
+ * Interface for image segmentation results
+ */
+export interface ImageSegmentationResult {
+  input_image: string;
+  segments_count: number;
+  segment_paths: string[];
+  segments: {
+    id: number;
+    bbox: number[];
+    area: number;
+    aspect_ratio: number;
+    center: number[];
+    confidence: number;
+    path: string;
+  }[];
+  visualization_path?: string;
+}
+
+/**
+ * Interface for feedback storage results
+ */
+export interface FeedbackStorageResult {
+  status: string;
+  feedback_id: string;
+}
+
+/**
+ * Interface for model retraining results
+ */
+export interface ModelRetrainingResult {
+  status: string;
+  model_path: string;
+  training_time: number;
+  dataset_size: number;
+  metrics: {
+    accuracy: number;
+    precision: number;
+    recall: number;
+    f1_score: number;
+  };
+}
+
+/**
+ * Interface for performance metrics
+ */
+export interface PerformanceMetricsResult {
+  time_period: string;
+  total_recognitions: number;
+  feedback_distribution: Record<string, number>;
+  accuracy: number;
+  timestamp: string;
+}
+
+/**
+ * Interface for performance optimization results
+ */
+export interface PerformanceOptimizationResult extends RecognitionResult {
+  performance: {
+    cached: boolean;
+    optimized_image: boolean;
+    parallel_processing: boolean;
+    total_time: number;
+  };
+}
 
 /**
  * Interface for PDF extraction results
@@ -121,6 +191,60 @@ export interface ConfidenceFusionResult {
     image_features?: Record<string, any>;
   };
   extractedFeatures: Record<string, any>;
+}
+
+/**
+ * Interface for crawler data preparation options
+ */
+export interface CrawlerDataPreparationOptions {
+  manifestPath: string;
+  outputDir: string;
+  minImagesPerClass?: number;
+  targetWidth?: number;
+  targetHeight?: number;
+}
+
+/**
+ * Interface for crawler data preparation results
+ */
+export interface CrawlerDataPreparationResult {
+  status: string;
+  datasetPath?: string;
+  classes?: string[];
+  classesCount?: number;
+  processedImages?: number;
+  downloadErrors?: number;
+  message?: string;
+}
+
+/**
+ * Interface for crawler dataset validation results
+ */
+export interface CrawlerDatasetValidationResult {
+  status: string;
+  valid: boolean;
+  classCount?: number;
+  classDistribution?: Record<string, number>;
+  totalImages?: number;
+  minClassSize?: number;
+  maxClassSize?: number;
+  imageSampleValidRatio?: number;
+  warnings?: string[];
+  message?: string;
+}
+
+/**
+ * Interface for crawler data training options
+ */
+export interface CrawlerTrainingOptions {
+  datasetPath: string;
+  outputDir: string;
+  modelType?: 'hybrid' | 'feature-based' | 'ml-based';
+  epochs?: number;
+  batchSize?: number;
+  learningRate?: number;
+  validateOnly?: boolean;
+  progressCallback?: (progress: number, message: string) => void;
 }
 
 /**
@@ -725,6 +849,337 @@ export async function visualizeSearchResults(
 }
 
 /**
+ * Options for image segmentation
+ */
+export interface ImageSegmentationOptions {
+  outputDir: string;
+  method?: 'edge' | 'color' | 'region' | 'grid';
+  minTileSize?: number;
+  maxTiles?: number;
+  visualize?: boolean;
+}
+
+/**
+ * Options for feedback storage
+ */
+export interface FeedbackOptions {
+  recognitionId: string;
+  feedbackType: 'correct' | 'incorrect' | 'partial';
+  materialId?: string;
+  userNotes?: string;
+}
+
+/**
+ * Options for performance optimization
+ */
+export interface PerformanceOptimizationOptions {
+  modelType?: 'hybrid' | 'feature-based' | 'ml-based';
+  useCache?: boolean;
+  useParallel?: boolean;
+  optimizeImage?: boolean;
+}
+
+/**
+ * Segment an image to detect multiple tiles
+ * @param imagePath Path to the input image
+ * @param options Segmentation options
+ * @returns Promise with segmentation results
+ */
+export async function segmentImage(
+  imagePath: string,
+  options: ImageSegmentationOptions
+): Promise<ImageSegmentationResult> {
+  return new Promise((resolve, reject) => {
+    // Ensure options has required fields
+    const outputDir = options.outputDir;
+    const method = options.method || 'edge';
+    const minTileSize = options.minTileSize || 0.05;
+    const maxTiles = options.maxTiles || 10;
+    const visualize = options.visualize || false;
+    
+    // Run the Python script for image segmentation
+    const scriptPath = path.join(PYTHON_SCRIPTS_DIR, 'image_segmentation.py');
+    const args = [
+      scriptPath,
+      imagePath,
+      '--output-dir', outputDir,
+      '--method', method,
+      '--min-tile-size', minTileSize.toString(),
+      '--max-tiles', maxTiles.toString()
+    ];
+    
+    if (visualize) {
+      args.push('--visualize');
+    }
+    
+    const pythonProcess = spawn('python', args);
+
+    let resultData = '';
+    let errorData = '';
+
+    // Collect data from stdout
+    pythonProcess.stdout.on('data', (data: Buffer) => {
+      resultData += data.toString();
+    });
+
+    // Collect error data from stderr
+    pythonProcess.stderr.on('data', (data: Buffer) => {
+      errorData += data.toString();
+    });
+
+    // Handle process completion
+    pythonProcess.on('close', (code: number | null) => {
+      if (code !== 0) {
+        reject(new Error(`Image segmentation failed with code ${code}: ${errorData}`));
+        return;
+      }
+
+      try {
+        const result = JSON.parse(resultData) as ImageSegmentationResult;
+        resolve(result);
+      } catch (error) {
+        reject(new Error(`Failed to parse image segmentation result: ${error}`));
+      }
+    });
+  });
+}
+
+/**
+ * Store feedback for a recognition result
+ * @param options Feedback options
+ * @returns Promise with feedback storage result
+ */
+export async function storeFeedback(
+  options: FeedbackOptions
+): Promise<FeedbackStorageResult> {
+  return new Promise((resolve, reject) => {
+    // Run the Python script for feedback storage
+    const scriptPath = path.join(PYTHON_SCRIPTS_DIR, 'feedback_loop.py');
+    const args = [
+      scriptPath,
+      'store',
+      '--recognition-id', options.recognitionId,
+      '--feedback-type', options.feedbackType
+    ];
+    
+    if (options.materialId) {
+      args.push('--material-id', options.materialId);
+    }
+    
+    if (options.userNotes) {
+      args.push('--notes', options.userNotes);
+    }
+    
+    const pythonProcess = spawn('python', args);
+
+    let resultData = '';
+    let errorData = '';
+
+    // Collect data from stdout
+    pythonProcess.stdout.on('data', (data: Buffer) => {
+      resultData += data.toString();
+    });
+
+    // Collect error data from stderr
+    pythonProcess.stderr.on('data', (data: Buffer) => {
+      errorData += data.toString();
+    });
+
+    // Handle process completion
+    pythonProcess.on('close', (code: number | null) => {
+      if (code !== 0) {
+        reject(new Error(`Feedback storage failed with code ${code}: ${errorData}`));
+        return;
+      }
+
+      try {
+        const result = JSON.parse(resultData) as FeedbackStorageResult;
+        resolve(result);
+      } catch (error) {
+        reject(new Error(`Failed to parse feedback storage result: ${error}`));
+      }
+    });
+  });
+}
+
+/**
+ * Adjust recognition result based on feedback history
+ * @param resultJson JSON string with recognition result
+ * @returns Promise with adjusted recognition result
+ */
+export async function adjustRecognitionResult(
+  resultJson: string
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    // Create temporary file for the result
+    const tempDir = os.tmpdir();
+    const resultPath = path.join(tempDir, `result_${Date.now()}.json`);
+    
+    try {
+      fs.writeFileSync(resultPath, resultJson);
+    } catch (error) {
+      reject(new Error(`Failed to write temporary result file: ${error}`));
+      return;
+    }
+    
+    // Run the Python script for result adjustment
+    const scriptPath = path.join(PYTHON_SCRIPTS_DIR, 'feedback_loop.py');
+    const pythonProcess = spawn('python', [
+      scriptPath,
+      'adjust',
+      '--result-file', resultPath
+    ]);
+
+    let resultData = '';
+    let errorData = '';
+
+    // Collect data from stdout
+    pythonProcess.stdout.on('data', (data: Buffer) => {
+      resultData += data.toString();
+    });
+
+    // Collect error data from stderr
+    pythonProcess.stderr.on('data', (data: Buffer) => {
+      errorData += data.toString();
+    });
+
+    // Handle process completion
+    pythonProcess.on('close', (code: number | null) => {
+      // Clean up temporary file
+      try {
+        fs.unlinkSync(resultPath);
+      } catch (e) {
+        // Ignore cleanup errors
+      }
+      
+      if (code !== 0) {
+        reject(new Error(`Result adjustment failed with code ${code}: ${errorData}`));
+        return;
+      }
+
+      resolve(resultData);
+    });
+  });
+}
+
+/**
+ * Get performance metrics for recognition system
+ * @param timePeriod Time period for metrics (day, week, month, year, all)
+ * @returns Promise with performance metrics
+ */
+export async function getPerformanceMetrics(
+  timePeriod: string = 'all'
+): Promise<PerformanceMetricsResult> {
+  return new Promise((resolve, reject) => {
+    // Run the Python script for metrics retrieval
+    const scriptPath = path.join(PYTHON_SCRIPTS_DIR, 'feedback_loop.py');
+    const pythonProcess = spawn('python', [
+      scriptPath,
+      'metrics',
+      '--time-period', timePeriod
+    ]);
+
+    let resultData = '';
+    let errorData = '';
+
+    // Collect data from stdout
+    pythonProcess.stdout.on('data', (data: Buffer) => {
+      resultData += data.toString();
+    });
+
+    // Collect error data from stderr
+    pythonProcess.stderr.on('data', (data: Buffer) => {
+      errorData += data.toString();
+    });
+
+    // Handle process completion
+    pythonProcess.on('close', (code: number | null) => {
+      if (code !== 0) {
+        reject(new Error(`Metrics retrieval failed with code ${code}: ${errorData}`));
+        return;
+      }
+
+      try {
+        const result = JSON.parse(resultData) as PerformanceMetricsResult;
+        resolve(result);
+      } catch (error) {
+        reject(new Error(`Failed to parse metrics result: ${error}`));
+      }
+    });
+  });
+}
+
+/**
+ * Optimize recognition pipeline for performance
+ * @param imagePath Path to the input image
+ * @param options Performance optimization options
+ * @returns Promise with optimized recognition result
+ */
+export async function optimizeRecognition(
+  imagePath: string,
+  options: PerformanceOptimizationOptions = {}
+): Promise<PerformanceOptimizationResult> {
+  return new Promise((resolve, reject) => {
+    // Set default options
+    const modelType = options.modelType || 'hybrid';
+    const useCache = options.useCache !== false;
+    const useParallel = options.useParallel !== false;
+    const optimizeImage = options.optimizeImage !== false;
+    
+    // Run the Python script for optimized recognition
+    const scriptPath = path.join(PYTHON_SCRIPTS_DIR, 'performance_optimizer.py');
+    const args = [
+      scriptPath,
+      'optimize',
+      '--image-path', imagePath,
+      '--model-type', modelType
+    ];
+    
+    if (!useCache) {
+      args.push('--no-cache');
+    }
+    
+    if (!useParallel) {
+      args.push('--no-parallel');
+    }
+    
+    if (!optimizeImage) {
+      args.push('--no-image-opt');
+    }
+    
+    const pythonProcess = spawn('python', args);
+
+    let resultData = '';
+    let errorData = '';
+
+    // Collect data from stdout
+    pythonProcess.stdout.on('data', (data: Buffer) => {
+      resultData += data.toString();
+    });
+
+    // Collect error data from stderr
+    pythonProcess.stderr.on('data', (data: Buffer) => {
+      errorData += data.toString();
+    });
+
+    // Handle process completion
+    pythonProcess.on('close', (code: number | null) => {
+      if (code !== 0) {
+        reject(new Error(`Optimized recognition failed with code ${code}: ${errorData}`));
+        return;
+      }
+
+      try {
+        const result = JSON.parse(resultData) as PerformanceOptimizationResult;
+        resolve(result);
+      } catch (error) {
+        reject(new Error(`Failed to parse optimized recognition result: ${error}`));
+      }
+    });
+  });
+}
+
+/**
  * Fuse confidence scores from different recognition approaches
  * @param featureResults Results from feature-based approach
  * @param mlResults Results from ML-based approach
@@ -899,5 +1354,220 @@ export default {
   searchSimilarMaterials,
   visualizeSearchResults,
   fuseConfidenceScores,
-  recognizeMaterialEnhanced
+  recognizeMaterialEnhanced,
+  
+  // Image segmentation functions
+  segmentImage,
+  
+  // Feedback loop functions
+  storeFeedback,
+  adjustRecognitionResult,
+  getPerformanceMetrics,
+  
+  // Performance optimization functions
+  optimizeRecognition,
+  
+  // Crawler data integration functions
+  prepareCrawlerDataForTraining,
+  validateCrawlerDataset,
+  trainModelWithCrawlerData
 };
+
+/**
+ * Prepare crawler data for training
+ * @param options Options for crawler data preparation
+ * @returns Promise with preparation results
+ */
+export async function prepareCrawlerDataForTraining(
+  options: CrawlerDataPreparationOptions
+): Promise<CrawlerDataPreparationResult> {
+  return new Promise((resolve, reject) => {
+    // Ensure output directory exists
+    if (!fs.existsSync(options.outputDir)) {
+      fs.mkdirSync(options.outputDir, { recursive: true });
+    }
+    
+    // Run the Python script for crawler data preparation
+    const scriptPath = path.join(PYTHON_SCRIPTS_DIR, 'crawler_adapter.py');
+    const args = [
+      scriptPath,
+      'prepare',
+      '--manifest-path', options.manifestPath,
+      '--output-dir', options.outputDir
+    ];
+    
+    if (options.minImagesPerClass) {
+      args.push('--min-images', options.minImagesPerClass.toString());
+    }
+    
+    if (options.targetWidth) {
+      args.push('--target-width', options.targetWidth.toString());
+    }
+    
+    if (options.targetHeight) {
+      args.push('--target-height', options.targetHeight.toString());
+    }
+    
+    const pythonProcess = spawn('python', args);
+
+    let resultData = '';
+    let errorData = '';
+
+    // Collect data from stdout
+    pythonProcess.stdout.on('data', (data: Buffer) => {
+      resultData += data.toString();
+    });
+
+    // Collect error data from stderr
+    pythonProcess.stderr.on('data', (data: Buffer) => {
+      errorData += data.toString();
+    });
+
+    // Handle process completion
+    pythonProcess.on('close', (code: number | null) => {
+      if (code !== 0) {
+        reject(new Error(`Crawler data preparation failed with code ${code}: ${errorData}`));
+        return;
+      }
+
+      try {
+        const result = JSON.parse(resultData) as CrawlerDataPreparationResult;
+        resolve(result);
+      } catch (error) {
+        reject(new Error(`Failed to parse crawler data preparation result: ${error}`));
+      }
+    });
+  });
+}
+
+/**
+ * Validate a crawler dataset for training suitability
+ * @param datasetPath Path to the crawler dataset
+ * @returns Promise with validation results
+ */
+export async function validateCrawlerDataset(
+  datasetPath: string
+): Promise<CrawlerDatasetValidationResult> {
+  return new Promise((resolve, reject) => {
+    // Run the Python script for crawler dataset validation
+    const scriptPath = path.join(PYTHON_SCRIPTS_DIR, 'crawler_adapter.py');
+    const args = [
+      scriptPath,
+      'validate',
+      '--dataset-path', datasetPath
+    ];
+    
+    const pythonProcess = spawn('python', args);
+
+    let resultData = '';
+    let errorData = '';
+
+    // Collect data from stdout
+    pythonProcess.stdout.on('data', (data: Buffer) => {
+      resultData += data.toString();
+    });
+
+    // Collect error data from stderr
+    pythonProcess.stderr.on('data', (data: Buffer) => {
+      errorData += data.toString();
+    });
+
+    // Handle process completion
+    pythonProcess.on('close', (code: number | null) => {
+      if (code !== 0) {
+        reject(new Error(`Crawler dataset validation failed with code ${code}: ${errorData}`));
+        return;
+      }
+
+      try {
+        const result = JSON.parse(resultData) as CrawlerDatasetValidationResult;
+        resolve(result);
+      } catch (error) {
+        reject(new Error(`Failed to parse crawler dataset validation result: ${error}`));
+      }
+    });
+  });
+}
+
+/**
+ * Train a model using crawler data
+ * @param options Training options for crawler data
+ * @returns Promise with training results
+ */
+export async function trainModelWithCrawlerData(
+  options: CrawlerTrainingOptions
+): Promise<NeuralNetworkTrainingResult> {
+  return new Promise((resolve, reject) => {
+    // First validate the dataset if requested
+    if (options.validateOnly) {
+      validateCrawlerDataset(options.datasetPath)
+        .then(validation => {
+          if (!validation.valid) {
+            reject(new Error(`Invalid crawler dataset: ${validation.message || 'Validation failed'}`));
+            return;
+          }
+          
+          if (options.validateOnly) {
+            // Resolve with a partial result since we're just validating
+            resolve({
+              model_path: '',
+              metadata_path: '',
+              class_mapping_path: '',
+              num_classes: validation.classCount || 0,
+              training_time: 0,
+              final_accuracy: 0,
+              final_val_accuracy: 0,
+              final_loss: 0,
+              final_val_loss: 0
+            });
+            return;
+          }
+        })
+        .catch(error => {
+          reject(error);
+          return;
+        });
+    }
+    
+    // Ensure the output directory exists
+    if (!fs.existsSync(options.outputDir)) {
+      fs.mkdirSync(options.outputDir, { recursive: true });
+    }
+    
+    // Train using the standard neural network training function
+    // The crawler adapter already prepared the data in the right format
+    return trainNeuralNetwork(
+      options.datasetPath,
+      options.outputDir,
+      {
+        framework: 'tensorflow', // Default to TensorFlow
+        model: 'mobilenetv2',    // Default to MobileNetV2
+        epochs: options.epochs,
+        batchSize: options.batchSize,
+        learningRate: options.learningRate,
+        imgSize: 224            // Default image size
+      }
+    )
+    .then(result => {
+      // Add metadata about the data source
+      const metadataPath = path.join(options.outputDir, 'crawler_training_metadata.json');
+      const metadata = {
+        data_source: 'crawler',
+        dataset_path: options.datasetPath,
+        training_time: result.training_time,
+        accuracy: result.final_accuracy,
+        model_type: options.modelType || 'hybrid',
+        training_completed: true,
+        timestamp: new Date().toISOString()
+      };
+      
+      fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
+      
+      // Return the training result
+      resolve(result);
+    })
+    .catch(error => {
+      reject(new Error(`Failed to train model with crawler data: ${error}`));
+    });
+  });
+}
