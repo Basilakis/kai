@@ -11,7 +11,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { ApiError } from '../../middleware/error.middleware';
-import { uploadToS3, getS3Url } from '../storage/s3Service';
+import { uploadToS3, getS3Url } from '../storage/supabaseStorageService';
 import { createCatalog, updateCatalog } from '../../models/catalog.model';
 import { createMaterial } from '../../models/material.model';
 import { extractTextFromImage } from './ocrService';
@@ -174,8 +174,8 @@ export async function processPdfCatalog(
           const s3Key = `${STORAGE.FOLDERS.CATALOGS}/images/${catalogId}/${image.fileName}`;
           await uploadToS3(image.filePath, s3Key);
           
-          // Get S3 URL
-          const s3Url = getS3Url(s3Key);
+          // Get S3 URL - await the Promise since Supabase Storage returns URLs asynchronously
+          const s3Url = await getS3Url(s3Key);
           
           // Update image with S3 info
           image.s3Key = s3Key;

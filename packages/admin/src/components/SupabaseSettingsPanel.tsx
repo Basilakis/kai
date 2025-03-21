@@ -23,7 +23,8 @@ const SupabaseSettingsPanel: React.FC = () => {
     enableHybridSearch: true,
     textSearchWeight: 0.5,
     vectorSearchWeight: 0.5,
-    storageRegion: 'us-east-1'
+    storageRegion: 'us-east-1',
+    storageBucket: 'materials'
   });
 
   // UI state
@@ -42,7 +43,8 @@ const SupabaseSettingsPanel: React.FC = () => {
           supabaseUrl: '',
           supabaseKey: '',
           enableVectorSearch: true,
-          storageRegion: 'us-east-1'
+          storageRegion: 'us-east-1',
+          storageBucket: 'materials'
         };
         
         setConfig(data);
@@ -188,6 +190,26 @@ const SupabaseSettingsPanel: React.FC = () => {
               </div>
               <p className="mt-2 text-xs text-gray-500">
                 Your Supabase service role API key (keep this secret)
+              </p>
+            </div>
+
+            <div className="sm:col-span-4">
+              <label htmlFor="storageBucket" className="block text-sm font-medium text-gray-700">
+                Storage Bucket Name
+              </label>
+              <div className="mt-1 relative rounded-md shadow-sm">
+                <input
+                  type="text"
+                  name="storageBucket"
+                  id="storageBucket"
+                  className="focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md"
+                  value={config.storageBucket}
+                  onChange={handleInputChange}
+                  placeholder="materials"
+                />
+              </div>
+              <p className="mt-2 text-xs text-gray-500">
+                Name of the Supabase storage bucket to use for file storage
               </p>
             </div>
 
