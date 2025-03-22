@@ -899,6 +899,768 @@ Cancels a job in the queue.
 }
 ```
 
+### Dataset Management API
+
+#### Generate Synthetic Data
+
+```
+POST /api/admin/datasets/:id/synthetic
+```
+
+Generates synthetic data to balance or augment a class.
+
+**URL Parameters:**
+- `id`: Dataset ID
+
+**Request Body:**
+```json
+{
+  "targetClass": "chair",
+  "targetCount": 200,
+  "generationMethod": "random",
+  "generationParams": {
+    "variability": 0.8,
+    "quality": 0.7
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "classId": "class-1",
+  "className": "chair",
+  "originalCount": 120,
+  "generatedCount": 80,
+  "newCount": 200,
+  "methods": {
+    "generationMethod": "random",
+    "params": {
+      "variability": 0.8,
+      "quality": 0.7
+    }
+  },
+  "generatedImages": [
+    {
+      "id": "synth-1",
+      "url": "https://storage.example.com/signed-url/synth_chair_001.jpg"
+    },
+    // Additional images...
+  ]
+}
+```
+
+#### Setup Incremental Learning Dataset
+
+```
+POST /api/admin/datasets/incremental
+```
+
+Sets up an incremental learning dataset.
+
+**Request Body:**
+```json
+{
+  "baseDatasetId": "dataset-123",
+  "newClasses": [
+    {
+      "name": "desk",
+      "description": "Work desks"
+    },
+    {
+      "name": "lamp",
+      "description": "Various types of lamps"
+    }
+  ],
+  "newImagesPerClass": 100,
+  "preserveOldClasses": true,
+  "rebalance": false
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "datasetId": "dataset-127",
+  "baseDatasetId": "dataset-123",
+  "newClasses": [
+    {
+      "id": "class-16",
+      "name": "desk",
+      "description": "Work desks",
+      "status": "pending"
+    },
+    {
+      "id": "class-17",
+      "name": "lamp",
+      "description": "Various types of lamps",
+      "status": "pending"
+    }
+  ],
+  "preservedClasses": 15,
+  "totalClasses": 17,
+  "targetImagesPerClass": 100
+}
+```
+
+#### Delete Dataset
+
+```
+DELETE /api/admin/datasets/:id
+```
+
+Deletes a dataset.
+
+**URL Parameters:**
+- `id`: Dataset ID
+
+**Response:**
+```json
+{
+  "success": true,
+  "dataset": {
+    "id": "dataset-123",
+    "name": "Furniture Dataset",
+    "deletedAt": "2023-04-03T10:15:00Z"
+  }
+}
+```
+
+#### Update Dataset
+
+```
+PUT /api/admin/datasets/:id
+```
+
+Updates a dataset.
+
+**URL Parameters:**
+- `id`: Dataset ID
+
+**Request Body:**
+```json
+{
+  "name": "Modern Furniture Dataset",
+  "description": "Updated dataset containing modern furniture items",
+  "status": "active"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "dataset": {
+    "id": "dataset-123",
+    "name": "Modern Furniture Dataset",
+    "description": "Updated dataset containing modern furniture items",
+    "status": "active",
+    "updatedAt": "2023-04-03T11:00:00Z"
+  }
+}
+```
+
+### Knowledge Base Bulk Operations
+
+#### Bulk Import Materials
+
+```
+POST /api/admin/knowledge-base/bulk/materials/import
+```
+
+Imports multiple materials at once.
+
+**Request Body:**
+```json
+{
+  "materials": [
+    {
+      "name": "Ceramic Tile Alpha",
+      "description": "A high-quality ceramic tile for indoor use",
+      "materialType": "tile",
+      "manufacturer": "Example Tiles Inc.",
+      "collectionId": "collection-abc"
+    },
+    {
+      "name": "Ceramic Tile Beta",
+      "description": "A durable ceramic tile for outdoor use",
+      "materialType": "tile",
+      "manufacturer": "Example Tiles Inc.",
+      "collectionId": "collection-abc"
+    }
+  ],
+  "options": {
+    "skipDuplicates": true,
+    "updateExisting": false,
+    "validateBeforeImport": true
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "imported": 2,
+  "skipped": 0,
+  "failed": 0,
+  "materials": [
+    {
+      "id": "material-123",
+      "name": "Ceramic Tile Alpha",
+      "materialType": "tile",
+      "manufacturer": "Example Tiles Inc.",
+      "status": "imported"
+    },
+    {
+      "id": "material-124",
+      "name": "Ceramic Tile Beta",
+      "materialType": "tile",
+      "manufacturer": "Example Tiles Inc.",
+      "status": "imported"
+    }
+  ]
+}
+```
+
+#### Bulk Update Materials
+
+```
+POST /api/admin/knowledge-base/bulk/materials/update
+```
+
+Updates multiple materials at once.
+
+**Request Body:**
+```json
+{
+  "updates": [
+    {
+      "id": "material-123",
+      "updates": {
+        "description": "Updated description for Alpha tile",
+        "price": {
+          "value": 49.99,
+          "currency": "USD",
+          "unit": "sqm"
+        }
+      }
+    },
+    {
+      "id": "material-124",
+      "updates": {
+        "description": "Updated description for Beta tile",
+        "price": {
+          "value": 54.99,
+          "currency": "USD",
+          "unit": "sqm"
+        }
+      }
+    }
+  ],
+  "options": {
+    "createRevision": true,
+    "validateBeforeUpdate": true
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "updated": 2,
+  "failed": 0,
+  "materials": [
+    {
+      "id": "material-123",
+      "name": "Ceramic Tile Alpha",
+      "status": "updated",
+      "revisionId": "revision-123"
+    },
+    {
+      "id": "material-124",
+      "name": "Ceramic Tile Beta",
+      "status": "updated",
+      "revisionId": "revision-124"
+    }
+  ]
+}
+```
+
+#### Bulk Delete Materials
+
+```
+POST /api/admin/knowledge-base/bulk/materials/delete
+```
+
+Deletes multiple materials at once.
+
+**Request Body:**
+```json
+{
+  "materialIds": ["material-123", "material-124"],
+  "options": {
+    "permanentDelete": false,
+    "cascade": true
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "deleted": 2,
+  "failed": 0,
+  "materials": [
+    {
+      "id": "material-123",
+      "name": "Ceramic Tile Alpha",
+      "status": "deleted"
+    },
+    {
+      "id": "material-124",
+      "name": "Ceramic Tile Beta",
+      "status": "deleted"
+    }
+  ]
+}
+```
+
+#### Bulk Export Materials
+
+```
+POST /api/admin/knowledge-base/bulk/materials/export
+```
+
+Exports multiple materials.
+
+**Request Body:**
+```json
+{
+  "materialIds": ["material-123", "material-124"],
+  "format": "json",
+  "options": {
+    "includeRelationships": true,
+    "includeVersions": false,
+    "includeImages": true
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "exportId": "export-123",
+  "format": "json",
+  "url": "https://assets.kai-system.com/exports/export-123.json",
+  "materialsCount": 2,
+  "expiresAt": "2023-04-10T12:00:00Z"
+}
+```
+
+#### Bulk Create Relationships
+
+```
+POST /api/admin/knowledge-base/bulk/relationships/create
+```
+
+Creates multiple relationships between materials.
+
+**Request Body:**
+```json
+{
+  "relationships": [
+    {
+      "sourceMaterialId": "material-123",
+      "targetMaterialId": "material-124",
+      "relationshipType": "complementary",
+      "strength": 0.85,
+      "metadata": {
+        "notes": "These two materials work well together"
+      }
+    },
+    {
+      "sourceMaterialId": "material-123",
+      "targetMaterialId": "material-125",
+      "relationshipType": "alternative",
+      "strength": 0.75,
+      "metadata": {
+        "notes": "Alternative option with similar properties"
+      }
+    }
+  ],
+  "options": {
+    "bidirectional": true,
+    "updateExisting": true
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "created": 4,
+  "updated": 0,
+  "failed": 0,
+  "relationships": [
+    {
+      "id": "relationship-123",
+      "sourceMaterialId": "material-123",
+      "targetMaterialId": "material-124",
+      "relationshipType": "complementary",
+      "status": "created"
+    },
+    {
+      "id": "relationship-124",
+      "sourceMaterialId": "material-124",
+      "targetMaterialId": "material-123",
+      "relationshipType": "complementary",
+      "status": "created"
+    },
+    {
+      "id": "relationship-125",
+      "sourceMaterialId": "material-123",
+      "targetMaterialId": "material-125",
+      "relationshipType": "alternative",
+      "status": "created"
+    },
+    {
+      "id": "relationship-126",
+      "sourceMaterialId": "material-125",
+      "targetMaterialId": "material-123",
+      "relationshipType": "alternative",
+      "status": "created"
+    }
+  ]
+}
+```
+
+#### Material Revision Management
+
+```
+POST /api/admin/knowledge-base/materials/:materialId/revisions
+```
+
+Creates a new revision of a material.
+
+**URL Parameters:**
+- `materialId`: Material ID
+
+**Request Body:**
+```json
+{
+  "changes": {
+    "description": "Updated description for ceramic tile",
+    "price": {
+      "value": 52.99,
+      "currency": "USD",
+      "unit": "sqm"
+    }
+  },
+  "changeDescription": "Updated description and price",
+  "preserveHistory": true
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "material": {
+    "id": "material-123",
+    "name": "Ceramic Tile Alpha",
+    "description": "Updated description for ceramic tile",
+    "price": {
+      "value": 52.99,
+      "currency": "USD",
+      "unit": "sqm"
+    },
+    "updatedAt": "2023-04-04T09:30:00Z"
+  },
+  "revision": {
+    "id": "revision-127",
+    "materialId": "material-123",
+    "versionNumber": 3,
+    "changeDescription": "Updated description and price",
+    "createdBy": "user-abc",
+    "createdAt": "2023-04-04T09:30:00Z"
+  }
+}
+```
+
+#### Revert Material Version
+
+```
+POST /api/admin/knowledge-base/materials/:materialId/revert/:versionId
+```
+
+Reverts a material to a previous version.
+
+**URL Parameters:**
+- `materialId`: Material ID
+- `versionId`: Version ID to revert to
+
+**Request Body:**
+```json
+{
+  "createNewRevision": true,
+  "changeDescription": "Reverted to version from 2023-03-15"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "material": {
+    "id": "material-123",
+    "name": "Ceramic Tile Alpha",
+    "description": "A high-quality ceramic tile for indoor use",
+    "price": {
+      "value": 45.99,
+      "currency": "USD",
+      "unit": "sqm"
+    },
+    "updatedAt": "2023-04-04T10:00:00Z"
+  },
+  "revision": {
+    "id": "revision-128",
+    "materialId": "material-123",
+    "versionNumber": 4,
+    "changeDescription": "Reverted to version from 2023-03-15",
+    "revertedFromVersion": "revision-125",
+    "createdBy": "user-abc",
+    "createdAt": "2023-04-04T10:00:00Z"
+  }
+}
+```
+
+#### Get Material Version History
+
+```
+GET /api/admin/knowledge-base/materials/:materialId/versions
+```
+
+Gets the version history for a material.
+
+**URL Parameters:**
+- `materialId`: Material ID
+
+**Response:**
+```json
+{
+  "material": {
+    "id": "material-123",
+    "name": "Ceramic Tile Alpha",
+    "currentVersion": 4
+  },
+  "versions": [
+    {
+      "id": "revision-128",
+      "versionNumber": 4,
+      "changeDescription": "Reverted to version from 2023-03-15",
+      "revertedFromVersion": "revision-125",
+      "createdBy": "user-abc",
+      "createdAt": "2023-04-04T10:00:00Z"
+    },
+    {
+      "id": "revision-127",
+      "versionNumber": 3,
+      "changeDescription": "Updated description and price",
+      "createdBy": "user-abc",
+      "createdAt": "2023-04-04T09:30:00Z"
+    },
+    {
+      "id": "revision-126",
+      "versionNumber": 2,
+      "changeDescription": "Updated technical properties",
+      "createdBy": "user-abc",
+      "createdAt": "2023-03-20T14:45:00Z"
+    },
+    {
+      "id": "revision-125",
+      "versionNumber": 1,
+      "changeDescription": "Initial version",
+      "createdBy": "user-abc",
+      "createdAt": "2023-03-15T11:15:00Z"
+    }
+  ]
+}
+```
+
+#### Search Indexes Management
+
+```
+POST /api/admin/knowledge-base/search-indexes
+```
+
+Creates a new search index.
+
+**Request Body:**
+```json
+{
+  "name": "Material Catalog Index",
+  "description": "Full-text and vector search index for materials",
+  "indexType": "hybrid",
+  "options": {
+    "includeFields": ["name", "description", "materialType", "manufacturer", "tags"],
+    "vectorizeFields": ["name", "description", "tags"],
+    "vectorDimension": 1536,
+    "textWeights": {
+      "name": 3.0,
+      "description": 1.0,
+      "tags": 2.0
+    }
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "index": {
+    "id": "index-123",
+    "name": "Material Catalog Index",
+    "description": "Full-text and vector search index for materials",
+    "indexType": "hybrid",
+    "status": "creating",
+    "createdAt": "2023-04-04T11:30:00Z"
+  }
+}
+```
+
+#### Get Search Indexes
+
+```
+GET /api/admin/knowledge-base/search-indexes
+```
+
+Gets a list of search indexes.
+
+**Query Parameters:**
+- `status`: Filter by status (optional, "creating", "ready", "updating", "error")
+
+**Response:**
+```json
+{
+  "indexes": [
+    {
+      "id": "index-123",
+      "name": "Material Catalog Index",
+      "description": "Full-text and vector search index for materials",
+      "indexType": "hybrid",
+      "status": "ready",
+      "documentCount": 12458,
+      "lastUpdated": "2023-04-04T12:00:00Z",
+      "createdAt": "2023-04-04T11:30:00Z"
+    },
+    {
+      "id": "index-122",
+      "name": "Collection Search Index",
+      "description": "Search index for collections",
+      "indexType": "text",
+      "status": "ready",
+      "documentCount": 235,
+      "lastUpdated": "2023-03-25T09:45:00Z",
+      "createdAt": "2023-03-25T09:15:00Z"
+    }
+  ]
+}
+```
+
+#### Rebuild Search Index
+
+```
+POST /api/admin/knowledge-base/search-indexes/:indexId/rebuild
+```
+
+Rebuilds a search index.
+
+**URL Parameters:**
+- `indexId`: Index ID
+
+**Request Body:**
+```json
+{
+  "optimizeForSearchQuality": true,
+  "priority": "high"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "index": {
+    "id": "index-123",
+    "name": "Material Catalog Index",
+    "status": "updating",
+    "jobId": "job-456",
+    "estimatedTimeToComplete": "10 minutes"
+  }
+}
+```
+
+#### Get Knowledge Base Statistics
+
+```
+GET /api/admin/knowledge-base/stats
+```
+
+Gets statistics about the knowledge base.
+
+**Response:**
+```json
+{
+  "materials": {
+    "total": 12458,
+    "byType": {
+      "tile": 7845,
+      "stone": 2532,
+      "wood": 2081
+    },
+    "revisions": 25890,
+    "averageRevisionsPerMaterial": 2.1
+  },
+  "collections": {
+    "total": 235,
+    "byManufacturer": {
+      "Example Tiles Inc.": 45,
+      "Stone Masters": 32,
+      "Wood Experts": 28
+    }
+  },
+  "relationships": {
+    "total": 35628,
+    "byType": {
+      "complementary": 15246,
+      "alternative": 12482,
+      "related": 7900
+    }
+  },
+  "searchIndexes": {
+    "total": 10,
+    "queries": {
+      "last24h": 1245,
+      "last7d": 7832,
+      "averageResponseTimeMs": 120
+    }
+  },
+  "activity": {
+    "materialsCreatedLast7d": 325,
+    "materialsUpdatedLast7d": 567,
+    "collectionsCreatedLast7d": 12
+  }
+}
+```
+
 ### User Management
 
 #### Get User Profile

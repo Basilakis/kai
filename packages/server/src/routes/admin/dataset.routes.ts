@@ -20,6 +20,7 @@ import { logger } from '../../utils/logger';
 import supabaseDatasetService from '../../services/supabase/supabase-dataset-service';
 import { zipExtractorService } from '../../services/datasets/zip-extractor.service';
 import { csvParserService } from '../../services/datasets/csv-parser.service';
+import { datasetManagementService } from '../../services/datasets/dataset-management.service';
 
 const router = Router();
 
@@ -131,14 +132,14 @@ router.get('/stats', async (req: Request, res: Response) => {
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const dataset = await supabaseDatasetService.getDatasetById(id);
+    const dataset = await supabaseDatasetService.getDatasetById(id || '');
     
     if (!dataset) {
       return res.status(404).json({ error: 'Dataset not found' });
     }
     
     // Get classes for the dataset
-    const classes = await supabaseDatasetService.getDatasetClasses(id);
+    const classes = await supabaseDatasetService.getDatasetClasses(id || '');
     
     return res.json({
       dataset,
@@ -166,7 +167,7 @@ router.get('/:id/classes/:classId/images', async (req: Request, res: Response) =
     const offset = (pageNum - 1) * limitNum;
     
     // Get images
-    const images = await supabaseDatasetService.getDatasetClassImages(classId, limitNum, offset);
+    const images = await supabaseDatasetService.getDatasetClassImages(classId || '', limitNum, offset);
     
     // Get signed URLs for each image
     const imagesWithUrls = await Promise.all(
@@ -327,13 +328,242 @@ router.get('/templates/csv', (req: Request, res: Response) => {
     const template = csvParserService.generateCsvTemplate();
     
     // Set headers for file download
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', 'attachment; filename="dataset-template.csv"');
+    (res as any).setHeader('Content-Type', 'text/csv');
+    (res as any).setHeader('Content-Disposition', 'attachment; filename="dataset-template.csv"');
     
-    return res.send(template);
+    return res.status(200).send(template as any);
   } catch (err) {
     logger.error(`Error generating CSV template: ${err}`);
     return res.status(500).json({ error: 'Failed to generate CSV template', details: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+/**
+ * @route   POST /api/admin/datasets/:id/clean
+ * @desc    Clean a dataset by detecting and fixing issues
+ * @access  Admin
+ */
+router.post('/:id/clean', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { 
+      createNewVersion = true,
+      detectDuplicates = true,
+      removeDuplicates = true,
+      detectCorrupted = true,
+      removeCorrupted = true,
+      detectOutliers = false,
+      removeOutliers = false,
+      balanceClasses = false,
+      fixLabels = false,
+      checkResolution
+    } = req.body;
+
+    const options = {
+      detectDuplicates,
+      removeDuplicates,
+      detectCorrupted,
+      removeCorrupted,
+      detectOutliers,
+      removeOutliers,
+      balanceClasses,
+      fixLabels,
+      checkResolution: checkResolution || {
+        enabled: true,
+        minWidth: 224,
+        minHeight: 224
+      }
+    };
+
+    const result = await datasetManagementService.cleanDataset(id || '', options, createNewVersion);
+    
+    return res.json(result);
+  } catch (err) {
+    logger.error(`Error cleaning dataset: ${err}`);
+    return res.status(500).json({ error: 'Failed to clean dataset', details: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+/**
+ * @route   POST /api/admin/datasets/:id/augment
+ * @desc    Augment a dataset with additional transformations
+ * @access  Admin
+ */
+router.post('/:id/augment', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { 
+      createNewVersion = true,
+      targetSamplesPerClass,
+      maxAugmentationPerImage,
+      transformations = {
+        rotation: { enabled: true, maxDegrees: 30 },
+        flip: { enabled: true, horizontal: true, vertical: false },
+        crop: { enabled: false },
+        zoom: { enabled: false },
+        brightness: { enabled: true, range: [-0.2, 0.2] },
+        contrast: { enabled: true, range: [-0.2, 0.2] },
+        noise: { enabled: false },
+        blur: { enabled: false },
+        colorJitter: { enabled: false },
+        perspective: { enabled: false }
+      }
+    } = req.body;
+
+    const options = {
+      enabled: true,
+      targetSamplesPerClass,
+      maxAugmentationPerImage,
+      transformations
+    };
+
+    const result = await datasetManagementService.augmentDataset(id || '', options, createNewVersion);
+    
+    return res.json(result);
+  } catch (err) {
+    logger.error(`Error augmenting dataset: ${err}`);
+    return res.status(500).json({ error: 'Failed to augment dataset', details: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+/**
+ * @route   POST /api/admin/datasets/:id/versions
+ * @desc    Create a new version of a dataset
+ * @access  Admin
+ */
+router.post('/:id/versions', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { name, description, changeLog } = req.body;
+    const userId = req.user?.id;
+    
+    const version = await datasetManagementService.createDatasetVersion(
+      id || '',
+      name || `Version ${new Date().toISOString()}`,
+      description,
+      changeLog,
+      userId
+    );
+    
+    return res.json(version);
+  } catch (err) {
+    logger.error(`Error creating dataset version: ${err}`);
+    return res.status(500).json({ error: 'Failed to create dataset version', details: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+/**
+ * @route   GET /api/admin/datasets/:id/versions
+ * @desc    Get all versions of a dataset
+ * @access  Admin
+ */
+router.get('/:id/versions', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    
+    const versions = await datasetManagementService.getDatasetVersions(id || '');
+    
+    return res.json(versions);
+  } catch (err) {
+    logger.error(`Error getting dataset versions: ${err}`);
+    return res.status(500).json({ error: 'Failed to get dataset versions', details: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+/**
+ * @route   GET /api/admin/datasets/:id/quality
+ * @desc    Analyze dataset quality and generate metrics
+ * @access  Admin
+ */
+router.get('/:id/quality', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    
+    const metrics = await datasetManagementService.analyzeDatasetQuality(id || '');
+    
+    return res.json(metrics);
+  } catch (err) {
+    logger.error(`Error analyzing dataset quality: ${err}`);
+    return res.status(500).json({ error: 'Failed to analyze dataset quality', details: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+/**
+ * @route   POST /api/admin/datasets/:id/synthetic
+ * @desc    Generate synthetic data to balance or augment a class
+ * @access  Admin
+ */
+router.post('/:id/synthetic', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { 
+      targetClass,
+      targetCount,
+      generationMethod = 'random',
+      generationParams = {}
+    } = req.body;
+
+    if (!targetClass) {
+      return res.status(400).json({ error: 'Target class is required' });
+    }
+
+    if (!targetCount || targetCount <= 0) {
+      return res.status(400).json({ error: 'Valid target count is required' });
+    }
+
+    const options = {
+      targetClass,
+      targetCount,
+      generationMethod,
+      generationParams
+    };
+
+    const result = await datasetManagementService.generateSyntheticData(id || '', options);
+    
+    return res.json(result);
+  } catch (err) {
+    logger.error(`Error generating synthetic data: ${err}`);
+    return res.status(500).json({ error: 'Failed to generate synthetic data', details: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+/**
+ * @route   POST /api/admin/datasets/incremental
+ * @desc    Set up an incremental learning dataset
+ * @access  Admin
+ */
+router.post('/incremental', async (req: Request, res: Response) => {
+  try {
+    const { 
+      baseDatasetId,
+      newClasses,
+      newImagesPerClass,
+      preserveOldClasses = true,
+      rebalance = false
+    } = req.body;
+
+    if (!baseDatasetId) {
+      return res.status(400).json({ error: 'Base dataset ID is required' });
+    }
+
+    if (!newClasses || !Array.isArray(newClasses) || newClasses.length === 0) {
+      return res.status(400).json({ error: 'At least one new class is required' });
+    }
+
+    const options = {
+      baseDatasetId,
+      newClasses,
+      newImagesPerClass,
+      preserveOldClasses,
+      rebalance
+    };
+
+    const result = await datasetManagementService.setupIncrementalLearningDataset(options);
+    
+    return res.json(result);
+  } catch (err) {
+    logger.error(`Error setting up incremental learning dataset: ${err}`);
+    return res.status(500).json({ error: 'Failed to set up incremental learning dataset', details: err instanceof Error ? err.message : String(err) });
   }
 });
 
@@ -345,7 +575,7 @@ router.get('/templates/csv', (req: Request, res: Response) => {
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const deletedDataset = await supabaseDatasetService.deleteDataset(id);
+    const deletedDataset = await supabaseDatasetService.deleteDataset(id || '');
     
     if (!deletedDataset) {
       return res.status(404).json({ error: 'Dataset not found' });
@@ -369,13 +599,13 @@ router.put('/:id', async (req: Request, res: Response) => {
     const { name, description, status } = req.body;
     
     // Check if dataset exists
-    const existingDataset = await supabaseDatasetService.getDatasetById(id);
+    const existingDataset = await supabaseDatasetService.getDatasetById(id || '');
     if (!existingDataset) {
       return res.status(404).json({ error: 'Dataset not found' });
     }
     
     // Update dataset
-    const updatedDataset = await supabaseDatasetService.updateDataset(id, {
+    const updatedDataset = await supabaseDatasetService.updateDataset(id || '', {
       name,
       description,
       status
