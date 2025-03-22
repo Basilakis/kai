@@ -34,6 +34,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, closeSidebar }) => {
     { name: 'Image Recognition', href: '/image-recognition', icon: PhotographIcon },
     { name: 'Knowledge Base', href: '/knowledge-base', icon: DatabaseIcon },
     { name: 'Material Management', href: '/materials', icon: CubeIcon },
+    { name: 'Models', href: '/models', icon: DatabaseIcon },
     { name: 'Datasets', href: '/datasets', icon: DatabaseIcon },
     { name: 'Reports', href: '/reports', icon: ChartBarIcon },
     { name: 'Addons', href: '/addons', icon: GlobeAltIcon },

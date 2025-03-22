@@ -1,10 +1,10 @@
 /**
  * Dataset Uploader Component
  * 
- * Handles uploading datasets through ZIP or CSV formats
+ * Handles uploading datasets through ZIP, CSV formats, or importing from premade datasets repositories
  */
 
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   Box,
   Button,
@@ -33,12 +33,40 @@ import {
 import {
   CloudUpload as CloudUploadIcon,
   Description as DescriptionIcon,
-  Folder as FolderIcon
+  Folder as FolderIcon,
+  Storage as StorageIcon,
+  Search as SearchIcon,
+  ImportExport as ImportExportIcon
 } from '@mui/icons-material';
 
-// Interface for component props
+// Interfaces for component props
 interface DatasetUploaderProps {
   onComplete: (dataset: any) => void;
+}
+
+// Interface for dataset repositories
+interface DatasetRepository {
+  id: string;
+  name: string;
+  description: string;
+  baseUrl: string;
+  logo?: string;
+}
+
+// Interface for premade dataset
+interface PremadeDataset {
+  id: string;
+  name: string;
+  description: string;
+  repository: string;
+  categories: string[];
+  size: number; // In MB
+  imageCount: number;
+  classCount: number;
+  format: string;
+  license: string;
+  citation?: string;
+  thumbnailUrl?: string;
 }
 
 // Interface for CSV mapping
@@ -49,12 +77,100 @@ interface CsvMapping {
   defaultValue?: any;
 }
 
+// Popular dataset repositories
+const DATASET_REPOSITORIES: DatasetRepository[] = [
+  {
+    id: 'kaggle',
+    name: 'Kaggle Datasets',
+    description: 'Public datasets from Kaggle, includes a variety of image classification datasets',
+    baseUrl: 'https://www.kaggle.com/datasets',
+    logo: 'https://www.kaggle.com/static/images/site-logo.png'
+  },
+  {
+    id: 'tensorflow',
+    name: 'TensorFlow Datasets',
+    description: 'Collection of ready-to-use datasets from TensorFlow',
+    baseUrl: 'https://www.tensorflow.org/datasets',
+    logo: 'https://www.tensorflow.org/images/tf_logo_social.png'
+  },
+  {
+    id: 'huggingface',
+    name: 'Hugging Face Datasets',
+    description: 'Public datasets for machine learning from Hugging Face',
+    baseUrl: 'https://huggingface.co/datasets',
+    logo: 'https://huggingface.co/front/assets/huggingface_logo.svg'
+  },
+  {
+    id: 'imageNet',
+    name: 'ImageNet',
+    description: 'Standard computer vision dataset with millions of labeled images',
+    baseUrl: 'https://image-net.org/',
+    logo: 'https://image-net.org/assets/logo.svg'
+  }
+];
+
+// Sample premade datasets
+const PREMADE_DATASETS: PremadeDataset[] = [
+  {
+    id: 'imagenet-mini',
+    name: 'ImageNet Mini',
+    description: 'A smaller subset of ImageNet with 1000 classes and 50,000 images',
+    repository: 'imageNet',
+    categories: ['general', 'classification'],
+    size: 6800,
+    imageCount: 50000,
+    classCount: 1000,
+    format: 'zip',
+    license: 'ImageNet License',
+    thumbnailUrl: 'https://miro.medium.com/max/1400/1*TYAuT3loV7hA_dZMGur2KQ.jpeg'
+  },
+  {
+    id: 'cifar-10',
+    name: 'CIFAR-10',
+    description: '60,000 32x32 color images in 10 classes, with 6,000 images per class',
+    repository: 'tensorflow',
+    categories: ['general', 'classification'],
+    size: 170,
+    imageCount: 60000,
+    classCount: 10,
+    format: 'binary',
+    license: 'MIT',
+    thumbnailUrl: 'https://production-media.paperswithcode.com/datasets/CIFAR-10-0000000431-07a032f6_ROQoXCo.jpg'
+  },
+  {
+    id: 'materials-dataset',
+    name: 'Materials Recognition Dataset',
+    description: 'Dataset for recognizing different materials surfaces, textures, and types',
+    repository: 'kaggle',
+    categories: ['materials', 'classification', 'textures'],
+    size: 2400,
+    imageCount: 5000,
+    classCount: 25,
+    format: 'zip',
+    license: 'CC BY-SA 4.0',
+    thumbnailUrl: 'https://storage.googleapis.com/kaggle-datasets-images/679/1290/f432bca5ce6eb8a9317e36a5303361ad/dataset-card.jpg'
+  },
+  {
+    id: 'dtd',
+    name: 'Describable Textures Dataset',
+    description: 'Collection of textural images in the wild organized according to human perception',
+    repository: 'huggingface',
+    categories: ['textures', 'classification'],
+    size: 600,
+    imageCount: 5640,
+    classCount: 47,
+    format: 'zip',
+    license: 'MIT',
+    thumbnailUrl: 'https://huggingface.co/datasets/dtd/resolve/main/visualizations.png'
+  }
+];
+
 // Dataset Uploader Component
 const DatasetUploader: React.FC<DatasetUploaderProps> = ({ onComplete }) => {
   const theme = useTheme();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState(0);
-  const [uploadType, setUploadType] = useState<'zip' | 'csv'>('zip');
+  const [uploadType, setUploadType] = useState<'zip' | 'csv' | 'premade'>('zip');
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -64,19 +180,39 @@ const DatasetUploader: React.FC<DatasetUploaderProps> = ({ onComplete }) => {
   const [csvMapping, setCsvMapping] = useState<CsvMapping[]>([]);
   const [activeStep, setActiveStep] = useState(0);
   const [hasMappingChanged, setHasMappingChanged] = useState(false);
+  
+  // Additional state for premade datasets
+  const [selectedRepository, setSelectedRepository] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [selectedDataset, setSelectedDataset] = useState<PremadeDataset | null>(null);
+  const [filteredDatasets, setFilteredDatasets] = useState<PremadeDataset[]>(PREMADE_DATASETS);
+  const [datasetOptions, setDatasetOptions] = useState<{
+    includeMetadata: boolean;
+    selectedClasses: string[];
+  }>({
+    includeMetadata: true,
+    selectedClasses: []
+  });
 
-  // Define upload steps
-  const steps = [
-    'Select File',
-    uploadType === 'csv' ? 'Configure Mapping' : 'Configure Settings',
-    'Upload & Process'
-  ];
+  // Define upload steps based on upload type
+  const getSteps = () => {
+    if (uploadType === 'zip') {
+      return ['Select File', 'Configure Settings', 'Upload & Process'];
+    } else if (uploadType === 'csv') {
+      return ['Select File', 'Configure Mapping', 'Upload & Process'];
+    } else {
+      return ['Select Dataset', 'Configure Options', 'Import & Process'];
+    }
+  };
+  
+  const steps = getSteps();
 
   // Handle tab change
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setActiveTab(newValue);
-    setUploadType(newValue === 0 ? 'zip' : 'csv');
+    setUploadType(newValue === 0 ? 'zip' : newValue === 1 ? 'csv' : 'premade');
     setFile(null);
+    setSelectedDataset(null);
     setError(null);
     setActiveStep(0);
   };
@@ -170,15 +306,57 @@ const DatasetUploader: React.FC<DatasetUploaderProps> = ({ onComplete }) => {
   };
 
   // Effect to load CSV mapping when a CSV file is selected
-  React.useEffect(() => {
+  useEffect(() => {
     if (file && uploadType === 'csv' && activeStep === 1) {
       loadCsvMapping();
     }
   }, [file, uploadType, activeStep]);
+  
+  // Effect to filter datasets based on search query
+  useEffect(() => {
+    if (uploadType === 'premade') {
+      const filtered = PREMADE_DATASETS.filter(dataset => {
+        const matchesQuery = searchQuery === '' || 
+          dataset.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          dataset.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          dataset.categories.some(cat => cat.toLowerCase().includes(searchQuery.toLowerCase()));
+          
+        const matchesRepo = selectedRepository === '' || dataset.repository === selectedRepository;
+        
+        return matchesQuery && matchesRepo;
+      });
+      
+      setFilteredDatasets(filtered);
+    }
+  }, [searchQuery, selectedRepository, uploadType]);
+  
+  // Handle repository selection
+  const handleRepositoryChange = (event: React.ChangeEvent<{ value: unknown }>) => {
+    setSelectedRepository(event.target.value as string);
+  };
+  
+  // Handle dataset selection
+  const handleDatasetSelect = (dataset: PremadeDataset) => {
+    setSelectedDataset(dataset);
+    setName(dataset.name);
+    setDescription(dataset.description);
+    setActiveStep(1);
+  };
+  
+  // Handle dataset option changes
+  const handleOptionChange = (option: string, value: any) => {
+    setDatasetOptions(prev => ({
+      ...prev,
+      [option]: value
+    }));
+  };
 
-  // Handle upload
+  // Handle upload/import
   const handleUpload = async () => {
-    if (!file) return;
+    if ((!file && uploadType !== 'premade') || (uploadType === 'premade' && !selectedDataset)) {
+      setError('No file or dataset selected');
+      return;
+    }
 
     setUploading(true);
     setProgress(0);
@@ -202,18 +380,35 @@ const DatasetUploader: React.FC<DatasetUploaderProps> = ({ onComplete }) => {
       clearInterval(interval);
       setProgress(100);
 
-      // Mock dataset response
-      const dataset = {
-        id: `dataset-${Date.now()}`,
-        name,
-        description,
-        status: 'ready',
-        classCount: 3,
-        imageCount: 25,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+      // Create dataset response based on upload type
+      let dataset: any;
+      
+      if (uploadType === 'premade' && selectedDataset) {
+        dataset = {
+          id: `dataset-${Date.now()}`,
+          name,
+          description,
+          status: 'ready',
+          classCount: selectedDataset.classCount,
+          imageCount: selectedDataset.imageCount,
+          source: selectedDataset.repository,
+          sourceId: selectedDataset.id,
+          license: selectedDataset.license,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+      } else {
+        dataset = {
+          id: `dataset-${Date.now()}`,
+          name,
+          description,
+          status: 'ready',
+          classCount: 3,
+          imageCount: 25,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
       };
-
       // Complete upload
       onComplete(dataset);
     } catch (err) {
@@ -240,6 +435,142 @@ const DatasetUploader: React.FC<DatasetUploaderProps> = ({ onComplete }) => {
   const getStepContent = (step: number) => {
     switch (step) {
       case 0:
+        if (uploadType === 'premade') {
+          return (
+            <Box sx={{ p: 3 }}>
+              <Typography variant="h6" gutterBottom>
+                Select Premade Dataset
+              </Typography>
+              <Typography variant="body2" color="textSecondary" paragraph>
+                Browse and select from a collection of public datasets ready for use in training models.
+              </Typography>
+              
+              <Box sx={{ mb: 3 }}>
+                <Grid container spacing={2} alignItems="center">
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="Search Datasets"
+                      variant="outlined"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search by name, description, or category"
+                      InputProps={{
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <SearchIcon />
+                          </InputAdornment>
+                        ),
+                      }}
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <FormControl fullWidth variant="outlined">
+                      <InputLabel>Repository</InputLabel>
+                      <Select
+                        value={selectedRepository}
+                        onChange={handleRepositoryChange}
+                        label="Repository"
+                      >
+                        <MenuItem value="">All Repositories</MenuItem>
+                        {DATASET_REPOSITORIES.map((repo) => (
+                          <MenuItem key={repo.id} value={repo.id}>
+                            {repo.name}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                </Grid>
+              </Box>
+              
+              {filteredDatasets.length === 0 ? (
+                <Typography variant="body1" align="center" color="textSecondary" sx={{ mt: 4 }}>
+                  No datasets found matching your criteria.
+                </Typography>
+              ) : (
+                <Grid container spacing={3}>
+                  {filteredDatasets.map((dataset) => (
+                    <Grid item xs={12} sm={6} md={4} key={dataset.id}>
+                      <Paper 
+                        sx={{ 
+                          p: 2, 
+                          height: '100%', 
+                          cursor: 'pointer',
+                          border: selectedDataset?.id === dataset.id ? '2px solid' : '1px solid',
+                          borderColor: selectedDataset?.id === dataset.id ? 'primary.main' : 'divider',
+                          transition: 'all 0.2s ease',
+                          '&:hover': {
+                            boxShadow: 3,
+                            borderColor: 'primary.main'
+                          }
+                        }}
+                        onClick={() => handleDatasetSelect(dataset)}
+                      >
+                        <Box sx={{ height: 140, mb: 2, overflow: 'hidden', borderRadius: 1, bgcolor: 'grey.100' }}>
+                          {dataset.thumbnailUrl ? (
+                            <Box
+                              component="img"
+                              src={dataset.thumbnailUrl}
+                              alt={dataset.name}
+                              sx={{ 
+                                width: '100%', 
+                                height: '100%', 
+                                objectFit: 'cover'
+                              }}
+                            />
+                          ) : (
+                            <Box sx={{ 
+                              height: '100%', 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              justifyContent: 'center' 
+                            }}>
+                              <StorageIcon sx={{ fontSize: 60, color: 'text.secondary' }} />
+                            </Box>
+                          )}
+                        </Box>
+                        
+                        <Typography variant="h6" gutterBottom noWrap>
+                          {dataset.name}
+                        </Typography>
+                        
+                        <Typography variant="body2" color="textSecondary" sx={{ mb: 1, height: 60, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {dataset.description}
+                        </Typography>
+                        
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                          <Typography variant="caption" color="primary">
+                            {DATASET_REPOSITORIES.find(r => r.id === dataset.repository)?.name}
+                          </Typography>
+                          <Typography variant="caption" color="textSecondary">
+                            {formatFileSize(dataset.size)}
+                          </Typography>
+                        </Box>
+                        
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <Typography variant="caption" color="textSecondary">
+                            {dataset.classCount} classes
+                          </Typography>
+                          <Typography variant="caption" color="textSecondary">
+                            {dataset.imageCount} images
+                          </Typography>
+                        </Box>
+                      </Paper>
+                    </Grid>
+                  ))}
+                </Grid>
+              )}
+              
+              {error && (
+                <Typography color="error" sx={{ mt: 2 }}>
+                  {error}
+                </Typography>
+              )}
+            </Box>
+          );
+        }
+        
         return (
           <Box sx={{ p: 3 }}>
             <Typography variant="h6" gutterBottom>
@@ -322,6 +653,103 @@ const DatasetUploader: React.FC<DatasetUploaderProps> = ({ onComplete }) => {
           </Box>
         );
       case 1:
+        if (uploadType === 'premade' && selectedDataset) {
+          return (
+            <Box sx={{ p: 3 }}>
+              <Typography variant="h6" gutterBottom>
+                Configure Dataset Options
+              </Typography>
+              <Typography variant="body2" color="textSecondary" paragraph>
+                Customize how the dataset should be imported and what data to include.
+              </Typography>
+              
+              <TextField
+                fullWidth
+                label="Dataset Name"
+                variant="outlined"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                sx={{ mb: 2 }}
+              />
+
+              <TextField
+                fullWidth
+                label="Description"
+                variant="outlined"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                multiline
+                rows={3}
+                sx={{ mb: 3 }}
+              />
+              
+              <Paper sx={{ p: 3, mb: 3 }}>
+                <Typography variant="subtitle1" gutterBottom>
+                  Import Options
+                </Typography>
+                
+                <FormControlLabel
+                  control={
+                    <Switch 
+                      checked={datasetOptions.includeMetadata}
+                      onChange={(e) => handleOptionChange('includeMetadata', e.target.checked)}
+                      color="primary"
+                    />
+                  }
+                  label="Include metadata (annotations, labels, etc.)"
+                />
+                
+                <Box sx={{ mt: 3 }}>
+                  <Typography variant="subtitle2" gutterBottom>
+                    Dataset Details
+                  </Typography>
+                  
+                  <Grid container spacing={2}>
+                    <Grid item xs={6} md={3}>
+                      <Typography variant="body2" color="textSecondary">
+                        Size
+                      </Typography>
+                      <Typography variant="body1">
+                        {formatFileSize(selectedDataset.size)}
+                      </Typography>
+                    </Grid>
+                    <Grid item xs={6} md={3}>
+                      <Typography variant="body2" color="textSecondary">
+                        Images
+                      </Typography>
+                      <Typography variant="body1">
+                        {selectedDataset.imageCount}
+                      </Typography>
+                    </Grid>
+                    <Grid item xs={6} md={3}>
+                      <Typography variant="body2" color="textSecondary">
+                        Classes
+                      </Typography>
+                      <Typography variant="body1">
+                        {selectedDataset.classCount}
+                      </Typography>
+                    </Grid>
+                    <Grid item xs={6} md={3}>
+                      <Typography variant="body2" color="textSecondary">
+                        License
+                      </Typography>
+                      <Typography variant="body1">
+                        {selectedDataset.license}
+                      </Typography>
+                    </Grid>
+                  </Grid>
+                </Box>
+              </Paper>
+              
+              {error && (
+                <Typography color="error" sx={{ mt: 2 }}>
+                  {error}
+                </Typography>
+              )}
+            </Box>
+          );
+        }
+        
         return (
           <Box sx={{ p: 3 }}>
             <Typography variant="h6" gutterBottom>
@@ -410,7 +838,7 @@ const DatasetUploader: React.FC<DatasetUploaderProps> = ({ onComplete }) => {
         return (
           <Box sx={{ p: 3 }}>
             <Typography variant="h6" gutterBottom>
-              Upload & Process
+              {uploadType === 'premade' ? 'Import & Process' : 'Upload & Process'}
             </Typography>
             <Typography variant="body2" color="textSecondary" paragraph>
               Uploading and processing your dataset. This may take a few minutes depending on the size.
@@ -440,7 +868,9 @@ const DatasetUploader: React.FC<DatasetUploaderProps> = ({ onComplete }) => {
               <Box sx={{ textAlign: 'center' }}>
                 <CircularProgress size={24} sx={{ mr: 1 }} />
                 <Typography variant="body2" color="textSecondary" component="span">
-                  {progress < 50 ? 'Uploading...' : 'Processing...'}
+                  {uploadType === 'premade' 
+                    ? (progress < 50 ? 'Downloading...' : 'Processing...') 
+                    : (progress < 50 ? 'Uploading...' : 'Processing...')}
                 </Typography>
               </Box>
             )}
@@ -459,15 +889,23 @@ const DatasetUploader: React.FC<DatasetUploaderProps> = ({ onComplete }) => {
 
   return (
     <Box>
-      <Tabs value={activeTab} onChange={handleTabChange} indicatorColor="primary" textColor="primary">
+      <Tabs 
+        value={activeTab} 
+        onChange={handleTabChange} 
+        indicatorColor="primary" 
+        textColor="primary"
+        variant="scrollable"
+        scrollButtons="auto"
+      >
         <Tab label="ZIP Dataset" icon={<FolderIcon />} iconPosition="start" />
         <Tab label="CSV Dataset" icon={<DescriptionIcon />} iconPosition="start" />
+        <Tab label="Premade Datasets" icon={<ImportExportIcon />} iconPosition="start" />
       </Tabs>
       <Divider />
 
       <Box sx={{ mt: 2, mb: 3 }}>
         <Stepper activeStep={activeStep}>
-          {steps.map((label) => (
+          {getSteps().map((label) => (
             <Step key={label}>
               <StepLabel>{label}</StepLabel>
             </Step>
@@ -490,7 +928,7 @@ const DatasetUploader: React.FC<DatasetUploaderProps> = ({ onComplete }) => {
           onClick={handleNext}
           disabled={uploading || (progress === 100)}
         >
-          {activeStep === steps.length - 1 ? 'Upload' : 'Next'}
+          {activeStep === steps.length - 1 ? (uploadType === 'premade' ? 'Import' : 'Upload') : 'Next'}
         </Button>
       </Box>
     </Box>
