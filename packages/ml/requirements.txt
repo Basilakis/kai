@@ -18,6 +18,9 @@ pymupdf>=1.22.0  # For PDF processing
 pytesseract>=0.3.10
 easyocr>=1.7.0
 
+# Enhanced OCR - includes specialized dependencies for OCR enhancements
+-r python/requirements-ocr.txt
+
 # Image processing
 scikit-image>=0.20.0
 albumentations>=1.3.0

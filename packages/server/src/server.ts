@@ -6,6 +6,8 @@ import morgan from 'morgan';
 import dotenv from 'dotenv';
 import { createServer } from 'http';
 import { queueEventsServer } from './services/websocket/queue-events';
+import { trainingProgressServer } from './services/websocket/training-progress';
+import { knowledgeBaseEventsServer } from './services/websocket/knowledge-base-events';
 import { KnowledgeBaseService } from './services/knowledgeBase/knowledgeBaseService';
 import { supabaseClient } from './services/supabase/supabaseClient';
 
@@ -91,6 +93,10 @@ const startServer = async () => {
   
   // Initialize WebSocket servers
   queueEventsServer.initialize(httpServer);
+  trainingProgressServer.initialize(httpServer);
+  knowledgeBaseEventsServer.initialize(httpServer);
+  
+  console.log('WebSocket servers initialized');
   
   httpServer.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
@@ -102,6 +108,10 @@ process.on('unhandledRejection', (err: Error) => {
   console.error(`Unhandled Rejection: ${err.message}`);
   // Close WebSocket servers
   queueEventsServer.close();
+  trainingProgressServer.close();
+  knowledgeBaseEventsServer.close().catch(err => {
+    console.error(`Error closing knowledge base events server: ${err.message}`);
+  });
   // Close server & exit process
   httpServer.close(() => process.exit(1));
 });

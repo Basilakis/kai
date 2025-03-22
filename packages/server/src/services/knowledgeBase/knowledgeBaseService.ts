@@ -8,12 +8,24 @@
 import { v4 as uuidv4 } from 'uuid';
 import mongoose from 'mongoose';
 import { logger } from '../../utils/logger';
+import { messageBroker } from '../messaging/messageBroker';
+import { entityLinkingService } from './entityLinking.service';
+import { 
+  createMaterialRelationship, 
+  getMaterialRelationships,
+  MaterialRelationshipType 
+} from '../../models/materialRelationship.model';
 
 // Import models
 import { MaterialDocument, findSimilarMaterials } from '../../models/material.model';
 import { CollectionDocument } from '../../models/collection.model';
 import { VersionDocument } from '../../models/version.model';
 import SearchIndex, { SearchIndexDocument } from '../../models/searchIndex.model';
+import { 
+  createCollectionMembership, 
+  getMembershipsForMaterial,
+  getMaterialsInCollection
+} from '../../models/collectionMembership.model';
 
 /**
  * Knowledge Base Service
@@ -681,6 +693,467 @@ export class KnowledgeBaseService {
     } catch (err) {
       logger.error(`Failed to count documents for index: ${err}`);
       return 0;
+    }
+  }
+
+  /**
+   * Send real-time notification about knowledge base changes
+   * 
+   * @param eventType Event type
+   * @param data Event data
+   */
+  private async sendKnowledgeBaseEvent(
+    eventType: 'material-created' | 'material-updated' | 'material-deleted' | 
+              'collection-created' | 'collection-updated' | 'collection-deleted' |
+              'relationship-created' | 'relationship-updated' | 'relationship-deleted',
+    data: any
+  ): Promise<void> {
+    try {
+      await messageBroker.publish('system', 'knowledge-base-event', {
+        type: eventType,
+        data,
+        timestamp: Date.now()
+      });
+      
+      logger.debug(`Sent knowledge base event: ${eventType}`);
+    } catch (err) {
+      logger.error(`Failed to send knowledge base event: ${err}`);
+      // Don't throw - this should not break the main operation
+    }
+  }
+
+  /**
+   * Bulk import materials
+   * 
+   * @param materials Materials to import
+   * @param userId User ID
+   * @param options Import options
+   * @returns Import results
+   */
+  public async bulkImportMaterials(
+    materials: Array<Partial<MaterialDocument>>,
+    userId: string,
+    options: {
+      updateExisting?: boolean;
+      detectDuplicates?: boolean;
+      validateSchema?: boolean;
+      collectionId?: string;
+    } = {}
+  ): Promise<{
+    imported: number;
+    updated: number;
+    failed: number;
+    errors: Array<{ index: number; error: string }>;
+    materialIds: string[];
+  }> {
+    try {
+      const {
+        updateExisting = false,
+        detectDuplicates = true,
+        validateSchema = true,
+        collectionId
+      } = options;
+      
+      // Get the Material model
+      const Material = mongoose.model('Material');
+      
+      // Initialize results
+      const results = {
+        imported: 0,
+        updated: 0,
+        failed: 0,
+        errors: [] as Array<{ index: number; error: string }>,
+        materialIds: [] as string[]
+      };
+      
+      // Process each material
+      for (let i = 0; i < materials.length; i++) {
+        const materialData = materials[i];
+        
+        try {
+          if (!materialData.name) {
+            throw new Error('Material name is required');
+          }
+          
+          // Add required fields
+          materialData.id = materialData.id || uuidv4();
+          materialData.createdBy = materialData.createdBy || userId;
+          materialData.createdAt = materialData.createdAt || new Date();
+          materialData.updatedAt = new Date();
+          
+          // Add to collection if specified
+          if (collectionId) {
+            materialData.collectionId = collectionId;
+          }
+          
+          // Check for duplicates if needed
+          if (detectDuplicates) {
+            const existingMaterial = await Material.findOne({ 
+              $or: [
+                { id: materialData.id },
+                { name: materialData.name }
+              ]
+            });
+            
+            if (existingMaterial) {
+              if (updateExisting) {
+                // Update existing material
+                await Material.updateOne(
+                  { id: existingMaterial.id },
+                  { 
+                    ...materialData,
+                    createdAt: existingMaterial.createdAt,
+                    createdBy: existingMaterial.createdBy,
+                    updatedAt: new Date()
+                  }
+                );
+                
+                results.updated++;
+                results.materialIds.push(existingMaterial.id);
+                continue;
+              } else {
+                throw new Error(`Duplicate material found: ${materialData.name}`);
+              }
+            }
+          }
+          
+          // Create the material
+          const material = new Material(materialData);
+          await material.save();
+          
+          // Send real-time notification
+          await this.sendKnowledgeBaseEvent('material-created', {
+            materialId: material.id,
+            name: material.name,
+            collectionId: material.collectionId
+          });
+          
+          // Track result
+          results.imported++;
+          results.materialIds.push(material.id);
+          
+          // Add to collection membership if different from direct collection
+          if (collectionId && materialData.collectionId && collectionId !== materialData.collectionId) {
+            await createCollectionMembership({
+              materialId: material.id,
+              collectionId,
+              createdBy: userId
+            });
+          }
+          
+          // Process entity linking if description is provided
+          if (materialData.description) {
+            await entityLinkingService.linkEntitiesInDescription(
+              material.id,
+              materialData.description,
+              { 
+                linkMaterials: true,
+                linkCollections: true,
+                createRelationships: true,
+                userId
+              }
+            );
+          }
+        } catch (err) {
+          results.failed++;
+          results.errors.push({
+            index: i,
+            error: err instanceof Error ? err.message : String(err)
+          });
+        }
+      }
+      
+      return results;
+    } catch (err) {
+      logger.error(`Failed to bulk import materials: ${err}`);
+      throw new Error(`Failed to bulk import materials: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /**
+   * Bulk update materials
+   * 
+   * @param updates Update data
+   * @param filter Filter
+   * @param userId User ID
+   * @returns Update results
+   */
+  public async bulkUpdateMaterials(
+    updates: Partial<MaterialDocument>,
+    filter: Record<string, any>,
+    userId: string
+  ): Promise<{
+    matched: number;
+    updated: number;
+    materialIds: string[];
+  }> {
+    try {
+      // Get the Material model
+      const Material = mongoose.model('Material');
+      
+      // Find matching materials
+      const matchingMaterials = await Material.find(filter, { id: 1 });
+      const materialIds = matchingMaterials.map(m => m.id);
+      
+      // Skip if no materials match
+      if (materialIds.length === 0) {
+        return { matched: 0, updated: 0, materialIds: [] };
+      }
+      
+      // Prepare update data
+      const updateData = {
+        ...updates,
+        updatedAt: new Date()
+      };
+      
+      // Apply update
+      const result = await Material.updateMany(
+        { id: { $in: materialIds } },
+        { $set: updateData }
+      );
+      
+      // Send real-time notifications for each updated material
+      for (const materialId of materialIds) {
+        await this.sendKnowledgeBaseEvent('material-updated', {
+          materialId,
+          updates: Object.keys(updates)
+        });
+      }
+      
+      // Process entity linking if description is updated
+      if (updates.description) {
+        for (const materialId of materialIds) {
+          await entityLinkingService.linkEntitiesInDescription(
+            materialId,
+            updates.description,
+            { 
+              linkMaterials: true,
+              linkCollections: true,
+              createRelationships: true,
+              userId
+            }
+          );
+        }
+      }
+      
+      return { 
+        matched: result.matchedCount || 0,
+        updated: result.modifiedCount || 0,
+        materialIds
+      };
+    } catch (err) {
+      logger.error(`Failed to bulk update materials: ${err}`);
+      throw new Error(`Failed to bulk update materials: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /**
+   * Bulk delete materials
+   * 
+   * @param materialIds Material IDs
+   * @param filter Filter
+   * @param userId User ID
+   * @returns Delete results
+   */
+  public async bulkDeleteMaterials(
+    materialIds?: string[],
+    filter?: Record<string, any>,
+    userId?: string
+  ): Promise<{
+    deleted: number;
+    materialIds: string[];
+  }> {
+    try {
+      // Get the Material model
+      const Material = mongoose.model('Material');
+      
+      let idsToDelete: string[] = [];
+      
+      // Determine which materials to delete
+      if (materialIds && materialIds.length > 0) {
+        idsToDelete = materialIds;
+      } else if (filter) {
+        const matchingMaterials = await Material.find(filter, { id: 1 });
+        idsToDelete = matchingMaterials.map(m => m.id);
+      } else {
+        throw new Error('Either materialIds or filter must be provided');
+      }
+      
+      // Skip if no materials match
+      if (idsToDelete.length === 0) {
+        return { deleted: 0, materialIds: [] };
+      }
+      
+      // Delete materials
+      const result = await Material.deleteMany({ id: { $in: idsToDelete } });
+      
+      // Send real-time notifications for each deleted material
+      for (const materialId of idsToDelete) {
+        await this.sendKnowledgeBaseEvent('material-deleted', {
+          materialId
+        });
+      }
+      
+      return { 
+        deleted: result.deletedCount || 0,
+        materialIds: idsToDelete
+      };
+    } catch (err) {
+      logger.error(`Failed to bulk delete materials: ${err}`);
+      throw new Error(`Failed to bulk delete materials: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /**
+   * Bulk export materials
+   * 
+   * @param filter Filter
+   * @param options Export options
+   * @returns Export results
+   */
+  public async bulkExportMaterials(
+    filter: Record<string, any>,
+    options: {
+      format?: 'json' | 'csv';
+      includeRelationships?: boolean;
+      includeVersions?: boolean;
+    } = {}
+  ): Promise<{
+    count: number;
+    data: any;
+  }> {
+    try {
+      const {
+        format = 'json',
+        includeRelationships = false,
+        includeVersions = false
+      } = options;
+      
+      // Get the Material model
+      const Material = mongoose.model('Material');
+      
+      // Get materials
+      const projection = includeVersions ? {} : { versions: 0 };
+      const materials = await Material.find(filter, projection);
+      
+      // Get relationships if requested
+      let materialsWithRelationships = materials;
+      
+      if (includeRelationships) {
+        materialsWithRelationships = await Promise.all(
+          materials.map(async (material) => {
+            const materialObj = material.toObject();
+            const relationships = await getMaterialRelationships(material.id);
+            return {
+              ...materialObj,
+              relationships
+            };
+          })
+        );
+      }
+      
+      // Convert to CSV if requested
+      if (format === 'csv') {
+        // Simple CSV conversion for demo purposes
+        // In a real implementation, use a proper CSV library
+        const csvHeader = Object.keys(materialsWithRelationships[0] || {}).join(',');
+        const csvRows = materialsWithRelationships.map(m => {
+          return Object.values(m).map(v => {
+            if (typeof v === 'object') {
+              return JSON.stringify(v).replace(/"/g, '""');
+            }
+            return v;
+          }).join(',');
+        });
+        
+        return {
+          count: materials.length,
+          data: [csvHeader, ...csvRows].join('\n')
+        };
+      }
+      
+      return {
+        count: materials.length,
+        data: materialsWithRelationships
+      };
+    } catch (err) {
+      logger.error(`Failed to bulk export materials: ${err}`);
+      throw new Error(`Failed to bulk export materials: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /**
+   * Bulk create material relationships
+   * 
+   * @param relationships Relationships to create
+   * @param userId User ID
+   * @returns Creation results
+   */
+  public async bulkCreateRelationships(
+    relationships: Array<{
+      sourceMaterialId: string;
+      targetMaterialId: string;
+      relationshipType: MaterialRelationshipType;
+      strength?: number;
+      bidirectional?: boolean;
+      metadata?: Record<string, any>;
+    }>,
+    userId: string
+  ): Promise<{
+    created: number;
+    failed: number;
+    errors: Array<{ index: number; error: string }>;
+    relationshipIds: string[];
+  }> {
+    try {
+      // Initialize results
+      const results = {
+        created: 0,
+        failed: 0,
+        errors: [] as Array<{ index: number; error: string }>,
+        relationshipIds: [] as string[]
+      };
+      
+      // Process each relationship
+      for (let i = 0; i < relationships.length; i++) {
+        const relationshipData = relationships[i];
+        
+        try {
+          // Validate relationship data
+          if (!relationshipData.sourceMaterialId || !relationshipData.targetMaterialId) {
+            throw new Error('Source and target material IDs are required');
+          }
+          
+          // Create the relationship
+          const relationship = await createMaterialRelationship({
+            ...relationshipData,
+            createdBy: userId
+          });
+          
+          // Send real-time notification
+          await this.sendKnowledgeBaseEvent('relationship-created', {
+            relationshipId: relationship.id,
+            sourceMaterialId: relationship.sourceMaterialId,
+            targetMaterialId: relationship.targetMaterialId,
+            relationshipType: relationship.relationshipType
+          });
+          
+          // Track result
+          results.created++;
+          results.relationshipIds.push(relationship.id);
+        } catch (err) {
+          results.failed++;
+          results.errors.push({
+            index: i,
+            error: err instanceof Error ? err.message : String(err)
+          });
+        }
+      }
+      
+      return results;
+    } catch (err) {
+      logger.error(`Failed to bulk create relationships: ${err}`);
+      throw new Error(`Failed to bulk create relationships: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 

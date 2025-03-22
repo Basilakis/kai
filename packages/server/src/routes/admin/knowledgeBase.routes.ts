@@ -3,6 +3,7 @@
  * 
  * Defines REST API endpoints for managing the knowledge base system,
  * including materials, collections, versioning, and search indexes.
+ * Also provides bulk operations for materials and relationships.
  */
 
 import { Router } from 'express';
@@ -28,6 +29,24 @@ router.post('/materials/:materialId/revert/:versionId', knowledgeBaseController.
 
 // Get version history for a material
 router.get('/materials/:materialId/versions', knowledgeBaseController.getMaterialVersionHistory);
+
+/**
+ * Bulk operations routes
+ */
+// Bulk import materials
+router.post('/bulk/materials/import', knowledgeBaseController.bulkImportMaterials);
+
+// Bulk update materials
+router.post('/bulk/materials/update', knowledgeBaseController.bulkUpdateMaterials);
+
+// Bulk delete materials
+router.post('/bulk/materials/delete', knowledgeBaseController.bulkDeleteMaterials);
+
+// Bulk export materials
+router.post('/bulk/materials/export', knowledgeBaseController.bulkExportMaterials);
+
+// Bulk create relationships
+router.post('/bulk/relationships/create', knowledgeBaseController.bulkCreateRelationships);
 
 /**
  * Collection routes

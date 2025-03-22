@@ -342,6 +342,179 @@ export const getKnowledgeBaseStats = async (req: Request, res: Response): Promis
   }
 };
 
+/**
+ * Bulk import materials
+ * 
+ * @param req Request
+ * @param res Response
+ */
+export const bulkImportMaterials = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { materials, options } = req.body;
+    const userId = req.user?.id; // From auth middleware
+    
+    if (!userId) {
+      res.status(401).json({ error: 'User ID is required' });
+      return;
+    }
+    
+    if (!Array.isArray(materials) || materials.length === 0) {
+      res.status(400).json({ error: 'Materials array is required and cannot be empty' });
+      return;
+    }
+    
+    const importOptions = {
+      skipExisting: options?.skipExisting === true,
+      updateExisting: options?.updateExisting === true,
+      validateOnly: options?.validateOnly === true,
+      collectionId: options?.collectionId
+    };
+    
+    const result = await knowledgeBaseService.bulkImportMaterials(materials, userId, importOptions);
+    
+    res.json(result);
+  } catch (err) {
+    logger.error(`Error in bulkImportMaterials: ${err}`);
+    res.status(500).json({
+      error: 'Failed to bulk import materials',
+      message: err instanceof Error ? err.message : String(err)
+    });
+  }
+};
+
+/**
+ * Bulk update materials
+ * 
+ * @param req Request
+ * @param res Response
+ */
+export const bulkUpdateMaterials = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { updates, filter } = req.body;
+    const userId = req.user?.id; // From auth middleware
+    
+    if (!userId) {
+      res.status(401).json({ error: 'User ID is required' });
+      return;
+    }
+    
+    if (!updates || Object.keys(updates).length === 0) {
+      res.status(400).json({ error: 'Updates object is required and cannot be empty' });
+      return;
+    }
+    
+    const result = await knowledgeBaseService.bulkUpdateMaterials(updates, filter, userId);
+    
+    res.json(result);
+  } catch (err) {
+    logger.error(`Error in bulkUpdateMaterials: ${err}`);
+    res.status(500).json({
+      error: 'Failed to bulk update materials',
+      message: err instanceof Error ? err.message : String(err)
+    });
+  }
+};
+
+/**
+ * Bulk delete materials
+ * 
+ * @param req Request
+ * @param res Response
+ */
+export const bulkDeleteMaterials = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { materialIds, filter } = req.body;
+    const userId = req.user?.id; // From auth middleware
+    
+    if (!userId) {
+      res.status(401).json({ error: 'User ID is required' });
+      return;
+    }
+    
+    if (!materialIds && !filter) {
+      res.status(400).json({ error: 'Either materialIds array or filter object is required' });
+      return;
+    }
+    
+    const result = await knowledgeBaseService.bulkDeleteMaterials(materialIds, filter, userId);
+    
+    res.json(result);
+  } catch (err) {
+    logger.error(`Error in bulkDeleteMaterials: ${err}`);
+    res.status(500).json({
+      error: 'Failed to bulk delete materials',
+      message: err instanceof Error ? err.message : String(err)
+    });
+  }
+};
+
+/**
+ * Bulk export materials
+ * 
+ * @param req Request
+ * @param res Response
+ */
+export const bulkExportMaterials = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { filter, format, includeRelationships, includeVersions } = req.body;
+    
+    const exportOptions = {
+      format: format || 'json',
+      includeRelationships: includeRelationships === true,
+      includeVersions: includeVersions === true
+    };
+    
+    const result = await knowledgeBaseService.bulkExportMaterials(filter, exportOptions);
+    
+    if (exportOptions.format === 'csv') {
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename=materials-export.csv');
+      res.send(result.data);
+    } else {
+      res.json(result);
+    }
+  } catch (err) {
+    logger.error(`Error in bulkExportMaterials: ${err}`);
+    res.status(500).json({
+      error: 'Failed to export materials',
+      message: err instanceof Error ? err.message : String(err)
+    });
+  }
+};
+
+/**
+ * Create relationships in bulk
+ * 
+ * @param req Request
+ * @param res Response
+ */
+export const bulkCreateRelationships = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { relationships } = req.body;
+    const userId = req.user?.id; // From auth middleware
+    
+    if (!userId) {
+      res.status(401).json({ error: 'User ID is required' });
+      return;
+    }
+    
+    if (!Array.isArray(relationships) || relationships.length === 0) {
+      res.status(400).json({ error: 'Relationships array is required and cannot be empty' });
+      return;
+    }
+    
+    const result = await knowledgeBaseService.bulkCreateRelationships(relationships, userId);
+    
+    res.json(result);
+  } catch (err) {
+    logger.error(`Error in bulkCreateRelationships: ${err}`);
+    res.status(500).json({
+      error: 'Failed to create relationships in bulk',
+      message: err instanceof Error ? err.message : String(err)
+    });
+  }
+};
+
 export const knowledgeBaseController = {
   searchMaterials,
   getCollections,
@@ -351,7 +524,12 @@ export const knowledgeBaseController = {
   createSearchIndex,
   getSearchIndexes,
   rebuildSearchIndex,
-  getKnowledgeBaseStats
+  getKnowledgeBaseStats,
+  bulkImportMaterials,
+  bulkUpdateMaterials,
+  bulkDeleteMaterials,
+  bulkExportMaterials,
+  bulkCreateRelationships
 };
 
 export default knowledgeBaseController;

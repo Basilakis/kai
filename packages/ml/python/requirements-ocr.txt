@@ -1,0 +1,51 @@
+# OCR Enhancement Dependencies
+
+# Core OCR
+pytesseract>=0.3.8       # OCR engine wrapper
+tesseract-ocr>=4.1.1     # Base OCR engine (system package)
+Pillow>=8.2.0            # Image processing
+pymupdf>=1.18.14         # PDF processing
+
+# Computer Vision
+opencv-python>=4.5.3     # Image processing and computer vision
+scikit-image>=0.18.2     # Image processing algorithms
+numpy>=1.21.0            # Numerical processing
+scipy>=1.7.0             # Scientific computing
+
+# Document Analysis
+pdf2image>=1.16.0        # PDF to image conversion
+pdfminer.six>=20201018   # PDF text extraction
+pypdfium2>=2.7.0         # Alternative PDF processor
+tabula-py>=2.3.0         # Table extraction from PDFs
+python-docx>=0.8.11      # DOCX file processing
+
+# NLP and Text Processing
+langdetect>=1.0.9        # Language detection
+nltk>=3.6.2              # Natural language processing
+spacy>=3.1.0             # Advanced NLP
+pyenchant>=3.2.1         # Spell checking (optional)
+
+# Machine Learning
+scikit-learn>=0.24.2     # Machine learning algorithms
+tensorflow>=2.5.0        # Deep learning (for handwriting recognition)
+transformers>=4.9.1      # Transformers models for text recognition
+
+# Form Processing
+pdfplumber>=0.6.0        # PDF form extraction
+camelot-py>=0.10.1       # Table extraction
+python-bidi>=0.4.2       # Bidirectional text support
+
+# Visualization and Debugging
+matplotlib>=3.4.2        # Visualization
+seaborn>=0.11.1          # Statistical visualizations
+
+# Utilities
+tqdm>=4.61.1             # Progress bars
+joblib>=1.0.1            # Parallel processing
+PyYAML>=5.4.1            # Configuration file support
+jsonschema>=3.2.0        # JSON validation
+
+# Optional: GPU Support
+# Uncomment if GPU is available
+# cupy>=9.3.0            # GPU acceleration for numpy
+# tensorflow-gpu>=2.5.0  # GPU acceleration for tensorflow

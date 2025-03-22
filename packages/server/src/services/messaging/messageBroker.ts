@@ -22,7 +22,8 @@ export type MessageType =
   | 'job-started'
   | 'job-completed'
   | 'job-failed'
-  | 'job-progress';
+  | 'job-progress'
+  | 'knowledge-base-event';
 
 /**
  * Message payload structure
