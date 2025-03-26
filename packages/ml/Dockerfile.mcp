@@ -1,0 +1,42 @@
+# Dockerfile for the Model Context Protocol (MCP) Server
+# This server centralizes model management and inference for the Kai system
+
+# Use Python 3.9 as the base image for better compatibility with ML libraries
+FROM python:3.9-slim
+
+# Set work directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libopencv-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements file
+COPY packages/ml/python/requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir fastapi uvicorn python-multipart
+
+# Copy the MCP server and ML scripts
+COPY packages/ml/python/mcp_server.py .
+COPY packages/ml/python/ ./python/
+
+# Create directory for models
+RUN mkdir -p models
+
+# Create volume for persisting models
+VOLUME /app/models
+
+# Expose port for MCP server
+EXPOSE 8000
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    MCP_SERVER_PORT=8000 \
+    MODEL_DIR=/app/models
+
+# Run the MCP server
+CMD ["uvicorn", "mcp_server:app", "--host", "0.0.0.0", "--port", "8000"]

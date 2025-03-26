@@ -12,6 +12,7 @@ This document provides comprehensive instructions for deploying Kai to productio
 |-----------|-----|-----|---------|-------|
 | API Server | 4 vCPUs | 8GB | 20GB SSD | Scales horizontally |
 | ML Services | 8 vCPUs | 16GB | 40GB SSD | GPU recommended |
+| MCP Server | 4 vCPUs | 8GB | 20GB SSD | Model Context Protocol server, GPU recommended |
 | Database | 4 vCPUs | 8GB | 100GB SSD | MongoDB replica set |
 | File Storage | - | - | 500GB+ | AWS S3 or equivalent |
 | Cache | 2 vCPUs | 4GB | 20GB SSD | Redis for caching |
@@ -44,6 +45,15 @@ This document provides comprehensive instructions for deploying Kai to productio
 │  (CloudFront)  │       │  (S3)          │       │  Cluster       │
 │                │       │                │       │                │
 └────────────────┘       └────────────────┘       └────────────────┘
+                                                          │
+                                                          │
+                                                          ▼
+                                                 ┌────────────────┐
+                                                 │                │
+                                                 │  MCP Server    │
+                                                 │  (Model Context)│
+                                                 │                │
+                                                 └────────────────┘
 ```
 
 #### Enhanced Architecture (High Availability)
@@ -150,6 +160,19 @@ TENSORFLOW_SERVING_URL=http://tensorflow-serving:8501
 VECTOR_INDEX_PATH=/opt/kai/indexes
 GPU_ENABLED=true
 BATCH_SIZE=8
+MCP_SERVER_URL=http://mcp-server:8000
+USE_MCP_SERVER=true
+```
+
+**MCP Server (.env.production)**
+```
+PORT=8000
+MODEL_PATH=/opt/kai/models
+MODEL_CACHE_SIZE=5
+GPU_ENABLED=true
+LOG_LEVEL=info
+AGENT_INTEGRATION_ENABLED=true
+MAX_BATCH_SIZE=16
 ```
 
 **Frontend (.env.production)**
@@ -265,16 +288,42 @@ EXPOSE 5000
 CMD ["python3", "/app/python/server.py"]
 ```
 
+**Dockerfile for MCP Server**
+```dockerfile
+FROM tensorflow/tensorflow:2.9.1-gpu
+
+WORKDIR /app
+
+COPY packages/ml/python/mcp_server.py /app/
+COPY packages/ml/python/requirements.txt /app/
+
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    python3-pip \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip3 install --no-cache-dir -r /app/requirements.txt
+RUN pip3 install --no-cache-dir fastapi uvicorn python-multipart
+
+EXPOSE 8000
+
+CMD ["uvicorn", "mcp_server:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
 Build and push to container registry:
 ```bash
 docker build -t kai-api-server:latest -f Dockerfile.api .
 docker build -t kai-ml-services:latest -f Dockerfile.ml .
+docker build -t kai-mcp-server:latest -f packages/ml/Dockerfile.mcp .
 
 docker tag kai-api-server:latest registry.example.com/kai-api-server:latest
 docker tag kai-ml-services:latest registry.example.com/kai-ml-services:latest
+docker tag kai-mcp-server:latest registry.example.com/kai-mcp-server:latest
 
 docker push registry.example.com/kai-api-server:latest
 docker push registry.example.com/kai-ml-services:latest
+docker push registry.example.com/kai-mcp-server:latest
 ```
 
 #### 5. Deployment Steps
@@ -353,6 +402,7 @@ services:
     env_file: .env.production
     depends_on:
       - mongodb
+      - mcp-server
     restart: always
 
   ml-services:
@@ -360,8 +410,26 @@ services:
     ports:
       - "5000:5000"
     env_file: .env.ml.production
+    depends_on:
+      - mcp-server
     volumes:
       - ml-models:/app/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: always
+    
+  mcp-server:
+    image: registry.example.com/kai-mcp-server:latest
+    ports:
+      - "8000:8000"
+    env_file: .env.mcp.production
+    volumes:
+      - ml-models:/opt/kai/models
     deploy:
       resources:
         reservations:
@@ -527,6 +595,37 @@ jobs:
 
 ### Local Environment Setup
 
+#### Additional Components
+
+##### MCP Server Setup
+
+1. **Install MCP Server dependencies**
+   ```bash
+   cd packages/ml
+   python -m venv mcp-venv
+   source mcp-venv/bin/activate  # On Windows: mcp-venv\Scripts\activate
+   pip install -r requirements.txt
+   pip install fastapi uvicorn python-multipart
+   ```
+
+2. **Set up environment variables**
+   ```bash
+   cp packages/ml/.env.mcp.example packages/ml/.env.mcp
+   ```
+
+3. **Install TypeScript client package**
+   ```bash
+   # From project root
+   cd packages/mcp-client
+   yarn install
+   yarn build
+   yarn link
+   
+   # Link to ML package
+   cd ../ml
+   yarn link @kai/mcp-client
+   ```
+
 #### Prerequisites
 
 - Node.js (v16 or higher)
@@ -649,6 +748,20 @@ docker-compose -f docker-compose.dev.yml up -d
 ```
 
 ### Development Workflow
+
+#### Using the MCP Server in Development
+
+```bash
+# Start the MCP server
+cd packages/ml
+source mcp-venv/bin/activate  # On Windows: mcp-venv\Scripts\activate
+python python/mcp_server.py
+
+# In your application code, enable MCP integration
+# Set environment variables:
+# - MCP_SERVER_URL=http://localhost:8000
+# - USE_MCP_SERVER=true
+```
 
 #### Code Organization
 
