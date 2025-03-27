@@ -17,6 +17,7 @@ import { authService } from '../services/authService';
 // Import agent factories
 import { createRecognitionAssistant } from '../frontend/recognitionAssistant';
 import { createMaterialExpert } from '../frontend/materialExpert';
+import { createEnhancedMaterialExpert } from '../frontend/enhancedMaterialExpert';
 import { createProjectAssistant } from '../frontend/projectAssistant';
 import { createKnowledgeBaseAgent } from '../backend/knowledgeBaseAgent';
 import { createAnalyticsAgent } from '../backend/analyticsAgent';
@@ -253,7 +254,8 @@ export async function createAgent(config: AgentConfig): Promise<AgentCreationRes
       break;
       
     case AgentType.MATERIAL_EXPERT:
-      agentInstance = await createMaterialExpert(config, modelSettings);
+      // Use the enhanced material expert with metadata formatting
+      agentInstance = await createEnhancedMaterialExpert(config, modelSettings);
       break;
       
     case AgentType.PROJECT_ASSISTANT:

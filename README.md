@@ -17,6 +17,7 @@ All detailed documentation is available in the `readme` folder:
 - [CrewAI Integration](./readme/agents-crewai.md) - Intelligent agent capabilities powered by crewAI
 - [CrewAI Implementation](./readme/agents-crewai-implementation.md) - Implementation details for crewAI agents
 - [CrewAI Development Steps](./readme/agents-crewai-next-steps.md) - Next steps for enhancing crewAI integration
+- [Material Metadata Enhancement](./readme/material-metadata-response-enhancement.md) - Comprehensive material metadata in responses
 
 ## Quick Start
 
