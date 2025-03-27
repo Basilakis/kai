@@ -13,6 +13,8 @@
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx"
   },
   "dependencies": {
+    "@emotion/react": "^11.11.0",
+    "@emotion/styled": "^11.11.0",
     "@heroui/react": "^1.0.0",
     "@heroui/themes": "^1.0.0",
     "@kai/shared": "0.1.0",
@@ -30,6 +32,7 @@
     "react-dropzone": "^14.2.3",
     "react-query": "^3.39.3",
     "styled-components": "^6.0.4",
+    "uuid": "^9.0.0",
     "yup": "^1.2.0"
   },
   "devDependencies": {
@@ -42,6 +45,7 @@
     "@types/node": "^20.4.2",
     "@types/react": "^18.2.15",
     "@types/react-dom": "^18.2.7",
+    "@types/uuid": "^9.0.1",
     "eslint": "^8.44.0",
     "eslint-config-gatsby": "^4.0.0",
     "eslint-plugin-react": "^7.32.2",

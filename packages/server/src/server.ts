@@ -1,10 +1,12 @@
-import express, { Request, Response } from 'express';
+import express from 'express';
+import type Request from 'express';
+import type Response from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
-import { createServer } from 'http';
+import http from 'http';
 import { queueEventsServer } from './services/websocket/queue-events';
 import { trainingProgressServer } from './services/websocket/training-progress';
 import { knowledgeBaseEventsServer } from './services/websocket/knowledge-base-events';
@@ -47,6 +49,7 @@ import crawlerRoutes from './routes/crawler.routes';
 import adminRoutes from './routes/admin.routes';
 import pdfRoutes from './routes/api/pdf.routes';
 import credentialsRoutes from './routes/credentials.routes';
+import agentRoutes from './routes/agents.routes';
 
 // Import middleware
 import { errorHandler } from './middleware/error.middleware';
@@ -54,7 +57,10 @@ import { authMiddleware } from './middleware/auth.middleware';
 
 // Create Express app
 const app = express();
-const httpServer = createServer(app);
+const httpServer = http.createServer(app);
+
+// Import WebSocket service
+import agentWebSocketService from './services/websocket/agent-websocket';
 
 // Set up middleware
 app.use(cors());
@@ -75,6 +81,7 @@ app.use('/api/crawlers', authMiddleware, crawlerRoutes);
 app.use('/api/admin', authMiddleware, adminRoutes);
 app.use('/api/pdf', authMiddleware, pdfRoutes);
 app.use('/api/credentials', authMiddleware, credentialsRoutes);
+app.use('/api/agents', agentRoutes);
 
 // Health check endpoint
 app.get('/health', (req: Request, res: Response) => {
@@ -95,6 +102,7 @@ const startServer = async () => {
   queueEventsServer.initialize(httpServer);
   trainingProgressServer.initialize(httpServer);
   knowledgeBaseEventsServer.initialize(httpServer);
+  agentWebSocketService.initialize(httpServer);
   
   console.log('WebSocket servers initialized');
   

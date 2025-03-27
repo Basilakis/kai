@@ -14,6 +14,9 @@ All detailed documentation is available in the `readme` folder:
 - [Queue System](./readme/queue-system.md) - Message broker and async processing
 - [API Reference](./readme/api-reference.md) - Comprehensive API endpoints
 - [Deployment & Development](./readme/deployment-and-development.md) - Production deployment and development setup
+- [CrewAI Integration](./readme/agents-crewai.md) - Intelligent agent capabilities powered by crewAI
+- [CrewAI Implementation](./readme/agents-crewai-implementation.md) - Implementation details for crewAI agents
+- [CrewAI Development Steps](./readme/agents-crewai-next-steps.md) - Next steps for enhancing crewAI integration
 
 ## Quick Start
 

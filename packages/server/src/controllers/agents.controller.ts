@@ -1,0 +1,374 @@
+/**
+ * Agents Controller
+ * 
+ * Provides endpoints for interacting with crewAI agents,
+ * serving as the bridge between frontend components and
+ * the agent system backend.
+ */
+
+import type Request from 'express';
+import type Response from 'express';
+import type NextFunction from 'express';
+import { v4 as uuidv4 } from 'uuid';
+import { initializeAgentSystem, AgentType } from '@kai/agents';
+
+// Store active sessions
+interface AgentSession {
+  id: string;
+  agentType: AgentType;
+  userId: string;
+  createdAt: Date;
+  lastActivity: Date;
+  messages: Array<{
+    id: string;
+    content: string;
+    sender: 'user' | 'agent';
+    timestamp: Date;
+  }>;
+}
+
+// In-memory session storage (would use Redis in production)
+const sessions: Map<string, AgentSession> = new Map();
+
+// Initialize agent system
+let isAgentSystemInitialized = false;
+const initializeAgents = async () => {
+  if (isAgentSystemInitialized) return;
+  
+  try {
+    await initializeAgentSystem({
+      apiKey: process.env.OPENAI_API_KEY || '',
+      redis: {
+        host: process.env.REDIS_HOST || 'localhost',
+        port: parseInt(process.env.REDIS_PORT || '6379'),
+        password: process.env.REDIS_PASSWORD
+      },
+      logLevel: 'info'
+    });
+    
+    isAgentSystemInitialized = true;
+    console.log('Agent system initialized successfully');
+  } catch (error) {
+    console.error('Failed to initialize agent system:', error);
+    throw error;
+  }
+};
+
+/**
+ * Create a new agent session
+ */
+export const createSession = async (req: Request, res: Response, next: typeof NextFunction) => {
+  try {
+    // Initialize agent system if needed
+    if (!isAgentSystemInitialized) {
+      await initializeAgents();
+    }
+    
+    const { agentType } = req.body;
+    const userId = req.user?.id || 'anonymous';
+    
+    // Validate agent type
+    if (!Object.values(AgentType).includes(agentType)) {
+      return res.status(400).json({ error: 'Invalid agent type' });
+    }
+    
+    // Create new session
+    const sessionId = uuidv4();
+    const session: AgentSession = {
+      id: sessionId,
+      agentType,
+      userId,
+      createdAt: new Date(),
+      lastActivity: new Date(),
+      messages: [
+        {
+          id: uuidv4(),
+          content: getWelcomeMessage(agentType),
+          sender: 'agent',
+          timestamp: new Date()
+        }
+      ]
+    };
+    
+    // Store session
+    sessions.set(sessionId, session);
+    
+    // Return session info
+    res.status(201).json({
+      sessionId,
+      agentType,
+      messages: session.messages
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Send a message to an agent
+ */
+export const sendMessage = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { sessionId } = req.params;
+    const { message } = req.body;
+    
+    // Validate request
+    if (!sessionId || !message) {
+      return res.status(400).json({ error: 'Session ID and message are required' });
+    }
+    
+    // Check if session exists
+    if (!sessionId) {
+      return res.status(400).json({ error: 'Session ID is required' });
+    }
+    
+    const session = sessions.get(sessionId);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    
+    // Add user message to session
+    const userMessageId = uuidv4();
+    session.messages.push({
+      id: userMessageId,
+      content: message,
+      sender: 'user',
+      timestamp: new Date()
+    });
+    
+    // Process message with corresponding agent
+    // In a real implementation, this would call the agent system
+    const agentResponse = await processAgentRequest(session.agentType, message);
+    
+    // Add agent response to session
+    const agentMessageId = uuidv4();
+    session.messages.push({
+      id: agentMessageId,
+      content: agentResponse,
+      sender: 'agent',
+      timestamp: new Date()
+    });
+    
+    // Update session last activity
+    session.lastActivity = new Date();
+    
+    // Return updated messages
+    res.status(200).json({
+      messages: session.messages
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Get messages for a session
+ */
+export const getMessages = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { sessionId } = req.params;
+    
+    // Check if session exists and sessionId is defined
+    if (!sessionId) {
+      return res.status(400).json({ error: 'Session ID is required' });
+    }
+    
+    const session = sessions.get(sessionId);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    
+    // Return session messages
+    res.status(200).json({
+      messages: session.messages
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Upload image for recognition agent
+ */
+export const uploadImage = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { sessionId } = req.params;
+    const imageFile = req.file;
+    
+    // Validate request
+    if (!sessionId || !imageFile) {
+      return res.status(400).json({ error: 'Session ID and image file are required' });
+    }
+    
+    // Check if session exists
+    const session = sessions.get(sessionId);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    
+    // Check if session is for recognition agent
+    if (session.agentType !== AgentType.RECOGNITION) {
+      return res.status(400).json({ error: 'Image upload is only supported for recognition agent' });
+    }
+    
+    // Process image with recognition agent
+    // In a real implementation, this would call the agent system
+    const imageUrl = `/uploads/${imageFile.filename}`;
+    const analysisResult = await processImageAnalysis(imageUrl);
+    
+    // Add agent response to session
+    const agentMessageId = uuidv4();
+    session.messages.push({
+      id: agentMessageId,
+      content: `I've analyzed your image and identified it as ${analysisResult.materialName} with ${analysisResult.confidence}% confidence. Would you like more details about this material?`,
+      sender: 'agent',
+      timestamp: new Date()
+    });
+    
+    // Update session last activity
+    session.lastActivity = new Date();
+    
+    // Return result
+    res.status(200).json({
+      url: imageUrl,
+      analysis: analysisResult,
+      messages: session.messages
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Close a session
+ */
+export const closeSession = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { sessionId } = req.params;
+    
+    // Check if session exists
+    if (!sessionId) {
+      return res.status(400).json({ error: 'Session ID is required' });
+    }
+    
+    if (!sessions.has(sessionId)) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    
+    // Remove session
+    sessions.delete(sessionId);
+    
+    res.status(200).json({ message: 'Session closed successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Process message with agent (mock implementation)
+ */
+const processAgentRequest = async (agentType: AgentType, message: string): Promise<string> => {
+  // Simulate processing time
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  
+  // In a real implementation, this would use the crewAI agent system
+  // to process the message and generate a response
+  
+  // Mock responses based on agent type and message keywords
+  const lowercaseMessage = message.toLowerCase();
+  
+  switch (agentType) {
+    case AgentType.RECOGNITION:
+      if (lowercaseMessage.includes('marble')) {
+        return "Marble is a natural stone known for its unique veining patterns and luxurious appearance. It's commonly used for countertops, flooring, and decorative elements, though it requires regular sealing and maintenance to prevent staining.";
+      } else if (lowercaseMessage.includes('porcelain')) {
+        return "Porcelain tile is highly durable and water-resistant, making it suitable for bathrooms, kitchens, and high-traffic areas. It's available in many styles, including ones that convincingly mimic natural stone or wood.";
+      } else {
+        return "I can help you identify and understand different materials from images. If you upload a photo of a material, I'll analyze it and provide information about its properties and applications.";
+      }
+    
+    case AgentType.MATERIAL_EXPERT:
+      if (lowercaseMessage.includes('durability')) {
+        return "When considering material durability, porcelain and quartz rank among the most durable options for residential use. Natural stones like granite are also very durable but require more maintenance. For high-traffic commercial spaces, porcelain or terrazzo would be excellent choices.";
+      } else if (lowercaseMessage.includes('clean') || lowercaseMessage.includes('maintenance')) {
+        return "For easy maintenance, porcelain and quartz require minimal care. Porcelain just needs regular cleaning with mild soap and water. Quartz never needs sealing. Natural stones like marble and granite require periodic sealing (typically annually) and should be cleaned with pH-neutral cleaners to preserve their finish.";
+      } else {
+        return "I can provide detailed information about material properties, applications, and maintenance requirements. What specific aspect would you like to know more about?";
+      }
+    
+    case AgentType.PROJECT_ASSISTANT:
+      if (lowercaseMessage.includes('cost') || lowercaseMessage.includes('budget')) {
+        return "When planning your budget, I recommend allocating about 10-15% of your total project cost as a contingency for unexpected expenses. For kitchen renovations, typically 30% goes to cabinetry, 20% to installation, 15% to appliances, 10% to countertops, 10% to flooring, and the rest to lighting, backsplash, and miscellaneous items.";
+      } else if (lowercaseMessage.includes('schedule') || lowercaseMessage.includes('timeline')) {
+        return "A typical bathroom renovation takes 3-4 weeks, while kitchen renovations usually take 4-6 weeks. Full-home renovations can take 3-9 months depending on scope. I recommend building in buffer time for material deliveries and unexpected issues. Would you like me to help you create a detailed timeline for your project?";
+      } else {
+        return "I can help you plan your renovation or construction project, including material selection, cost estimation, and timeline planning. What specific aspect of your project would you like assistance with?";
+      }
+    
+    case AgentType.KNOWLEDGE_BASE:
+      return "I'm analyzing our knowledge base for relevant information about your query. This feature is still under development. In the future, I'll be able to provide detailed insights from our extensive material database.";
+    
+    case AgentType.ANALYTICS:
+    case AgentType.OPERATIONS:
+      return "This administrative agent capability is currently restricted to system operators. If you're an administrator, please login to the admin dashboard to access these features.";
+    
+    default:
+      return "I'm not sure how to help with that specific query. Could you try rephrasing your question or provide more details about what you're looking for?";
+  }
+};
+
+/**
+ * Process image analysis (mock implementation)
+ */
+const processImageAnalysis = async (imageUrl: string) => {
+  // Simulate processing time
+  await new Promise(resolve => setTimeout(resolve, 2000));
+  
+  // In a real implementation, this would use the ML system
+  // to analyze the image and identify the material
+  
+  // Mock result
+  return {
+    materialName: 'Carrara Marble',
+    confidence: 92,
+    properties: {
+      material: 'Marble',
+      color: 'White with Gray Veining',
+      finish: 'Polished',
+      size: '12" x 24"'
+    },
+    alternatives: [
+      'White Quartz',
+      'Porcelain Marble Look',
+      'Dolomite'
+    ]
+  };
+};
+
+/**
+ * Get welcome message based on agent type
+ */
+const getWelcomeMessage = (agentType: AgentType): string => {
+  switch (agentType) {
+    case AgentType.RECOGNITION:
+      return "Hi there! I'm your Recognition Assistant. I can help you identify materials from images and provide information about their properties. Upload an image to get started, or ask me any questions about material recognition.";
+    
+    case AgentType.MATERIAL_EXPERT:
+      return "Hello! I'm your Material Expert. I can provide detailed information about various building materials, their properties, applications, and maintenance requirements. What materials would you like to learn about today?";
+    
+    case AgentType.PROJECT_ASSISTANT:
+      return "Hi there! I'm your Project Assistant. I can help you plan your renovation or construction project, organize materials by room, calculate quantities, and recommend suitable materials. How can I assist with your project today?";
+    
+    case AgentType.KNOWLEDGE_BASE:
+      return "Welcome to the Knowledge Base Agent. I can help you navigate our extensive material database and provide insights on material properties, applications, and relationships.";
+    
+    case AgentType.ANALYTICS:
+      return "Analytics Agent initialized. This agent helps administrators analyze system metrics, user behavior, and material trends to derive actionable insights.";
+    
+    case AgentType.OPERATIONS:
+      return "Operations Agent initialized. This agent monitors system health, performance, and resource utilization to ensure optimal operation of the KAI platform.";
+    
+    default:
+      return "Hello! I'm an AI assistant that can help you with materials, projects, and recognition. How can I assist you today?";
+  }
+};

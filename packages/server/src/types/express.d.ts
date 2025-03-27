@@ -1,121 +1,101 @@
 /**
- * Custom type definitions for Express and Multer
+ * Express Type Declarations
+ * 
+ * This file provides type definitions for Express and related middleware,
+ * ensuring proper TypeScript type checking for server-side code.
  */
 
 declare module 'express' {
   import { Server } from 'http';
-  
-  export interface Request {
-    user?: any;
-    file?: any;
-    files?: any[];
-    body: any;
-    params: {
-      [key: string]: string;
-    };
-    query: {
-      [key: string]: string | string[] | undefined;
-    };
+  import { NextFunction, Request, Response } from 'express';
+
+  interface Express {
+    (): Application;
+    json: (options?: any) => any;
+    urlencoded: (options?: any) => any;
+    static: (path: string, options?: any) => any;
   }
-  
-  export interface Response {
-    status(code: number): Response;
-    json(data: any): void;
-    sendFile(path: string, options?: any, callback?: (err?: any) => void): void;
+
+  interface Application {
+    use: (middleware: any) => Application;
+    listen: (port: number, callback?: () => void) => Server;
+    set: (setting: string, value: any) => Application;
+    get: (path: string, ...handlers: any[]) => Application;
+    post: (path: string, ...handlers: any[]) => Application;
+    put: (path: string, ...handlers: any[]) => Application;
+    delete: (path: string, ...handlers: any[]) => Application;
+    patch: (path: string, ...handlers: any[]) => Application;
+    options: (path: string, ...handlers: any[]) => Application;
+    head: (path: string, ...handlers: any[]) => Application;
   }
-  
-  export interface NextFunction {
-    (err?: any): void;
-  }
-  
-  export interface Router {
-    get(path: string, ...handlers: any[]): Router;
-    post(path: string, ...handlers: any[]): Router;
-    put(path: string, ...handlers: any[]): Router;
-    delete(path: string, ...handlers: any[]): Router;
-    use(path: string, router: Router): Router;
-    use(...handlers: any[]): Router;
-  }
-  
-  export interface Express {
-    use(path: string, router: Router): Express;
-    use(...handlers: any[]): Express;
-    listen(port: number, callback?: () => void): Server;
-  }
-  
-  export function Router(): Router;
+
+  const express: Express;
+  export default express;
 }
 
-declare module 'multer' {
-  import { Request } from 'express';
+declare module 'cors' {
+  import { RequestHandler } from 'express';
   
-  interface StorageEngine {
-    _handleFile(req: Request, file: Multer.File, callback: (error?: any, info?: Partial<Multer.File>) => void): void;
-    _removeFile(req: Request, file: Multer.File, callback: (error?: any) => void): void;
+  interface CorsOptions {
+    origin?: string | string[] | boolean | ((origin: string, callback: (err: Error | null, allow?: boolean) => void) => void);
+    methods?: string | string[];
+    allowedHeaders?: string | string[];
+    exposedHeaders?: string | string[];
+    credentials?: boolean;
+    maxAge?: number;
+    preflightContinue?: boolean;
+    optionsSuccessStatus?: number;
   }
   
-  interface DiskStorageOptions {
-    destination?: string | ((req: any, file: any, callback: (error: Error | null, destination: string) => void) => void);
-    filename?: (req: any, file: any, callback: (error: Error | null, filename: string) => void) => void;
-  }
-  
-  interface MulterOptions {
-    dest?: string;
-    storage?: StorageEngine;
-    limits?: {
-      fieldNameSize?: number;
-      fieldSize?: number;
-      fields?: number;
-      fileSize?: number;
-      files?: number;
-      parts?: number;
-      headerPairs?: number;
-    };
-    fileFilter?: (req: any, file: any, callback: (error: Error | null | any, acceptFile?: boolean) => void) => void;
-    preservePath?: boolean;
-  }
-  
-  namespace Multer {
-    interface File {
-      fieldname: string;
-      originalname: string;
-      encoding: string;
-      mimetype: string;
-      size: number;
-      destination: string;
-      filename: string;
-      path: string;
-      buffer: Buffer;
-    }
-  }
-  
-  interface Multer {
-    single(fieldname: string): any;
-    array(fieldname: string, maxCount?: number): any;
-    fields(fields: Array<{ name: string, maxCount?: number }>): any;
-    none(): any;
-  }
-  
-  function diskStorage(options: DiskStorageOptions): StorageEngine;
-  function memoryStorage(): StorageEngine;
-  
-  export default function(options?: MulterOptions): Multer;
-  export { diskStorage, memoryStorage };
+  function cors(options?: CorsOptions): RequestHandler;
+  export default cors;
 }
 
-// Add Express.Multer namespace to fix 'Express.Multer.File' issue
-declare namespace Express {
-  namespace Multer {
-    interface File {
-      fieldname: string;
-      originalname: string;
-      encoding: string;
-      mimetype: string;
-      size: number;
-      destination: string;
-      filename: string;
-      path: string;
-      buffer: Buffer;
-    }
+declare module 'helmet' {
+  import { RequestHandler } from 'express';
+  
+  function helmet(options?: any): RequestHandler;
+  export default helmet;
+}
+
+declare module 'compression' {
+  import { RequestHandler } from 'express';
+  
+  interface CompressionOptions {
+    threshold?: number;
+    level?: number;
+    filter?: (req: any, res: any) => boolean;
   }
+  
+  function compression(options?: CompressionOptions): RequestHandler;
+  export default compression;
+}
+
+declare module 'morgan' {
+  import { RequestHandler } from 'express';
+  
+  function morgan(format: string, options?: any): RequestHandler;
+  export default morgan;
+}
+
+declare module 'dotenv' {
+  interface DotenvConfigOptions {
+    path?: string;
+    encoding?: string;
+    debug?: boolean;
+    override?: boolean;
+  }
+  
+  interface DotenvConfigOutput {
+    parsed?: { [key: string]: string };
+    error?: Error;
+  }
+  
+  interface Dotenv {
+    config(options?: DotenvConfigOptions): DotenvConfigOutput;
+    parse(src: string | Buffer): { [key: string]: string };
+  }
+  
+  const dotenv: Dotenv;
+  export default dotenv;
 }
