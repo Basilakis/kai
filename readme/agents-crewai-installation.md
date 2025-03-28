@@ -15,9 +15,11 @@ cd packages/agents
 yarn install
 ```
 
-2. **Create environment file**
+2. **Configure environment variables**
 
-Create a `.env` file in the `packages/agents` directory:
+All CrewAI integration environment variables should be added to the main application's `.env` file in the root directory. Do not create a separate environment file for the agent system.
+
+The following environment variables are needed for the agent system:
 
 ```
 # Required

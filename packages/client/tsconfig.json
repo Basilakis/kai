@@ -31,6 +31,7 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
+    "exactOptionalPropertyTypes": true,
     "allowSyntheticDefaultImports": true,
     "jsx": "react",
     "jsxFactory": "React.createElement",

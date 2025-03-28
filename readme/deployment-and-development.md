@@ -129,54 +129,51 @@ Steps:
 
 #### 1. Environment Configuration
 
-Create the following `.env` files for production:
+Create a single `.env` file in the root directory for production:
 
-**API Server (.env.production)**
+**Root .env file (.env.production)**
 ```
+# Node Environment
 NODE_ENV=production
+
+# Server Configuration
 PORT=3000
 API_BASE_URL=https://api.yourdomain.com
-MONGODB_URI=mongodb+srv://user:password@cluster.mongodb.net/kai
-JWT_SECRET=your-very-secure-jwt-secret
-S3_BUCKET=kai-production
-S3_REGION=us-east-1
-S3_ACCESS_KEY=your-access-key
-S3_SECRET_KEY=your-secret-key
-SUPABASE_URL=https://your-supabase-project.supabase.co
-SUPABASE_KEY=your-supabase-key
 CORS_ORIGIN=https://yourdomain.com
 LOG_LEVEL=info
-```
 
-**ML Services (.env.production)**
-```
+# Database Configuration
 MONGODB_URI=mongodb+srv://user:password@cluster.mongodb.net/kai
+
+# Authentication
+JWT_SECRET=your-very-secure-jwt-secret
+
+# Storage Configuration
 S3_BUCKET=kai-production
 S3_REGION=us-east-1
 S3_ACCESS_KEY=your-access-key
 S3_SECRET_KEY=your-secret-key
+
+# Supabase Configuration
+SUPABASE_URL=https://your-supabase-project.supabase.co
+SUPABASE_KEY=your-supabase-key
+SUPABASE_STORAGE_BUCKET=materials
+
+# ML Configuration
 MODEL_PATH=/opt/kai/models
 TENSORFLOW_SERVING_URL=http://tensorflow-serving:8501
 VECTOR_INDEX_PATH=/opt/kai/indexes
 GPU_ENABLED=true
 BATCH_SIZE=8
+
+# MCP Server Configuration
 MCP_SERVER_URL=http://mcp-server:8000
 USE_MCP_SERVER=true
-```
-
-**MCP Server (.env.production)**
-```
-PORT=8000
-MODEL_PATH=/opt/kai/models
 MODEL_CACHE_SIZE=5
-GPU_ENABLED=true
-LOG_LEVEL=info
 AGENT_INTEGRATION_ENABLED=true
 MAX_BATCH_SIZE=16
-```
 
-**Frontend (.env.production)**
-```
+# Frontend Configuration
 GATSBY_API_URL=https://api.yourdomain.com
 GATSBY_SUPABASE_URL=https://your-supabase-project.supabase.co
 GATSBY_SUPABASE_ANON_KEY=your-supabase-anon-key
@@ -184,6 +181,8 @@ GATSBY_STORAGE_URL=https://your-cdn.com
 GATSBY_DEFAULT_LOCALE=en
 GATSBY_GOOGLE_ANALYTICS_ID=your-ga-id
 ```
+
+All KAI components will read from this single centralized environment file. This simplifies configuration management and ensures consistency across services.
 
 #### 2. Database Setup
 
@@ -409,7 +408,7 @@ services:
     image: registry.example.com/kai-ml-services:latest
     ports:
       - "5000:5000"
-    env_file: .env.ml.production
+    env_file: .env.production
     depends_on:
       - mcp-server
     volumes:
@@ -427,7 +426,7 @@ services:
     image: registry.example.com/kai-mcp-server:latest
     ports:
       - "8000:8000"
-    env_file: .env.mcp.production
+    env_file: .env.production
     volumes:
       - ml-models:/opt/kai/models
     deploy:
@@ -610,7 +609,7 @@ jobs:
 
 2. **Set up environment variables**
    ```bash
-   cp packages/ml/.env.mcp.example packages/ml/.env.mcp
+   cp .env.example .env
    ```
 
 3. **Install TypeScript client package**
@@ -650,10 +649,11 @@ jobs:
 
 3. **Set up environment variables**
    ```bash
-   # For each package
-   cp packages/server/.env.example packages/server/.env
-   cp packages/client/.env.example packages/client/.env
-   cp packages/admin/.env.example packages/admin/.env
+   # Use the centralized .env file in the root directory
+   cp .env.example .env
+   
+   # Configure all necessary environment variables in the .env file
+   # including database connections, API keys, services URLs, etc.
    ```
 
 4. **Set up MongoDB**
@@ -662,7 +662,7 @@ jobs:
    docker run -d -p 27017:27017 --name kai-mongodb mongo:5
    
    # Option 2: Using MongoDB Atlas
-   # Configure your MongoDB Atlas connection string in packages/server/.env
+   # Configure your MongoDB Atlas connection string in the root .env file
    ```
 
 5. **Set up ML environment**
@@ -676,7 +676,7 @@ jobs:
 6. **Set up Supabase for the queue system**
    ```bash
    # Option 1: Using Supabase cloud
-   # Create a project at https://supabase.com and configure in .env files
+   # Create a project at https://supabase.com and configure in the root .env file
    
    # Option 2: Using Supabase local development
    npx supabase start

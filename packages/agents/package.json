@@ -9,7 +9,11 @@
     "dev": "tsc --watch",
     "lint": "eslint src --ext .ts,.tsx",
     "test": "jest",
-    "setup": "node ./scripts/setup.js"
+    "setup": "node ./scripts/setup.js",
+    "setup:unix": "chmod +x ./setup.sh && ./setup.sh",
+    "verify": "node ./scripts/verify-setup.js",
+    "test:integration": "node ./scripts/test-integration.js",
+    "prepare": "npm run build"
   },
   "dependencies": {
     "axios": "^1.6.0",

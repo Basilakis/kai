@@ -29,7 +29,7 @@ cd kai
 yarn install
 
 # Set up environment
-cp packages/[package-name]/.env.example packages/[package-name]/.env
+cp .env.example .env
 
 # Start development environment
 yarn dev
