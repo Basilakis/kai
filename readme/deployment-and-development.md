@@ -486,11 +486,34 @@ volumes:
 
 ### Continuous Integration and Deployment
 
-#### CI/CD Pipeline Example (GitHub Actions)
+The Kai platform uses a robust CI/CD pipeline with GitHub Actions to automate the deployment process. The system is configured with a three-branch structure and specific branch protection rules that ensure only authorized users can deploy to production.
 
-**.github/workflows/deploy.yml**
+For detailed information about the CI/CD pipeline, including branch protection, deployment workflows, and required GitHub secrets, please refer to the [CI/CD Pipeline Documentation](./cicd-pipeline.md).
+
+#### Key CI/CD Features
+
+- Three-branch structure (development, staging, main)
+- Branch protection rules controlling who can push to production
+- Automated deployments triggered only from the main branch
+- Comprehensive build, test, and deployment stages
+- Environment-specific configurations for staging and production
+
+#### CI/CD Pipeline Implementation
+
+The CI/CD pipeline is implemented in `.github/workflows/deploy.yml`. This file contains the workflow definition that handles:
+
+1. Building and testing the codebase
+2. Deploying to staging for pre-production validation
+3. Deploying to production when changes are pushed to main
+
+> **Note**: The production deployment from the main branch is restricted to user "Basilakis" via GitHub branch protection rules.
+
+#### Previous CI/CD Pipeline Example (GitHub Actions)
+
+This is kept for reference purposes. The actual implementation is now in `.github/workflows/deploy.yml`.
+
 ```yaml
-name: Deploy Kai
+name: Deploy Kai (Legacy)
 
 on:
   push:

@@ -1,490 +1,314 @@
-name: Deploy Kai Application
+name: Kai Platform CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main, staging, development]
+  pull_request:
+    branches: [main, staging, development]
   workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+# Environment variables used across jobs
+env:
+  NODE_VERSION: '16'
+  PYTHON_VERSION: '3.9'
+  DOCKER_BUILDKIT: '1'
 
 jobs:
-  test:
-    name: Test Application
+  # Build and test job runs on all branches
+  build-and-test:
+    name: Build and Test
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v3
-      
-      - name: Set up Node.js
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '16'
+          node-version: ${{ env.NODE_VERSION }}
           cache: 'yarn'
-      
+
       - name: Install dependencies
-        run: yarn install
-      
+        run: yarn install --frozen-lockfile
+
       - name: Run linting
         run: yarn lint
-      
-      - name: Run tests
+
+      - name: Run unit tests
         run: yarn test
 
-  build-and-push-docker:
-    name: Build and Push Docker Images
-    needs: test
+      - name: Build packages
+        run: yarn build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: build-artifacts
+          path: |
+            packages/*/dist
+            packages/client/public
+            packages/admin/out
+          retention-days: 1
+
+  # Deploy to staging environment (only on staging branch or manual trigger)
+  deploy-staging:
+    name: Deploy to Staging
+    needs: build-and-test
+    if: |
+      (github.ref == 'refs/heads/staging') || 
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
     runs-on: ubuntu-latest
+    environment: staging
+    concurrency: staging_environment
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v3
-      
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: build-artifacts
+
+      # Deploy frontend client to Vercel staging
+      - name: Deploy Client to Vercel (Staging)
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID_CLIENT }}
+          working-directory: ./packages/client
+          alias-domains: |
+            staging-kai-client.vercel.app
+          scope: ${{ secrets.VERCEL_ORG_ID }}
+
+      # Deploy admin panel to Vercel staging
+      - name: Deploy Admin to Vercel (Staging)
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID_ADMIN }}
+          working-directory: ./packages/admin
+          alias-domains: |
+            staging-kai-admin.vercel.app
+          scope: ${{ secrets.VERCEL_ORG_ID }}
+
+      # Set up Docker for backend services
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
-      
-      - name: Log in to Docker Hub
+
+      - name: Login to Container Registry
         uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-      
-      - name: Build and push API server
-        uses: docker/build-push-action@v3
+          registry: ${{ secrets.DOCKER_REGISTRY }}
+
+      # Build and push API server image
+      - name: Build and push API server (Staging)
+        uses: docker/build-push-action@v4
         with:
           context: .
           file: ./Dockerfile.api
           push: true
-          tags: ${{ secrets.DOCKER_USERNAME }}/kai-api-server:${{ github.sha }},${{ secrets.DOCKER_USERNAME }}/kai-api-server:latest
-      
-      - name: Build and push ML services
-        uses: docker/build-push-action@v3
+          tags: |
+            ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-api-server:${{ github.sha }}
+            ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-api-server:staging
+          cache-from: type=registry,ref=${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-api-server:staging-cache
+          cache-to: type=registry,ref=${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-api-server:staging-cache,mode=max
+
+      # Build and push ML services image
+      - name: Build and push ML services (Staging)
+        uses: docker/build-push-action@v4
         with:
           context: .
           file: ./Dockerfile.ml
           push: true
-          tags: ${{ secrets.DOCKER_USERNAME }}/kai-ml-services:${{ github.sha }},${{ secrets.DOCKER_USERNAME }}/kai-ml-services:latest
+          tags: |
+            ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-ml-services:${{ github.sha }}
+            ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-ml-services:staging
+          cache-from: type=registry,ref=${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-ml-services:staging-cache
+          cache-to: type=registry,ref=${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-ml-services:staging-cache,mode=max
 
-  deploy-kubernetes:
-    name: Deploy to Digital Ocean Kubernetes
-    needs: build-and-push-docker
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-      
-      - name: Install doctl
-        uses: digitalocean/action-doctl@v2
+      # Deploy to Digital Ocean Kubernetes staging environment
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
         with:
-          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
-      
-      - name: Save DigitalOcean kubeconfig
-        run: doctl kubernetes cluster kubeconfig save ${{ secrets.DIGITALOCEAN_CLUSTER_NAME }}
-      
-      - name: Create necessary Kubernetes files
+          version: 'latest'
+
+      - name: Set up kubeconfig
         run: |
-          mkdir -p k8s
-          
-          # Create namespace.yaml if it doesn't exist
-          cat > k8s/namespace.yaml << EOF
-          apiVersion: v1
-          kind: Namespace
-          metadata:
-            name: kai
-          EOF
-          
-          # Create configmap.yaml
-          cat > k8s/configmap.yaml << EOF
-          apiVersion: v1
-          kind: ConfigMap
-          metadata:
-            name: kai-config
-            namespace: kai
-          data:
-            NODE_ENV: "production"
-            API_BASE_URL: "https://api.kai.${{ secrets.DOMAIN_NAME }}"
-            S3_BUCKET: "kai-production"
-            S3_REGION: "${{ secrets.AWS_REGION }}"
-            CORS_ORIGIN: "https://kai.${{ secrets.DOMAIN_NAME }},https://admin.kai.${{ secrets.DOMAIN_NAME }}"
-            LOG_LEVEL: "info"
-            PORT: "3000"
-          EOF
-          
-          # Create API server deployment
-          cat > k8s/api-server-deployment.yaml << EOF
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata:
-            name: kai-api-server
-            namespace: kai
-          spec:
-            replicas: 3
-            selector:
-              matchLabels:
-                app: kai-api-server
-            template:
-              metadata:
-                labels:
-                  app: kai-api-server
-              spec:
-                containers:
-                - name: api-server
-                  image: ${{ secrets.DOCKER_USERNAME }}/kai-api-server:${{ github.sha }}
-                  ports:
-                  - containerPort: 3000
-                  envFrom:
-                  - configMapRef:
-                      name: kai-config
-                  env:
-                  - name: MONGODB_URI
-                    valueFrom:
-                      secretKeyRef:
-                        name: kai-secrets
-                        key: mongodb-uri
-                  - name: SUPABASE_URL
-                    valueFrom:
-                      secretKeyRef:
-                        name: kai-secrets
-                        key: supabase-url
-                  - name: SUPABASE_KEY
-                    valueFrom:
-                      secretKeyRef:
-                        name: kai-secrets
-                        key: supabase-key
-                  - name: JWT_SECRET
-                    valueFrom:
-                      secretKeyRef:
-                        name: kai-secrets
-                        key: jwt-secret
-                  - name: S3_ACCESS_KEY
-                    valueFrom:
-                      secretKeyRef:
-                        name: kai-secrets
-                        key: s3-access-key
-                  - name: S3_SECRET_KEY
-                    valueFrom:
-                      secretKeyRef:
-                        name: kai-secrets
-                        key: s3-secret-key
-                  resources:
-                    requests:
-                      memory: "512Mi"
-                      cpu: "250m"
-                    limits:
-                      memory: "1Gi"
-                      cpu: "500m"
-                  readinessProbe:
-                    httpGet:
-                      path: /health
-                      port: 3000
-                    initialDelaySeconds: 5
-                    periodSeconds: 10
-          EOF
-          
-          # Create ML services deployment
-          cat > k8s/ml-services-deployment.yaml << EOF
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata:
-            name: kai-ml-services
-            namespace: kai
-          spec:
-            replicas: 2
-            selector:
-              matchLabels:
-                app: kai-ml-services
-            template:
-              metadata:
-                labels:
-                  app: kai-ml-services
-              spec:
-                containers:
-                - name: ml-services
-                  image: ${{ secrets.DOCKER_USERNAME }}/kai-ml-services:${{ github.sha }}
-                  ports:
-                  - containerPort: 5000
-                  envFrom:
-                  - configMapRef:
-                      name: kai-config
-                  env:
-                  - name: MONGODB_URI
-                    valueFrom:
-                      secretKeyRef:
-                        name: kai-secrets
-                        key: mongodb-uri
-                  - name: S3_ACCESS_KEY
-                    valueFrom:
-                      secretKeyRef:
-                        name: kai-secrets
-                        key: s3-access-key
-                  - name: S3_SECRET_KEY
-                    valueFrom:
-                      secretKeyRef:
-                        name: kai-secrets
-                        key: s3-secret-key
-                  resources:
-                    requests:
-                      memory: "2Gi"
-                      cpu: "1000m"
-                    limits:
-                      memory: "4Gi"
-                      cpu: "2000m"
-                  readinessProbe:
-                    httpGet:
-                      path: /health
-                      port: 5000
-                    initialDelaySeconds: 30
-                    periodSeconds: 30
-          EOF
-          
-          # Create services.yaml
-          cat > k8s/services.yaml << EOF
-          apiVersion: v1
-          kind: Service
-          metadata:
-            name: kai-api-server-service
-            namespace: kai
-          spec:
-            selector:
-              app: kai-api-server
-            ports:
-            - port: 80
-              targetPort: 3000
-            type: ClusterIP
-          ---
-          apiVersion: v1
-          kind: Service
-          metadata:
-            name: kai-ml-services-service
-            namespace: kai
-          spec:
-            selector:
-              app: kai-ml-services
-            ports:
-            - port: 80
-              targetPort: 5000
-            type: ClusterIP
-          EOF
-          
-          # Create ingress.yaml
-          cat > k8s/ingress.yaml << EOF
-          apiVersion: networking.k8s.io/v1
-          kind: Ingress
-          metadata:
-            name: kai-ingress
-            namespace: kai
-            annotations:
-              kubernetes.io/ingress.class: "nginx"
-              cert-manager.io/cluster-issuer: "letsencrypt-prod"
-          spec:
-            tls:
-            - hosts:
-              - api.kai.${{ secrets.DOMAIN_NAME }}
-              secretName: kai-tls-secret
-            rules:
-            - host: api.kai.${{ secrets.DOMAIN_NAME }}
-              http:
-                paths:
-                - path: /api/ml
-                  pathType: Prefix
-                  backend:
-                    service:
-                      name: kai-ml-services-service
-                      port:
-                        number: 80
-                - path: /
-                  pathType: Prefix
-                  backend:
-                    service:
-                      name: kai-api-server-service
-                      port:
-                        number: 80
-          EOF
-      
-      # Apply Kubernetes configurations
-      - name: Apply Kubernetes manifests
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG_DATA }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Update Kubernetes deployments (Staging)
         run: |
-          # Check if namespace exists, create if not
-          if ! kubectl get namespace kai &> /dev/null; then
-            kubectl apply -f k8s/namespace.yaml
-          fi
-          
-          # Check if secrets exist, create if not (first deployment)
-          if ! kubectl get secret kai-secrets -n kai &> /dev/null; then
-            # Create secrets from GitHub secrets
-            kubectl create secret generic kai-secrets -n kai \
-              --from-literal=mongodb-uri="${{ secrets.MONGODB_URI }}" \
-              --from-literal=supabase-url="${{ secrets.SUPABASE_URL }}" \
-              --from-literal=supabase-key="${{ secrets.SUPABASE_KEY }}" \
-              --from-literal=jwt-secret="${{ secrets.JWT_SECRET }}" \
-              --from-literal=s3-access-key="${{ secrets.AWS_ACCESS_KEY }}" \
-              --from-literal=s3-secret-key="${{ secrets.AWS_SECRET_KEY }}"
-          fi
-          
-          # Apply ConfigMap and update if it exists
-          kubectl apply -f k8s/configmap.yaml
-          
-          # Apply deployments
-          kubectl apply -f k8s/api-server-deployment.yaml
-          kubectl apply -f k8s/ml-services-deployment.yaml
-          
-          # Apply services
-          kubectl apply -f k8s/services.yaml
-          
-          # Apply ingress
-          kubectl apply -f k8s/ingress.yaml
-      
-      - name: Verify deployment
+          kubectl set image deployment/kai-api-server-staging api-server=${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-api-server:${{ github.sha }} -n kai-staging
+          kubectl set image deployment/kai-ml-services-staging ml-services=${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-ml-services:${{ github.sha }} -n kai-staging
+          kubectl rollout status deployment/kai-api-server-staging -n kai-staging
+          kubectl rollout status deployment/kai-ml-services-staging -n kai-staging
+
+      # Run integration tests against staging environment
+      - name: Setup Node.js for testing
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Run integration tests
         run: |
+          export API_URL=https://api-staging.kai.yourdomain.com
+          yarn workspace @kai/server test:integration
+        env:
+          NODE_ENV: staging
+
+      # Notify on Slack (optional)
+      - name: Notify Slack on staging deployment
+        if: always()
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+          SLACK_CHANNEL: deployments
+          SLACK_TITLE: Staging Deployment ${{ job.status }}
+          SLACK_MESSAGE: "Kai Platform deployed to staging :rocket:"
+          SLACK_COLOR: ${{ job.status == 'success' && 'good' || 'danger' }}
+
+  # Deploy to production environment (only on main branch or manual trigger)
+  deploy-production:
+    name: Deploy to Production
+    needs: build-and-test
+    if: |
+      (github.ref == 'refs/heads/main') || 
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency: production_environment
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: build-artifacts
+
+      # Deploy frontend client to Vercel production
+      - name: Deploy Client to Vercel (Production)
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID_CLIENT }}
+          working-directory: ./packages/client
+          vercel-args: '--prod'
+          scope: ${{ secrets.VERCEL_ORG_ID }}
+
+      # Deploy admin panel to Vercel production
+      - name: Deploy Admin to Vercel (Production)
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID_ADMIN }}
+          working-directory: ./packages/admin
+          vercel-args: '--prod'
+          scope: ${{ secrets.VERCEL_ORG_ID }}
+
+      # Set up Docker for backend services
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to Container Registry
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+          registry: ${{ secrets.DOCKER_REGISTRY }}
+
+      # Build and push API server image
+      - name: Build and push API server (Production)
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./Dockerfile.api
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-api-server:${{ github.sha }}
+            ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-api-server:latest
+          cache-from: type=registry,ref=${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-api-server:build-cache
+          cache-to: type=registry,ref=${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-api-server:build-cache,mode=max
+
+      # Build and push ML services image
+      - name: Build and push ML services (Production)
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./Dockerfile.ml
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-ml-services:${{ github.sha }}
+            ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-ml-services:latest
+          cache-from: type=registry,ref=${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-ml-services:build-cache
+          cache-to: type=registry,ref=${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-ml-services:build-cache,mode=max
+
+      # Deploy to Digital Ocean Kubernetes production environment
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: Set up kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG_DATA }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Update Kubernetes deployments (Production)
+        run: |
+          kubectl set image deployment/kai-api-server api-server=${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-api-server:${{ github.sha }} -n kai
+          kubectl set image deployment/kai-ml-services ml-services=${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-ml-services:${{ github.sha }} -n kai
           kubectl rollout status deployment/kai-api-server -n kai
           kubectl rollout status deployment/kai-ml-services -n kai
 
-  deploy-frontend-vercel:
-    name: Deploy Frontend to Vercel
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-      
-      - name: Deploy Admin Panel to Vercel
-        uses: amondnet/vercel-action@v25
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_ADMIN_PROJECT_ID }}
-          working-directory: ./packages/admin
-          vercel-args: '--prod'
-          alias-domains: |
-            admin.kai.${{ secrets.DOMAIN_NAME }}
-      
-      - name: Deploy Client App to Vercel
-        uses: amondnet/vercel-action@v25
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_CLIENT_PROJECT_ID }}
-          working-directory: ./packages/client
-          vercel-args: '--prod'
-          alias-domains: |
-            kai.${{ secrets.DOMAIN_NAME }}
-
-  create-dockerfiles:
-    name: Create Dockerfile Templates
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-      
-      - name: Create API Server Dockerfile
+      # Run smoke tests against production
+      - name: Run smoke tests
         run: |
-          cat > Dockerfile.api << 'EOF'
-          FROM node:16-alpine AS builder
+          export API_URL=https://api.kai.yourdomain.com
+          yarn workspace @kai/server test:smoke
+        env:
+          NODE_ENV: production
 
-          WORKDIR /app
-
-          # Copy package files
-          COPY package.json yarn.lock ./
-          COPY packages/shared/package.json ./packages/shared/
-          COPY packages/server/package.json ./packages/server/
-
-          # Install dependencies
-          RUN yarn install --frozen-lockfile
-
-          # Copy source code
-          COPY packages/shared ./packages/shared/
-          COPY packages/server ./packages/server/
-
-          # Build packages
-          RUN yarn workspace @kai/shared build
-          RUN yarn workspace @kai/server build
-
-          # Production image
-          FROM node:16-alpine
-
-          WORKDIR /app
-
-          # Copy package files
-          COPY package.json yarn.lock ./
-          COPY packages/shared/package.json ./packages/shared/
-          COPY packages/server/package.json ./packages/server/
-
-          # Install production dependencies only
-          RUN yarn install --frozen-lockfile --production
-
-          # Copy built files
-          COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
-          COPY --from=builder /app/packages/server/dist ./packages/server/dist
-
-          # Set environment variables
-          ENV NODE_ENV=production
-          ENV PORT=3000
-
-          # Expose port
-          EXPOSE 3000
-
-          # Add healthcheck
-          HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-            CMD wget -qO- http://localhost:3000/health || exit 1
-
-          # Start server
-          CMD ["node", "packages/server/dist/server.js"]
-          EOF
-      
-      - name: Create ML Services Dockerfile
-        run: |
-          cat > Dockerfile.ml << 'EOF'
-          FROM tensorflow/tensorflow:2.9.1-gpu
-
-          WORKDIR /app
-
-          # Install system dependencies
-          RUN apt-get update && apt-get install -y \
-              build-essential \
-              python3-pip \
-              python3-dev \
-              nodejs \
-              npm \
-              && rm -rf /var/lib/apt/lists/*
-
-          # Install yarn
-          RUN npm install -g yarn
-
-          # Copy package files
-          COPY package.json yarn.lock ./
-          COPY packages/shared/package.json ./packages/shared/
-          COPY packages/ml/package.json ./packages/ml/
-
-          # Copy requirements.txt
-          COPY packages/ml/requirements.txt ./packages/ml/
-
-          # Install Python dependencies
-          RUN pip3 install --no-cache-dir -r packages/ml/requirements.txt
-
-          # Install Node.js dependencies
-          RUN yarn install --frozen-lockfile --production
-
-          # Copy source code
-          COPY packages/shared ./packages/shared/
-          COPY packages/ml ./packages/ml/
-
-          # Build TypeScript packages
-          RUN yarn workspace @kai/shared build
-          RUN yarn workspace @kai/ml build
-
-          # Expose port
-          EXPOSE 5000
-
-          # Add healthcheck
-          HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-            CMD wget -qO- http://localhost:5000/health || exit 1
-
-          # Start ML service
-          CMD ["python3", "packages/ml/python/server.py"]
-          EOF
-      
-      - name: Commit Dockerfiles if they don't exist
-        uses: EndBug/add-and-commit@v9
+      # Update deployment status
+      - name: Update GitHub deployment status
+        uses: chrnorm/deployment-status@v2
         with:
-          author_name: GitHub Actions
-          author_email: actions@github.com
-          message: 'chore: add Dockerfile templates for API server and ML services'
-          add: '["Dockerfile.api", "Dockerfile.ml"]'
+          token: ${{ secrets.GITHUB_TOKEN }}
+          state: "success"
+          deployment-id: ${{ steps.deployment.outputs.deployment_id }}
+          environment-url: https://kai.yourdomain.com
+
+      # Notify on Slack (optional)
+      - name: Notify Slack on production deployment
+        if: always()
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+          SLACK_CHANNEL: deployments
+          SLACK_TITLE: Production Deployment ${{ job.status }}
+          SLACK_MESSAGE: "Kai Platform deployed to production :rocket:"
+          SLACK_COLOR: ${{ job.status == 'success' && 'good' || 'danger' }}
