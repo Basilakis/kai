@@ -8,6 +8,7 @@ The crewAI integration adds intelligent agent capabilities to the KAI platform, 
 
 1. **User-facing intelligence**: Agents that assist users during material recognition, provide detailed information about materials, and help organize projects
 2. **System-level intelligence**: Agents that monitor the knowledge base, analyze system metrics, and optimize platform operations
+3. **MCP-powered inference**: Optimized language model operations through the Model Context Protocol server architecture
 
 ## Architecture
 
@@ -19,6 +20,7 @@ The integration is structured around several key components:
 - **Agent Types**: Specialized agents for different roles and capabilities
 - **Agent Tools**: Functions that allow agents to interact with KAI systems
 - **Utilities**: Common functionality for logging, error handling, and data processing
+- **MCP Integration**: Adapters that enable agents to leverage the MCP server architecture
 
 ### Directory Structure
 
@@ -50,6 +52,30 @@ packages/
     │       ├── logger.ts                # Logging system
     │       └── index.ts                 # Utility exports
     └── logs/               # Agent operation logs
+```
+
+### MCP Integration Structure
+
+```
+packages/
+└── agents/
+    ├── src/
+    │   ├── core/
+    │   │   └── mcpAgentFactory.ts       # MCP-enabled agent creation
+    │   ├── services/
+    │   │   └── adapters/
+    │   │       ├── llmInferenceMcpAdapter.ts    # LLM operations adapter
+    │   │       ├── vectorSearchMcpAdapter.ts    # Vector search adapter
+    │   │       ├── imageAnalysisMcpAdapter.ts   # Image analysis adapter
+    │   │       └── ocrMcpAdapter.ts             # OCR adapter
+    │   ├── utils/
+    │   │   ├── mcpIntegration.ts        # MCP connection utilities
+    │   │   ├── mcpBatchProcessor.ts     # Request batching system
+    │   │   └── llmInferenceHelper.ts    # LLM inference utilities
+    │   └── examples/
+    │       └── mcpAgentExample.ts       # Example MCP agent usage
+    └── docs/
+        └── mcp-integration.md           # MCP integration documentation
 ```
 
 ## Agent Types
@@ -130,6 +156,75 @@ packages/
      - Operations interfaces
      - Notification systems
 
+## MCP Integration for Agents
+
+The agent system integrates with the Model Context Protocol (MCP) server architecture to optimize language model operations and resource utilization.
+
+### Benefits of MCP for Agents
+
+1. **Performance Optimization**
+   - Reduced latency by eliminating model loading overhead
+   - Improved throughput through token batching
+   - More efficient GPU/TPU utilization for inference
+
+2. **Resource Efficiency**
+   - Multiple agents share the same model instances
+   - Lower memory footprint
+   - More efficient scaling of agent capabilities
+
+3. **Enhanced Capabilities**
+   - Streaming responses for real-time agent interactions
+   - Centralized model version management
+   - Seamless model upgrades without restarts
+
+### MCP-Enabled Agent Factory
+
+The `mcpAgentFactory.ts` provides enhanced agent creation with MCP integration:
+
+```typescript
+import { createMCPAgent } from '@kai/agents/core/mcpAgentFactory';
+
+// Create an MCP-enabled agent
+const agent = await createMCPAgent({
+  id: 'material-expert-1',
+  name: 'Material Expert',
+  description: 'Provides detailed information about materials',
+  modelSettings: {
+    provider: 'openai',
+    model: 'gpt-4-turbo',
+    temperature: 0.7
+  },
+  tools: [materialSearchTool, vectorSearchTool]
+});
+
+// Agent uses MCP server for LLM operations when available
+// Falls back to local implementation if MCP server is unavailable
+const response = await agent.execute(userQuery);
+```
+
+### LLM Inference Adapter
+
+The `llmInferenceMcpAdapter.ts` handles all language model operations through MCP:
+
+- **Chat completions** - For conversational agent interactions
+- **Text completions** - For structured text generation
+- **Embeddings** - For semantic representation of text
+- **Streaming responses** - For real-time interactions
+
+### Batch Processing
+
+Agents benefit from automatic batching of similar operations:
+
+```typescript
+// These operations will be automatically batched if they occur within
+// the configured time window (default: 50ms)
+const [resultA, resultB, resultC] = await Promise.all([
+  agent.generateEmbedding(textA),
+  agent.generateEmbedding(textB),
+  agent.generateEmbedding(textC)
+]);
+```
+
 ## Agent Tools
 
 ### Material Search Tool
@@ -167,6 +262,29 @@ const similarMaterials = await agent.invoke('vector_search', {
   query: 'luxury italian marble with gold veining',
   limit: 5,
   threshold: 0.75
+});
+```
+
+### MCP-Enabled Tools
+
+These tools leverage the MCP architecture for improved performance:
+
+```typescript
+// Vector search using MCP
+const similarMaterials = await agent.invoke('vector_search', {
+  mode: 'text',
+  query: 'luxury italian marble with gold veining',
+  useMCP: true,  // Explicitly use MCP for this operation
+  limit: 5,
+  threshold: 0.75
+});
+
+// Image analysis using MCP
+const analysis = await agent.invoke('analyze_image', {
+  imageUrl: 'https://example.com/material.jpg',
+  useMCP: true,  // Explicitly use MCP for this operation
+  mode: 'full',
+  detail_level: 'detailed'
 });
 ```
 
@@ -210,6 +328,25 @@ The backend integration enables system-level intelligence:
    - Insight generation and reporting
    - Automated task handling and delegation
 
+### MCP Integration
+
+The MCP integration enhances both frontend and backend components:
+
+1. **Frontend Optimization**
+   - Faster response times for agent interactions
+   - Streaming responses for a more interactive experience
+   - Lower resource usage during agent operations
+
+2. **Backend Efficiency**
+   - Centralized management of ML models
+   - Shared model instances across multiple requests
+   - Better scalability for high-volume agent operations
+
+3. **Cross-Component Communication**
+   - MCP server as a bridge between packages
+   - Standardized protocol for model operations
+   - Consistent versioning across the system
+
 ## Implementation Roadmap
 
 ### Phase 1: Foundation (Completed)
@@ -237,27 +374,23 @@ The backend integration enables system-level intelligence:
 - Performance optimization and scaling
 - Additional specialized agents and tools
 
+### Phase 5: MCP Migration (Months 7-8) - Current
+- MCP integration for LLM operations
+- Performance measurement and optimization
+- Batch processing implementation
+- Advanced security and monitoring
+
 ## Setup and Usage
 
 ### Prerequisites
 - Node.js 16+
 - Yarn package manager
 - OpenAI API key (or other supported LLM provider)
+- MCP server (optional, for optimized performance)
 
 ### Installation
 
-1. Install dependencies:
-```bash
-cd packages/agents
-./setup.sh
-yarn install
-```
-
-2. Configure environment variables:
-```
-OPENAI_API_KEY=your_api_key_here
-NODE_ENV=development
-```
+> **Note**: Installation instructions for CrewAI have been moved to the [Deployment Guide](./deployment-guide.md#crewai-integration-installation).
 
 ### Example Usage
 
@@ -274,6 +407,12 @@ await initializeAgentSystem({
     temperature: 0.7,
   },
   logLevel: 'info',
+  mcpOptions: {
+    enabled: true,
+    serverUrl: process.env.MCP_SERVER_URL || 'http://localhost:8000',
+    authToken: process.env.MCP_AUTH_TOKEN,
+    healthCheckTimeout: 5000
+  }
 });
 ```
 
@@ -297,6 +436,30 @@ const insights = await agent.instance.processImage(imageUrl, {
 });
 ```
 
+Create an MCP-enabled agent:
+
+```typescript
+import { createMCPAgent } from '@kai/agents/core/mcpAgentFactory';
+
+// Create an MCP-enabled Material Expert
+const mcpAgent = await createMCPAgent({
+  id: 'mcp-material-expert-1',
+  type: AgentType.MATERIAL_EXPERT,
+  name: 'MCP Material Expert',
+  description: 'Provides detailed material information using MCP',
+  mcpOptions: {
+    // Override global MCP settings if needed
+    serverUrl: 'http://specialized-mcp-server:8000',
+    batchingEnabled: true,
+    batchWindow: 100 // ms
+  }
+});
+
+// The agent will use MCP for all LLM operations
+// with transparent fallback to local implementation if MCP is unavailable
+const materialDetails = await mcpAgent.getDetailedInformation(materialId);
+```
+
 ## Technical Considerations
 
 ### Performance and Scaling
@@ -306,6 +469,7 @@ const insights = await agent.instance.processImage(imageUrl, {
   - Rate limiting for API-dependent operations
   - Asynchronous processing for non-interactive tasks
   - Horizontal scaling for high-volume deployments
+  - MCP integration for optimized model operations
 
 ### Security
 - Agents operate with least privilege principle
@@ -313,15 +477,19 @@ const insights = await agent.instance.processImage(imageUrl, {
 - User data is handled according to existing platform policies
 - Input validation is implemented for all agent inputs
 - Output filtering ensures appropriate agent responses
+- MCP authentication is handled securely with automatic token rotation
 
 ### Error Handling
 - Agents implement graceful degradation on API failures
 - Fallback mechanisms ensure continuity of service
 - Comprehensive logging aids in debugging and issue resolution
 - Monitoring systems alert administrators to repeated errors
+- MCP health checks prevent requests to unavailable services
 
 ## Related Documentation
 - [Material Recognition](./material-recognition.md)
 - [Knowledge Base](./knowledge-base.md)
 - [PDF Processing](./pdf-processing.md)
 - [Queue System](./queue-system.md)
+- [MCP Server](./mcp-server.md)
+- [MCP Integration Documentation](../packages/agents/src/docs/mcp-integration.md)

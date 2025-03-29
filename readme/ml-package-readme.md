@@ -11,23 +11,7 @@ This package provides machine learning functionality for the Kai Material Recogn
 
 ## Installation
 
-### Prerequisites
-
-- Python 3.8+
-- Node.js 16+
-- Tesseract OCR (for text extraction)
-
-### Setup
-
-1. Install Node.js dependencies:
-   ```bash
-   npm install
-   ```
-
-2. Install Python dependencies:
-   ```bash
-   npm run setup-python
-   ```
+> **Note**: Installation instructions for the ML package have been moved to the [Deployment Guide](./deployment-guide.md#ml-package-installation).
 
 ## Dataset Organization
 
@@ -169,7 +153,11 @@ async function trainModel() {
 
 ### Vector Search
 
-Create a vector search index and search for similar materials:
+The ML package supports two vector search implementations:
+
+#### 1. Local Vector Search (FAISS)
+
+Create a local vector search index and search for similar materials:
 
 ```typescript
 import { createVectorSearchIndex, searchSimilarMaterials } from '@kai/ml';
@@ -191,6 +179,45 @@ async function setupAndSearch() {
     });
   } catch (error) {
     console.error('Vector search failed:', error);
+  }
+}
+```
+
+#### 2. Supabase Vector Integration
+
+Store and search vector embeddings using Supabase Vector:
+
+```typescript
+import { storeEmbeddingInSupabase, searchSimilarInSupabase } from '@kai/ml';
+
+async function supabaseVectorSearch() {
+  try {
+    // Generate and store embedding for a material
+    const embeddingId = await storeEmbeddingInSupabase('path/to/image.jpg', {
+      materialId: 'marble-001',
+      materialName: 'Carrara Marble',
+      materialType: 'marble',
+      metadata: { 
+        color: 'white',
+        finish: 'polished'
+      }
+    });
+    
+    console.log(`Stored embedding with ID: ${embeddingId}`);
+    
+    // Search for similar materials with Supabase Vector
+    const similarMaterials = await searchSimilarInSupabase('path/to/query.jpg', {
+      threshold: 0.7,
+      limit: 5,
+      materialType: 'marble' // Optional filter
+    });
+    
+    console.log('Similar materials:');
+    similarMaterials.forEach(match => {
+      console.log(`- ${match.materialName} (similarity: ${match.similarity.toFixed(2)})`);
+    });
+  } catch (error) {
+    console.error('Supabase vector operations failed:', error);
   }
 }
 ```
@@ -218,6 +245,60 @@ async function visualizeResults() {
 }
 ```
 
+## Supabase Vector Integration
+
+The ML package integrates with Supabase Vector to provide advanced vector embedding storage and similarity search capabilities across multiple application domains:
+
+### Core Vector Functionality
+
+The ML package leverages Supabase Vector (using PostgreSQL's pgvector extension) for:
+
+1. **Vector Embedding Storage**
+   - Storing feature vectors generated from material images
+   - Associating embeddings with material metadata
+   - Efficient vector operations via pgvector
+   - Automatic vector indexing for high-performance searches
+
+2. **Similarity Search**
+   - Semantic similarity between material vectors
+   - Filtering by material type, properties, or metadata
+   - Configurable similarity thresholds and result limits
+   - High-performance vector operations via optimized indices
+
+3. **Database Implementation**
+   - Dedicated vector tables in Supabase PostgreSQL
+   - Vector columns with appropriate dimensionality
+   - Optimized indices using HNSW or IVF-Flat
+   - Metadata columns for rich material information
+
+### Integration with Application Domains
+
+This ML package provides the vector foundations for:
+
+1. **Material Recognition**
+   - Visual feature vectors for material classification
+   - Similarity-based material identification
+   - Flexible confidence thresholds
+   - Multiple recognition strategy support
+
+2. **Query Understanding**
+   - Natural language query embedding
+   - Semantic search enhancement
+   - Query expansion based on vector similarity
+   - Domain-specific context integration
+
+3. **Recommendation Engine**
+   - User preference vector modeling
+   - Similarity-based recommendation generation
+   - Diversity control in recommendations
+   - Feedback loop for preference adaption
+
+4. **Document Processing**
+   - Text chunk vectorization
+   - Semantic document search
+   - Entity extraction and linking
+   - Cross-document relationship discovery
+
 ## API Reference
 
 ### PDF Processing
@@ -242,6 +323,13 @@ async function visualizeResults() {
 - `createVectorSearchIndex(embeddingsDir: string, indexPath: string): Promise<IndexCreationResult>`
 - `searchSimilarMaterials(indexPath: string, imagePath: string, options?: SearchOptions): Promise<VectorSearchResult>`
 - `visualizeSearchResults(indexPath: string, imagePath: string, outputPath: string, numResults?: number): Promise<string>`
+
+### Supabase Vector Operations
+
+- `storeEmbeddingInSupabase(imagePath: string, metadata: MaterialMetadata): Promise<string>`
+- `searchSimilarInSupabase(imagePath: string, options?: SupabaseSearchOptions): Promise<SupabaseSearchResult[]>`
+- `createVectorIndex(tableName: string, columnName: string, indexMethod?: 'hnsw' | 'ivfflat', dimensions?: number): Promise<boolean>`
+- `generateAndStoreEmbedding(material: Material): Promise<string>`
 
 ### Confidence Fusion
 

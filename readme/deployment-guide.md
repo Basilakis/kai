@@ -5,6 +5,7 @@ This guide provides detailed instructions for deploying the Kai application to p
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)
+- [Component Installation](#component-installation)
 - [Architecture Overview](#architecture-overview)
 - [Supabase Deployment](#supabase-deployment)
 - [Vercel Deployment](#vercel-deployment)
@@ -25,6 +26,230 @@ Before proceeding with deployment, ensure you have the following:
 - Node.js (v16+) and Yarn (v1.22+) installed locally
 - Docker and kubectl installed locally for testing
 - Domain name(s) for your deployment
+
+## Component Installation
+
+This section provides installation instructions for all Kai system components. Follow these steps to set up the required dependencies and services before deployment.
+
+### Neural OCR Installation
+
+The Neural OCR integration requires additional dependencies beyond the standard OCR system:
+
+1. Install neural OCR dependencies:
+   ```bash
+   cd packages/ml
+   pip install -r python/requirements-ocr.txt
+   ```
+
+2. Verify installation:
+   ```bash
+   python -c "from neural_ocr_orchestrator import NeuralOCROrchestrator; print('Neural OCR available:', NeuralOCROrchestrator.available_engines())"
+   ```
+
+### ML Package Installation
+
+The ML package provides machine learning functionality for material recognition, vector embeddings, and model training:
+
+#### Prerequisites
+
+- Python 3.8+
+- Node.js 16+
+- Tesseract OCR (for text extraction)
+
+#### Setup
+
+1. Install Node.js dependencies:
+   ```bash
+   cd packages/ml
+   npm install
+   ```
+
+2. Install Python dependencies:
+   ```bash
+   npm run setup-python
+   ```
+
+### MCP Server Installation
+
+The Model Context Protocol (MCP) Server centralizes model management and provides optimized inference capabilities:
+
+#### Prerequisites
+
+- Docker (for containerized deployment)
+- Python 3.8+ (for local development)
+- Node.js 14+ (for client SDK)
+
+#### Environment Variables
+
+The MCP Server can be configured with the following environment variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `MCP_SERVER_PORT` | Port for the MCP server | `8000` |
+| `MODEL_DIR` | Directory for storing model files | `/app/models` |
+| `LOG_LEVEL` | Logging level (DEBUG, INFO, WARNING, ERROR) | `INFO` |
+| `ENABLE_AGENT_API` | Enable agent communication APIs | `true` |
+
+#### Docker Deployment
+
+The MCP Server can be deployed as a Docker container:
+
+```bash
+# Build the MCP server image
+docker build -t kai-mcp-server -f packages/ml/Dockerfile.mcp .
+
+# Run the MCP server container
+docker run -d \
+  --name kai-mcp-server \
+  -p 8000:8000 \
+  -v $(pwd)/models:/app/models \
+  kai-mcp-server
+```
+
+#### Local Development
+
+For local development, you can run the MCP server directly:
+
+```bash
+# Install required packages
+cd packages/ml
+pip install -r requirements.txt
+pip install fastapi uvicorn python-multipart
+
+# Run the server
+cd packages/ml/python
+uvicorn mcp_server:app --reload --host 0.0.0.0 --port 8000
+```
+
+### MCP Client Installation
+
+The MCP Client provides a TypeScript interface for the MCP server:
+
+```bash
+# From the project root
+cd packages/mcp-client
+yarn install
+yarn build
+yarn link  # For local development
+
+# In packages that use the MCP client
+cd ../ml
+yarn link @kai/mcp-client
+```
+
+#### Client Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `MCP_SERVER_URL` | URL of the MCP server | `http://localhost:8000` |
+| `USE_MCP_SERVER` | Enable MCP server integration | `false` |
+| `MCP_HEALTH_CHECK_TIMEOUT` | Timeout for health check (ms) | `5000` |
+
+### CrewAI Integration Installation
+
+The CrewAI integration adds intelligent agent capabilities to the Kai platform:
+
+#### Prerequisites
+- Node.js 16+
+- Yarn or npm
+- OpenAI API key
+- KAI platform services running
+
+#### Installation Steps
+
+1. Install dependencies:
+   ```bash
+   cd packages/agents
+   yarn install
+   ```
+
+2. Configure environment variables in the root `.env` file:
+   ```
+   # Required
+   OPENAI_API_KEY=your_openai_api_key
+
+   # KAI Services (change URLs as needed for your environment)
+   KAI_API_URL=http://localhost:3000/api
+   KAI_VECTOR_DB_URL=http://localhost:5000/api/vector
+   KAI_ML_SERVICE_URL=http://localhost:7000/api/ml
+
+   # Optional
+   OPENAI_DEFAULT_MODEL=gpt-4
+   OPENAI_TEMPERATURE=0.7
+   ENABLE_MOCK_FALLBACK=true
+   LOG_LEVEL=info
+   
+   # Redis Configuration (for agent state persistence)
+   REDIS_URL=redis://localhost:6379
+   REDIS_PASSWORD=
+   ```
+
+3. Verify installation:
+   ```bash
+   cd packages/agents
+   yarn verify
+   ```
+   
+   Or run integration tests:
+   ```bash
+   yarn test:integration
+   ```
+
+### Hugging Face Integration Installation
+
+The Hugging Face integration with adaptive model selection provides enhanced AI capabilities across multiple providers:
+
+#### Prerequisites
+- Node.js 16+
+- Yarn or npm
+- Hugging Face API key
+- Optional: OpenAI and/or Anthropic API keys (for multi-provider capabilities)
+
+#### Installation Steps
+
+1. Install dependencies:
+   ```bash
+   cd packages/server
+   yarn install
+   ```
+
+2. Configure environment variables in the root `.env` file:
+   ```
+   # Required for Hugging Face integration
+   HF_API_KEY=your_huggingface_api_key
+   
+   # Optional Hugging Face configuration
+   HF_ORGANIZATION_ID=your_organization_id
+   HF_DEFAULT_TEXT_MODEL=google/flan-t5-xxl
+   HF_DEFAULT_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+   HF_DEFAULT_IMAGE_MODEL=google/vit-base-patch16-224
+   HF_MODEL_TIMEOUT=30000
+   HF_USE_FAST_MODELS=true
+   
+   # Optional additional providers
+   OPENAI_API_KEY=your_openai_api_key
+   ANTHROPIC_API_KEY=your_anthropic_api_key
+   
+   # Adaptive model selection configuration
+   MODEL_EVALUATION_STANDARD_CYCLE=10
+   MODEL_EVALUATION_TEST_CYCLE=3
+   MODEL_SELECTION_METRICS_WEIGHTS={"accuracy":0.6,"latency":0.2,"cost":0.2}
+   ```
+
+3. Verify installation:
+   ```bash
+   curl http://localhost:3000/api/ai/models/list
+   ```
+   
+   The response should include available models across all configured providers.
+
+4. Test the adaptive model selection system:
+   ```bash
+   # Generate text with automatic model selection
+   curl -X POST http://localhost:3000/api/ai/text/generate \
+     -H "Content-Type: application/json" \
+     -d '{"prompt": "Explain the properties of porcelain tiles"}'
+   ```
 
 ## Architecture Overview
 

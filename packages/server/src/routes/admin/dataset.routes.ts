@@ -200,7 +200,7 @@ router.post('/upload/zip', upload.single('file'), async (req: Request, res: Resp
       return res.status(400).json({ error: 'No file uploaded' });
     }
     
-    const { name, description } = req.body;
+    const { name, description, generateEmbeddings } = req.body;
     const userId = req.user?.id;
     
     // Process ZIP file
@@ -208,7 +208,8 @@ router.post('/upload/zip', upload.single('file'), async (req: Request, res: Resp
       req.file.path,
       name || path.basename(req.file.originalname, '.zip'),
       description,
-      userId
+      userId,
+      generateEmbeddings === 'true' || generateEmbeddings === true
     );
     
     // Clean up temporary file
@@ -230,7 +231,8 @@ router.post('/upload/zip', upload.single('file'), async (req: Request, res: Resp
       dataset: result.dataset,
       classCount: result.classCount,
       imageCount: result.imageCount,
-      warnings: result.errors.length > 0 ? result.errors : undefined
+      warnings: result.errors.length > 0 ? result.errors : undefined,
+      embeddingsGenerated: result.embeddingsGenerated || 0
     });
   } catch (err) {
     logger.error(`Error processing ZIP dataset: ${err}`);

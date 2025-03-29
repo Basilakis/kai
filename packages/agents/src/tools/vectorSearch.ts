@@ -3,11 +3,13 @@
  * 
  * A specialized tool for performing semantic similarity searches using vector embeddings.
  * This tool helps agents find materials with similar properties based on their vector representations.
+ * 
+ * When MCP integration is enabled, this tool uses the MCP server for vector operations.
+ * Otherwise, it falls back to the local implementation.
  */
 
 import { Tool } from 'crewai';
 import { createLogger } from '../utils/logger';
-import { getVectorService } from '../services/serviceFactory';
 import { ApiError } from '../services/baseService';
 import { 
   VectorSearchParams, 
@@ -15,6 +17,7 @@ import {
   VectorSearchResult, 
   SimilarMaterialsResponse 
 } from '../services/vectorService';
+import * as vectorSearchAdapter from '../services/adapters/vectorSearchMcpAdapter';
 
 // Logger instance
 const logger = createLogger('VectorSearchTool');
@@ -25,8 +28,15 @@ const logger = createLogger('VectorSearchTool');
 export async function createVectorSearchTool(): Promise<Tool> {
   logger.info('Creating vector search tool');
 
-  // Get the vector service instance
-  const vectorService = getVectorService();
+  // Initialize the vector search MCP adapter
+  await vectorSearchAdapter.initializeVectorSearchMcpAdapter();
+  
+  // Log whether we're using MCP for vector search
+  if (vectorSearchAdapter.isMcpEnabledForVectorSearch()) {
+    logger.info('Vector search tool will use MCP server when available');
+  } else {
+    logger.info('Vector search tool will use local implementation');
+  }
 
   /**
    * Search for materials using vector embeddings
@@ -56,8 +66,8 @@ export async function createVectorSearchTool(): Promise<Tool> {
         includeMetadata: options.includeMetadata
       };
       
-      // Use the VectorService to perform the search
-      const results = await vectorService.searchByVector(params);
+      // Use the adapter to perform the search (which will use MCP if available)
+      const results = await vectorSearchAdapter.searchByVector(params);
       logger.debug(`Vector search returned ${results.length} results`);
       return results;
     } catch (error) {
@@ -99,8 +109,8 @@ export async function createVectorSearchTool(): Promise<Tool> {
         sameMaterialType: options.sameMaterialType
       };
       
-      // Use the VectorService to find similar materials
-      const results = await vectorService.findSimilarMaterials(params);
+      // Use the adapter to find similar materials (which will use MCP if available)
+      const results = await vectorSearchAdapter.findSimilarMaterials(params);
       logger.debug(`Similar materials search returned ${results.similarMaterials.length} results`);
       return results;
     } catch (error) {
@@ -133,7 +143,8 @@ export async function createVectorSearchTool(): Promise<Tool> {
             if (typeof query === 'string' && materialId && typeof materialId === 'string') {
               // Compare two texts for similarity
               try {
-                const similarity = await vectorService.compareSimilarity(query, materialId);
+                // Use the adapter to compare similarity (which will use MCP if available)
+                const similarity = await vectorSearchAdapter.compareSimilarity(query, materialId);
                 return JSON.stringify({ similarity });
               } catch (error) {
                 logger.error(`Error comparing similarity: ${error}`);

@@ -43,17 +43,7 @@ The Kai MCP implementation follows a hybrid approach:
 
 ## Installation
 
-```bash
-# From the project root
-cd packages/mcp-client
-yarn install
-yarn build
-yarn link  # For local development
-
-# In packages that use the MCP client
-cd ../ml
-yarn link @kai/mcp-client
-```
+> **Note**: Installation instructions for the MCP Client have been moved to the [Deployment Guide](./deployment-guide.md#mcp-client-installation).
 
 ## Usage
 

@@ -50,6 +50,7 @@ import adminRoutes from './routes/admin.routes';
 import pdfRoutes from './routes/api/pdf.routes';
 import credentialsRoutes from './routes/credentials.routes';
 import agentRoutes from './routes/agents.routes';
+import aiRoutes from './routes/ai.routes';
 
 // Import middleware
 import { errorHandler } from './middleware/error.middleware';
@@ -82,6 +83,7 @@ app.use('/api/admin', authMiddleware, adminRoutes);
 app.use('/api/pdf', authMiddleware, pdfRoutes);
 app.use('/api/credentials', authMiddleware, credentialsRoutes);
 app.use('/api/agents', agentRoutes);
+app.use('/api/ai', authMiddleware, aiRoutes);
 
 // Health check endpoint
 app.get('/health', (req: Request, res: Response) => {

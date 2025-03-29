@@ -60,71 +60,7 @@ The Kai MCP implementation follows a hybrid approach:
 
 ## Installation
 
-### Python MCP Server
-
-1. Install core dependencies:
-
-```bash
-cd packages/ml
-python -m venv mcp-venv
-source mcp-venv/bin/activate  # On Windows: mcp-venv\Scripts\activate
-pip install -r requirements.txt
-pip install fastapi uvicorn python-multipart
-```
-
-2. Install ML framework dependencies based on your needs:
-
-```bash
-# For TensorFlow
-pip install tensorflow==2.9.1
-
-# For PyTorch
-pip install torch torchvision
-```
-
-3. Create an `.env.mcp` file:
-
-```
-PORT=8000
-MODEL_PATH=/path/to/models
-MODEL_CACHE_SIZE=5
-GPU_ENABLED=true
-LOG_LEVEL=info
-AGENT_INTEGRATION_ENABLED=true
-MAX_BATCH_SIZE=16
-```
-
-### TypeScript Client SDK
-
-1. Add TypeScript client dependencies:
-
-```bash
-cd packages/mcp-client
-yarn install
-```
-
-2. Build the package:
-
-```bash
-yarn build
-```
-
-3. Link to the ML package:
-
-```bash
-yarn link
-cd ../ml
-yarn link @kai/mcp-client
-```
-
-## Docker Deployment
-
-Use the provided Dockerfile for easy deployment:
-
-```bash
-docker build -t kai-mcp-server -f packages/ml/Dockerfile.mcp .
-docker run -p 8000:8000 -v /path/to/models:/app/models kai-mcp-server
-```
+> **Note**: Installation instructions for the MCP Server have been consolidated into the [Deployment Guide](/readme/deployment-guide.md#mcp-server-installation).
 
 ## Configuration
 

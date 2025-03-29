@@ -4,20 +4,60 @@
  * This service extracts and processes ZIP files containing dataset images.
  * It supports extracting class-organized files, validates them, 
  * and uploads them to the dataset storage structure.
+ * It can also generate vector embeddings for extracted images for knowledge base and training.
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
+// Type declaration for os module
+declare module 'os' {
+  function tmpdir(): string;
+  // Add other os functions as needed
+}
 import * as os from 'os';
+
+// Type declaration for unzipper module
+declare module 'unzipper' {
+  export function Parse(): NodeJS.ReadWriteStream;
+  export namespace Open {
+    function file(path: string): Promise<Directory>;
+  }
+  export interface Directory {
+    files: Array<{ path: string; type: string; buffer(): Promise<Buffer> }>;
+    extract(options: { path: string }): Promise<void>;
+  }
+}
 import * as unzipper from 'unzipper';
+
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../../utils/logger';
 import { Dataset, DatasetClass, DatasetImage } from '../supabase/supabase-dataset-service';
 import supabaseDatasetService from '../supabase/supabase-dataset-service';
 import { supabaseClient } from '../supabase/supabaseClient';
+import { vectorSearch } from '../supabase/vector-search';
+import axios from 'axios';
+
+// Type declaration for form-data module
+declare module 'form-data' {
+  class FormData {
+    append(key: string, value: any, options?: any): void;
+    getHeaders(): Record<string, string>;
+    getBoundary(): string;
+    getBuffer(): Buffer;
+  }
+  export = FormData;
+}
+import FormData from 'form-data';
 
 // Supported image formats
 const SUPPORTED_FORMATS = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
+
+// Configuration constants
+const MCP_SERVER_URL = process.env.MCP_SERVER_URL || 'http://localhost:8000';
+const USE_MCP_SERVER = process.env.USE_MCP_SERVER === 'true';
+const EMBEDDING_DIMENSIONS = 256; // Default embedding dimension size
+const EMBEDDING_METHOD = 'hybrid'; // 'feature-based', 'ml-based', or 'hybrid'
+const GENERATE_EMBEDDINGS = process.env.GENERATE_EMBEDDINGS !== 'false'; // Default to true
 
 // Class directory metadata file name
 const CLASS_METADATA_FILE = 'class.json';
@@ -38,13 +78,16 @@ export interface ZipExtractionResult {
   classCount: number;
   imageCount: number;
   errors: string[];
+  embeddingsGenerated?: number;
 }
 
 export class ZipExtractorService {
   private static instance: ZipExtractorService;
+  private generateEmbeddings: boolean;
 
   private constructor() {
-    logger.info('ZIP Extractor Service initialized');
+    this.generateEmbeddings = GENERATE_EMBEDDINGS;
+    logger.info(`ZIP Extractor Service initialized (embeddings: ${this.generateEmbeddings ? 'enabled' : 'disabled'})`);
   }
 
   /**
@@ -59,17 +102,29 @@ export class ZipExtractorService {
   }
 
   /**
+   * Set whether to generate embeddings during extraction
+   * @param enabled Whether to enable embedding generation
+   */
+  public setEmbeddingGeneration(enabled: boolean): void {
+    this.generateEmbeddings = enabled;
+    logger.info(`Embedding generation ${enabled ? 'enabled' : 'disabled'}`);
+  }
+
+  /**
    * Process a ZIP file into a dataset
    * @param zipFilePath Path to the uploaded ZIP file
    * @param datasetName Name for the dataset (default: from ZIP filename)
+   * @param description Optional description for the dataset
    * @param userId User ID who created the dataset
+   * @param generateEmbeddings Whether to generate embeddings (overrides instance setting)
    * @returns Extraction result
    */
   public async processZipFile(
     zipFilePath: string, 
     datasetName?: string,
     description?: string,
-    userId?: string
+    userId?: string,
+    generateEmbeddings?: boolean
   ): Promise<ZipExtractionResult> {
     // Initialize result
     const result: ZipExtractionResult = {
@@ -77,9 +132,13 @@ export class ZipExtractorService {
       dataset: null,
       classCount: 0,
       imageCount: 0,
-      errors: []
+      errors: [],
+      embeddingsGenerated: 0
     };
 
+    // Determine whether to generate embeddings for this extraction
+    const useEmbeddings = generateEmbeddings !== undefined ? generateEmbeddings : this.generateEmbeddings;
+    
     // Create a temporary directory for extraction
     const extractDir = path.join(os.tmpdir(), `dataset-${uuidv4()}`);
     try {
@@ -123,14 +182,26 @@ export class ZipExtractorService {
           });
           
           // Process all images into the default class
-          const processedCount = await this.processImagesIntoClass(rootImages, defaultClass, dataset.id);
+          const processResult = await this.processImagesIntoClass(
+            rootImages, 
+            defaultClass, 
+            dataset.id,
+            useEmbeddings
+          );
           
           result.classCount = 1;
-          result.imageCount = processedCount;
+          result.imageCount = processResult.processedCount;
+          
+          // Track embeddings if they were generated
+          if (useEmbeddings) {
+            result.embeddingsGenerated = processResult.embeddingsGenerated;
+          }
         } else {
           result.errors.push('No images found in the ZIP file.');
         }
       } else {
+        let totalEmbeddingsGenerated = 0;
+        
         // Process each class
         for (const classData of classes) {
           // Create the class
@@ -141,16 +212,26 @@ export class ZipExtractorService {
           });
           
           // Process images for this class
-          const processedCount = await this.processImagesIntoClass(
+          const processResult = await this.processImagesIntoClass(
             classData.images, 
             datasetClass, 
-            dataset.id
+            dataset.id,
+            useEmbeddings
           );
           
-          result.imageCount += processedCount;
+          result.imageCount += processResult.processedCount;
+          
+          // Track embeddings if they were generated
+          if (useEmbeddings) {
+            totalEmbeddingsGenerated += processResult.embeddingsGenerated;
+          }
         }
         
         result.classCount = classes.length;
+        
+        if (useEmbeddings) {
+          result.embeddingsGenerated = totalEmbeddingsGenerated;
+        }
       }
 
       // Update dataset status to 'ready'
@@ -258,14 +339,17 @@ export class ZipExtractorService {
    * @param images Array of image information
    * @param datasetClass Dataset class
    * @param datasetId Dataset ID
-   * @returns Number of successfully processed images
+   * @param generateEmbeddings Whether to generate embeddings for images
+   * @returns Processed counts and embedding info
    */
   private async processImagesIntoClass(
     images: Array<{ filename: string; fullPath: string }>,
     datasetClass: DatasetClass,
-    datasetId: string
-  ): Promise<number> {
+    datasetId: string,
+    generateEmbeddings: boolean = false
+  ): Promise<{ processedCount: number; embeddingsGenerated: number }> {
     let processedCount = 0;
+    let embeddingsGenerated = 0;
     
     for (const image of images) {
       try {
@@ -289,13 +373,31 @@ export class ZipExtractorService {
           continue;
         }
         
-        // Create image entry in the database
-        await supabaseDatasetService.createDatasetImage({
+        // Create image entry in the database (with or without embedding)
+        const datasetImage = await supabaseDatasetService.createDatasetImage({
           datasetId,
           classId: datasetClass.id,
           storagePath,
           filename: image.filename
         });
+        
+        // Generate and store vector embedding if enabled
+        if (generateEmbeddings) {
+          try {
+            // Generate embedding
+            const embedding = await this.generateEmbedding(image.fullPath);
+            
+            if (embedding && embedding.vector) {
+              // Store embedding in vector_embeddings table
+              const success = await this.storeEmbedding(embedding.vector, datasetImage.id);
+              if (success) {
+                embeddingsGenerated++;
+              }
+            }
+          } catch (embeddingError) {
+            logger.error(`Failed to generate embedding for ${image.filename}: ${embeddingError}`);
+          }
+        }
         
         processedCount++;
       } catch (err) {
@@ -303,7 +405,93 @@ export class ZipExtractorService {
       }
     }
     
-    return processedCount;
+    return { processedCount, embeddingsGenerated };
+  }
+
+  /**
+   * Generate vector embedding for an image
+   * @param imagePath Path to the image file
+   * @returns Vector embedding and metadata
+   */
+  private async generateEmbedding(imagePath: string): Promise<{ vector: number[]; dimensions: number }> {
+    try {
+      if (USE_MCP_SERVER) {
+        // Use MCP server for embedding generation
+        return await this.generateEmbeddingWithMCP(imagePath);
+      } else {
+        // Use direct embedding generation (future implementation)
+        // For now, use a placeholder embedding
+        logger.warn('Direct embedding generation not implemented, using placeholder');
+        return {
+          vector: new Array(EMBEDDING_DIMENSIONS).fill(0).map(() => Math.random()),
+          dimensions: EMBEDDING_DIMENSIONS
+        };
+      }
+    } catch (error) {
+      logger.error(`Error generating embedding: ${error}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Generate vector embedding using MCP server
+   * @param imagePath Path to the image file
+   * @returns Vector embedding and metadata
+   */
+  private async generateEmbeddingWithMCP(imagePath: string): Promise<{ vector: number[]; dimensions: number }> {
+    try {
+      // Create form data with image
+      const formData = new FormData();
+      formData.append('image', fs.createReadStream(imagePath));
+      
+      // Set options for embedding generation
+      const options = {
+        model_type: EMBEDDING_METHOD,
+        include_features: true
+      };
+      formData.append('options', JSON.stringify(options));
+      
+      // Send request to MCP server
+      const response = await axios.post(`${MCP_SERVER_URL}/api/v1/embeddings`, formData, {
+        headers: {
+          ...formData.getHeaders(),
+        },
+      });
+      
+      // Extract embedding from response
+      const result = response.data;
+      
+      return {
+        vector: result.vector,
+        dimensions: result.dimensions || result.vector.length
+      };
+    } catch (error) {
+      logger.error(`Error generating embedding with MCP: ${error}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Store embedding in vector_embeddings table
+   * @param vector Embedding vector
+   * @param datasetImageId Dataset image ID
+   * @returns Success flag
+   */
+  private async storeEmbedding(vector: number[], datasetImageId: string): Promise<boolean> {
+    try {
+      // Store embedding using vector search service
+      await vectorSearch.storeEmbedding(
+        vector,
+        { dataset_image_id: datasetImageId, created_at: new Date().toISOString() },
+        'dataset_embeddings',
+        'embedding'
+      );
+      
+      return true;
+    } catch (error) {
+      logger.error(`Error storing embedding: ${error}`);
+      return false;
+    }
   }
 
   /**

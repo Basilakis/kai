@@ -1,9 +1,21 @@
 # OCR Enhancement Dependencies
 
 # Core OCR
+# Base OCR Dependencies
 pytesseract>=0.3.8       # OCR engine wrapper
 tesseract-ocr>=4.1.1     # Base OCR engine (system package)
 Pillow>=8.2.0            # Image processing
+
+# Advanced Neural OCR Dependencies
+paddlepaddle>=2.4.0      # PaddleOCR base framework
+paddleocr>=2.6.0         # PaddleOCR toolkit
+pdfdeal>=0.2.0           # PDF native processing
+surya>=0.2.0             # Scientific document understanding
+mplug-docowl>=0.1.0      # Multimodal document understanding
+transformers>=4.26.0     # Transformer models for DocOwl and others
+torch>=1.12.0            # PyTorch for neural models
+torchvision>=0.13.0      # Image processing for neural models
+opencv-python>=4.6.0     # OpenCV for image preprocessing
 pymupdf>=1.18.14         # PDF processing
 
 # Computer Vision
@@ -12,12 +24,21 @@ scikit-image>=0.18.2     # Image processing algorithms
 numpy>=1.21.0            # Numerical processing
 scipy>=1.7.0             # Scientific computing
 
+# Neural OCR Engines
+torch>=1.9.0             # PyTorch for neural models
+torchvision>=0.10.0      # Computer vision for PyTorch
+nougat-ocr>=0.1.14       # Meta's Nougat for scientific documents
+marker-ocr>=0.1.5        # VikParuchuri's Marker for layout-preserving OCR
+thepipe>=0.2.0           # emcf's thepipe for structured information extraction
+
 # Document Analysis
 pdf2image>=1.16.0        # PDF to image conversion
 pdfminer.six>=20201018   # PDF text extraction
 pypdfium2>=2.7.0         # Alternative PDF processor
 tabula-py>=2.3.0         # Table extraction from PDFs
 python-docx>=0.8.11      # DOCX file processing
+transformers>=4.24.0     # Hugging Face transformers for document understanding
+tokenizers>=0.13.2       # Tokenization for neural models
 
 # NLP and Text Processing
 langdetect>=1.0.9        # Language detection
@@ -44,6 +65,10 @@ tqdm>=4.61.1             # Progress bars
 joblib>=1.0.1            # Parallel processing
 PyYAML>=5.4.1            # Configuration file support
 jsonschema>=3.2.0        # JSON validation
+regex>=2022.3.15         # Advanced regular expressions
+pandas>=1.4.0            # Data manipulation and analysis
+protobuf>=3.19.0         # Protocol buffers for model communication
+tensorboard>=2.9.0       # Visualization for model training (optional)
 
 # Optional: GPU Support
 # Uncomment if GPU is available

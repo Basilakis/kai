@@ -9,8 +9,10 @@ All detailed documentation is available in the `readme` folder:
 - [Project Structure](./readme/folder-structure.md) - Organization and component interactions
 - [Material Recognition](./readme/material-recognition.md) - ML-powered material identification
 - [Knowledge Base](./readme/knowledge-base.md) - Material storage and retrieval system
+- [Database & Vector DB](./readme/database-vector-db.md) - Supabase Vector integration for semantic search
 - [Datasets and AI Models](./readme/datasets-and-models.md) - Integration of premade datasets with AI models
 - [PDF Processing](./readme/pdf-processing.md) - Catalog extraction capabilities
+- [Neural OCR Integration](./readme/neural-ocr-integration.md) - Advanced document understanding with AI models
 - [Queue System](./readme/queue-system.md) - Message broker and async processing
 - [API Reference](./readme/api-reference.md) - Comprehensive API endpoints
 - [Deployment & Development](./readme/deployment-and-development.md) - Production deployment and development setup

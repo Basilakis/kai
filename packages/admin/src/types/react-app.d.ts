@@ -1,70 +1,84 @@
-import React from 'react';
+/// <reference types="react" />
 
 declare global {
   namespace JSX {
     interface IntrinsicElements {
-      // HTML elements
-      div: React.DetailedHTMLProps<React.HTMLAttributes<HTMLDivElement>, HTMLDivElement>;
-      p: React.DetailedHTMLProps<React.HTMLAttributes<HTMLParagraphElement>, HTMLParagraphElement>;
-      h1: React.DetailedHTMLProps<React.HTMLAttributes<HTMLHeadingElement>, HTMLHeadingElement>;
-      h2: React.DetailedHTMLProps<React.HTMLAttributes<HTMLHeadingElement>, HTMLHeadingElement>;
-      h3: React.DetailedHTMLProps<React.HTMLAttributes<HTMLHeadingElement>, HTMLHeadingElement>;
-      h4: React.DetailedHTMLProps<React.HTMLAttributes<HTMLHeadingElement>, HTMLHeadingElement>;
-      h5: React.DetailedHTMLProps<React.HTMLAttributes<HTMLHeadingElement>, HTMLHeadingElement>;
-      h6: React.DetailedHTMLProps<React.HTMLAttributes<HTMLHeadingElement>, HTMLHeadingElement>;
-      span: React.DetailedHTMLProps<React.HTMLAttributes<HTMLSpanElement>, HTMLSpanElement>;
-      a: React.DetailedHTMLProps<React.AnchorHTMLAttributes<HTMLAnchorElement>, HTMLAnchorElement>;
-      button: React.DetailedHTMLProps<React.ButtonHTMLAttributes<HTMLButtonElement>, HTMLButtonElement>;
-      input: React.DetailedHTMLProps<React.InputHTMLAttributes<HTMLInputElement>, HTMLInputElement>;
-      select: React.DetailedHTMLProps<React.SelectHTMLAttributes<HTMLSelectElement>, HTMLSelectElement>;
-      option: React.DetailedHTMLProps<React.OptionHTMLAttributes<HTMLOptionElement>, HTMLOptionElement>;
-      label: React.DetailedHTMLProps<React.LabelHTMLAttributes<HTMLLabelElement>, HTMLLabelElement>;
-      form: React.DetailedHTMLProps<React.FormHTMLAttributes<HTMLFormElement>, HTMLFormElement>;
-      nav: React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
-      img: React.DetailedHTMLProps<React.ImgHTMLAttributes<HTMLImageElement>, HTMLImageElement>;
-      ul: React.DetailedHTMLProps<React.HTMLAttributes<HTMLUListElement>, HTMLUListElement>;
-      ol: React.DetailedHTMLProps<React.HTMLAttributes<HTMLOListElement>, HTMLOListElement>;
-      li: React.DetailedHTMLProps<React.LiHTMLAttributes<HTMLLIElement>, HTMLLIElement>;
-      table: React.DetailedHTMLProps<React.TableHTMLAttributes<HTMLTableElement>, HTMLTableElement>;
-      tr: React.DetailedHTMLProps<React.HTMLAttributes<HTMLTableRowElement>, HTMLTableRowElement>;
-      td: React.DetailedHTMLProps<React.TdHTMLAttributes<HTMLTableDataCellElement>, HTMLTableDataCellElement>;
-      th: React.DetailedHTMLProps<React.ThHTMLAttributes<HTMLTableHeaderCellElement>, HTMLTableHeaderCellElement>;
-      thead: React.DetailedHTMLProps<React.HTMLAttributes<HTMLTableSectionElement>, HTMLTableSectionElement>;
-      tbody: React.DetailedHTMLProps<React.HTMLAttributes<HTMLTableSectionElement>, HTMLTableSectionElement>;
-      textarea: React.DetailedHTMLProps<React.TextareaHTMLAttributes<HTMLTextAreaElement>, HTMLTextAreaElement>;
+      div: any;
+      span: any;
+      p: any;
+      br: any;
+      a: any;
+      button: any;
+      input: any;
+      label: any;
+      select: any;
+      option: any;
+      table: any;
+      thead: any;
+      tbody: any;
+      tr: any;
+      td: any;
+      th: any;
+      [elemName: string]: any;
     }
   }
 }
 
-// Re-exports for FC and other React types
 declare module 'react' {
-  export interface FC<P = {}> {
-    (props: P, context?: any): React.ReactNode;
-    displayName?: string;
-    defaultProps?: Partial<P>;
+
+  export function useState<T>(initialState: T | (() => T)): [T, (newState: T | ((prevState: T) => T)) => void];
+  export function useEffect(effect: () => void | (() => void), deps?: ReadonlyArray<any>): void;
+  export type ChangeEvent<T = Element> = {
+    target: T;
+    currentTarget: T;
+  };
+  export type MouseEvent<T = Element> = {
+    target: T;
+    currentTarget: T;
+  };
+}
+
+declare module '@mui/material' {
+  export interface SelectChangeEvent {
+    target: {
+      value: any;
+      name?: string;
+    };
   }
+
+  export const Box: React.FC<any>;
+  export const Button: React.FC<any>;
+  export const Card: React.FC<any>;
+  export const CardContent: React.FC<any>;
+  export const Chip: React.FC<any>;
+  export const Dialog: React.FC<any>;
+  export const DialogActions: React.FC<any>;
+  export const DialogContent: React.FC<any>;
+  export const DialogTitle: React.FC<any>;
+  export const Grid: React.FC<any>;
+  export const IconButton: React.FC<any>;
+  export const Paper: React.FC<any>;
+  export const TextField: React.FC<any>;
+  export const Typography: React.FC<any>;
+  export const FormControl: React.FC<any>;
+  export const InputLabel: React.FC<any>;
+  export const Select: React.FC<any>;
+  export const MenuItem: React.FC<any>;
+  export const Switch: React.FC<any>;
+  export const FormControlLabel: React.FC<any>;
+  export const Table: React.FC<any>;
+  export const TableBody: React.FC<any>;
+  export const TableCell: React.FC<any>;
+  export const TableContainer: React.FC<any>;
+  export const TableHead: React.FC<any>;
+  export const TableRow: React.FC<any>;
 }
 
-// Fix for heroicons
-declare module '@heroicons/react/outline' {
-  export const CloudIcon: React.FC<React.SVGProps<SVGSVGElement>>;
-  export const DatabaseIcon: React.FC<React.SVGProps<SVGSVGElement>>;
-  export const MailIcon: React.FC<React.SVGProps<SVGSVGElement>>;
-  export const ServerIcon: React.FC<React.SVGProps<SVGSVGElement>>;
-  export const ChipIcon: React.FC<React.SVGProps<SVGSVGElement>>;
-  export const LockClosedIcon: React.FC<React.SVGProps<SVGSVGElement>>;
-  export const SaveIcon: React.FC<React.SVGProps<SVGSVGElement>>;
-  export const RefreshIcon: React.FC<React.SVGProps<SVGSVGElement>>;
-  export const CheckCircleIcon: React.FC<React.SVGProps<SVGSVGElement>>;
-  export const ExclamationCircleIcon: React.FC<React.SVGProps<SVGSVGElement>>;
-  export const ArrowCircleRightIcon: React.FC<React.SVGProps<SVGSVGElement>>;
-  export const CheckIcon: React.FC<React.SVGProps<SVGSVGElement>>;
-  export const ExclamationIcon: React.FC<React.SVGProps<SVGSVGElement>>;
-}
-
-// Fix for react-jsx-runtime
-declare module 'react/jsx-runtime' {
-  export const jsx: any;
-  export const jsxs: any;
-  export const Fragment: any;
+declare module '@mui/icons-material' {
+  export const Add: React.FC<any>;
+  export const Edit: React.FC<any>;
+  export const Delete: React.FC<any>;
+  export const Refresh: React.FC<any>;
+  export const Sync: React.FC<any>;
+  export const Schedule: React.FC<any>;
 }

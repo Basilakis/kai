@@ -13,8 +13,18 @@ We have implemented a foundation for integrating crewAI agents into the KAI plat
 
 2. **Frontend Components**
    - Developed UI components for agent interaction (AgentChat, panels for different agent types)
-   - Created agent-specific panels (RecognitionPanel, MaterialExpertPanel, ProjectAssistantPanel)
+   - Created agent-specific panels (RecognitionPanel, MaterialExpertPanel, ProjectAssistantPanel, ThreeDDesignerPanel)
    - Implemented a unified dashboard to access all agent capabilities
+   - Added 3D visualization capabilities with model integrations
+
+3. **3D Designer Agent**
+   - Implemented ThreeDDesignerAgent for 3D visualization tasks
+   - Integrated multiple AI models:
+     * NeRF-based reconstruction (NerfStudio, Instant-NGP)
+     * Text-to-3D generation (Shap-E, GET3D, Hunyuan3D-2)
+     * Scene understanding (YOLO v8, MiDaS, SAM)
+   - Added material suggestion capabilities
+   - Integrated with existing knowledge base
 
 3. **Backend Integration**
    - Designed SystemAgent interface for backend agents (KnowledgeBaseAgent, AnalyticsAgent, OperationsAgent)

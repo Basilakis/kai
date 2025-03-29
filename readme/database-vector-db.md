@@ -1,6 +1,6 @@
 # Database Management and Vector DB
 
-The Kai platform leverages advanced database management and vector database capabilities to provide powerful search, storage, and retrieval functionality. This document details the system's approach to database management, with a focus on vector-based similarity search and hybrid search implementations.
+The Kai platform leverages advanced database management and vector database capabilities to provide powerful search, storage, and retrieval functionality. This document details the system's approach to database management, with a focus on vector-based similarity search and hybrid search implementations across multiple application domains.
 
 ## Features
 
@@ -560,7 +560,111 @@ export class DatasetManagementService {
 }
 ```
 
-## Integration with Other Systems
+## Extended Vector Applications
+
+The Supabase Vector database is integrated across multiple domains within the system, providing powerful semantic capabilities beyond basic search.
+
+### Query Understanding
+
+The system leverages Supabase Vector to enhance search with semantic understanding:
+
+1. **Query Embedding and Storage**
+   - Natural language queries converted to vector embeddings
+   - Storage of historical queries with metadata
+   - Semantic clustering of query embeddings
+   - Contextual understanding of search intent
+   - Association with user context and session data
+
+2. **Semantic Enhancement**
+   - Query expansion based on vector similarity
+   - Identification of semantically similar terms
+   - Domain-specific concept linking
+   - Personalized query interpretation
+   - Context-aware search term weighting
+
+3. **Search Personalization**
+   - User preference learning through query vectors
+   - Category and domain-specific personalization
+   - Continuous adaptation to user behavior
+   - Vector-based user intent modeling
+   - Hybrid personalization combining explicit and implicit signals
+
+### Material Recognition System
+
+The Database Management and Vector DB components provide advanced material recognition capabilities:
+
+1. **Feature Vector Management**
+   - Material visual features stored as vector embeddings
+   - Multi-dimensional feature space for material properties
+   - Classification confidence through vector similarity
+   - Feature extraction and storage pipeline
+   - Automatic vector indexing for performance
+
+2. **Similarity Matching**
+   - Recognition based on visual feature similarity
+   - Confidence scoring through vector distance metrics
+   - Similar material identification
+   - "More like this" functionality
+   - Handling of material variations and lighting conditions
+
+3. **Feedback Mechanisms**
+   - User feedback integration for recognition improvement
+   - Vector space adaptation based on feedback
+   - Accuracy tracking by material type
+   - Continuous model refinement
+   - Recognition confidence threshold optimization
+
+### Recommendation Engine
+
+The system implements vector-based recommendation capabilities:
+
+1. **User Preference Modeling**
+   - User preferences encoded as vector embeddings
+   - Interaction-based preference vector updates
+   - Category weighting through vector components
+   - User profile evolution over time
+   - Multi-dimensional interest representation
+
+2. **Recommendation Generation**
+   - Material-user similarity through vector operations
+   - Diversity balancing in recommendations
+   - Personalized relevance scoring
+   - Category-aware recommendations
+   - Cold-start handling for new users
+
+3. **Feedback Integration**
+   - Preference vector updates based on interactions
+   - Positive and negative feedback weighting
+   - Duration-based influence for engagement
+   - Share-based significance boosting
+   - Progressive adaptation to changing preferences
+
+### Document Processing
+
+The system uses vector embeddings for advanced document management:
+
+1. **Document Content Vectorization**
+   - Text chunks converted to semantic vectors
+   - Document section embedding with metadata
+   - Hierarchical content representation
+   - Cross-document semantic linking
+   - Vector-based document organization
+
+2. **Semantic Search Capabilities**
+   - Meaning-based document retrieval
+   - Context-aware search within documents
+   - Conceptual matching beyond keywords
+   - Relevance ranking with confidence scores
+   - Query-section matching at paragraph level
+
+3. **Entity Recognition and Linking**
+   - Named entity vectorization in documents
+   - Entity relationship mapping through vectors
+   - Cross-document entity tracking
+   - Confidence-based entity identification
+   - Semantic entity categorization
+
+## Integration with Core Systems
 
 ### Material Recognition Pipeline
 
@@ -813,6 +917,374 @@ async function createAndManageDataset() {
 }
 ```
 
+## Implementation Examples
+
+### Query Understanding Service
+
+```typescript
+/**
+ * Query Understanding Service
+ * Enhances search by understanding the semantic meaning of queries using vector embeddings
+ */
+export class QueryUnderstandingService {
+  private embeddingTableName = 'semantic_concepts';
+  private vectorColumnName = 'embedding';
+  private queryHistoryTableName = 'query_history';
+  
+  /**
+   * Process and enhance a search query using semantic understanding
+   */
+  public async enhanceQuery(
+    query: string,
+    options: QueryUnderstandingOptions = {},
+    context?: QueryContext
+  ): Promise<ExpandedQuery> {
+    try {
+      // Generate embedding for the query
+      const queryEmbedding = await this.generateQueryEmbedding(query);
+      
+      // Find semantically similar concepts
+      const similarConcepts = await this.findSimilarConcepts(
+        queryEmbedding, 
+        options.domainContext || 'general',
+        options.minConfidence || 0.7
+      );
+      
+      // Extract related terms from similar concepts
+      const relatedTerms = this.extractRelatedTerms(similarConcepts, options.maxRelatedTerms || 5);
+      
+      // Create enhanced query with synonyms if requested
+      let enhancedQuery = query;
+      if (options.expandSynonyms && similarConcepts.length > 0) {
+        enhancedQuery = this.expandWithSynonyms(query, similarConcepts);
+      }
+      
+      // Personalize based on user context if available
+      if (context?.userId) {
+        enhancedQuery = await this.personalizeQuery(enhancedQuery, context);
+      }
+      
+      // Store query in history
+      await this.storeQueryHistory(query, queryEmbedding, context?.userId);
+      
+      return {
+        originalQuery: query,
+        enhancedQuery,
+        relatedTerms,
+        queryEmbedding,
+        confidence: similarConcepts.length > 0 ? similarConcepts[0].similarity : 0.5
+      };
+    } catch (error) {
+      logger.error(`Failed to enhance query: ${error}`);
+      // Return basic result if enhancement fails
+      return {
+        originalQuery: query,
+        enhancedQuery: query,
+        relatedTerms: [],
+        queryEmbedding: await this.generateMockEmbedding(),
+        confidence: 0
+      };
+    }
+  }
+  
+  private async findSimilarConcepts(embedding: number[], domainContext: string, minConfidence: number) {
+    // Use vector search to find similar concepts
+    return await vectorSearch.findSimilar(
+      embedding,
+      this.embeddingTableName,
+      this.vectorColumnName,
+      {
+        threshold: minConfidence,
+        limit: 10,
+        filters: {
+          domain_context: domainContext === 'general' 
+            ? { $in: [domainContext, 'general'] }
+            : domainContext
+        }
+      }
+    );
+  }
+  
+  // Additional implementation details...
+}
+```
+
+### Material Recognition Service
+
+```typescript
+/**
+ * Material Recognition Service
+ * Identifies materials based on their visual feature vectors using Supabase Vector
+ */
+export class MaterialRecognitionService {
+  private embeddingTableName = 'material_feature_vectors';
+  private vectorColumnName = 'embedding';
+  private recognitionHistoryTableName = 'recognition_history';
+  
+  /**
+   * Recognize a material from its feature vector
+   */
+  public async recognizeMaterial(
+    featureVector: number[],
+    options: RecognitionOptions = {}
+  ): Promise<MaterialRecognitionResult> {
+    try {
+      // Prepare filters
+      const filters: Record<string, any> = {
+        feature_type: options.featureType || 'global'
+      };
+      
+      // Add material type filter if specified
+      if (options.materialType) {
+        if (Array.isArray(options.materialType)) {
+          filters.material_type = { $in: options.materialType };
+        } else {
+          filters.material_type = options.materialType;
+        }
+      }
+      
+      // Find similar feature vectors
+      const similarVectors = await vectorSearch.findSimilar(
+        featureVector,
+        this.embeddingTableName,
+        this.vectorColumnName,
+        {
+          threshold: options.minConfidence || 0.7,
+          limit: options.maxResults || 5,
+          filters
+        }
+      );
+      
+      // Process recognition results
+      if (!similarVectors || similarVectors.length === 0) {
+        return {
+          materialId: '',
+          materialName: 'Unknown',
+          materialType: 'Unknown',
+          similarity: 0,
+          confidence: 0,
+          alternatives: []
+        };
+      }
+      
+      // Get best match and prepare result
+      const bestMatch = similarVectors[0];
+      const result = this.prepareRecognitionResult(
+        bestMatch, 
+        similarVectors, 
+        options.includeAlternatives || true,
+        options.includeAttributes || true
+      );
+      
+      // Log recognition result
+      await this.logRecognitionResult(featureVector, result);
+      
+      return result;
+    } catch (error) {
+      logger.error(`Recognition failed: ${error}`);
+      throw new Error(`Recognition failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  
+  // Additional implementation details...
+}
+```
+
+### Recommendation Engine
+
+```typescript
+/**
+ * Recommendation Engine
+ * Provides personalized material recommendations based on user preferences
+ * and material feature vectors using Supabase Vector similarity search
+ */
+export class RecommendationEngine {
+  private userPreferenceTableName = 'user_preference_vectors';
+  private materialFeatureTableName = 'material_feature_vectors';
+  private interactionHistoryTableName = 'user_material_interactions';
+  private vectorColumnName = 'embedding';
+  
+  /**
+   * Get personalized recommendations for a user
+   */
+  public async getRecommendations(
+    options: RecommendationOptions
+  ): Promise<RecommendationResult[]> {
+    try {
+      // Get user preference vector
+      const userPreference = await this.getUserPreference(options.userId);
+      
+      if (!userPreference) {
+        // Fall back to general popularity-based recommendations for new users
+        return this.getPopularRecommendations(
+          options.count || 10,
+          options.materialTypes || [],
+          options.excludeMaterialIds || [],
+          options.categoryFilter
+        );
+      }
+      
+      // Prepare filters for material search
+      const filters: Record<string, any> = {};
+      
+      if (options.materialTypes?.length) {
+        filters.material_type = { $in: options.materialTypes };
+      }
+      
+      if (options.categoryFilter) {
+        filters.category = options.categoryFilter;
+      }
+      
+      if (options.excludeMaterialIds?.length) {
+        filters.material_id = { $nin: options.excludeMaterialIds };
+      }
+      
+      // Find similar materials based on user preference vector
+      const similarMaterials = await vectorSearch.findSimilar(
+        userPreference.preferenceVector,
+        this.materialFeatureTableName,
+        this.vectorColumnName,
+        {
+          threshold: options.minRelevance || 0.6,
+          limit: (options.count || 10) * 2, // Get more than needed for diversity filtering
+          filters
+        }
+      );
+      
+      // Process and return recommendations
+      const recommendations = this.processRecommendations(
+        similarMaterials,
+        options.diversityFactor || 0.3,
+        options.count || 10,
+        options.includeExplanations || true,
+        userPreference
+      );
+      
+      return recommendations;
+    } catch (error) {
+      logger.error(`Error getting recommendations: ${error}`);
+      throw new Error(`Error getting recommendations: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  
+  // Additional implementation details...
+}
+```
+
+### Document Processing Service
+
+```typescript
+/**
+ * Document Processing Service
+ * Leverages Supabase Vector to enable semantic search across document repositories
+ */
+export class DocumentProcessingService {
+  private documentsTableName = 'documents';
+  private documentChunksTableName = 'document_chunks';
+  private entitiesTableName = 'document_entities';
+  private vectorColumnName = 'embedding';
+  
+  /**
+   * Process a document and store it with vector embeddings
+   */
+  public async processDocument(
+    documentContent: string,
+    metadata: Omit<DocumentMetadata, 'id'>
+  ): Promise<string> {
+    try {
+      // Generate document ID
+      const documentId = uuidv4();
+      
+      // Store document metadata
+      await this.storeDocumentMetadata({
+        id: documentId,
+        ...metadata
+      });
+      
+      // Split document into chunks
+      const chunks = this.splitDocumentIntoChunks(documentContent);
+      
+      // Process chunks with embeddings
+      await this.processDocumentChunks(documentId, chunks);
+      
+      // Extract and store entities
+      await this.extractAndStoreEntities(documentId, documentContent, metadata.title);
+      
+      return documentId;
+    } catch (error) {
+      logger.error(`Document processing failed: ${error}`);
+      throw new Error(`Document processing failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  
+  /**
+   * Search documents using semantic search
+   */
+  public async searchDocuments(
+    options: DocumentSearchOptions
+  ): Promise<DocumentSearchResult[]> {
+    try {
+      // Generate embedding for the query
+      const queryEmbedding = await this.generateTextEmbedding(options.query);
+      
+      // Get document IDs that match metadata filters
+      const documentIds = await this.getFilteredDocumentIds(
+        options.fileTypes,
+        options.dateRange,
+        options.categories,
+        options.tags,
+        options.author,
+        options.uploadedBy
+      );
+      
+      // Prepare filters for vector search
+      const filters: Record<string, any> = {};
+      
+      if (documentIds.length > 0) {
+        filters.document_id = { $in: documentIds };
+      }
+      
+      // Find similar chunks
+      const similarChunks = await vectorSearch.findSimilar(
+        queryEmbedding,
+        this.documentChunksTableName,
+        this.vectorColumnName,
+        {
+          threshold: options.minRelevance || 0.6,
+          limit: (options.limit || 10) * 3,
+          filters
+        }
+      );
+      
+      // Process and return search results
+      if (!similarChunks || similarChunks.length === 0) {
+        return this.fallbackKeywordSearch(
+          options.query,
+          options.limit || 10,
+          options.offset || 0,
+          documentIds,
+          options.includeMetadata || true,
+          options.highlightResults || true
+        );
+      }
+      
+      return this.processSearchResults(
+        similarChunks,
+        options.includeMetadata || true,
+        options.highlightResults || true,
+        options.limit || 10,
+        options.offset || 0
+      );
+    } catch (error) {
+      logger.error(`Document search failed: ${error}`);
+      throw new Error(`Document search failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  
+  // Additional implementation details...
+}
+```
+
 ## Performance Considerations
 
 1. **Database Scaling**
@@ -828,6 +1300,9 @@ async function createAndManageDataset() {
    - Batched vector operations for bulk processing
    - Vector storage compression
    - Cached vector computations for frequent queries
+   - Multiple vector indices for different application domains
+   - Selective pruning of outdated vectors
+   - Parameterized indices based on domain requirements
 
 3. **Search Performance**
    - Query optimization for complex searches

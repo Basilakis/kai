@@ -38,6 +38,46 @@ The MCP server addresses these issues and provides several benefits:
    - Better handling of high-volume inference requests
    - Load balancing across multiple model server instances
 
+## Components That Should Use MCP
+
+The following ML-intensive components should be moved to MCP server architecture:
+
+1. **Firecrawl** (Already implemented)
+   - Web crawling operations
+   - HTML content extraction and processing
+
+2. **Vector Search Operations**
+   - Semantic similarity operations
+   - Embedding model inference
+   - Batch processing of search queries
+   - GPU-accelerated vector operations
+
+3. **OCR Processing**
+   - Document text extraction
+   - Layout analysis
+   - Handwriting recognition
+   - Form field identification
+   - Multiple specialized OCR models
+
+4. **Image Analysis & Material Recognition**
+   - Feature extraction from images
+   - Material classification
+   - Property detection
+   - Quality assessment
+   - Vision model inference
+
+5. **Agent LLM Inference**
+   - Large language model operations
+   - Token batching
+   - Model version management
+   - Streaming capabilities
+
+6. **ML Training Pipeline**
+   - Transfer learning operations
+   - Hyperparameter optimization
+   - Distributed training
+   - Progress tracking and reporting
+
 ## Implementation Approach
 
 The Kai system uses a hybrid implementation approach:
@@ -52,6 +92,50 @@ The Kai system uses a hybrid implementation approach:
 - Clean TypeScript interface for the MCP server
 - Type-safe API for model management and inference
 - Seamless integration with existing Kai components
+
+### Component Adapters
+- Specialized adapters for each ML component
+- Authentication and metrics support
+- Fallback capabilities for reliability
+- Batching for improved throughput
+
+## Integration Patterns
+
+The MCP architecture supports two distinct integration patterns:
+
+### Same-Package Integration
+When component implementation and MCP adapter are in the same package:
+- Full local fallback support
+- Transparent switching between MCP and local
+- Consistent API regardless of implementation
+
+### Cross-Package Integration
+When component implementation and MCP adapter are in different packages:
+- Uses MCP as a communication bridge
+- Respects package boundaries
+- No direct cross-package dependencies
+
+## Advanced Features
+
+The MCP implementation includes several advanced capabilities:
+
+### Authentication and Security
+- Token-based authentication
+- Automatic token management and renewal
+- Environment-based configuration
+- Secure logging with token masking
+
+### Performance Metrics
+- Request counts, latency, and errors
+- Component-specific metrics collection
+- Configurable sampling rates
+- Integration with monitoring systems
+
+### Batch Processing
+- Automatic batching of similar operations
+- Configurable batch sizes and timing
+- Improved hardware utilization
+- Optimized for GPU/TPU acceleration
 
 ## Architecture Integration
 

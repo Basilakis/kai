@@ -1,22 +1,33 @@
-/**
+ /**
  * Agent Service
  * 
  * Provides communication between frontend components and backend agent system.
  * Handles agent sessions, message exchanges, and specialized agent operations.
  */
-import { v4 as uuidv4 } from 'uuid';
 import axios, { AxiosError } from 'axios';
+
+// Simple UUID v4 generator
+function generateUUID(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
 
 // Error types for better error handling
 export class AgentServiceError extends Error {
-  public statusCode?: number;
-  public context?: any;
+  public readonly statusCode: number | undefined;
+  public readonly context?: any;
   
   constructor(message: string, statusCode?: number, context?: any) {
     super(message);
     this.name = 'AgentServiceError';
     this.statusCode = statusCode;
     this.context = context;
+    
+    // Ensure prototype chain is setup properly
+    Object.setPrototypeOf(this, AgentServiceError.prototype);
   }
 }
 
@@ -24,7 +35,8 @@ export class AgentServiceError extends Error {
 export enum AgentType {
   RECOGNITION = 'recognition',
   MATERIAL_EXPERT = 'material_expert',
-  PROJECT_ASSISTANT = 'project_assistant'
+  PROJECT_ASSISTANT = 'project_assistant',
+  THREE_D_DESIGNER = '3d_designer'
 }
 
 // Message interfaces
@@ -308,7 +320,7 @@ class AgentService {
         });
       }
       
-      const sessionId = uuidv4();
+      const sessionId = generateUUID();
       
       // Create session in backend
       try {
@@ -352,6 +364,9 @@ class AgentService {
             break;
           case AgentType.PROJECT_ASSISTANT:
             welcomeMessage = "Hi! I'm your Project Assistant. I can help you organize materials into projects, calculate quantities, and provide timelines and budgeting assistance. How can I help with your project today?";
+            break;
+          case AgentType.THREE_D_DESIGNER:
+            welcomeMessage = "Welcome! I'm your 3D Designer Assistant. I can help you create and visualize 3D environments from images or text descriptions. I can handle room reconstruction, depth estimation, and furniture placement. How would you like to start?";
             break;
         }
         

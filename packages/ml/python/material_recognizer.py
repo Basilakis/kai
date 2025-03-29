@@ -6,6 +6,7 @@ This script implements a hybrid approach for material recognition using:
 1. Feature-based matching with OpenCV
 2. ML-based classification with TensorFlow/PyTorch
 3. Combined results with confidence scoring
+4. Adaptive embedding selection based on quality assessment
 
 Usage:
     python material_recognizer.py <image_path> [options]
@@ -17,6 +18,10 @@ Options:
     --model-type                Type of model to use (hybrid, feature-based, ml-based)
     --confidence-threshold      Minimum confidence threshold for matches
     --max-results               Maximum number of results to return
+    --adaptive                  Use adaptive embedding selection (default: True)
+    --no-adaptive               Disable adaptive embedding selection
+    --quality-threshold         Quality threshold for adaptive method switching
+    --material-id               Optional material ID for context-aware adaptation
 """
 
 import os
@@ -25,9 +30,17 @@ import json
 import argparse
 import numpy as np
 import cv2
-from typing import Dict, List, Any, Tuple, Optional
+from typing import Dict, List, Any, Tuple, Optional, Union
 import time
 import uuid
+
+# Import embedding bridge if available
+try:
+    from embedding_bridge import generate_embedding
+    EMBEDDING_BRIDGE_AVAILABLE = True
+except ImportError:
+    EMBEDDING_BRIDGE_AVAILABLE = False
+    print("Warning: Embedding bridge not available. Falling back to traditional embedding generation.")
 
 # Conditionally import TensorFlow or PyTorch based on availability
 try:
@@ -61,7 +74,13 @@ os.makedirs(MODEL_DIR, exist_ok=True)
 class MaterialRecognizer:
     """Material recognition system using a hybrid approach"""
     
-    def __init__(self, model_type: str = 'hybrid', confidence_threshold: float = 0.6, max_results: int = 5):
+    def __init__(self, 
+                model_type: str = 'hybrid', 
+                confidence_threshold: float = 0.6, 
+                max_results: int = 5,
+                adaptive: bool = True,
+                quality_threshold: float = 0.65,
+                material_id: Optional[str] = None):
         """
         Initialize the material recognizer
         
@@ -69,10 +88,16 @@ class MaterialRecognizer:
             model_type: Type of model to use (hybrid, feature-based, ml-based)
             confidence_threshold: Minimum confidence threshold for matches
             max_results: Maximum number of results to return
+            adaptive: Whether to use adaptive embedding selection
+            quality_threshold: Quality threshold for adaptive method switching
+            material_id: Optional material ID for context-aware adaptation
         """
         self.model_type = model_type
         self.confidence_threshold = confidence_threshold
         self.max_results = max_results
+        self.adaptive = adaptive and EMBEDDING_BRIDGE_AVAILABLE
+        self.quality_threshold = quality_threshold
+        self.material_id = material_id
         self.start_time = time.time()
         
         # Load material metadata
@@ -138,6 +163,54 @@ class MaterialRecognizer:
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         keypoints, descriptors = self.feature_extractor.detectAndCompute(gray, None)
         return keypoints, descriptors
+    
+    def _generate_embedding(self, image: np.ndarray) -> Dict[str, Any]:
+        """Generate embedding using the adaptive bridge if available"""
+        if not self.adaptive or not EMBEDDING_BRIDGE_AVAILABLE:
+            # Fallback to traditional embedding extraction
+            keypoints, descriptors = self._extract_features(image)
+            return {
+                "vector": descriptors,
+                "dimensions": descriptors.shape[1] if descriptors is not None else 0,
+                "method": self.model_type,
+                "adaptive": False
+            }
+        
+        # Save image to temporary file (required for embedding_bridge)
+        temp_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'temp')
+        os.makedirs(temp_path, exist_ok=True)
+        temp_file = os.path.join(temp_path, f"temp_img_{uuid.uuid4()}.jpg")
+        cv2.imwrite(temp_file, image)
+        
+        try:
+            # Use adaptive embedding generation through the bridge
+            result = generate_embedding(
+                image_path=temp_file,
+                method=self.model_type,
+                material_id=self.material_id,
+                adaptive=True,
+                quality_threshold=self.quality_threshold
+            )
+            
+            # Clean up temp file
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+                
+            return result
+        except Exception as e:
+            print(f"Warning: Error generating adaptive embedding: {e}")
+            # Clean up temp file
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+                
+            # Fallback to traditional embedding extraction
+            keypoints, descriptors = self._extract_features(image)
+            return {
+                "vector": descriptors,
+                "dimensions": descriptors.shape[1] if descriptors is not None else 0,
+                "method": self.model_type,
+                "adaptive": False
+            }
     
     def _feature_based_recognition(self, image: np.ndarray) -> List[Dict[str, Any]]:
         """Perform feature-based recognition using OpenCV"""
@@ -255,8 +328,85 @@ class MaterialRecognizer:
         
         return matches_list[:self.max_results]
     
+    def _adaptive_recognition(self, image: np.ndarray) -> List[Dict[str, Any]]:
+        """Perform recognition using the adaptive embedding system"""
+        # Generate embedding using adaptive bridge
+        embedding_result = self._generate_embedding(image)
+        
+        # Extract embedding vector and metadata
+        vector = embedding_result.get("vector", [])
+        method = embedding_result.get("method", self.model_type)
+        initial_method = embedding_result.get("initial_method", method)
+        quality_scores = embedding_result.get("quality_scores", {})
+        method_switches = embedding_result.get("method_switches", 0)
+        
+        if len(vector) == 0:
+            print("Warning: Failed to generate embedding")
+            return []
+        
+        # Find similar materials using vector similarity
+        matches_list = []
+        for material_id, material_info in self.material_metadata["materials"].items():
+            if "vectorRepresentation" not in material_info:
+                continue
+                
+            material_vector = material_info["vectorRepresentation"]
+            
+            # Calculate cosine similarity
+            similarity = self._calculate_similarity(vector, material_vector)
+            
+            if similarity >= self.confidence_threshold:
+                matches_list.append({
+                    "materialId": material_id,
+                    "confidence": float(similarity),
+                    "features": {
+                        "vectorSimilarity": float(similarity),
+                        "embeddingMethod": method,
+                        "initialMethod": initial_method,
+                        "methodSwitches": method_switches,
+                        "qualityScores": quality_scores
+                    }
+                })
+        
+        # Sort by confidence (descending)
+        matches_list.sort(key=lambda x: x["confidence"], reverse=True)
+        
+        return matches_list[:self.max_results]
+    
+    def _calculate_similarity(self, vec1: Union[List[float], np.ndarray], 
+                             vec2: Union[List[float], np.ndarray]) -> float:
+        """Calculate cosine similarity between two vectors"""
+        # Convert to numpy arrays if needed
+        if not isinstance(vec1, np.ndarray):
+            vec1 = np.array(vec1)
+        if not isinstance(vec2, np.ndarray):
+            vec2 = np.array(vec2)
+            
+        # Ensure vectors have the same dimension
+        min_dim = min(vec1.shape[0], vec2.shape[0])
+        vec1 = vec1[:min_dim]
+        vec2 = vec2[:min_dim]
+        
+        # Calculate cosine similarity
+        dot_product = np.dot(vec1, vec2)
+        norm_a = np.linalg.norm(vec1)
+        norm_b = np.linalg.norm(vec2)
+        
+        if norm_a == 0 or norm_b == 0:
+            return 0.0
+            
+        similarity = dot_product / (norm_a * norm_b)
+        
+        # Normalize to [0, 1] range
+        return (similarity + 1) / 2
+    
     def _hybrid_recognition(self, image: np.ndarray) -> List[Dict[str, Any]]:
         """Combine feature-based and ML-based recognition results"""
+        # If adaptive embedding is enabled, use it
+        if self.adaptive and EMBEDDING_BRIDGE_AVAILABLE:
+            return self._adaptive_recognition(image)
+            
+        # Otherwise use traditional hybrid approach
         feature_matches = self._feature_based_recognition(image)
         ml_matches = self._ml_based_recognition(image)
         
@@ -313,7 +463,9 @@ class MaterialRecognizer:
         aspect_ratio = width / height
         
         # Perform recognition based on model type
-        if self.model_type == 'feature-based':
+        if self.adaptive and EMBEDDING_BRIDGE_AVAILABLE:
+            matches = self._adaptive_recognition(image)
+        elif self.model_type == 'feature-based':
             matches = self._feature_based_recognition(image)
         elif self.model_type == 'ml-based':
             matches = self._ml_based_recognition(image)
@@ -335,6 +487,7 @@ class MaterialRecognizer:
                 "channels": channels,
                 "dominantColors": self._extract_dominant_colors(image)
             },
+            "adaptiveEnabled": self.adaptive and EMBEDDING_BRIDGE_AVAILABLE,
             "processingTime": processing_time
         }
         
@@ -391,6 +544,13 @@ def main():
                         help="Minimum confidence threshold for matches")
     parser.add_argument("--max-results", type=int, default=5,
                         help="Maximum number of results to return")
+    parser.add_argument("--adaptive", action="store_true", default=True,
+                        help="Use adaptive embedding selection")
+    parser.add_argument("--no-adaptive", action="store_false", dest="adaptive",
+                        help="Disable adaptive embedding selection")
+    parser.add_argument("--quality-threshold", type=float, default=0.65,
+                        help="Quality threshold for adaptive method switching")
+    parser.add_argument("--material-id", help="Optional material ID for context-aware adaptation")
     
     args = parser.parse_args()
     
@@ -399,7 +559,10 @@ def main():
         recognizer = MaterialRecognizer(
             model_type=args.model_type,
             confidence_threshold=args.confidence_threshold,
-            max_results=args.max_results
+            max_results=args.max_results,
+            adaptive=args.adaptive,
+            quality_threshold=args.quality_threshold,
+            material_id=args.material_id
         )
         
         # Perform recognition

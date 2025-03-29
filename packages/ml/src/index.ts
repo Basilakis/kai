@@ -499,18 +499,62 @@ export async function trainModel(
 /**
  * Generate vector embeddings for an image
  * @param imagePath Path to the image file
+ * @param options Options for embedding generation
  * @returns Promise with vector embedding
  */
 export async function generateImageEmbedding(
-  imagePath: string
-): Promise<{ vector: number[]; dimensions: number }> {
+  imagePath: string,
+  options: {
+    method?: 'hybrid' | 'feature-based' | 'ml-based';
+    materialId?: string;
+    adaptive?: boolean;
+    qualityThreshold?: number;
+  } = {}
+): Promise<{ 
+  vector: number[]; 
+  dimensions: number; 
+  method?: string;
+  initial_method?: string;
+  quality_scores?: Record<string, number>;
+  method_switches?: number;
+  adaptive?: boolean;
+}> {
   return new Promise((resolve, reject) => {
-    // Run the Python script for embedding generation
-    const scriptPath = path.join(PYTHON_SCRIPTS_DIR, 'embedding_generator.py');
-    const pythonProcess = spawn('python', [
+    // Set default options
+    const method = options.method || 'hybrid';
+    const adaptive = options.adaptive !== false; // Default to true
+    const qualityThreshold = options.qualityThreshold || 0.65;
+
+    // Run the Python script for embedding generation using the bridge
+    const scriptPath = path.join(PYTHON_SCRIPTS_DIR, 'embedding_bridge.py');
+    const args = [
       scriptPath,
-      imagePath
-    ]);
+      imagePath,
+      '--method', method
+    ];
+
+    // Add optional parameters if provided
+    if (options.materialId) {
+      args.push('--material-id', options.materialId);
+    }
+    
+    // Add adaptive parameters
+    args.push('--adaptive');
+    
+    // Add quality threshold if specified
+    if (options.qualityThreshold) {
+      args.push('--quality-threshold', options.qualityThreshold.toString());
+    }
+    
+    // Add cache directory for performance history
+    // Use __dirname instead of process.cwd() for TypeScript compatibility
+    const cacheDir = path.join(__dirname, '..', '..', 'data', 'embedding-cache');
+    args.push('--cache-dir', cacheDir);
+    
+    // Ensure cache directory exists
+    fs.mkdirSync(cacheDir, { recursive: true });
+    
+    const pythonProcess = spawn('python', args);
 
     let resultData = '';
     let errorData = '';

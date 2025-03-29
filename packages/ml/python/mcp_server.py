@@ -23,17 +23,18 @@ import sys
 import json
 import time
 import uuid
+import tempfile
 import numpy as np
 import cv2
 from typing import Dict, List, Any, Tuple, Optional, Union
-from fastapi import FastAPI, File, UploadFile, Body, HTTPException, BackgroundTasks
+from fastapi import FastAPI, File, UploadFile, Body, HTTPException, BackgroundTasks, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import logging
 from enum import Enum
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-
+import base64
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -41,7 +42,6 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()]
 )
 logger = logging.getLogger("mcp_server")
-
 # Conditionally import ML frameworks
 try:
     import tensorflow as tf
@@ -50,7 +50,6 @@ try:
 except ImportError:
     TF_AVAILABLE = False
     logger.warning("TensorFlow is not available")
-
 try:
     import torch
     import torchvision
@@ -59,17 +58,14 @@ try:
 except ImportError:
     TORCH_AVAILABLE = False
     logger.warning("PyTorch is not available")
-
 # Constants
 MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'models')
 FEATURE_MODEL_PATH = os.path.join(MODEL_DIR, 'feature_descriptors.npz')
 ML_MODEL_PATH_TF = os.path.join(MODEL_DIR, 'material_classifier_tf')
 ML_MODEL_PATH_TORCH = os.path.join(MODEL_DIR, 'material_classifier_torch.pt')
 MATERIAL_METADATA_PATH = os.path.join(MODEL_DIR, 'material_metadata.json')
-
 # Ensure model directory exists
 os.makedirs(MODEL_DIR, exist_ok=True)
-
 # Define data models for API
 class ModelType(str, Enum):
     HYBRID = "hybrid"
@@ -604,15 +600,89 @@ async def root():
         "endpoints": {
             "models": "/api/v1/models",
             "recognition": "/api/v1/recognize",
-            "agent": "/api/v1/agent"
+            "agent": "/api/v1/agent",
+            "embeddings": "/api/v1/embeddings"
         }
     }
-
 @app.get("/api/v1/models")
 async def list_models():
     """List all available models."""
     return model_manager.list_models()
-
+@app.post("/api/v1/embeddings")
+async def generate_embeddings(
+    image: UploadFile = File(...),
+    options: str = Body("{}")
+):
+    """
+    Generate vector embeddings for an image.
+    
+    - **image**: The image file to analyze
+    - **options**: JSON string with embedding generation options
+    """
+    try:
+        # Parse options
+        if isinstance(options, str):
+            try:
+                options_dict = json.loads(options)
+            except json.JSONDecodeError:
+                options_dict = {}
+        else:
+            options_dict = options
+            
+        method = options_dict.get("model_type", "hybrid")
+        include_features = options_dict.get("include_features", True)
+        
+        # Read and decode image
+        contents = await image.read()
+        nparr = np.frombuffer(contents, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if img is None:
+            raise HTTPException(status_code=400, detail="Invalid image file")
+        
+        # Create a temporary file for the image
+        temp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as temp:
+                temp_path = temp.name
+                cv2.imwrite(temp_path, img)
+            
+            # Import embedding bridge directly here to ensure it's available
+            try:
+                # First try local import
+                from embedding_bridge import generate_embedding
+            except ImportError:
+                # Fall back to the full path
+                sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+                from embedding_bridge import generate_embedding
+            
+            # Generate embedding
+            start_time = time.time()
+            embedding_result = generate_embedding(
+                image_path=temp_path,
+                method=method,
+                output_dimensions=256
+            )
+            
+            # Add processing time if not included
+            if 'processing_time' not in embedding_result:
+                embedding_result['processing_time'] = time.time() - start_time
+                
+            # Remove image data from result to reduce response size
+            if 'image_metadata' in embedding_result:
+                embedding_result['image_metadata'].pop('path', None)
+                
+            return embedding_result
+        finally:
+            # Clean up temporary file
+            if temp_path and os.path.exists(temp_path):
+                try:
+                    os.unlink(temp_path)
+                except Exception as e:
+                    logger.warning(f"Failed to delete temporary file: {e}")
+    except Exception as e:
+        logger.error(f"Error generating embeddings: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 @app.get("/api/v1/models/{model_id}")
 async def get_model_info(model_id: str):
     """Get information about a specific model."""

@@ -1,6 +1,6 @@
 # Knowledge Base System
 
-The Knowledge Base is the central repository of material information in Kai. It stores comprehensive data about materials, their properties, and relationships, enabling powerful search, organization, and retrieval capabilities.
+The Knowledge Base is the central repository of material information in Kai. It stores comprehensive data about materials, their properties, and relationships, enabling powerful search, organization, and retrieval capabilities. The system now features real-time synchronization, enhanced cross-referencing, deeper hierarchical categorization, bulk operations, and automated entity linking.
 
 ## Features
 
@@ -64,9 +64,11 @@ The system provides comprehensive collection management:
 
 1. **Collection Hierarchy**
    - Parent-child relationships between collections
-   - Nested collection structures
+   - Deep nested collection structures with unlimited levels
+   - Multiple parent categories supported through collection memberships
    - Inheritance of properties
    - Propagation of updates
+   - Path tracking for efficient hierarchy traversal
 
 2. **Collection Types**
    - Manufacturer collections
@@ -91,19 +93,24 @@ The Knowledge Base manages complex relationships between materials:
    - Required accessories
    - Installation dependencies
    - Visual similarity
+   - Series and variant relationships
+   - Entity-based references (automatically detected)
 
 2. **Relationship Properties**
    - Relationship strength (0-1 scale)
-   - Bidirectional or directional
+   - Bidirectional or directional (with automatic inverse creation)
    - Context-specific metadata
    - Source attribution
    - Confidence scoring
+   - Relationship creation timestamp and author tracking
 
 3. **Relationship Discovery**
    - Automated suggestion of potential relationships
-   - Entity linking in text descriptions
+   - Automatic entity linking in text descriptions
+   - Intelligent entity detection with confidence thresholds
    - Visual similarity-based relationships
    - User feedback incorporation
+   - Background processing for relationship suggestions
 
 ### Versioning System
 
@@ -126,6 +133,38 @@ The Knowledge Base includes a robust versioning system:
    - Compliance reporting
    - Change analytics
    - Data lineage tracking
+### Real-Time Synchronization
+
+The Knowledge Base now features comprehensive real-time updates:
+
+1. **WebSocket-based Notifications**
+   - Live updates when material or collection data changes
+   - Client subscription management with connection tracking
+   - Event categorization by operation type (create, update, delete)
+   - Support for relationship and bulk operation events
+   - Optimized for low-latency delivery
+
+2. **Pub/Sub Architecture**
+   - Supabase real-time messaging infrastructure
+   - Prioritized updates for knowledge base changes
+   - Scalable message delivery with reconnection handling
+   - Configurable event filtering by content type
+   - Client-side caching for offline support
+
+3. **Event Types**
+   - Material creation, update, and deletion events
+   - Collection hierarchy modifications
+   - Relationship changes
+   - Search index updates
+   - Version creation
+   - Bulk operation completion notifications
+
+4. **Implementation Benefits**
+   - Real-time collaborative editing support
+   - Live dashboards with instant updates
+   - Immediate notifications for content changes
+   - Enhanced user experience with live content
+   - Background processing with completion notifications
 
 ## Technical Implementation
 
@@ -210,14 +249,40 @@ The Knowledge Base uses the following core data models:
      id: string;
      sourceMaterialId: string;
      targetMaterialId: string;
-     relationshipType: 'complementary' | 'alternative' | 'accessory' | 'required' | 'similar';
+     relationshipType: 'complementary' | 'alternative' | 'accessory' | 'required' | 'similar' | 'series' | 'variant' | 'entity-reference' | 'custom';
      strength: number;
      bidirectional: boolean;
      context?: string;
-     metadata?: Record<string, any>;
+     metadata?: {
+       description?: string;
+       entityType?: string;
+       mentionedText?: string;
+       detectionConfidence?: number;
+       detectionMethod?: 'automatic' | 'manual' | 'suggested';
+       customType?: string;
+       [key: string]: any;
+     };
      createdAt: Date;
      updatedAt: Date;
      createdBy: string;
+   }
+   ```
+
+4. **Collection Membership Model**
+   ```typescript
+   interface CollectionMembershipDocument {
+     id: string;
+     materialId: string;
+     collectionId: string;
+     primaryMembership: boolean;
+     inheritParentProperties: boolean;
+     position: number;
+     path: string[];  // Array representing the path from root to this collection
+     nestingLevel: number;  // Depth in the collection hierarchy
+     metadata?: Record<string, any>;
+     addedAt: Date;
+     updatedAt: Date;
+     addedBy: string;
    }
    ```
 
@@ -279,31 +344,46 @@ The Knowledge Base implements search through several mechanisms:
 
 ### Bulk Operations
 
-The Knowledge Base supports efficient bulk operations:
+The Knowledge Base supports efficient bulk operations with real-time notifications:
 
 1. **Import**
    - Bulk import of materials with validation
    - Duplicate detection and resolution
    - Relationship inference
    - Collection assignment
+   - Batched processing for large datasets
+   - Real-time progress and completion notifications
+   - Detailed success/failure reporting
 
 2. **Update**
    - Bulk update of materials matching criteria
    - Field-specific updates
    - Version tracking for bulk changes
    - Cascading updates to relationships
+   - Batched processing with error resilience
+   - Real-time notifications for updates
 
 3. **Export**
    - Configurable export formats (JSON, CSV)
    - Filtered exports based on criteria
    - Options for including relationships and versions
    - Compression for large exports
+   - Background processing for large exports
 
 4. **Delete**
    - Soft delete with retention period
    - Hard delete with relationship cleanup
    - Bulk delete with criteria
    - Deletion audit logging
+   - Batched processing with failure tracking
+   - Real-time notifications for completion
+
+5. **Relationship Management**
+   - Bulk relationship creation with validation
+   - Automatic bidirectional relationship handling
+   - Batch processing with configurable batch sizes
+   - Real-time notification of creation progress
+   - Error handling with partial success support
 
 ### Entity Linking
 
@@ -311,15 +391,21 @@ The Entity Linking service automatically identifies relationships between materi
 
 1. **Text Analysis**
    - Natural language processing to identify entity mentions
+   - Machine learning-based entity recognition in descriptions
+   - Material, collection, and property detection
    - Context-aware linking to existing materials and collections
    - Confidence scoring for potential links
+   - Configurable confidence thresholds
    - User verification workflow for uncertain links
 
 2. **Relationship Creation**
    - Automatic creation of relationships based on text analysis
+   - Immediate relationship creation upon material creation/update
    - Type inference from context
    - Bidirectionality determination
-   - Strength estimation based on context
+   - Strength estimation based on context and confidence
+   - Background processing for entity linking
+   - Detailed metadata for entity-based relationships
 
 ## API Usage
 
@@ -392,15 +478,34 @@ const versions = await knowledgeBaseService.getMaterialVersionHistory('material-
 ### Bulk Operations
 
 ```typescript
-// Bulk import materials
-const importResults = await knowledgeBaseService.bulkImportMaterials(
+// Bulk import materials with real-time notifications
+const importResults = await realTimeKnowledgeBaseService.bulkImportMaterials(
   materialsArray,
-  'user-id',
   {
     updateExisting: true,
     detectDuplicates: true,
     validateSchema: true,
-    collectionId: 'collection-id'
+    collectionId: 'collection-id',
+    userId: 'user-id'
+  }
+);
+
+// Subscribe to real-time updates
+scalableMessageBroker.subscribeWithOptions(
+  'system',
+  (message) => {
+    if (message.type === MessageType.KNOWLEDGE_BASE_EVENT) {
+      const { eventType, payload } = message.data;
+      
+      if (eventType === KnowledgeBaseEventType.BULK_OPERATION_COMPLETED) {
+        console.log(`Bulk ${payload.operationType} completed: ${payload.count}/${payload.totalRequested}`);
+      }
+    }
+  },
+  {
+    useAcknowledgment: true,
+    autoAcknowledge: true,
+    enableCache: true
   }
 );
 

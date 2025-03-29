@@ -1,0 +1,7 @@
+pybullet>=3.2.5
+numpy>=1.21.0
+torch>=1.9.0
+diffuscene>=0.1.0
+pytorch3d>=0.6.0
+trimesh>=3.9.0
+scipy>=1.7.0

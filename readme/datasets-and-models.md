@@ -8,6 +8,7 @@ The Kai platform supports multiple ways to manage datasets and AI models:
 
 1. **Dataset Management**
    - Upload custom datasets (ZIP archives with organized folders or CSV mapping files)
+   - Generate vector embeddings from uploaded images for knowledge base and training
    - Import premade datasets from public repositories
    - Data quality assessment and enhancement
    - Dataset versioning and metadata management
@@ -23,6 +24,98 @@ The Kai platform supports multiple ways to manage datasets and AI models:
    - Configure training parameters and techniques
    - Monitor progress with real-time metrics
    - Evaluate performance after completion
+
+## Custom Dataset Upload
+
+The system supports uploading custom datasets directly using ZIP files or CSV mapping files.
+
+### ZIP Archive Upload with Vector Embedding Generation
+
+You can upload a ZIP archive containing organized image folders, with each folder representing a dataset class. The system will:
+
+1. Extract images from the ZIP archive
+2. Organize them into dataset classes
+3. Generate vector embeddings for each image
+4. Store both the images and their embeddings in the database
+5. Make them available for both the knowledge base and model training
+
+![ZIP Upload Process](https://storage.googleapis.com/kai-docs-assets/zip-upload-embedding-workflow.png)
+
+#### How to Upload a ZIP Dataset with Embeddings
+
+1. Navigate to **Admin Panel → Datasets → Upload Dataset**
+2. Select the **ZIP Upload** tab
+3. Choose your ZIP file containing organized image folders
+4. Enable the **Generate Vector Embeddings** option
+5. Configure additional options if needed
+6. Click **Upload and Process**
+
+```javascript
+// Client-side code example for uploading a ZIP dataset with embeddings
+async function uploadZipDatasetWithEmbeddings(zipFile, options) {
+  try {
+    const formData = new FormData();
+    formData.append('file', zipFile);
+    formData.append('name', options.name);
+    formData.append('description', options.description);
+    formData.append('generateEmbeddings', 'true'); // Enable embedding generation
+    
+    const response = await fetch('/api/admin/datasets/upload/zip', {
+      method: 'POST',
+      body: formData,
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to upload dataset');
+    }
+    
+    const result = await response.json();
+    console.log(`Successfully processed ${result.imageCount} images across ${result.classCount} classes`);
+    console.log(`Generated ${result.embeddingsGenerated} vector embeddings`);
+    
+    return result;
+  } catch (error) {
+    console.error('Error uploading ZIP dataset:', error);
+    throw error;
+  }
+}
+```
+
+#### ZIP Dataset Structure
+
+For best results, organize your ZIP file with the following structure:
+
+```
+dataset.zip
+├── class1/
+│   ├── image1.jpg
+│   ├── image2.png
+│   └── ...
+├── class2/
+│   ├── image1.jpg
+│   ├── image2.png
+│   └── ...
+└── ...
+```
+
+Each top-level folder becomes a dataset class. Supported image formats include JPG, JPEG, PNG, WEBP, and GIF.
+
+#### Generated Embeddings
+
+The vector embeddings generated from your uploaded images are:
+
+- Stored in the vector database for similarity search
+- Available for both knowledge base integration and model training
+- Accessible through the API for custom applications
+- Used to improve material recognition accuracy
+
+#### Vector Embedding Options
+
+When uploading a ZIP file with embedding generation enabled, you can configure:
+
+- **Embedding Dimension**: Control the vector size (default: 256)
+- **Embedding Method**: Choose between hybrid, feature-based, or ML-based approaches
+- **Quality Threshold**: Set minimum quality requirements for generated embeddings
 
 ## Premade Datasets Integration
 
@@ -132,10 +225,90 @@ The system supports models from multiple frameworks:
 
 | Framework | File Formats | Model Types |
 |-----------|--------------|-------------|
-| TensorFlow | .pb, .h5, .tflite, .savedmodel | Classification, detection |
-| PyTorch | .pt, .pth | Classification, segmentation |
+| TensorFlow | .pb, .h5, .tflite, .savedmodel | Classification, detection, 3D reconstruction |
+| PyTorch | .pt, .pth | Classification, segmentation, text-to-3D |
 | ONNX | .onnx | Cross-platform models |
 | Custom | .bin, .model | Project-specific formats |
+| NeRF | .ngp, .nerf | Neural radiance fields |
+
+### 3D Visualization Models
+
+The system includes specialized models for 3D visualization:
+
+#### NeRF-based Reconstruction
+- **NerfStudio**
+  * Format: Custom NeRF format
+  * Use: Room reconstruction from images
+  * Features: Lighting estimation, material properties
+  * Integration: Via Python API
+
+- **Instant-NGP**
+  * Format: .ngp
+  * Use: Fast scene reconstruction
+  * Features: Real-time preview, optimization
+  * Integration: CUDA-accelerated backend
+
+#### Text-to-3D Generation
+- **Shap-E**
+  * Format: PyTorch (.pth)
+  * Use: Base structure generation
+  * Features: Text-guided shape synthesis
+  * Integration: REST API
+
+- **GET3D**
+  * Format: PyTorch (.pth)
+  * Use: Detailed scene generation
+  * Features: Furniture placement, texturing
+  * Integration: Python API
+
+- **Hunyuan3D-2**
+  * Format: Custom (.h3d)
+  * Use: Alternative generation
+  * Features: Style transfer, scene variation
+  * Integration: REST API
+
+#### Scene Understanding
+- **YOLO v8**
+  * Format: PyTorch (.pt)
+  * Use: Object detection
+  * Features: Real-time detection, classification
+  * Integration: Python API
+
+- **MiDaS**
+  * Format: PyTorch (.pt)
+  * Use: Depth estimation
+  * Features: Single-image depth
+  * Integration: ONNX Runtime
+
+- **SAM**
+  * Format: PyTorch (.pth)
+  * Use: Scene segmentation
+  * Features: Zero-shot segmentation
+  * Integration: REST API
+
+#### Model Configuration
+
+Example configuration for 3D visualization models:
+
+```typescript
+interface ModelEndpoints {
+  nerfStudio: string;
+  instantNgp: string;
+  shapE: string;
+  get3d: string;
+  hunyuan3d: string;
+  blenderProc: string;
+}
+
+const modelConfig: ModelEndpoints = {
+  nerfStudio: process.env.NERF_STUDIO_ENDPOINT,
+  instantNgp: process.env.INSTANT_NGP_ENDPOINT,
+  shapE: process.env.SHAPE_E_ENDPOINT,
+  get3d: process.env.GET3D_ENDPOINT,
+  hunyuan3d: process.env.HUNYUAN3D_ENDPOINT,
+  blenderProc: process.env.BLENDER_PROC_ENDPOINT
+};
+```
 
 ### Supported Model Repositories
 
@@ -366,7 +539,39 @@ def configure_transfer_learning(base_model, num_classes, freeze_layers=True, tra
 
 ## Examples and Use Cases
 
-### Example 1: Ceramic Tile Classification
+### Example 1: Material Dataset with Vector Embeddings
+
+```typescript
+// Upload a ZIP archive of material images and generate embeddings
+async function createMaterialDatasetWithEmbeddings() {
+  // Upload ZIP file with vector embedding generation
+  const zipFile = document.getElementById('dataset-file').files[0];
+  
+  const uploadResult = await uploadZipDatasetWithEmbeddings(zipFile, {
+    name: 'Material Surfaces Dataset',
+    description: 'Dataset of various material surfaces with vector embeddings',
+  });
+  
+  console.log(`Created dataset with ${uploadResult.imageCount} images`);
+  console.log(`Generated ${uploadResult.embeddingsGenerated} vector embeddings`);
+  
+  // Now the dataset is ready for both knowledge base and training use
+  
+  // Optional: Start training a model using this dataset
+  const trainingJob = await startModelTraining({
+    datasetId: uploadResult.dataset.id,
+    modelId: 'pretrained-material-classifier',
+    // Other training parameters...
+  });
+  
+  return {
+    datasetId: uploadResult.dataset.id,
+    trainingJobId: trainingJob.id
+  };
+}
+```
+
+### Example 2: Ceramic Tile Classification
 
 ```typescript
 // Import ImageNet pretrained model and fine-tune on ceramic tiles dataset
@@ -411,7 +616,7 @@ async function setupCeramicTileClassifier() {
 }
 ```
 
-### Example 2: Multi-Model Ensemble
+### Example 3: Multi-Model Ensemble
 
 ```typescript
 // Create an ensemble model using multiple pretrained models and datasets
@@ -462,6 +667,8 @@ async function createMaterialEnsemble() {
 2. **Class Balance**: Ensure classes are balanced or use techniques to address imbalance
 3. **Diversity**: Select datasets with diverse examples covering the variance in your target domain
 4. **Metadata Richness**: Prefer datasets with comprehensive metadata when available
+5. **Vector Embedding Generation**: Enable vector embedding generation for ZIP uploads to leverage similarity search and improve recognition capabilities
+6. **Embedding Quality**: For optimal embedding results, use clear, well-lit images with good contrast and minimal background noise
 
 ### Model Selection
 

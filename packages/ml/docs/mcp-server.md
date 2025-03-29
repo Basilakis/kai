@@ -68,63 +68,7 @@ The TypeScript client SDK integrates with the Node.js application:
 
 ## Installation & Configuration
 
-### Prerequisites
-
-- Docker (for containerized deployment)
-- Python 3.8+ (for local development)
-- Node.js 14+ (for client SDK)
-
-### Environment Variables
-
-The MCP Server and client can be configured with the following environment variables:
-
-#### Server Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `MCP_SERVER_PORT` | Port for the MCP server | `8000` |
-| `MODEL_DIR` | Directory for storing model files | `/app/models` |
-| `LOG_LEVEL` | Logging level (DEBUG, INFO, WARNING, ERROR) | `INFO` |
-| `ENABLE_AGENT_API` | Enable agent communication APIs | `true` |
-
-#### Client Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `MCP_SERVER_URL` | URL of the MCP server | `http://localhost:8000` |
-| `USE_MCP_SERVER` | Enable MCP server integration | `false` |
-| `MCP_HEALTH_CHECK_TIMEOUT` | Timeout for health check (ms) | `5000` |
-
-### Docker Deployment
-
-The MCP Server can be deployed as a Docker container:
-
-```bash
-# Build the MCP server image
-docker build -t kai-mcp-server -f packages/ml/Dockerfile.mcp .
-
-# Run the MCP server container
-docker run -d \
-  --name kai-mcp-server \
-  -p 8000:8000 \
-  -v $(pwd)/models:/app/models \
-  kai-mcp-server
-```
-
-### Local Development
-
-For local development, you can run the MCP server directly:
-
-```bash
-# Install required packages
-cd packages/ml
-pip install -r requirements.txt
-pip install fastapi uvicorn python-multipart
-
-# Run the server
-cd packages/ml/python
-uvicorn mcp_server:app --reload --host 0.0.0.0 --port 8000
-```
+> **Note**: Installation and configuration instructions for the MCP Server have been consolidated into the [Deployment Guide](/readme/deployment-guide.md#mcp-server-installation).
 
 ## Usage
 
