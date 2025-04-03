@@ -1,5 +1,7 @@
 import { ServiceConfig } from '../baseService';
 import { MaterialSearchResult } from '../materialService';
+import { DataPipelineService } from './dataPipelineService';
+import { GPUTier, GPU_TIER_CONFIGS, TaskPriority, RESOURCE_THRESHOLDS } from './types';
 
 interface SearchOptions {
   query: string;
@@ -52,7 +54,7 @@ interface SearchResult {
   total: number;
 }
 
-interface ModelEndpoints {
+export interface ModelEndpoints {
   nerfStudio: string;
   instantNgp: string;
   shapE: string;
@@ -61,6 +63,9 @@ interface ModelEndpoints {
   blenderProc: string;
   architecturalRecognition: string;
   roomLayoutGenerator: string;
+  controlNet: string;
+  text2material: string;
+  clip: string;
 }
 
 interface HunyuanConfig {
@@ -69,35 +74,224 @@ interface HunyuanConfig {
   guidance_scale?: number;
 }
 
+interface HouseGenerationConfig {
+  style?: string;
+  roomCount?: number;
+  floorCount?: number;
+  constraints?: {
+    maxArea?: number;
+    minArea?: number;
+    requireGarage?: boolean;
+    requireBasement?: boolean;
+  };
+  texturePreferences?: {
+    exteriorStyle?: string;
+    interiorStyle?: string;
+    materialTypes?: string[];
+  };
+}
+
+interface HouseGenerationResult {
+  outline: {
+    sketch: string; // Base64 encoded image
+    refined: string; // Base64 encoded image
+  };
+  shell: {
+    model: string; // GLB format base64
+    preview: string; // Base64 encoded preview
+  };
+  detailedScene: {
+    model: string; // GLB format base64
+    preview: string; // Base64 encoded preview
+  };
+  furniture: Array<{
+    type: string;
+    model: string; // GLB format base64
+    position: { x: number; y: number; z: number };
+    rotation: { x: number; y: number; z: number };
+  }>;
+  textures: {
+    exterior: Record<string, string>; // Material name -> Base64 texture maps
+    interior: Record<string, string>; // Material name -> Base64 texture maps
+  };
+}
+
 export class ThreeDService {
   private modelEndpoints: ModelEndpoints;
   private apiBase: string;
+  private dataPipeline: DataPipelineService;
 
   constructor(modelEndpoints: ModelEndpoints) {
     this.modelEndpoints = modelEndpoints;
     this.apiBase = process.env.ML_SERVICE_URL || 'http://localhost:5000';
+    
+    // Initialize data pipeline with configuration
+    this.dataPipeline = new DataPipelineService(
+      {
+        maxSize: 2048,  // 2GB cache
+        ttl: 3600,      // 1 hour
+        priority: 'lru'
+      },
+      [
+        { level: 0, vertexReduction: 100, textureResolution: 4096, maxDistance: 10 },
+        { level: 1, vertexReduction: 75, textureResolution: 2048, maxDistance: 50 },
+        { level: 2, vertexReduction: 50, textureResolution: 1024, maxDistance: 100 },
+        { level: 3, vertexReduction: 25, textureResolution: 512, maxDistance: 200 }
+      ],
+      {
+        type: 'bvh',
+        maxDepth: 16,
+        minObjectsPerNode: 4
+      },
+      {
+        maxBatchSize: 4,
+        priorityQueue: true,
+        memoryLimit: 4096  // 4GB
+      },
+      this.detectGPUTier()
+    );
+  }
+
+  getModelEndpoints(): ModelEndpoints {
+    return { ...this.modelEndpoints };
+  }
+
+  async generateFurniturePlacement(layout: RoomLayout, requirements: {
+    style?: string;
+    constraints?: {
+      minSpacing?: number;
+      alignToWalls?: boolean;
+      maxOccupancy?: number;
+    };
+  }): Promise<{
+    furniture: Array<{
+      type: string;
+      position: { x: number; y: number; z: number };
+      rotation: { y: number };
+      dimensions: { width: number; length: number; height: number };
+    }>;
+    metadata: {
+      style: string;
+      occupancyRate: number;
+      flowScore: number;
+    };
+  }> {
+    try {
+      const response = await fetch(`${this.modelEndpoints.blenderProc}/furniture-placement`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ layout, requirements })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to generate furniture placement: ${response.statusText}`);
+      }
+
+      return response.json();
+    } catch (error) {
+      console.error('Error generating furniture placement:', error);
+      throw error;
+    }
   }
 
   async processArchitecturalDrawing(drawing: ArrayBuffer): Promise<RoomLayout> {
     try {
-      const formData = new FormData();
-      formData.append('drawing', new Blob([drawing]));
-
-      const response = await fetch(`${this.modelEndpoints.architecturalRecognition}/process`, {
-        method: 'POST',
-        body: formData
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to process architectural drawing: ${response.statusText}`);
+      // Generate cache key from ArrayBuffer content hash
+      const cacheKey = `arch_drawing_${Array.from(new Uint8Array(drawing))
+        .reduce((hash, byte) => (((hash << 5) - hash) + byte) | 0, 0)
+        .toString(36)}`;
+      const cached = await this.dataPipeline.getFromCache(cacheKey);
+      if (cached) {
+        return this.convertUnifiedToRoomLayout(cached);
       }
 
-      const result = await response.json();
-      return this.validateArchitecturalStandards(result);
+      // Schedule GPU task for processing
+      const processTask = async () => {
+        const formData = new FormData();
+        formData.append('drawing', new Blob([drawing]));
+
+        const response = await fetch(`${this.modelEndpoints.architecturalRecognition}/process`, {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to process architectural drawing: ${response.statusText}`);
+        }
+
+        const result = await response.json();
+        const validated = await this.validateArchitecturalStandards(result);
+        
+        // Convert to unified format and cache
+        const unifiedData = await this.dataPipeline.convertToUnifiedFormat(validated, 'custom');
+        await this.dataPipeline.cacheIntermediateResult(cacheKey, unifiedData);
+        
+        // Generate acceleration structure for rendering
+        await this.dataPipeline.generateAccelerationStructure(unifiedData);
+        
+        return validated;
+      };
+
+      return await this.dataPipeline.scheduleGPUTask(
+        processTask,
+        TaskPriority.HIGH,
+        512 // Estimated memory usage in MB
+      );
     } catch (error) {
       console.error('Error processing architectural drawing:', error);
       throw error;
     }
+  }
+
+  private async convertUnifiedToRoomLayout(unifiedData: any): Promise<RoomLayout> {
+    // Convert unified format back to RoomLayout
+    const layout: RoomLayout = {
+      dimensions: {
+        width: unifiedData.metadata.bbox.max[0] - unifiedData.metadata.bbox.min[0],
+        length: unifiedData.metadata.bbox.max[2] - unifiedData.metadata.bbox.min[2],
+        height: unifiedData.metadata.bbox.max[1] - unifiedData.metadata.bbox.min[1]
+      },
+      elements: [],
+      metadata: unifiedData.metadata
+    };
+
+    // Convert unified geometry to architectural elements
+    unifiedData.hierarchy.forEach((node: any) => {
+      if (node.type === 'mesh') {
+        layout.elements.push({
+          type: this.determineElementType(node),
+          position: {
+            x: node.transform.position[0],
+            y: node.transform.position[1],
+            z: node.transform.position[2]
+          },
+          dimensions: this.calculateDimensions(unifiedData.vertices, node),
+          rotation: { y: node.transform.rotation[1] }
+        });
+      }
+    });
+
+    return layout;
+  }
+
+  private determineElementType(node: any): 'wall' | 'window' | 'door' {
+    // Implement logic to determine element type based on node properties
+    return 'wall'; // Placeholder
+  }
+
+  private calculateDimensions(vertices: Float32Array, node: any): { width: number; height: number; depth: number } {
+    // Implement dimension calculation from vertices
+    return {
+      width: 1,
+      height: 1,
+      depth: 1
+    }; // Placeholder
+  }
+
+  private detectGPUTier(): GPUTier {
+    // Implement GPU detection logic
+    // This is a placeholder - actual implementation would check GPU capabilities
+    return 'medium';
   }
 
   async generateRoomLayout(specifications: {
@@ -109,7 +303,9 @@ export class ThreeDService {
     style?: string;
   }): Promise<RoomLayout[]> {
     try {
-      const response = await fetch(`${this.modelEndpoints.roomLayoutGenerator}/generate`, {
+      // Schedule GPU task with high priority
+      const generateTask = async () => {
+        const response = await fetch(`${this.modelEndpoints.roomLayoutGenerator}/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(specifications)
@@ -119,8 +315,35 @@ export class ThreeDService {
         throw new Error(`Failed to generate room layout: ${response.statusText}`);
       }
 
-      const layouts = await response.json() as RoomLayout[];
-      return Promise.all(layouts.map((layout: RoomLayout) => this.validateArchitecturalStandards(layout)));
+        const layouts = await response.json() as RoomLayout[];
+        return layouts;
+      };
+
+      const layouts = await this.dataPipeline.scheduleGPUTask(
+        generateTask,
+        TaskPriority.HIGH,
+        1024 // Estimated memory usage in MB
+      );
+
+      // Process each layout with optimizations
+      const optimizedLayouts = await Promise.all(layouts.map(async (layout: RoomLayout) => {
+        const validated = await this.validateArchitecturalStandards(layout);
+        
+        // Convert to unified format for optimization
+        const unifiedData = await this.dataPipeline.convertToUnifiedFormat(validated, 'custom');
+        
+        // Generate LODs
+        await Promise.all([0, 1, 2, 3].map(level => 
+          this.dataPipeline.generateLOD(unifiedData, level)
+        ));
+        
+        // Generate acceleration structure
+        await this.dataPipeline.generateAccelerationStructure(unifiedData);
+        
+        return validated;
+      }));
+
+      return optimizedLayouts;
     } catch (error) {
       console.error('Error generating room layout:', error);
       throw error;
@@ -197,8 +420,13 @@ export class ThreeDService {
     style?: string;
     constraints?: any;
     hunyuanConfig?: HunyuanConfig;
+    houseConfig?: HouseGenerationConfig;
   }): Promise<any> {
     try {
+      if (options.houseConfig) {
+        return await this.generateHouse(description, options.houseConfig);
+      }
+
       // Generate base structure with Shap-E
       const baseStructure = await this.generateBaseStructure(description);
 
@@ -299,6 +527,114 @@ export class ThreeDService {
     }
 
     return response.json();
+  }
+
+  async generateHouse(description: string, config: HouseGenerationConfig): Promise<HouseGenerationResult> {
+    try {
+      // Generate house outline using ControlNet
+      const outlineResponse = await fetch(`${this.modelEndpoints.controlNet}/generate-outline`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description, style: config.style })
+      });
+
+      if (!outlineResponse.ok) {
+        throw new Error(`Failed to generate house outline: ${outlineResponse.statusText}`);
+      }
+
+      const outline = await outlineResponse.json();
+
+      // Generate house shell using Shap-E
+      const shellResponse = await fetch(`${this.modelEndpoints.shapE}/generate-house`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          outline: outline.refined,
+          description,
+          config: {
+            roomCount: config.roomCount,
+            floorCount: config.floorCount,
+            constraints: config.constraints
+          }
+        })
+      });
+
+      if (!shellResponse.ok) {
+        throw new Error(`Failed to generate house shell: ${shellResponse.statusText}`);
+      }
+
+      const shell = await shellResponse.json();
+
+      // Generate detailed scene with GET3D
+      const sceneResponse = await fetch(`${this.modelEndpoints.get3d}/generate-house-scene`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          shell: shell.model,
+          description,
+          style: config.style
+        })
+      });
+
+      if (!sceneResponse.ok) {
+        throw new Error(`Failed to generate detailed scene: ${sceneResponse.statusText}`);
+      }
+
+      const detailedScene = await sceneResponse.json();
+
+      // Generate textures using Text2Material
+      const textureResponse = await fetch(`${this.modelEndpoints.text2material}/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          exterior: config.texturePreferences?.exteriorStyle,
+          interior: config.texturePreferences?.interiorStyle,
+          materials: config.texturePreferences?.materialTypes
+        })
+      });
+
+      if (!textureResponse.ok) {
+        throw new Error(`Failed to generate textures: ${textureResponse.statusText}`);
+      }
+
+      const textures = await textureResponse.json();
+
+      // Validate visual-text matching with CLIP
+      const clipResponse = await fetch(`${this.modelEndpoints.clip}/validate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          description,
+          images: {
+            outline: outline.refined,
+            shell: shell.preview,
+            scene: detailedScene.preview
+          }
+        })
+      });
+
+      if (!clipResponse.ok) {
+        throw new Error(`Failed to validate with CLIP: ${clipResponse.statusText}`);
+      }
+
+      const clipValidation = await clipResponse.json();
+
+      // If CLIP score is low, try to refine the results
+      if (clipValidation.score < 0.7) {
+        // Implement refinement logic here
+      }
+
+      return {
+        outline,
+        shell,
+        detailedScene,
+        furniture: detailedScene.furniture,
+        textures
+      };
+    } catch (error) {
+      console.error('Error generating house:', error);
+      throw error;
+    }
   }
   async refineResult(result: any, feedback: string, options?: any): Promise<any> {
     try {

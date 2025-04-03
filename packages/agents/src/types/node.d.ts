@@ -1,57 +1,34 @@
-/**
- * Type declarations for Node.js
- * 
- * This file provides TypeScript declarations for Node.js APIs used in
- * the agent system, including process, environment variables, etc.
- */
-
-declare namespace NodeJS {
-  interface ProcessEnv {
-    [key: string]: string | undefined;
-    NODE_ENV?: 'development' | 'production' | 'test';
-    OPENAI_API_KEY?: string;
-    PORT?: string;
-    HOST?: string;
-    DEBUG?: string;
-    LOG_LEVEL?: 'debug' | 'info' | 'warn' | 'error';
-  }
-
-  interface Process {
-    env: ProcessEnv;
-    cwd(): string;
-    exit(code?: number): never;
-    on(event: string, listener: (...args: any[]) => void): this;
-    stdout: {
-      write(data: string | Uint8Array): boolean;
-    };
-    stderr: {
-      write(data: string | Uint8Array): boolean;
-    };
-    stdin: {
-      on(event: string, listener: (...args: any[]) => void): this;
-    };
-    platform: string;
-    version: string;
-    versions: {
-      node: string;
-      [key: string]: string;
-    };
-    pid: number;
-    uptime(): number;
-    memoryUsage(): {
-      rss: number;
-      heapTotal: number;
-      heapUsed: number;
-      external: number;
-      arrayBuffers: number;
-    };
-    nextTick(callback: (...args: any[]) => void, ...args: any[]): void;
-    hrtime(time?: [number, number]): [number, number];
-  }
+declare module 'fs' {
+  export type PathLike = string | Buffer | URL;
+  export function existsSync(path: PathLike): boolean;
+  export function mkdirSync(path: PathLike, options?: { recursive?: boolean }): void;
+  export function readFileSync(path: string, options?: { encoding?: string | null; flag?: string } | string | null): string | Buffer;
+  export function writeFileSync(path: string, data: string | Buffer, options?: { encoding?: string | null; flag?: string } | string | null): void;
+  export function unlinkSync(path: string): void;
+  export function rmdirSync(path: string, options?: { recursive?: boolean }): void;
+  export function readdirSync(path: string): string[];
+  export function statSync(path: string): {
+    isFile(): boolean;
+    isDirectory(): boolean;
+    size: number;
+    mtime: Date;
+  };
 }
 
-declare const process: NodeJS.Process;
-
 declare module 'process' {
-  export = process;
+  export const env: {
+    [key: string]: string | undefined;
+    NODE_ENV?: 'development' | 'production' | 'test';
+  };
+  export function cwd(): string;
+}
+
+declare module 'path' {
+  export function join(...paths: string[]): string;
+  export function resolve(...paths: string[]): string;
+  export function dirname(path: string): string;
+  export function basename(path: string, ext?: string): string;
+  export function extname(path: string): string;
+  export function normalize(path: string): string;
+  export function relative(from: string, to: string): string;
 }

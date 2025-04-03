@@ -12,6 +12,7 @@ import { trainingProgressServer } from './services/websocket/training-progress';
 import { knowledgeBaseEventsServer } from './services/websocket/knowledge-base-events';
 import { KnowledgeBaseService } from './services/knowledgeBase/knowledgeBaseService';
 import { supabaseClient } from './services/supabase/supabaseClient';
+import { initializeStorage } from './services/storage/storageInitializer';
 
 // Add type declaration for Node.js process
 declare global {
@@ -99,6 +100,15 @@ const startServer = async () => {
   // Initialize Services
   const knowledgeBaseService = KnowledgeBaseService.getInstance();
   console.log('Knowledge Base Service initialized');
+  
+  // Initialize S3 Storage
+  try {
+    initializeStorage();
+    console.log('S3 Storage initialized successfully');
+  } catch (error) {
+    console.error('Failed to initialize S3 Storage:', error);
+    throw error; // Rethrow to prevent server startup if storage init fails
+  }
   
   // Initialize WebSocket servers
   queueEventsServer.initialize(httpServer);

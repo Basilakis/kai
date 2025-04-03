@@ -1,38 +1,34 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "CommonJS",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "outDir": "./dist",
-    "rootDir": "./src",
+    "rootDir": "../../",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "declaration": true,
     "resolveJsonModule": true,
-    "moduleResolution": "node",
     "baseUrl": ".",
     "paths": {
       "*": ["node_modules/*", "src/types/*"],
-      "@kai/agents/*": ["src/*"]
+      "@kai/agents/*": ["src/*"],
+      "@kai/shared/*": ["../shared/src/*"]
     },
     "allowJs": true,
-    "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true,
     "typeRoots": [
       "./node_modules/@types",
       "./src/types"
-    ],
-    "types": [
-      "node",
-      "jest",
-      "three",
-      "python-shell"
     ]
   },
   "include": [
-    "src/**/*"
+    "src/**/*",
+    "src/types/**/*.d.ts",
+    "../shared/src/**/*"
   ],
   "exclude": [
     "node_modules",

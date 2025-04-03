@@ -2,14 +2,20 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "outDir": "./dist",
-    "rootDir": "./src",
+    "rootDir": "../../",
     "baseUrl": "./",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "@kai/shared/*": ["../shared/src/*"],
+      "three": ["../../node_modules/@types/three"],
+      "three/*": ["../../node_modules/@types/three/*"],
+      "react": ["../../node_modules/@types/react"],
+      "react/*": ["../../node_modules/@types/react/*"]
     },
     "typeRoots": [
       "./node_modules/@types",
-      "../../node_modules/@types"
+      "../../node_modules/@types",
+      "./src/types"
     ],
     "esModuleInterop": true,
     "resolveJsonModule": true,
@@ -38,7 +44,9 @@
     "jsxFragmentFactory": "React.Fragment"
   },
   "include": [
-    "src/**/*"
+    "src/**/*",
+    "src/types/**/*",
+    "../shared/src/**/*"
   ],
   "exclude": [
     "node_modules",

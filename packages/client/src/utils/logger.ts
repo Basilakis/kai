@@ -1,229 +1,71 @@
-/**
- * Structured Logging System
- * 
- * Provides consistent log formatting, filtering, and handling across the application.
- * This makes debugging easier and enables potential integration with external logging services.
- */
-
+import { Logger as SharedLogger, LogLevel as SharedLogLevel, LoggerConfig as SharedLoggerConfig } from '@kai/shared/utils/logger';
 import { EnhancedError, ErrorCategory, reportError } from './errorHandling';
 
-// Log levels in order of severity
-export enum LogLevel {
-  DEBUG = 'debug',
-  INFO = 'info',
-  WARN = 'warn',
-  ERROR = 'error',
-  SILENT = 'silent'  // Special level to disable all logging
+export type { SharedLogLevel as LogLevel };
+
+// Extended log entry with client-specific fields
+export interface ClientLogEntry {
+  tags?: string[];
+  error?: Error;
+  component?: string;
 }
 
-// Log entry structure for consistent formatting
-export interface LogEntry {
-  timestamp: Date;
-  level: LogLevel;
-  message: string;
-  context?: Record<string, any> | undefined;
-  error?: Error | undefined;
-  component?: string | undefined;
-  tags?: string[] | undefined;
+// Extended logger config with client-specific options
+export interface ClientLoggerConfig extends SharedLoggerConfig {
+  component?: string;
+  defaultTags?: string[];
 }
-
-// Logger configuration
-export interface LoggerConfig {
-  minLevel: LogLevel;
-  enableConsole: boolean;
-  component?: string | undefined;
-  defaultTags?: string[] | undefined;
-  environment?: 'development' | 'test' | 'production' | undefined;
-}
-
-// Default config based on environment
-const defaultConfig: LoggerConfig = {
-  minLevel: (typeof process !== 'undefined' && process.env?.NODE_ENV === 'production') 
-    ? LogLevel.INFO 
-    : LogLevel.DEBUG,
-  enableConsole: true,
-  environment: typeof process !== 'undefined' ? process.env?.NODE_ENV as any : 'development'
-};
 
 /**
- * Logger class for structured logging
+ * Client-specific logger extending the shared implementation
+ * with additional features for browser environment
  */
-export class Logger {
-  private config: LoggerConfig;
-  private handlers: Array<(entry: LogEntry) => void> = [];
+export class ClientLogger extends SharedLogger {
+  protected component: string | undefined;
+  protected defaultTags: string[] = [];
+  protected currentConfig: SharedLoggerConfig;
 
-  constructor(config?: Partial<LoggerConfig>) {
-    this.config = { ...defaultConfig, ...config };
+  constructor(config?: Partial<ClientLoggerConfig>) {
+    const loggerConfig = {
+      minLevel: config?.minLevel || (process.env.NODE_ENV === 'production' ? 'info' : 'debug'),
+      enableConsole: config?.enableConsole ?? true,
+      environment: process.env.NODE_ENV as 'development' | 'production' | 'test'
+    };
     
-    // Add console logger by default if enabled
-    if (this.config.enableConsole) {
-      this.addHandler(this.consoleHandler);
-    }
-  }
-
-  /**
-   * Set minimum log level
-   */
-  setMinLevel(level: LogLevel): Logger {
-    this.config.minLevel = level;
-    return this;
+    super(loggerConfig);
+    this.currentConfig = loggerConfig;
+    this.component = config?.component;
+    this.defaultTags = config?.defaultTags || [];
   }
 
   /**
    * Create a child logger with inherited settings plus additional context
    */
-  createChild(component: string, defaultTags?: string[]): Logger {
-    const childConfig = { 
-      ...this.config,
+  createChild(component: string, defaultTags?: string[]): ClientLogger {
+    const childConfig: Partial<ClientLoggerConfig> = {
+      minLevel: this.currentConfig.minLevel,
+      enableConsole: this.currentConfig.enableConsole ?? true,
+      environment: this.currentConfig.environment || 'production',
       component,
-      defaultTags: [...(this.config.defaultTags || []), ...(defaultTags || [])]
+      defaultTags: [...this.defaultTags, ...(defaultTags || [])]
     };
-    
-    const childLogger = new Logger(childConfig);
-    
-    // Add all parent handlers to child
-    this.handlers.forEach(handler => {
-      // Skip default console handler which is already added
-      if (handler !== this.consoleHandler) {
-        childLogger.addHandler(handler);
-      }
-    });
-    
-    return childLogger;
+
+    return new ClientLogger(childConfig);
   }
 
   /**
-   * Add a custom log handler
+   * Log at ERROR level with enhanced error handling
    */
-  addHandler(handler: (entry: LogEntry) => void): Logger {
-    this.handlers.push(handler);
-    return this;
-  }
-
-  /**
-   * Remove a custom log handler
-   */
-  removeHandler(handler: (entry: LogEntry) => void): Logger {
-    this.handlers = this.handlers.filter(h => h !== handler);
-    return this;
-  }
-
-  /**
-   * Default console handler
-   */
-  private consoleHandler = (entry: LogEntry): void => {
-    if (typeof console === 'undefined') return;
-    
-    const timestamp = entry.timestamp.toISOString();
-    const level = entry.level.toUpperCase();
-    const component = entry.component ? `[${entry.component}]` : '';
-    const tags = entry.tags && entry.tags.length 
-      ? `[${entry.tags.join(', ')}]` 
-      : '';
-    
-    const logPrefix = `${timestamp} ${level} ${component} ${tags}`;
-    
-    switch (entry.level) {
-      case LogLevel.DEBUG:
-        console.debug(`${logPrefix} ${entry.message}`, entry.context || '');
-        break;
-      case LogLevel.INFO:
-        console.info(`${logPrefix} ${entry.message}`, entry.context || '');
-        break;
-      case LogLevel.WARN:
-        console.warn(`${logPrefix} ${entry.message}`, entry.context || '');
-        break;
-      case LogLevel.ERROR:
-        console.error(`${logPrefix} ${entry.message}`, entry.context || '', entry.error || '');
-        break;
-      default:
-        console.log(`${logPrefix} ${entry.message}`, entry.context || '');
-    }
-  };
-
-  /**
-   * Check if a given log level should be logged
-   */
-  private shouldLog(level: LogLevel): boolean {
-    if (this.config.minLevel === LogLevel.SILENT) return false;
-    
-    const levels = [LogLevel.DEBUG, LogLevel.INFO, LogLevel.WARN, LogLevel.ERROR];
-    const configLevelIndex = levels.indexOf(this.config.minLevel);
-    const messageLevelIndex = levels.indexOf(level);
-    
-    return messageLevelIndex >= configLevelIndex;
-  }
-
-  /**
-   * Create a log entry
-   */
-  private createEntry(
-    level: LogLevel, 
-    message: string, 
-    context?: Record<string, any>,
-    error?: Error,
-    tags?: string[]
-  ): LogEntry {
-    return {
-      timestamp: new Date(),
-      level,
-      message,
-      context,
-      error,
-      component: this.config.component,
-      tags: [...(this.config.defaultTags || []), ...(tags || [])]
+  override error(message: string, error?: Error, context?: Record<string, any>, tags?: string[]): void {
+    const enhancedContext = {
+      ...context,
+      component: this.component,
+      tags: [...this.defaultTags, ...(tags || [])]
     };
-  }
 
-  /**
-   * Process a log entry
-   */
-  private processEntry(entry: LogEntry): void {
-    if (!this.shouldLog(entry.level)) return;
-    
-    // Execute all handlers
-    this.handlers.forEach(handler => {
-      try {
-        handler(entry);
-      } catch (err) {
-        // Fallback to console if handler fails
-        console.error('Logger: Handler failed', err);
-      }
-    });
-  }
+    super.error(message, enhancedContext);
 
-  /**
-   * Log at DEBUG level
-   */
-  debug(message: string, context?: Record<string, any>, tags?: string[]): void {
-    const entry = this.createEntry(LogLevel.DEBUG, message, context, undefined, tags);
-    this.processEntry(entry);
-  }
-
-  /**
-   * Log at INFO level
-   */
-  info(message: string, context?: Record<string, any>, tags?: string[]): void {
-    const entry = this.createEntry(LogLevel.INFO, message, context, undefined, tags);
-    this.processEntry(entry);
-  }
-
-  /**
-   * Log at WARN level
-   */
-  warn(message: string, context?: Record<string, any>, tags?: string[]): void {
-    const entry = this.createEntry(LogLevel.WARN, message, context, undefined, tags);
-    this.processEntry(entry);
-  }
-
-  /**
-   * Log at ERROR level
-   */
-  error(message: string, error?: Error, context?: Record<string, any>, tags?: string[]): void {
-    const entry = this.createEntry(LogLevel.ERROR, message, context, error, tags);
-    this.processEntry(entry);
-    
-    // If the error is an EnhancedError, also report it using our error reporting
+    // Additional error reporting for enhanced errors
     if (error && 'category' in error && 'timestamp' in error) {
       reportError(error as EnhancedError, context);
     }
@@ -241,54 +83,74 @@ export class Logger {
     this.error(message, error, context);
     throw error;
   }
-  
+
   /**
    * Time an operation and log its duration
    */
   time<T>(
-    operationName: string, 
+    operationName: string,
     operation: () => T,
-    level: LogLevel = LogLevel.DEBUG
+    level: SharedLogLevel = 'debug'
   ): T {
     const start = performance.now();
     try {
       return operation();
     } finally {
       const duration = performance.now() - start;
-      const entry = this.createEntry(
-        level, 
-        `Operation "${operationName}" completed in ${duration.toFixed(2)}ms`,
-        { duration }
-      );
-      this.processEntry(entry);
+      const message = `Operation "${operationName}" completed in ${duration.toFixed(2)}ms`;
+      
+      switch (level) {
+        case 'debug':
+          this.debug(message, { duration });
+          break;
+        case 'info':
+          this.info(message, { duration });
+          break;
+        case 'warn':
+          this.warn(message, { duration });
+          break;
+        case 'error':
+          this.error(message, undefined, { duration });
+          break;
+      }
     }
   }
-  
+
   /**
    * Time an async operation and log its duration
    */
   async timeAsync<T>(
-    operationName: string, 
+    operationName: string,
     operation: () => Promise<T>,
-    level: LogLevel = LogLevel.DEBUG
+    level: SharedLogLevel = 'debug'
   ): Promise<T> {
     const start = performance.now();
     try {
       return await operation();
     } finally {
       const duration = performance.now() - start;
-      const entry = this.createEntry(
-        level, 
-        `Async operation "${operationName}" completed in ${duration.toFixed(2)}ms`,
-        { duration }
-      );
-      this.processEntry(entry);
+      const message = `Async operation "${operationName}" completed in ${duration.toFixed(2)}ms`;
+      
+      switch (level) {
+        case 'debug':
+          this.debug(message, { duration });
+          break;
+        case 'info':
+          this.info(message, { duration });
+          break;
+        case 'warn':
+          this.warn(message, { duration });
+          break;
+        case 'error':
+          this.error(message, undefined, { duration });
+          break;
+      }
     }
   }
 }
 
-// Create and export a default logger instance
-export const logger = new Logger();
+// Create and export default logger instance
+export const logger = new ClientLogger();
 
 // Create component-specific loggers
 export const apiLogger = logger.createChild('API');
@@ -316,10 +178,5 @@ export const wsLogger = logger.createChild('WebSocket');
  * // Async timing
  * const data = await logger.timeAsync('fetchData', async () => {
  *   return await api.getData();
- * }, LogLevel.INFO);
- * 
- * // Setting minimum level (e.g., in production)
- * if (process.env.NODE_ENV === 'production') {
- *   logger.setMinLevel(LogLevel.WARN);
- * }
+ * }, 'info');
  */

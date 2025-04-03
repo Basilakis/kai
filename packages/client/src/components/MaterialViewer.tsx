@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useRef, useCallback, MouseEvent, WheelEvent } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { materialRecognitionProvider } from '@kai/shared/services/recognition/materialProvider';
+import type { ExtractedColor, MaterialRecognitionOptions, MaterialRecognitionMatch, RecognitionResult } from '@kai/shared/services/recognition/types';
 
 interface MaterialViewerProps {
   // Material information
@@ -44,11 +46,6 @@ interface DetectedArea {
   color?: string;
 }
 
-interface ExtractedColor {
-  color: string; // HEX color code
-  percentage: number; // Percentage of this color in the image
-  name?: string; // Optional color name (e.g., "Navy Blue")
-}
 
 // Material color interface
 interface MaterialColor {
@@ -173,69 +170,39 @@ const MaterialViewer: React.FC<MaterialViewerProps> = ({
     }
   }, [detectedAreas]);
 
-  // Simulate color extraction from image
-  const extractColorsFromImage = (url: string): void => {
-    // This is a placeholder. In a real app, you would use a library like vibrant.js
-    // or a backend API to analyze the image and extract dominant colors
-    
-    // For demo purposes, generate more realistic colors based on the image URL
-    // In real implementation, this would analyze actual pixel data
-    const seed = url.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    const pseudoRandom = (n: number): number => ((seed * 9301 + 49297) % 233280) / 233280 * n;
-    
-    const materialColors: MaterialColor[] = [
-      // Wood tones
-      { h: 30, s: 60, l: 40, name: 'Walnut' },
-      { h: 25, s: 50, l: 60, name: 'Oak' },
-      { h: 20, s: 40, l: 70, name: 'Maple' },
-      // Stone tones
-      { h: 0, s: 0, l: 80, name: 'Marble' },
-      { h: 200, s: 5, l: 70, name: 'Slate' },
-      { h: 30, s: 15, l: 75, name: 'Travertine' },
-      // Fabric tones
-      { h: 210, s: 10, l: 50, name: 'Denim' },
-      { h: 350, s: 20, l: 60, name: 'Linen' },
-      // Metal tones
-      { h: 40, s: 30, l: 80, name: 'Brass' },
-      { h: 0, s: 0, l: 90, name: 'Silver' },
-    ];
-    
-    // Select 4-6 colors based on the image URL (pseudo-random but deterministic)
-    const colorCount = 4 + Math.floor(pseudoRandom(3));
-    const selectedColors: ExtractedColor[] = [];
-    
-    for (let i = 0; i < colorCount; i++) {
-      const colorIndex = Math.floor(pseudoRandom(10));
-      const color = materialColors[colorIndex];
+  // Extract colors from image
+  const extractColorsFromImage = async (url: string): Promise<void> => {
+    try {
+      // Fetch the image as a blob
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error('Failed to fetch image');
+      }
       
-      if (!color) continue;
+      const imageBlob = await response.blob();
       
-      const { h, s, l, name } = color;
-      
-      // Add some variation to each color
-      const hue = h + Math.floor(pseudoRandom(20) - 10);
-      const saturation = s + Math.floor(pseudoRandom(20) - 10);
-      const lightness = l + Math.floor(pseudoRandom(20) - 10);
-      
-      const randomColor = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
-      
-      selectedColors.push({
-        color: randomColor,
-        name: name,
-        percentage: Math.max(5, Math.min(60, Math.floor(15 + pseudoRandom(45))))
-      });
+      // Use the recognition provider to extract colors
+      const options: MaterialRecognitionOptions = {
+        confidenceThreshold: 0.6,
+        maxResults: 1, // We only need one result for colors
+        includeMetadata: true,
+        modelType: 'hybrid'
+      };
+      const recognitionResult = await materialRecognitionProvider.recognize(imageBlob, options);
+
+      // Get colors from the first match
+      const match = recognitionResult.matches[0] as MaterialRecognitionMatch;
+      if (recognitionResult.matches.length > 0 && match?.extractedColors) {
+        setExtractedColors(match.extractedColors);
+      } else {
+        // Fallback to default colors if no colors were extracted
+        setExtractedColors(defaultColors);
+      }
+    } catch (error) {
+      console.error('Failed to extract colors:', error);
+      // Fallback to default colors on error
+      setExtractedColors(defaultColors);
     }
-    
-    // Sort by percentage (descending)
-    selectedColors.sort((a, b) => b.percentage - a.percentage);
-    
-    // Ensure percentages sum to 100
-    const totalPercentage = selectedColors.reduce((sum, color) => sum + color.percentage, 0);
-    selectedColors.forEach(color => {
-      color.percentage = Math.round(color.percentage / totalPercentage * 100);
-    });
-    
-    setExtractedColors(selectedColors);
   };
 
   // Reset view to default
@@ -262,7 +229,7 @@ const MaterialViewer: React.FC<MaterialViewerProps> = ({
   };
 
   // Handle mouse down for dragging
-  const handleMouseDown = (e: MouseEvent<HTMLDivElement>) => {
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!enableZoom || zoom <= 1) return;
     
     setIsDragging(true);
@@ -270,7 +237,7 @@ const MaterialViewer: React.FC<MaterialViewerProps> = ({
   };
 
   // Handle mouse move for dragging
-  const handleMouseMove = useCallback((e: MouseEvent<HTMLDivElement>) => {
+  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     // Update magnifier position if enabled
     if (showMagnifier && containerRef.current && viewMode === '2d') {
       const rect = containerRef.current.getBoundingClientRect();
@@ -309,7 +276,7 @@ const MaterialViewer: React.FC<MaterialViewerProps> = ({
   }, []);
 
   // Handle wheel for zooming
-  const handleWheel = (e: WheelEvent<HTMLDivElement>) => {
+  const handleWheel = (e: WheelEvent) => {
     if (!enableZoom) return;
     
     e.preventDefault();
@@ -476,9 +443,10 @@ const MaterialViewer: React.FC<MaterialViewerProps> = ({
                 <div 
                   className="h-full w-0.5 bg-white shadow-md pointer-events-auto cursor-ew-resize"
                   style={{ left: `${comparisonSlider}%` }}
-                  onMouseDown={(e: MouseEvent<HTMLDivElement>) => {
+                  onMouseDown={(e: React.MouseEvent<HTMLDivElement> & { preventDefault: () => void; stopPropagation: () => void }) => {
+                    e.preventDefault();
                     e.stopPropagation();
-                    const handleMove = (moveEvent: MouseEvent) => {
+                    const handleMove = (moveEvent: globalThis.MouseEvent) => {
                       const rect = containerRef.current?.getBoundingClientRect();
                       if (rect) {
                         const x = ((moveEvent.clientX - rect.left) / rect.width) * 100;

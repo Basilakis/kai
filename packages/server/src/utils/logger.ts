@@ -1,12 +1,6 @@
-/**
- * Logger Utility
- * 
- * This utility provides a consistent logging interface for the application.
- * It wraps the console logging functions with additional features like
- * timestamps, log levels, and formatting.
- */
+import { Logger } from '../../../shared/src/utils/logger';
 
-// Define log levels
+// Define log levels enum for backward compatibility
 export enum LogLevel {
   ERROR = 0,
   WARN = 1,
@@ -14,139 +8,63 @@ export enum LogLevel {
   DEBUG = 3,
 }
 
-// Set the current log level based on environment
-const currentLogLevel = (() => {
+// Map environment log level to shared logger level
+function getLogLevel(): 'debug' | 'info' | 'warn' | 'error' {
   const envLogLevel = process.env.LOG_LEVEL?.toLowerCase();
   
-  if (envLogLevel === 'debug') return LogLevel.DEBUG;
-  if (envLogLevel === 'info') return LogLevel.INFO;
-  if (envLogLevel === 'warn') return LogLevel.WARN;
-  if (envLogLevel === 'error') return LogLevel.ERROR;
+  if (envLogLevel === 'debug') return 'debug';
+  if (envLogLevel === 'info') return 'info';
+  if (envLogLevel === 'warn') return 'warn';
+  if (envLogLevel === 'error') return 'error';
   
-  // Default to INFO in production, DEBUG in development
-  return process.env.NODE_ENV === 'production' ? LogLevel.INFO : LogLevel.DEBUG;
-})();
-
-/**
- * Format a log message with timestamp and additional context
- * 
- * @param level Log level
- * @param message Message to log
- * @param meta Additional metadata
- * @returns Formatted log message
- */
-function formatLogMessage(level: string, message: string, meta?: any): string {
-  const timestamp = new Date().toISOString();
-  let formattedMessage = `[${timestamp}] [${level.toUpperCase()}] ${message}`;
-  
-  if (meta) {
-    try {
-      const metaString = typeof meta === 'object' 
-        ? JSON.stringify(meta, null, 2) 
-        : meta.toString();
-      formattedMessage += `\n${metaString}`;
-    } catch (err) {
-      formattedMessage += `\n[Error serializing metadata: ${err}]`;
-    }
-  }
-  
-  return formattedMessage;
+  return process.env.NODE_ENV === 'production' ? 'info' : 'debug';
 }
 
-/**
- * Logger interface
- */
+// Create server logger instance with environment-specific configuration
+const serverLogger = new Logger({
+  minLevel: getLogLevel(),
+  environment: process.env.NODE_ENV as 'development' | 'production' | 'test',
+  enableConsole: true
+});
+
+// Export logger interface that matches the original API
 export const logger = {
-  /**
-   * Log an error message
-   * 
-   * @param message Message to log
-   * @param meta Additional metadata
-   */
-  error(message: string, meta?: any): void {
-    if (currentLogLevel >= LogLevel.ERROR) {
-      console.error(formatLogMessage('error', message, meta));
+  error: (message: string, meta?: any) => serverLogger.error(message, meta),
+  warn: (message: string, meta?: any) => serverLogger.warn(message, meta),
+  info: (message: string, meta?: any) => serverLogger.info(message, meta),
+  debug: (message: string, meta?: any) => serverLogger.debug(message, meta),
+  log: (level: string, message: string, meta?: any) => {
+    switch (level.toLowerCase()) {
+      case 'error': return serverLogger.error(message, meta);
+      case 'warn': return serverLogger.warn(message, meta);
+      case 'info': return serverLogger.info(message, meta);
+      case 'debug': return serverLogger.debug(message, meta);
+      default: return serverLogger.info(message, meta);
     }
   },
-  
-  /**
-   * Log a warning message
-   * 
-   * @param message Message to log
-   * @param meta Additional metadata
-   */
-  warn(message: string, meta?: any): void {
-    if (currentLogLevel >= LogLevel.WARN) {
-      console.warn(formatLogMessage('warn', message, meta));
-    }
-  },
-  
-  /**
-   * Log an info message
-   * 
-   * @param message Message to log
-   * @param meta Additional metadata
-   */
-  info(message: string, meta?: any): void {
-    if (currentLogLevel >= LogLevel.INFO) {
-      console.info(formatLogMessage('info', message, meta));
-    }
-  },
-  
-  /**
-   * Log a debug message
-   * 
-   * @param message Message to log
-   * @param meta Additional metadata
-   */
-  debug(message: string, meta?: any): void {
-    if (currentLogLevel >= LogLevel.DEBUG) {
-      console.debug(formatLogMessage('debug', message, meta));
-    }
-  },
-  
-  /**
-   * Log a message with a custom level
-   * 
-   * @param level Log level
-   * @param message Message to log
-   * @param meta Additional metadata
-   */
-  log(level: string, message: string, meta?: any): void {
-    console.log(formatLogMessage(level, message, meta));
-  },
-  
-  /**
-   * Create a child logger with additional context
-   * 
-   * @param context Context for the child logger
-   * @returns Child logger
-   */
-  child(context: Record<string, any>): typeof logger {
+  child: (context: Record<string, any>) => {
+    const childLogger = serverLogger.child(Object.keys(context).join('.'));
     return {
-      error: (message: string, meta?: any) => 
-        logger.error(message, { ...context, ...meta }),
-      warn: (message: string, meta?: any) => 
-        logger.warn(message, { ...context, ...meta }),
-      info: (message: string, meta?: any) => 
-        logger.info(message, { ...context, ...meta }),
-      debug: (message: string, meta?: any) => 
-        logger.debug(message, { ...context, ...meta }),
-      log: (level: string, message: string, meta?: any) => 
-        logger.log(level, message, { ...context, ...meta }),
-      child: (childContext: Record<string, any>) => 
-        logger.child({ ...context, ...childContext })
+      error: (message: string, meta?: any) => childLogger.error(message, { ...context, ...meta }),
+      warn: (message: string, meta?: any) => childLogger.warn(message, { ...context, ...meta }),
+      info: (message: string, meta?: any) => childLogger.info(message, { ...context, ...meta }),
+      debug: (message: string, meta?: any) => childLogger.debug(message, { ...context, ...meta }),
+      log: (level: string, message: string, meta?: any) => {
+        switch (level.toLowerCase()) {
+          case 'error': return childLogger.error(message, { ...context, ...meta });
+          case 'warn': return childLogger.warn(message, { ...context, ...meta });
+          case 'info': return childLogger.info(message, { ...context, ...meta });
+          case 'debug': return childLogger.debug(message, { ...context, ...meta });
+          default: return childLogger.info(message, { ...context, ...meta });
+        }
+      },
+      child: (childContext: Record<string, any>) => logger.child({ ...context, ...childContext })
     };
   }
 };
 
-/**
- * Create a logger for a specific module
- * 
- * @param moduleName Name of the module
- * @returns Module-specific logger
- */
-export function createModuleLogger(moduleName: string): typeof logger {
+// Export createModuleLogger with the same interface
+export function createModuleLogger(moduleName: string) {
   return logger.child({ module: moduleName });
 }
 

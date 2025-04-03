@@ -12,7 +12,78 @@ The 3D visualization system provides comprehensive capabilities for:
 
 ## Core Components
 
-### 1. Image Processing Pipeline
+### 1. Visualization Layer
+
+#### ThreeJsViewer Component
+The core visualization component built with Three.js that provides:
+- Real-time 3D rendering with WebGL
+- WebXR support for AR/VR experiences
+- BVH-optimized ray tracing
+- Efficient scene management
+
+![ThreeJsViewer Architecture](docs/images/threejs-viewer-architecture.png)
+
+```typescript
+// Example usage of ThreeJsViewer
+<ThreeJsViewer
+  modelUrl="path/to/model.glb"
+  modelType="3d"
+  enableVR={true}
+  enableAR={true}
+  enableBVH={true}
+  onSceneReady={(scene) => {
+    // Scene is ready for interaction
+  }}
+/>
+```
+
+#### SceneController Component
+Manages scene modifications and real-time updates:
+- Batch processing for performance
+- Real-time preview system
+- Export capabilities for multiple formats
+- Object selection and manipulation
+
+![Scene Controller Flow](docs/images/scene-controller-flow.png)
+
+```typescript
+// Example usage of SceneController
+<SceneController
+  scene={scene}
+  enableRealTimePreview={true}
+  previewInterval={100}
+>
+  {/* Child components receive scene control props */}
+</SceneController>
+```
+
+#### Export Capabilities
+Support for multiple 3D formats:
+- GLB/GLTF with metadata preservation
+- FBX export
+- OBJ export
+- Configurable texture and quality settings
+
+![Export Options](docs/images/export-options.png)
+
+#### BVH Optimization
+Automatic Bounding Volume Hierarchy for improved performance:
+- Faster ray tracing and intersection tests
+- Optimized scene traversal
+- Automatic updates on geometry changes
+
+![BVH Visualization](docs/images/bvh-optimization.png)
+
+#### WebXR Integration
+Built-in support for immersive experiences:
+- VR mode with full scene navigation
+- AR mode for real-world integration
+- Device capability detection
+- Optimized rendering for XR
+
+![WebXR Features](docs/images/webxr-features.png)
+
+### 2. Image Processing Pipeline
 - **Room Layout Extraction**
   * HorizonNet for initial layout analysis
   * CubeMap for room mapping

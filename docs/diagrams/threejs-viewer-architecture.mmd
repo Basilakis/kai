@@ -1,0 +1,42 @@
+graph TD
+    subgraph ThreeJsViewer
+        WebGL[WebGL Renderer] --> Scene
+        Scene --> Camera
+        Scene --> Lights
+        Scene --> Objects
+        
+        subgraph Scene Management
+            Objects --> |BVH| Optimization[BVH Optimization]
+            Objects --> Materials
+            Objects --> Geometry
+        end
+        
+        subgraph XR Integration
+            WebXR[WebXR System] --> VR[VR Mode]
+            WebXR --> AR[AR Mode]
+            WebXR --> Controls[XR Controls]
+        end
+        
+        subgraph Interaction
+            Controls[User Controls] --> OrbitControls
+            Controls --> Selection
+            Controls --> Navigation
+        end
+        
+        subgraph Export System
+            Export --> GLB[GLB/GLTF]
+            Export --> FBX
+            Export --> OBJ
+        end
+    end
+    
+    style ThreeJsViewer fill:#f9f9f9,stroke:#333,stroke-width:2px
+    style Scene Management fill:#e1f3d8
+    style XR Integration fill:#fce8d6
+    style Interaction fill:#d4e6f1
+    style Export System fill:#f2d7d5
+    
+    classDef default fill:#fff,stroke:#333,stroke-width:1px
+    classDef highlight fill:#f8f9fa,stroke:#0066cc,stroke-width:2px
+    
+    class WebGL,Scene,Camera highlight

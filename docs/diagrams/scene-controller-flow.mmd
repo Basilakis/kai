@@ -1,0 +1,51 @@
+sequenceDiagram
+    participant User
+    participant SC as SceneController
+    participant Queue as ModificationQueue
+    participant Scene
+    participant Preview as PreviewSystem
+    participant Export as ExportSystem
+
+    Note over SC: Initialize Scene Controller
+
+    rect rgb(240, 240, 240)
+        User->>SC: Modify Scene
+        SC->>Queue: Push Modification
+        alt Real-time Preview Enabled
+            Queue->>Preview: Process Queue
+            Preview->>Scene: Apply Changes
+            Scene-->>User: Update View
+        else Preview Disabled
+            Queue->>Scene: Batch Process Later
+        end
+    end
+
+    rect rgb(230, 245, 230)
+        User->>SC: Request Export
+        SC->>Scene: Prepare Scene
+        SC->>Export: Export Scene
+        Export-->>User: Return File
+    end
+
+    rect rgb(245, 230, 230)
+        Note over Preview: Real-time Preview Loop
+        loop Every Preview Interval
+            Preview->>Queue: Check Queue
+            alt Has Modifications
+                Queue->>Scene: Apply Batch
+                Scene-->>User: Update View
+            end
+        end
+    end
+
+    rect rgb(230, 230, 245)
+        Note over Scene: BVH Optimization
+        Scene->>Scene: Update Geometry
+        Scene->>Scene: Compute BVH
+        Scene->>Scene: Update Ray Tracing
+    end
+
+style User fill:#f9f,stroke:#333,stroke-width:2px
+style SC fill:#bbf,stroke:#333,stroke-width:2px
+style Queue fill:#bfb,stroke:#333,stroke-width:2px
+style Scene fill:#fbf,stroke:#333,stroke-width:2px

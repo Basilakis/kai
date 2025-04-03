@@ -1,0 +1,38 @@
+graph TD
+    subgraph Scene Optimization
+        Root[Scene Root] --> BVH[BVH Tree]
+        BVH --> |Subdivide| Level1A[Level 1A]
+        BVH --> |Subdivide| Level1B[Level 1B]
+        
+        Level1A --> |Split| Level2A[Level 2A]
+        Level1A --> |Split| Level2B[Level 2B]
+        Level1B --> |Split| Level2C[Level 2C]
+        Level1B --> |Split| Level2D[Level 2D]
+    end
+    
+    subgraph Ray Tracing
+        Ray[Ray Cast] --> |Check| BVH
+        Ray --> |Skip| Excluded[Excluded Branches]
+        Ray --> |Test| Intersect[Intersection Tests]
+    end
+    
+    subgraph Performance
+        Before[Without BVH]
+        After[With BVH]
+        
+        Before --> |O(n)| LinearTest[Linear Testing]
+        After --> |O(log n)| TreeTest[Tree Testing]
+        
+        LinearTest --> SlowPerf[Slower Performance]
+        TreeTest --> FastPerf[Faster Performance]
+    end
+    
+    style Scene Optimization fill:#e1f3d8,stroke:#333
+    style Ray Tracing fill:#fce8d6,stroke:#333
+    style Performance fill:#d4e6f1,stroke:#333
+    
+    classDef default fill:#fff,stroke:#333,stroke-width:1px
+    classDef highlight fill:#f8f9fa,stroke:#0066cc,stroke-width:2px
+    
+    class Root,BVH highlight
+    class Ray,Before,After highlight

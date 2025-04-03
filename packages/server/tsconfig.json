@@ -40,7 +40,8 @@
   },
   "include": [
     "src/**/*",
-    "../ml/src/index.ts"  /* Include ML package for type checking */
+    "../ml/src/index.ts",  /* Include ML package for type checking */
+    "../shared/src/**/*"   /* Include shared package for type checking */
   ],
   "exclude": [
     "node_modules",

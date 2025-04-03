@@ -1,5 +1,26 @@
 import React, { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
+import { materialRecognitionProvider } from '@kai/shared/services/recognition/materialProvider';
+import { RecognitionError } from '@kai/shared/services/recognition/types';
+import type { 
+  MaterialRecognitionMatch, 
+  MaterialRecognitionOptions,
+  RecognitionResult as BaseRecognitionResult 
+} from '@kai/shared/services/recognition/types';
+
+interface RecognitionResult {
+  id: string;
+  name: string;
+  manufacturer: string;
+  confidence: number;
+  image: string;
+  specs: {
+    material: string;
+    size: string;
+    color: string;
+    finish: string;
+  };
+}
 
 /**
  * RecognitionDemo component for demonstrating material recognition
@@ -8,7 +29,7 @@ const RecognitionDemo: React.FC = () => {
   const [image, setImage] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [isRecognizing, setIsRecognizing] = useState(false);
-  const [results, setResults] = useState<any[] | null>(null);
+  const [results, setResults] = useState<RecognitionResult[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Handle file drop
@@ -20,6 +41,10 @@ const RecognitionDemo: React.FC = () => {
     }
     
     const file = acceptedFiles[0];
+    if (!file) {
+      setError('No file selected');
+      return;
+    }
     
     // Check if file is an image
     if (!file.type.startsWith('image/')) {
@@ -62,54 +87,49 @@ const RecognitionDemo: React.FC = () => {
     setError(null);
     
     try {
-      // In a real implementation, this would call the API
-      // For demo purposes, we'll simulate a response after a delay
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // Mock results
-      setResults([
-        {
-          id: '1',
-          name: 'Marble Tile - Carrara White',
-          manufacturer: 'LuxStone',
-          confidence: 0.92,
-          image: '/images/demo/marble-tile.jpg',
-          specs: {
-            material: 'Marble',
-            size: '12" x 24"',
-            color: 'White',
-            finish: 'Polished'
-          }
-        },
-        {
-          id: '2',
-          name: 'Porcelain Tile - Marble Look',
-          manufacturer: 'TileWorks',
-          confidence: 0.87,
-          image: '/images/demo/porcelain-marble-look.jpg',
-          specs: {
-            material: 'Porcelain',
-            size: '12" x 24"',
-            color: 'White/Gray',
-            finish: 'Matte'
-          }
-        },
-        {
-          id: '3',
-          name: 'Ceramic Tile - White Subway',
-          manufacturer: 'ClassicTiles',
-          confidence: 0.76,
-          image: '/images/demo/subway-tile.jpg',
-          specs: {
-            material: 'Ceramic',
-            size: '3" x 6"',
-            color: 'White',
-            finish: 'Glossy'
-          }
+      const options: MaterialRecognitionOptions = {
+        confidenceThreshold: 0.6,
+        maxResults: 5,
+        includeMetadata: true,
+        modelType: 'hybrid',
+        materialType: 'any'
+      };
+
+      const recognitionResult = await materialRecognitionProvider.recognize(image, options);
+
+      // Transform recognition matches to UI format
+      const transformedResults = (recognitionResult.matches as MaterialRecognitionMatch[]).map((match) => {
+        // Ensure we have a MaterialRecognitionMatch
+        if (!('name' in match) || !('type' in match)) {
+          throw new Error('Invalid recognition match format');
         }
-      ]);
+        
+        return {
+          id: match.id,
+          name: match.name,
+          manufacturer: match.metadata?.manufacturer || 'Unknown',
+          confidence: match.confidence,
+          image: match.imageUrl || '/images/placeholder.jpg',
+          specs: {
+            material: match.type,
+            size: match.metadata?.dimensions || 'Unknown',
+            color: match.metadata?.color || 'Unknown',
+            finish: match.metadata?.finish || 'Unknown'
+          }
+        };
+      });
+
+      setResults(transformedResults);
     } catch (err) {
-      setError('An error occurred during recognition. Please try again.');
+      const errorMessage = err instanceof Error 
+        ? err.message 
+        : 'An error occurred during recognition. Please try again.';
+      
+      if (err instanceof RecognitionError && err.code === 'UPLOAD_FAILED') {
+        setError('Failed to upload image. Please try again.');
+      } else {
+        setError(errorMessage);
+      }
     } finally {
       setIsRecognizing(false);
     }

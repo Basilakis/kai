@@ -10,8 +10,9 @@ import mongoose from 'mongoose';
 import { logger } from '../../utils/logger';
 import { messageBroker } from '../messaging/messageBroker';
 import { entityLinkingService } from './entityLinking.service';
+import { modelRouter } from '../ai/modelRouter';
 import { 
-  createMaterialRelationship, 
+  createMaterialRelationship,
   getMaterialRelationships,
   MaterialRelationshipType 
 } from '../../models/materialRelationship.model';
@@ -22,9 +23,7 @@ import { CollectionDocument } from '../../models/collection.model';
 import { VersionDocument } from '../../models/version.model';
 import SearchIndex, { SearchIndexDocument } from '../../models/searchIndex.model';
 import { 
-  createCollectionMembership, 
-  getMembershipsForMaterial,
-  getMaterialsInCollection
+  createCollectionMembership
 } from '../../models/collectionMembership.model';
 
 /**
@@ -230,11 +229,22 @@ export class KnowledgeBaseService {
    * @returns Vector embedding
    */
   private async generateQueryEmbedding(query: string): Promise<number[]> {
-    // This is a placeholder implementation
-    // In a real-world scenario, this would call an embeddings API like OpenAI
-    
-    // Simple mock implementation for testing
-    return Array(128).fill(0).map(() => Math.random() - 0.5);
+    try {
+      logger.debug(`Generating embedding for query: "${query}"`);
+      // Route the request through the ModelRouter
+      const embeddingResult = await modelRouter.routeEmbeddingGeneration(query, {
+        taskType: 'embedding', // Specify task type
+        encoderType: 'text'     // Specify encoder type
+      });
+      
+      logger.debug(`Embedding generated successfully for query: "${query}"`);
+      return embeddingResult.result; // Return the embedding vector
+    } catch (err) {
+      logger.error(`Failed to generate query embedding via ModelRouter: ${err}`);
+      // Fallback or re-throw depending on desired behavior
+      // For now, re-throwing to indicate failure
+      throw new Error(`Failed to generate query embedding: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   /**
@@ -290,7 +300,7 @@ export class KnowledgeBaseService {
   }
 
   /**
-   * Get collections with their materials count
+   * Get collections with their materials count using an efficient aggregation pipeline.
    * 
    * @param options Query options
    * @returns Collections with count
@@ -314,54 +324,80 @@ export class KnowledgeBaseService {
         sort = { name: 1 }
       } = options;
 
-      // Get the Collection model
+      // Get Mongoose models
       const Collection = mongoose.model('Collection');
-      
-      // Build query
-      const filter: Record<string, any> = {};
-      
+      const Material = mongoose.model('Material'); // Needed for lookup
+
+      // Base filter for collections
+      const matchFilter: Record<string, any> = {};
       if (parentId) {
-        filter.parentId = parentId;
+        matchFilter.parentId = parentId;
       } else {
-        filter.parentId = { $exists: false }; // Top-level collections
+        matchFilter.parentId = { $exists: false }; // Top-level collections
       }
 
-      // Get collections
-      const collections = await Collection.find(filter)
-        .sort(sort)
-        .skip(skip)
-        .limit(limit);
-      
-      const total = await Collection.countDocuments(filter);
-
-      // Get material counts for each collection
-      const Material = mongoose.model('Material');
-      const collectionsWithCount = await Promise.all(
-        collections.map(async (collection) => {
-          const materialCount = await Material.countDocuments({ collectionId: collection.id });
-          
-          // Skip collections with no materials if includeEmpty is false
-          if (!includeEmpty && materialCount === 0) {
-            return null;
+      // Define base aggregation pipeline stages (before filtering empty and pagination)
+      const basePipeline: any[] = [
+        { $match: matchFilter }, // Filter collections first
+        {
+          $lookup: { // Join with materials to count them
+            from: Material.collection.name, // Use actual collection name from model
+            localField: 'id', // Assuming 'id' is the field in Collection model
+            foreignField: 'collectionId', // Assuming 'collectionId' is the field in Material model
+            as: 'materials'
           }
-          
-          return {
-            ...collection.toObject(),
-            materialCount
-          };
-        })
-      );
+        },
+        {
+          $addFields: { // Calculate materialCount
+            materialCount: { $size: '$materials' }
+          }
+        },
+        { $project: { materials: 0 } } // Remove the joined materials array
+      ];
 
-      // Filter out null values from collections with no materials
-      const filteredCollections = collectionsWithCount.filter(Boolean) as Array<CollectionDocument & { materialCount: number }>;
+      // Define pipeline for counting total matching collections (respecting includeEmpty)
+      const countPipeline: any[] = [...basePipeline];
+      if (!includeEmpty) {
+        // Apply the empty filter *before* counting
+        countPipeline.push({ $match: { materialCount: { $gt: 0 } } });
+      }
+      countPipeline.push({ $count: 'total' });
 
-      return { 
-        collections: filteredCollections,
-        total: includeEmpty ? total : filteredCollections.length
+      // Define pipeline for fetching paginated results
+      const resultsPipeline: any[] = [...basePipeline];
+      if (!includeEmpty) {
+        // Apply the empty filter before pagination
+        resultsPipeline.push({ $match: { materialCount: { $gt: 0 } } });
+      }
+      // Apply sorting, skipping, limiting
+      resultsPipeline.push({ $sort: sort });
+      resultsPipeline.push({ $skip: skip });
+      resultsPipeline.push({ $limit: limit });
+
+      // Execute both pipelines (count and results)
+      // Using $facet might be slightly more efficient if DB supports it well,
+      // but running two separate aggregations is often clearer.
+      const [totalResult, collectionsWithCount] = await Promise.all([
+        Collection.aggregate(countPipeline),
+        Collection.aggregate(resultsPipeline)
+      ]);
+
+      const total = totalResult.length > 0 ? totalResult[0].total : 0;
+
+      // Ensure the result type matches the expected return type
+      // Mongoose aggregate returns plain objects, not full documents by default
+      // If full document methods are needed later, consider hydrating the results
+      const typedCollections = collectionsWithCount as Array<CollectionDocument & { materialCount: number }>;
+
+      return {
+        collections: typedCollections,
+        total
       };
     } catch (err) {
       logger.error(`Failed to get collections: ${err}`);
-      throw new Error(`Failed to get collections: ${err instanceof Error ? err.message : String(err)}`);
+      // Ensure error message is a string
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      throw new Error(`Failed to get collections: ${errorMessage}`);
     }
   }
 
@@ -750,7 +786,6 @@ export class KnowledgeBaseService {
       const {
         updateExisting = false,
         detectDuplicates = true,
-        validateSchema = true,
         collectionId
       } = options;
       
@@ -769,16 +804,25 @@ export class KnowledgeBaseService {
       // Process each material
       for (let i = 0; i < materials.length; i++) {
         const materialData = materials[i];
+
+        // Add explicit check for undefined to satisfy linter, though loop condition should prevent it
+        if (!materialData) {
+            results.failed++;
+            results.errors.push({ index: i, error: 'Material data is undefined' });
+            continue; 
+        }
         
         try {
+          // Check name after ensuring materialData is defined
           if (!materialData.name) {
             throw new Error('Material name is required');
           }
           
-          // Add required fields
+          // Add required fields, ensuring materialData is defined
           materialData.id = materialData.id || uuidv4();
           materialData.createdBy = materialData.createdBy || userId;
-          materialData.createdAt = materialData.createdAt || new Date();
+          // Removed potentially problematic createdAt assignment:
+          // materialData.createdAt = materialData.createdAt || new Date(); 
           materialData.updatedAt = new Date();
           
           // Add to collection if specified
@@ -837,15 +881,15 @@ export class KnowledgeBaseService {
             await createCollectionMembership({
               materialId: material.id,
               collectionId,
-              createdBy: userId
+              addedBy: userId
             });
           }
           
-          // Process entity linking if description is provided
+          // Process entity linking if description is provided (check materialData first)
           if (materialData.description) {
             await entityLinkingService.linkEntitiesInDescription(
               material.id,
-              materialData.description,
+              materialData.description, // Safe to access now
               { 
                 linkMaterials: true,
                 linkCollections: true,
@@ -893,7 +937,8 @@ export class KnowledgeBaseService {
       
       // Find matching materials
       const matchingMaterials = await Material.find(filter, { id: 1 });
-      const materialIds = matchingMaterials.map(m => m.id);
+      // Add explicit type to map parameter
+      const materialIds = matchingMaterials.map((m: MaterialDocument) => m.id); 
       
       // Skip if no materials match
       if (materialIds.length === 0) {
@@ -957,8 +1002,7 @@ export class KnowledgeBaseService {
    */
   public async bulkDeleteMaterials(
     materialIds?: string[],
-    filter?: Record<string, any>,
-    userId?: string
+    filter?: Record<string, any>
   ): Promise<{
     deleted: number;
     materialIds: string[];
@@ -974,7 +1018,8 @@ export class KnowledgeBaseService {
         idsToDelete = materialIds;
       } else if (filter) {
         const matchingMaterials = await Material.find(filter, { id: 1 });
-        idsToDelete = matchingMaterials.map(m => m.id);
+        // Add explicit type to map parameter
+        idsToDelete = matchingMaterials.map((m: MaterialDocument) => m.id); 
       } else {
         throw new Error('Either materialIds or filter must be provided');
       }
@@ -1021,6 +1066,7 @@ export class KnowledgeBaseService {
   ): Promise<{
     count: number;
     data: any;
+    error?: string; // Optional error property for fallback scenarios
   }> {
     try {
       const {
@@ -1041,8 +1087,9 @@ export class KnowledgeBaseService {
       
       if (includeRelationships) {
         materialsWithRelationships = await Promise.all(
-          materials.map(async (material) => {
-            const materialObj = material.toObject();
+          // Add explicit type to map parameter
+          materials.map(async (material: MaterialDocument) => { 
+            const materialObj = (material as any).toObject();
             const relationships = await getMaterialRelationships(material.id);
             return {
               ...materialObj,
@@ -1054,22 +1101,82 @@ export class KnowledgeBaseService {
       
       // Convert to CSV if requested
       if (format === 'csv') {
-        // Simple CSV conversion for demo purposes
-        // In a real implementation, use a proper CSV library
-        const csvHeader = Object.keys(materialsWithRelationships[0] || {}).join(',');
-        const csvRows = materialsWithRelationships.map(m => {
-          return Object.values(m).map(v => {
-            if (typeof v === 'object') {
-              return JSON.stringify(v).replace(/"/g, '""');
+        try {
+          // Sanitize and flatten the material data
+          const sanitizedMaterials = materialsWithRelationships.map((material: any) => {
+            const sanitized: Record<string, any> = {};
+            
+            // Process each field
+            Object.entries(material).forEach(([key, value]) => {
+              if (value === undefined) return;
+              
+              if (typeof value === 'object' && value !== null) {
+                try {
+                  if (Array.isArray(value) && value.every(item => typeof item !== 'object')) {
+                    sanitized[key] = value.join('; ');
+                  } else {
+                    sanitized[key] = JSON.stringify(value);
+                  }
+                } catch (e) {
+                  sanitized[key] = '[Complex Object]';
+                }
+              } else {
+                sanitized[key] = value;
+              }
+            });
+            
+            return sanitized;
+          });
+          
+          // Generate CSV using native JavaScript
+          if (sanitizedMaterials.length === 0) {
+            return {
+              count: 0,
+              data: ''
+            };
+          }
+          
+          // Get headers from the first object
+          const headers = Object.keys(sanitizedMaterials[0]);
+          
+          // Helper function to properly escape and quote CSV values
+          const escapeCsvValue = (val: any): string => {
+            const stringVal = String(val ?? '');
+            // If value contains commas, quotes, or newlines, it needs quoting
+            if (/[",\n\r]/.test(stringVal)) {
+              // Escape quotes by doubling them
+              return `"${stringVal.replace(/"/g, '""')}"`;
             }
-            return v;
-          }).join(',');
-        });
-        
-        return {
-          count: materials.length,
-          data: [csvHeader, ...csvRows].join('\n')
-        };
+            return stringVal;
+          };
+          
+          // Create CSV header row
+          const headerRow = headers.map(escapeCsvValue).join(',');
+          
+          // Create data rows
+          const rows = sanitizedMaterials.map((obj: Record<string, any>) => {
+            return headers.map(header => {
+              const value = obj[header];
+              return escapeCsvValue(value);
+            }).join(',');
+          });
+          
+          // Combine header and rows
+          const csvData = [headerRow, ...rows].join('\n');
+          
+          return {
+            count: materials.length,
+            data: csvData
+          };
+        } catch (err) {
+          // Log error but don't fail the export - fall back to JSON
+          logger.error(`Failed to convert materials to CSV: ${err}`);
+          return {
+            count: materials.length,
+            data: materialsWithRelationships,
+            error: 'CSV conversion failed, returning JSON data'
+          };
+        }
       }
       
       return {
@@ -1117,9 +1224,16 @@ export class KnowledgeBaseService {
       // Process each relationship
       for (let i = 0; i < relationships.length; i++) {
         const relationshipData = relationships[i];
+
+        // Add explicit check for undefined to satisfy linter
+        if (!relationshipData) {
+            results.failed++;
+            results.errors.push({ index: i, error: 'Relationship data is undefined' });
+            continue;
+        }
         
         try {
-          // Validate relationship data
+          // Validate relationship data (safe to access now)
           if (!relationshipData.sourceMaterialId || !relationshipData.targetMaterialId) {
             throw new Error('Source and target material IDs are required');
           }

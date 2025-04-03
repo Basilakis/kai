@@ -1,0 +1,60 @@
+graph LR
+    subgraph WebXR Integration
+        XR[WebXR System] --> VR[VR Mode]
+        XR --> AR[AR Mode]
+        
+        subgraph VR Features
+            VR --> VRControls[VR Controls]
+            VR --> VRInteraction[Scene Interaction]
+            VR --> VROptimization[VR Optimization]
+            
+            VRControls --> Controllers[Hand Controllers]
+            VRControls --> HeadTracking[Head Tracking]
+            
+            VRInteraction --> Selection[Object Selection]
+            VRInteraction --> Manipulation[Object Manipulation]
+            
+            VROptimization --> FrameRate[90Hz Rendering]
+            VROptimization --> Foveated[Foveated Rendering]
+        end
+        
+        subgraph AR Features
+            AR --> ARTracking[Space Tracking]
+            AR --> ARPlacement[Object Placement]
+            AR --> AROptimization[AR Optimization]
+            
+            ARTracking --> Planes[Plane Detection]
+            ARTracking --> Anchors[Spatial Anchors]
+            
+            ARPlacement --> RealWorld[Real-world Scale]
+            ARPlacement --> Occlusion[Occlusion Handling]
+            
+            AROptimization --> LightEst[Light Estimation]
+            AROptimization --> Performance[Performance Mode]
+        end
+        
+        subgraph Device Support
+            XR --> Desktop[Desktop VR]
+            XR --> Mobile[Mobile AR/VR]
+            XR --> Standalone[Standalone HMDs]
+            
+            Desktop --> SteamVR[SteamVR]
+            Desktop --> Oculus[Oculus]
+            
+            Mobile --> ARCore[ARCore]
+            Mobile --> ARKit[ARKit]
+            
+            Standalone --> Quest[Quest]
+            Standalone --> Pico[Pico]
+        end
+    end
+    
+    style WebXR Integration fill:#f9f9f9,stroke:#333,stroke-width:2px
+    style VR Features fill:#e1f3d8,stroke:#333
+    style AR Features fill:#fce8d6,stroke:#333
+    style Device Support fill:#d4e6f1,stroke:#333
+    
+    classDef default fill:#fff,stroke:#333,stroke-width:1px
+    classDef highlight fill:#f8f9fa,stroke:#0066cc,stroke-width:2px
+    
+    class XR,VR,AR highlight

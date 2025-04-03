@@ -1,15 +1,13 @@
-/**
- * Global type declarations for the shared package
- */
+/// <reference types="node" />
 
-// Add type declaration for Node.js process
-declare namespace NodeJS {
-  interface ProcessEnv {
-    API_URL?: string;
-    S3_BUCKET?: string;
-    NODE_ENV?: 'development' | 'production' | 'test';
-    JWT_SECRET?: string;
-    MONGODB_URI?: string;
-    PORT?: string;
+declare global {
+  // Re-export Node.js types
+  namespace NodeJS {
+    interface ProcessEnv {
+      NODE_ENV: 'development' | 'production' | 'test';
+    }
   }
 }
+
+// This file is a module
+export {};

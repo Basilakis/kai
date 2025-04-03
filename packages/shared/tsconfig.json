@@ -3,11 +3,15 @@
   "compilerOptions": {
     "outDir": "./dist",
     "rootDir": "./src",
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "types": ["node"],
     "baseUrl": "./",
     "paths": {
       "@/*": ["src/*"]
     },
     "typeRoots": [
+      "./src/types",
       "./node_modules/@types",
       "../../node_modules/@types"
     ],
