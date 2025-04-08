@@ -3,20 +3,10 @@ import { useDropzone } from 'react-dropzone';
 import styled from '@emotion/styled';
 import AgentChat from './AgentChat';
 import agentService, { AgentType, AgentMessage } from '../../services/agentService';
+import recognitionService, { RecognitionResult } from '../../services/recognitionService';
 
-interface Material {
-  id: string;
-  name: string;
-  manufacturer: string;
-  confidence: number;
-  image: string;
-  specs: {
-    material: string;
-    size: string;
-    color: string;
-    finish: string;
-  };
-}
+// Use RecognitionResult type from the service
+type Material = RecognitionResult;
 
 // Using AgentMessage from agentService instead of local interface
 
@@ -361,57 +351,37 @@ const RecognitionPanel: React.FC = () => {
         
         // Agent responses will be handled by the agent service callbacks
       } else {
-        // Fallback to mock implementation with real-time feedback
-        // Allow time for the animation to complete
-        await new Promise(resolve => setTimeout(resolve, analysisSteps.length * 1500 + 500));
+        // Use the recognition service directly when no agent is available
+        // Still keep the animation going for better UX
+        // Let at least 3 steps display before showing results
+        const minAnimationTime = Math.min(3, analysisSteps.length) * 1500;
         
-        // Mock results
-        const mockResults: Material[] = [
-          {
-            id: '1',
-            name: 'Marble Tile - Carrara White',
-            manufacturer: 'LuxStone',
-            confidence: 0.92,
-            image: '/images/demo/marble-tile.jpg',
-            specs: {
-              material: 'Marble',
-              size: '12" x 24"',
-              color: 'White',
-              finish: 'Polished'
-            }
-          },
-          {
-            id: '2',
-            name: 'Porcelain Tile - Marble Look',
-            manufacturer: 'TileWorks',
-            confidence: 0.87,
-            image: '/images/demo/porcelain-marble-look.jpg',
-            specs: {
-              material: 'Porcelain',
-              size: '12" x 24"',
-              color: 'White/Gray',
-              finish: 'Matte'
-            }
-          },
-          {
-            id: '3',
-            name: 'Ceramic Tile - White Subway',
-            manufacturer: 'ClassicTiles',
-            confidence: 0.76,
-            image: '/images/demo/subway-tile.jpg',
-            specs: {
-              material: 'Ceramic',
-              size: '3" x 6"',
-              color: 'White',
-              finish: 'Glossy'
-            }
-          }
-        ];
-        
-        setResults(mockResults);
-        
-        // Replace typing message with final analysis
-        const topResult = mockResults[0];
+        try {
+          // Make API call in parallel with animation
+          const recognitionPromise = recognitionService.identifyMaterial(image, {
+            maxResults: 5,
+            confidenceThreshold: 0.6,
+            useFusion: true
+          });
+          
+          // Ensure animation plays for a minimum time for better UX
+          const timeoutPromise = new Promise<void>(resolve => 
+            setTimeout(() => resolve(), minAnimationTime)
+          );
+          
+          // Wait for both animation and API call to complete
+          const [recognitionResults] = await Promise.all([
+            recognitionPromise,
+            timeoutPromise
+          ]);
+          
+          // Set results in state
+          setResults(recognitionResults);
+          
+          // Replace typing message with final analysis
+          const topResult = recognitionResults && recognitionResults.length > 0 
+            ? recognitionResults[0] 
+            : null;
         
         setAgentMessages(prev => {
           const updatedMessages = [...prev];
@@ -430,6 +400,10 @@ const RecognitionPanel: React.FC = () => {
           
           return updatedMessages;
         });
+        } catch (error) {
+          console.error('Error using recognition service:', error);
+          throw error; // Re-throw to be caught by the outer catch block
+        }
       }
     } catch (err) {
       // Clear the interval

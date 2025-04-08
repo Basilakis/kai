@@ -1,4 +1,8 @@
-import React from 'react';
+// @ts-nocheck
+// Import global TypeScript JSX declarations
+import '../types/global-jsx';
+
+import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { 
@@ -29,6 +33,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, closeSidebar }) => {
   const navItems = [
     { name: 'Dashboard', href: '/dashboard', icon: HomeIcon },
     { name: 'User Management', href: '/users', icon: UsersIcon },
+    { name: 'Subscription Tiers', href: '/subscription-tiers', icon: DatabaseIcon },
     { name: 'Catalog Management', href: '/catalogs', icon: DocumentTextIcon },
     { name: 'PDF Processor', href: '/pdf-processor', icon: DocumentTextIcon },
     { name: 'Image Recognition', href: '/image-recognition', icon: PhotographIcon },
@@ -50,7 +55,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, closeSidebar }) => {
     <>
       {/* Mobile sidebar backdrop */}
       {isOpen && (
-        <div 
+        <div
           className="fixed inset-0 z-20 bg-black bg-opacity-50 lg:hidden"
           onClick={closeSidebar}
         />

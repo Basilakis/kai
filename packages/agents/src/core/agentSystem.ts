@@ -13,6 +13,15 @@ import { createLogger, logAgentActivity } from '../utils/logger';
 import { env, configureLoggingFromEnvironment } from '../utils/environment';
 import { AgentConfig, AgentType, AgentCreationResult } from './types';
 import { authService } from '../services/authService';
+import { 
+  ErrorHandler, 
+  AgentSystemError,
+  AgentInitializationError,
+  ServiceConnectionError,
+  ResourceNotFoundError,
+  TaskExecutionError,
+  ValidationError
+} from './errors';
 
 // Import agent factories
 import { createRecognitionAssistant } from '../frontend/recognitionAssistant';
@@ -113,7 +122,10 @@ export async function initializeAgentSystem(config?: Partial<AgentSystemConfig>)
   
   // Validate required configuration
   if (!globalConfig.apiKey) {
-    throw new Error('OpenAI API key is required. Set OPENAI_API_KEY environment variable or provide in config.');
+    throw new ValidationError(
+      'OpenAI API key is required. Set OPENAI_API_KEY environment variable or provide in config.',
+      { severity: 'high' }
+    );
   }
   
   // Set up API key for the LLM provider
@@ -139,7 +151,15 @@ export async function initializeAgentSystem(config?: Partial<AgentSystemConfig>)
       await redisClient.connect();
       logger.info('Redis connection established');
     } catch (error) {
-      logger.error(`Failed to connect to Redis: ${error}`);
+      const redisError = new ServiceConnectionError('Redis', 'connect', {
+        cause: error instanceof Error ? error : undefined,
+        data: { 
+          host: globalConfig.redis.host,
+          port: globalConfig.redis.port
+        },
+        severity: 'medium' // Not critical, can continue without Redis
+      });
+      logger.error(`${redisError.message}`, { error: redisError });
       logger.warn('Continuing without Redis persistence');
     }
   }
@@ -181,9 +201,22 @@ export async function connectToServices(config?: ServiceConnectionConfig): Promi
       await authService.authenticateWithApiKey(serviceConfig.apiKey);
       logger.info('Successfully authenticated with KAI API');
     } catch (error) {
-      logger.error(`Authentication failed: ${error}`);
+      const authError = new ServiceConnectionError('Authentication', 'authenticateWithApiKey', {
+        cause: error instanceof Error ? error : undefined,
+        data: { apiUrl: serviceConfig.apiUrl },
+        severity: 'high'
+      });
+      logger.error(`${authError.message}`, { error: authError });
+      
       if (!serviceConfig.enableMockFallback) {
-        throw new Error('Authentication failed and mock fallback is disabled');
+        throw new ServiceConnectionError('Authentication', 'authenticateWithApiKey', {
+          cause: error instanceof Error ? error : undefined,
+          data: { 
+            apiUrl: serviceConfig.apiUrl,
+            message: 'Authentication failed and mock fallback is disabled'
+          },
+          severity: 'critical'
+        });
       }
       logger.warn('Continuing with mock services due to authentication failure');
     }
@@ -215,7 +248,9 @@ export function getSystemConfig(): AgentSystemConfig | null {
  */
 function ensureInitialized(): void {
   if (!isInitialized || !globalConfig) {
-    throw new Error('Agent system is not initialized. Call initializeAgentSystem first.');
+    throw new ValidationError('Agent system is not initialized. Call initializeAgentSystem first.', {
+      severity: 'high'
+    });
   }
 }
 
@@ -225,17 +260,18 @@ function ensureInitialized(): void {
 export async function createAgent(config: AgentConfig): Promise<AgentCreationResult> {
   ensureInitialized();
   
-  logger.info(`Creating agent of type ${config.type || AgentType.RECOGNITION} with ID ${config.id}`);
-  
-  // Track agent creation
-  logAgentActivity(config.id, {
-    action: 'agent_creation',
-    status: 'start',
-    details: {
-      type: config.type || AgentType.RECOGNITION,
-      name: config.name
-    }
-  });
+  return ErrorHandler.withErrorHandling(async () => {
+    logger.info(`Creating agent of type ${config.type || AgentType.RECOGNITION} with ID ${config.id}`);
+    
+    // Track agent creation
+    logAgentActivity(config.id, {
+      action: 'agent_creation',
+      status: 'start',
+      details: {
+        type: config.type || AgentType.RECOGNITION,
+        name: config.name
+      }
+    });
   
   // Merge default model settings with agent-specific ones
   const modelSettings = {
@@ -245,39 +281,65 @@ export async function createAgent(config: AgentConfig): Promise<AgentCreationRes
     ...config.model,
   };
   
-  let agentInstance;
-  
-  // Create the appropriate agent based on the type
-  switch (config.type) {
-    case AgentType.RECOGNITION:
-      agentInstance = await createRecognitionAssistant(config, modelSettings);
-      break;
+    let agentInstance;
+    
+    try {
+      // Create the appropriate agent based on the type
+      switch (config.type) {
+        case AgentType.RECOGNITION:
+          agentInstance = await createRecognitionAssistant(config, modelSettings);
+          break;
+          
+        case AgentType.MATERIAL_EXPERT:
+          // Use the enhanced material expert with metadata formatting
+          agentInstance = await createEnhancedMaterialExpert(config, modelSettings);
+          break;
+          
+        case AgentType.PROJECT_ASSISTANT:
+          agentInstance = await createProjectAssistant(config, modelSettings);
+          break;
+          
+        case AgentType.KNOWLEDGE_BASE:
+          agentInstance = await createKnowledgeBaseAgent(config, modelSettings);
+          break;
+          
+        case AgentType.ANALYTICS:
+          agentInstance = await createAnalyticsAgent(config, modelSettings);
+          break;
+          
+        case AgentType.OPERATIONS:
+          agentInstance = await createOperationsAgent(config, modelSettings);
+          break;
+          
+        default:
+          throw new ValidationError(`Unsupported agent type: ${config.type}`, {
+            data: { type: config.type },
+            severity: 'high'
+          });
+      }
+    } catch (error) {
+      // Log agent creation failure
+      logAgentActivity(config.id, {
+        action: 'agent_creation',
+        status: 'error',
+        error: error instanceof Error ? error : new Error(String(error)),
+        details: {
+          type: config.type,
+          name: config.name
+        }
+      });
       
-    case AgentType.MATERIAL_EXPERT:
-      // Use the enhanced material expert with metadata formatting
-      agentInstance = await createEnhancedMaterialExpert(config, modelSettings);
-      break;
-      
-    case AgentType.PROJECT_ASSISTANT:
-      agentInstance = await createProjectAssistant(config, modelSettings);
-      break;
-      
-    case AgentType.KNOWLEDGE_BASE:
-      agentInstance = await createKnowledgeBaseAgent(config, modelSettings);
-      break;
-      
-    case AgentType.ANALYTICS:
-      agentInstance = await createAnalyticsAgent(config, modelSettings);
-      break;
-      
-    case AgentType.OPERATIONS:
-      agentInstance = await createOperationsAgent(config, modelSettings);
-      break;
-      
-    default:
-      logger.error(`Unsupported agent type: ${config.type}`);
-      throw new Error(`Unsupported agent type: ${config.type}`);
-  }
+      // Rethrow as specialized error
+      throw new AgentInitializationError(
+        `Failed to initialize agent of type ${config.type}`, 
+        {
+          agentId: config.id,
+          agentType: config.type,
+          cause: error instanceof Error ? error : undefined,
+          severity: 'high'
+        }
+      );
+    }
   
   // Create the result object
   const result: AgentCreationResult = {
@@ -290,19 +352,23 @@ export async function createAgent(config: AgentConfig): Promise<AgentCreationRes
   // Store the agent in the active agents map
   activeAgents.set(config.id, result);
   
-  logger.info(`Agent ${config.id} created successfully`);
-  
-  // Log successful creation
-  logAgentActivity(config.id, {
-    action: 'agent_creation',
-    status: 'success',
-    details: {
-      type: config.type,
-      model: modelSettings.name
-    }
+    logger.info(`Agent ${config.id} created successfully`);
+    
+    // Log successful creation
+    logAgentActivity(config.id, {
+      action: 'agent_creation',
+      status: 'success',
+      details: {
+        type: config.type,
+        model: modelSettings.name
+      }
+    });
+    
+    return result;
+  }, {
+    agentId: config.id,
+    agentType: config.type
   });
-  
-  return result;
 }
 
 /**
@@ -354,7 +420,10 @@ export function createCrew(name: string, agentIds: string[], tasks: string[]): C
   const agents = agentIds.map(id => {
     const agentResult = activeAgents.get(id);
     if (!agentResult) {
-      throw new Error(`Agent with ID ${id} not found`);
+      throw new ResourceNotFoundError('Agent', id, {
+        data: { context: 'createCrew' },
+        severity: 'high'
+      });
     }
     return (agentResult.instance as any).getAgent() as Agent;
   });
@@ -384,10 +453,14 @@ export function createCrew(name: string, agentIds: string[], tasks: string[]): C
 export async function executeAgentTask(agentId: string, taskDescription: string): Promise<string> {
   ensureInitialized();
   
-  const agentResult = activeAgents.get(agentId);
-  if (!agentResult) {
-    throw new Error(`Agent with ID ${agentId} not found`);
-  }
+  return ErrorHandler.withErrorHandling(async () => {
+    const agentResult = activeAgents.get(agentId);
+    if (!agentResult) {
+      throw new ResourceNotFoundError('Agent', agentId, {
+        data: { context: 'executeAgentTask' },
+        severity: 'high'
+      });
+    }
   
   logger.info(`Executing task with agent ${agentId}: ${taskDescription}`);
   
@@ -400,30 +473,50 @@ export async function executeAgentTask(agentId: string, taskDescription: string)
     }
   });
   
-  try {
-    // Each agent class should provide a runTask or processUserInput method
-    if ('runTask' in agentResult.instance) {
-      return await agentResult.instance.runTask(taskDescription);
-    } else if ('processUserInput' in agentResult.instance) {
-      return await agentResult.instance.processUserInput(taskDescription);
-    } else {
-      throw new Error(`Agent ${agentId} does not support task execution`);
-    }
-  } catch (error: any) {
-    logger.error(`Error executing task with agent ${agentId}: ${error}`);
-    
-    // Log task execution error
-    logAgentActivity(agentId, {
-      action: 'task_execution',
-      status: 'error',
-      error: error instanceof Error ? error : new Error(String(error)),
-      details: {
-        task: taskDescription.substring(0, 100) + (taskDescription.length > 100 ? '...' : '')
+    try {
+      // Each agent class should provide a runTask or processUserInput method
+      if ('runTask' in agentResult.instance) {
+        return await agentResult.instance.runTask(taskDescription);
+      } else if ('processUserInput' in agentResult.instance) {
+        return await agentResult.instance.processUserInput(taskDescription);
+      } else {
+        throw new ValidationError(`Agent ${agentId} does not support task execution`, {
+          data: { 
+            agentType: agentResult.type,
+            availableMethods: Object.keys(agentResult.instance)
+          },
+          severity: 'high'
+        });
       }
-    });
-    
-    throw error;
-  }
+    } catch (error: any) {
+      // Convert to specialized error and log
+      const taskError = new TaskExecutionError(
+        `Failed to execute task with agent ${agentId}`,
+        {
+          taskId: `task-${Date.now()}`,
+          agentId: agentId,
+          taskDescription: taskDescription.substring(0, 100) + (taskDescription.length > 100 ? '...' : ''),
+          cause: error instanceof Error ? error : undefined,
+          severity: 'high'
+        }
+      );
+      
+      // Log task execution error
+      logAgentActivity(agentId, {
+        action: 'task_execution',
+        status: 'error',
+        error: taskError,
+        details: {
+          task: taskDescription.substring(0, 100) + (taskDescription.length > 100 ? '...' : '')
+        }
+      });
+      
+      throw taskError;
+    }
+  }, {
+    agentId,
+    taskDescription: taskDescription.substring(0, 100)
+  });
 }
 
 /**
@@ -432,35 +525,63 @@ export async function executeAgentTask(agentId: string, taskDescription: string)
 export async function processEventWithAgent(agentId: string, eventType: string, eventData: any): Promise<void> {
   ensureInitialized();
   
-  const agentResult = activeAgents.get(agentId);
-  if (!agentResult) {
-    throw new Error(`Agent with ID ${agentId} not found`);
-  }
+  return ErrorHandler.withErrorHandling(async () => {
+    const agentResult = activeAgents.get(agentId);
+    if (!agentResult) {
+      throw new ResourceNotFoundError('Agent', agentId, {
+        data: { 
+          context: 'processEventWithAgent',
+          eventType
+        },
+        severity: 'high'
+      });
+    }
   
   logger.info(`Processing event ${eventType} with agent ${agentId}`);
   
-  try {
-    // Only backend agents should have processEvent method
-    if ('processEvent' in agentResult.instance) {
-      await agentResult.instance.processEvent(eventType, eventData);
-    } else {
-      throw new Error(`Agent ${agentId} does not support event processing`);
-    }
-  } catch (error: any) {
-    logger.error(`Error processing event with agent ${agentId}: ${error}`);
-    
-    // Log event processing error
-    logAgentActivity(agentId, {
-      action: 'event_processing',
-      status: 'error',
-      error: error instanceof Error ? error : new Error(String(error)),
-      details: {
-        eventType
+    try {
+      // Only backend agents should have processEvent method
+      if ('processEvent' in agentResult.instance) {
+        await agentResult.instance.processEvent(eventType, eventData);
+      } else {
+        throw new ValidationError(`Agent ${agentId} does not support event processing`, {
+          data: { 
+            agentType: agentResult.type,
+            eventType: eventType,
+            availableMethods: Object.keys(agentResult.instance)
+          },
+          severity: 'medium'
+        });
       }
-    });
-    
-    throw error;
-  }
+    } catch (error: any) {
+      // Convert to specialized error and log
+      const eventError = new TaskExecutionError(
+        `Failed to process event ${eventType} with agent ${agentId}`,
+        {
+          taskId: `event-${Date.now()}`,
+          agentId: agentId,
+          data: { eventType, eventData },
+          cause: error instanceof Error ? error : undefined,
+          severity: 'medium'
+        }
+      );
+      
+      // Log event processing error
+      logAgentActivity(agentId, {
+        action: 'event_processing',
+        status: 'error',
+        error: eventError,
+        details: {
+          eventType
+        }
+      });
+      
+      throw eventError;
+    }
+  }, {
+    agentId,
+    eventType
+  });
 }
 
 /**

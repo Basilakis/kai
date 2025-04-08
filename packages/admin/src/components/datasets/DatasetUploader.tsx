@@ -177,6 +177,7 @@ const DatasetUploader: React.FC<DatasetUploaderProps> = ({ onComplete }) => {
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [source, setSource] = useState('');
   const [csvMapping, setCsvMapping] = useState<CsvMapping[]>([]);
   const [activeStep, setActiveStep] = useState(0);
   const [hasMappingChanged, setHasMappingChanged] = useState(false);
@@ -405,6 +406,7 @@ const DatasetUploader: React.FC<DatasetUploaderProps> = ({ onComplete }) => {
           status: 'ready',
           classCount: 3,
           imageCount: 25,
+          source,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         };
@@ -773,6 +775,17 @@ const DatasetUploader: React.FC<DatasetUploaderProps> = ({ onComplete }) => {
               onChange={(e) => setDescription(e.target.value)}
               multiline
               rows={3}
+              sx={{ mb: 3 }}
+            />
+            
+            <TextField
+              fullWidth
+              label="Source / Company Name"
+              variant="outlined"
+              value={source}
+              onChange={(e) => setSource(e.target.value)}
+              placeholder="Enter the company or source of this dataset"
+              helperText="Define where the data comes from (e.g. company name)"
               sx={{ mb: 3 }}
             />
 

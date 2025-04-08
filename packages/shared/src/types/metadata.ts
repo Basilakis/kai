@@ -136,52 +136,70 @@ export type MaterialMetadata =
 /**
  * Type guard to check if metadata is for Tile
  */
-export function isTileMetadata(metadata: any): metadata is TileMetadata {
-  return metadata && 
-    (metadata.rRating !== undefined || 
-     metadata.vRating !== undefined || 
-     (metadata.material && 
-      ['Ceramic', 'Porcelain', 'Marble', 'Granite', 'Terracotta', 'Quartzite', 'Limestone', 'Slate', 'Glass', 'Cement'].includes(metadata.material)));
+export function isTileMetadata(metadata: unknown): metadata is TileMetadata {
+  return typeof metadata === 'object' && 
+    metadata !== null && 
+    (
+      'rRating' in metadata || 
+      'vRating' in metadata || 
+      ('material' in metadata && 
+       typeof metadata.material === 'string' && 
+       ['Ceramic', 'Porcelain', 'Marble', 'Granite', 'Terracotta', 'Quartzite', 'Limestone', 'Slate', 'Glass', 'Cement'].includes(metadata.material))
+    );
 }
 
 /**
  * Type guard to check if metadata is for Wood
  */
-export function isWoodMetadata(metadata: any): metadata is WoodMetadata {
-  return metadata && 
-    (metadata.woodType !== undefined || 
-     metadata.construction !== undefined ||
-     (metadata.material && metadata.material.toLowerCase().includes('wood')));
+export function isWoodMetadata(metadata: unknown): metadata is WoodMetadata {
+  return typeof metadata === 'object' && 
+    metadata !== null && 
+    (
+      'woodType' in metadata || 
+      'construction' in metadata ||
+      ('material' in metadata && 
+       typeof metadata.material === 'string' && 
+       metadata.material.toLowerCase().includes('wood'))
+    );
 }
 
 /**
  * Type guard to check if metadata is for Lighting
  */
-export function isLightingMetadata(metadata: any): metadata is LightingMetadata {
-  return metadata && 
-    (metadata.lightingType !== undefined || 
-     metadata.bulbType !== undefined ||
-     metadata.wattage !== undefined);
+export function isLightingMetadata(metadata: unknown): metadata is LightingMetadata {
+  return typeof metadata === 'object' && 
+    metadata !== null && 
+    (
+      'lightingType' in metadata || 
+      'bulbType' in metadata ||
+      'wattage' in metadata
+    );
 }
 
 /**
  * Type guard to check if metadata is for Furniture
  */
-export function isFurnitureMetadata(metadata: any): metadata is FurnitureMetadata {
-  return metadata && 
-    (metadata.furnitureType !== undefined || 
-     metadata.cushionFilling !== undefined ||
-     metadata.weightCapacity !== undefined);
+export function isFurnitureMetadata(metadata: unknown): metadata is FurnitureMetadata {
+  return typeof metadata === 'object' && 
+    metadata !== null && 
+    (
+      'furnitureType' in metadata || 
+      'cushionFilling' in metadata ||
+      'weightCapacity' in metadata
+    );
 }
 
 /**
  * Type guard to check if metadata is for Decoration
  */
-export function isDecorationMetadata(metadata: any): metadata is DecorationMetadata {
-  return metadata && 
-    (metadata.decorationType !== undefined || 
-     metadata.mountingType !== undefined ||
-     metadata.setSize !== undefined);
+export function isDecorationMetadata(metadata: unknown): metadata is DecorationMetadata {
+  return typeof metadata === 'object' && 
+    metadata !== null && 
+    (
+      'decorationType' in metadata || 
+      'mountingType' in metadata ||
+      'setSize' in metadata
+    );
 }
 
 /**

@@ -6,22 +6,39 @@
  * endpoints to HTTP routes with appropriate middleware.
  */
 
-// Using require instead of import for Express to avoid TypeScript issues
+// Import with require to match project structure
 // @ts-ignore
 const express = require('express');
-const router = express.Router();
-import multer from 'multer';
+// @ts-ignore
+const multer = require('multer');
 import * as aiController from '../controllers/ai.controller';
 import { authMiddleware } from '../middleware/auth.middleware';
+import { Request, Response, NextFunction } from '../types/middleware';
 
-// Import types for type annotations only
-type Request = any;
-type Response = any;
+// Create router instance matching project convention
+const router = express.Router();
 
-// Configure multer for memory storage (for file uploads)
-// @ts-ignore - Ignore TypeScript errors with multer
+// Configure multer for memory storage matching project convention
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
+
+/**
+ * Type-safe route handler function
+ */
+type RouteHandler = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => Promise<void> | void;
+
+/**
+ * Helper to wrap controller methods with proper typing
+ */
+const createHandler = (handler: RouteHandler): RouteHandler => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    return handler(req, res, next);
+  };
+};
 
 /**
  * @route   POST /api/ai/text/generate
@@ -31,7 +48,7 @@ const upload = multer({ storage });
 router.post(
   '/text/generate',
   authMiddleware,
-  (req: Request, res: Response) => aiController.generateText(req, res)
+  createHandler((req: Request, res: Response) => aiController.generateText(req, res))
 );
 
 /**
@@ -42,7 +59,7 @@ router.post(
 router.post(
   '/embedding/generate',
   authMiddleware,
-  (req: Request, res: Response) => aiController.generateEmbedding(req, res)
+  createHandler((req: Request, res: Response) => aiController.generateEmbedding(req, res))
 );
 
 /**
@@ -54,7 +71,7 @@ router.post(
   '/image/analyze',
   authMiddleware,
   upload.single('image'),
-  (req: Request, res: Response) => aiController.analyzeImage(req, res)
+  createHandler((req: Request, res: Response) => aiController.analyzeImage(req, res))
 );
 
 /**
@@ -65,7 +82,7 @@ router.post(
 router.get(
   '/models/metrics',
   authMiddleware,
-  (req: Request, res: Response) => aiController.getModelMetrics(req, res)
+  createHandler((req: Request, res: Response) => aiController.getModelMetrics(req, res))
 );
 
 /**
@@ -76,7 +93,7 @@ router.get(
 router.post(
   '/evaluation/set',
   authMiddleware,
-  (req: Request, res: Response) => aiController.setEvaluationMode(req, res)
+  createHandler((req: Request, res: Response) => aiController.setEvaluationMode(req, res))
 );
 
 export default router;

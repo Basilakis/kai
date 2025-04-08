@@ -8,29 +8,88 @@
 import { v4 as uuidv4 } from 'uuid';
 import mongoose from 'mongoose';
 import { logger } from '../../utils/logger';
-import { messageBroker } from '../messaging/messageBroker';
+import { messageBrokerFactory } from '../messaging/messageBrokerFactory';
 import { entityLinkingService } from './entityLinking.service';
+
+// Get broker instance
+const broker = messageBrokerFactory.createBroker();
 import { modelRouter } from '../ai/modelRouter';
 import { 
   createMaterialRelationship,
   getMaterialRelationships,
   MaterialRelationshipType 
 } from '../../models/materialRelationship.model';
+import {
+  NotFoundError,
+  ExternalServiceError,
+  IndexingError,
+  ErrorHandler
+} from './errors';
 
 // Import models
-import { MaterialDocument, findSimilarMaterials } from '../../models/material.model';
+import { MaterialType, findSimilarMaterials } from '../../models/material.model';
 import { CollectionDocument } from '../../models/collection.model';
 import { VersionDocument } from '../../models/version.model';
 import SearchIndex, { SearchIndexDocument } from '../../models/searchIndex.model';
 import { 
   createCollectionMembership
 } from '../../models/collectionMembership.model';
+import searchIndexQueue from './searchIndexQueue'; // Import the search index queue
 
 /**
  * Knowledge Base Service
  * 
  * Provides unified APIs for managing the material knowledge base
  */
+/**
+ * Search strategy enum for material search
+ */
+enum SearchStrategy {
+  TEXT = 'text',
+  VECTOR = 'vector',
+  METADATA = 'metadata',
+  COMBINED = 'combined'
+}
+
+/**
+ * Search options interface for material search
+ */
+interface MaterialSearchOptions {
+  query?: string;
+  materialType?: string | string[];
+  collectionId?: string;
+  seriesId?: string;
+  tags?: string[];
+  fields?: Record<string, any>;
+  filter?: Record<string, any>;
+  sort?: Record<string, 1 | -1>;
+  limit?: number;
+  skip?: number;
+  includeVersions?: boolean;
+  useVectorSearch?: boolean;
+  searchStrategy?: SearchStrategy | string;
+}
+
+/**
+ * Search pagination options
+ */
+interface SearchPaginationOptions {
+  limit: number;
+  skip: number;
+  sort: Record<string, 1 | -1>;
+  includeVersions: boolean;
+}
+
+
+/**
+ * Search results interface for material search
+ */
+interface MaterialSearchResults {
+  materials: MaterialType[];
+  total: number;
+  facets?: Record<string, any>;
+}
+
 export class KnowledgeBaseService {
   private static instance: KnowledgeBaseService;
 
@@ -57,117 +116,224 @@ export class KnowledgeBaseService {
    * @param options Search options
    * @returns Search results
    */
-  public async searchMaterials(options: {
-    query?: string;
-    materialType?: string | string[];
-    collectionId?: string;
-    seriesId?: string;
-    tags?: string[];
-    fields?: Record<string, any>;
-    filter?: Record<string, any>;
-    sort?: Record<string, 1 | -1>;
-    limit?: number;
-    skip?: number;
-    includeVersions?: boolean;
-    useVectorSearch?: boolean;
-    searchStrategy?: 'text' | 'vector' | 'metadata' | 'combined';
-  }): Promise<{
-    materials: MaterialDocument[];
-    total: number;
-    facets?: Record<string, any>;
-  }> {
+  public async searchMaterials(options: MaterialSearchOptions): Promise<MaterialSearchResults> {
     try {
       const {
         query,
         materialType,
-        collectionId,
-        seriesId,
-        tags,
-        fields,
-        filter = {},
-        sort = { updatedAt: -1 },
         limit = 10,
         skip = 0,
-        includeVersions = false,
         useVectorSearch = false,
-        searchStrategy = 'text'
+        searchStrategy = SearchStrategy.TEXT,
+        includeVersions = false,
+        sort = { updatedAt: -1 }
       } = options;
 
-      // Choose search strategy
-      if (useVectorSearch && query) {
-        return this.vectorSearch({ query, materialType, limit, skip });
-      }
+      // Create pagination options for reuse
+      const paginationOptions: SearchPaginationOptions = {
+        limit,
+        skip,
+        sort,
+        includeVersions
+      };
 
-      // Build query
-      const searchFilter: Record<string, any> = { ...filter };
+      // Determine which search strategy to use
+      const effectiveStrategy = this.determineSearchStrategy(
+        query, 
+        useVectorSearch, 
+        searchStrategy
+      );
 
-      // Apply text search
-      if (query) {
-        if (searchStrategy === 'text' || searchStrategy === 'combined') {
-          searchFilter.$text = { $search: query };
-        } else {
-          searchFilter.$or = [
-            { name: { $regex: query, $options: 'i' } },
-            { description: { $regex: query, $options: 'i' } },
-            { tags: { $in: [new RegExp(query, 'i')] } }
-          ];
-        }
-      }
-
-      // Apply materialType filter
-      if (materialType) {
-        searchFilter.materialType = Array.isArray(materialType)
-          ? { $in: materialType }
-          : materialType;
-      }
-
-      // Apply collection filter
-      if (collectionId) {
-        searchFilter.collectionId = collectionId;
-      }
-
-      // Apply series filter
-      if (seriesId) {
-        searchFilter.seriesId = seriesId;
-      }
-
-      // Apply tags filter
-      if (tags && tags.length > 0) {
-        searchFilter.tags = { $all: tags };
-      }
-
-      // Apply additional field filters
-      if (fields) {
-        Object.entries(fields).forEach(([key, value]) => {
-          if (value !== undefined && value !== null) {
-            searchFilter[key] = value;
-          }
+      // Execute the appropriate search strategy
+      if (effectiveStrategy === SearchStrategy.VECTOR) {
+        return this.vectorSearch({ 
+          query: query || '', 
+          materialType, 
+          limit, 
+          skip 
         });
       }
 
-      // Get the Material model
-      const Material = mongoose.model('Material');
-
-      // Execute query
-      const projection = includeVersions ? {} : { versions: 0 };
-      const materials = await Material.find(searchFilter, projection)
-        .sort(sort)
-        .skip(skip)
-        .limit(limit);
-
-      const total = await Material.countDocuments(searchFilter);
-
-      // Calculate facets if metadata search
-      let facets: Record<string, any> | undefined;
-      if (searchStrategy === 'metadata' || searchStrategy === 'combined') {
-        facets = await this.calculateFacets(searchFilter);
-      }
-
-      return { materials, total, facets };
+      // Standard search flow for non-vector searches
+      return this.executeStandardSearch(
+        options, 
+        effectiveStrategy, 
+        paginationOptions
+      );
+      
     } catch (err) {
       logger.error(`Failed to search materials: ${err}`);
-      throw new Error(`Failed to search materials: ${err instanceof Error ? err.message : String(err)}`);
+      // Use the ErrorHandler to convert to appropriate error type
+      throw ErrorHandler.handleError(err);
     }
+  }
+
+  /**
+   * Determine which search strategy to use based on parameters
+   * 
+   * @param query Search query text
+   * @param useVectorSearch Whether vector search was explicitly requested
+   * @param requestedStrategy The requested search strategy
+   * @returns The effective search strategy to use
+   */
+  private determineSearchStrategy(
+    query?: string, 
+    useVectorSearch = false, 
+    requestedStrategy: SearchStrategy | string = SearchStrategy.TEXT
+  ): SearchStrategy {
+    // Vector search takes precedence if explicitly requested with a query
+    if (useVectorSearch && query) {
+      return SearchStrategy.VECTOR;
+    }
+    
+    // Otherwise use the requested strategy (normalizing string to enum)
+    return (requestedStrategy as SearchStrategy) || SearchStrategy.TEXT;
+  }
+
+  /**
+   * Execute standard (non-vector) search
+   * 
+   * @param options Search options
+   * @param strategy Search strategy to use
+   * @param paginationOptions Pagination options
+   * @returns Search results
+   */
+  private async executeStandardSearch(
+    options: MaterialSearchOptions,
+    strategy: SearchStrategy,
+    paginationOptions: SearchPaginationOptions
+  ): Promise<MaterialSearchResults> {
+    // Build search filter based on criteria
+    const searchFilter = this.buildSearchFilter(options, strategy);
+
+    // Get the Material model
+    const Material = mongoose.model('Material');
+
+    // Execute the search with proper pagination and projection
+    const { materials, total } = await this.executeSearch(
+      Material, 
+      searchFilter, 
+      paginationOptions
+    );
+
+    // Calculate facets if metadata or combined search strategy is used
+    let facets: Record<string, any> | undefined;
+    if (
+      strategy === SearchStrategy.METADATA || 
+      strategy === SearchStrategy.COMBINED
+    ) {
+      facets = await this.calculateFacets(searchFilter);
+    }
+
+    return { materials, total, facets };
+  }
+
+  /**
+   * Build search filter based on search criteria
+   * 
+   * @param options Search options
+   * @param strategy The search strategy being used
+   * @returns MongoDB query filter
+   */
+  private buildSearchFilter(
+    options: MaterialSearchOptions, 
+    strategy: SearchStrategy = SearchStrategy.TEXT
+  ): Record<string, any> {
+    const {
+      query,
+      materialType,
+      collectionId,
+      seriesId,
+      tags,
+      fields,
+      filter = {}
+    } = options;
+
+    // Start with the base filter
+    const searchFilter: Record<string, any> = { ...filter };
+
+    // Apply text search based on strategy
+    if (query) {
+      if (strategy === SearchStrategy.TEXT || strategy === SearchStrategy.COMBINED) {
+        // Use MongoDB text index search for better performance
+        searchFilter.$text = { $search: query };
+      } else {
+        // Fallback to regex search when text index is not preferred or available
+        searchFilter.$or = [
+          { name: { $regex: query, $options: 'i' } },
+          { description: { $regex: query, $options: 'i' } },
+          { tags: { $in: [new RegExp(query, 'i')] } }
+        ];
+      }
+    }
+
+    // Apply materialType filter (support both single and array)
+    if (materialType) {
+      searchFilter.materialType = Array.isArray(materialType)
+        ? { $in: materialType }
+        : materialType;
+    }
+
+    // Apply collection filter
+    if (collectionId) {
+      searchFilter.collectionId = collectionId;
+    }
+
+    // Apply series filter
+    if (seriesId) {
+      searchFilter.seriesId = seriesId;
+    }
+
+    // Apply tags filter (all tags must match)
+    if (tags && tags.length > 0) {
+      searchFilter.tags = { $all: tags };
+    }
+
+    // Apply additional field filters
+    if (fields) {
+      Object.entries(fields).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          searchFilter[key] = value;
+        }
+      });
+    }
+
+    return searchFilter;
+  }
+
+  /**
+   * Execute the search query with pagination and projection
+   * 
+   * @param Model The Mongoose model to query
+   * @param filter MongoDB query filter
+   * @param options Pagination and projection options
+   * @returns Search results
+   */
+  private async executeSearch(
+    Model: any,
+    filter: Record<string, any>,
+    options: {
+      limit: number;
+      skip: number;
+      sort: Record<string, 1 | -1>;
+      includeVersions: boolean;
+    }
+  ): Promise<{ materials: MaterialType[]; total: number }> {
+    const { limit, skip, sort, includeVersions } = options;
+
+    // Determine projection (whether to include version history)
+    const projection = includeVersions ? {} : { versions: 0 };
+
+    // Execute query with pagination
+    const materials = await Model.find(filter, projection)
+      .sort(sort)
+      .skip(skip)
+      .limit(limit);
+
+    // Get total count for pagination
+    const total = await Model.countDocuments(filter);
+
+    return { materials, total };
   }
 
   /**
@@ -183,7 +349,7 @@ export class KnowledgeBaseService {
     limit?: number;
     skip?: number;
   }): Promise<{
-    materials: MaterialDocument[];
+    materials: MaterialType[];
     total: number;
   }> {
     try {
@@ -241,9 +407,13 @@ export class KnowledgeBaseService {
       return embeddingResult.result; // Return the embedding vector
     } catch (err) {
       logger.error(`Failed to generate query embedding via ModelRouter: ${err}`);
-      // Fallback or re-throw depending on desired behavior
-      // For now, re-throwing to indicate failure
-      throw new Error(`Failed to generate query embedding: ${err instanceof Error ? err.message : String(err)}`);
+      // Use specialized external service error
+      throw new ExternalServiceError(
+        'ModelRouter', 
+        'generateEmbedding', 
+        err instanceof Error ? err : new Error(String(err)),
+        { query }
+      );
     }
   }
 
@@ -411,9 +581,9 @@ export class KnowledgeBaseService {
    */
   public async createMaterialRevision(
     materialId: string,
-    updateData: Partial<MaterialDocument>,
+    updateData: Partial<MaterialType>,
     userId: string
-  ): Promise<MaterialDocument> {
+  ): Promise<MaterialType> {
     try {
       // Get the Material model
       const Material = mongoose.model('Material');
@@ -458,7 +628,7 @@ export class KnowledgeBaseService {
       // Update search indexes
       await this.updateSearchIndexes('material', materialId);
       
-      return updatedMaterial as MaterialDocument;
+      return updatedMaterial as MaterialType;
     } catch (err) {
       logger.error(`Failed to create material revision: ${err}`);
       throw new Error(`Failed to create material revision: ${err instanceof Error ? err.message : String(err)}`);
@@ -477,7 +647,7 @@ export class KnowledgeBaseService {
     materialId: string,
     versionId: string,
     userId: string
-  ): Promise<MaterialDocument> {
+  ): Promise<MaterialType> {
     try {
       // Get the Material and Version models
       const Material = mongoose.model('Material');
@@ -486,13 +656,13 @@ export class KnowledgeBaseService {
       // Find version to revert to
       const version = await Version.findOne({ id: versionId, entityId: materialId });
       if (!version) {
-        throw new Error(`Version not found: ${versionId}`);
+        throw new NotFoundError('Version', versionId, { materialId });
       }
       
       // Find current material
       const currentMaterial = await Material.findOne({ id: materialId });
       if (!currentMaterial) {
-        throw new Error(`Material not found: ${materialId}`);
+        throw new NotFoundError('Material', materialId);
       }
       
       // Create new version record for the revert operation
@@ -531,10 +701,11 @@ export class KnowledgeBaseService {
       // Update search indexes
       await this.updateSearchIndexes('material', materialId);
       
-      return updatedMaterial as MaterialDocument;
+      return updatedMaterial as MaterialType;
     } catch (err) {
       logger.error(`Failed to revert material version: ${err}`);
-      throw new Error(`Failed to revert material version: ${err instanceof Error ? err.message : String(err)}`);
+      // Use error handler to create appropriate error
+      throw ErrorHandler.handleError(err);
     }
   }
 
@@ -580,8 +751,9 @@ export class KnowledgeBaseService {
         return;
       }
       
-      // Mark indexes as needing update
+      // Add update job to the queue for each index
       for (const index of indexes) {
+        // Mark index as updating
         await SearchIndex.updateOne(
           { id: index.id },
           { 
@@ -590,9 +762,24 @@ export class KnowledgeBaseService {
           }
         );
         
-        // This would normally trigger an async process to update the indexes
-        // For now, we just log that it needs to be updated
-        logger.info(`Search index ${index.id} for ${entityType} needs update for entity ${entityId}`);
+        // Add job to update queue
+        try {
+          const jobId = await searchIndexQueue.addUpdateJob(
+            index.id,
+            entityType,
+            entityId,
+            { priority: 'normal' }
+          );
+          
+          logger.info(`Added index update job to queue: ${index.id} for ${entityType}/${entityId} (Job ID: ${jobId})`);
+        } catch (queueErr) {
+          logger.error(`Failed to queue index update job: ${queueErr}`);
+          // If queue fails, mark index back as ready
+          await SearchIndex.updateOne(
+            { id: index.id },
+            { status: 'ready' }
+          );
+        }
       }
     } catch (err) {
       logger.error(`Failed to update search indexes: ${err}`);
@@ -607,10 +794,34 @@ export class KnowledgeBaseService {
    */
   public async createSearchIndex(indexData: Partial<SearchIndexDocument>): Promise<SearchIndexDocument> {
     try {
-      const searchIndex = await SearchIndex.create(indexData);
+      // Create the search index
+      const searchIndex = await SearchIndex.create({
+        ...indexData,
+        status: 'building', // Start in building status
+        createdAt: new Date(),
+        lastUpdateTime: new Date(),
+        documentCount: 0
+      });
       
-      // In a real implementation, this would trigger a background job
-      // to build the index asynchronously
+      // Queue a job to build the index in the background
+      try {
+        const jobId = await searchIndexQueue.addCreateJob(
+          {
+            ...indexData,
+            id: searchIndex.id
+          },
+          { priority: 'normal' }
+        );
+        
+        logger.info(`Added create index job to queue: ${searchIndex.name} (Job ID: ${jobId})`);
+      } catch (queueErr) {
+        logger.error(`Failed to queue index creation job: ${queueErr}`);
+        // If queue fails, mark index as ready but empty
+        await SearchIndex.updateOne(
+          { id: searchIndex.id },
+          { status: 'ready' }
+        );
+      }
       
       return searchIndex;
     } catch (err) {
@@ -684,7 +895,7 @@ export class KnowledgeBaseService {
     try {
       const index = await SearchIndex.findOne({ id: indexId });
       if (!index) {
-        throw new Error(`Search index not found: ${indexId}`);
+        throw new NotFoundError('SearchIndex', indexId);
       }
       
       // Mark index as updating
@@ -696,41 +907,42 @@ export class KnowledgeBaseService {
         }
       );
       
-      // In a real implementation, this would trigger a background job
-      // For now we just simulate it being done immediately
-      const updatedIndex = await SearchIndex.findOneAndUpdate(
-        { id: indexId },
-        {
-          status: 'ready',
-          lastBuildTime: new Date(),
-          lastUpdateTime: new Date(),
-          documentCount: await this.countDocumentsForIndex(index)
-        },
-        { new: true }
-      );
-      
-      return updatedIndex as SearchIndexDocument;
+      // Queue the rebuild job in the background
+      try {
+        const jobId = await searchIndexQueue.addRebuildJob(
+          indexId,
+          { priority: 'high' } // Rebuilds are higher priority
+        );
+        
+        logger.info(`Added index rebuild job to queue: ${indexId} (Job ID: ${jobId})`);
+        
+        // Return the updated index status
+        const updatedIndex = await SearchIndex.findOne({ id: indexId });
+        if (!updatedIndex) {
+          throw new NotFoundError('SearchIndex', indexId, { stage: 'post-update-check' });
+        }
+        return updatedIndex;
+      } catch (queueErr) {
+        // If queue fails, revert the index status to ready
+        logger.error(`Failed to queue index rebuild job: ${queueErr}`);
+        await SearchIndex.updateOne(
+          { id: indexId },
+          { status: 'ready' }
+        );
+        throw new IndexingError(
+          `Failed to queue index rebuild job`, 
+          indexId, 
+          'rebuild',
+          { originalError: queueErr instanceof Error ? queueErr.message : String(queueErr) }
+        );
+      }
     } catch (err) {
       logger.error(`Failed to rebuild search index: ${err}`);
-      throw new Error(`Failed to rebuild search index: ${err instanceof Error ? err.message : String(err)}`);
+      // Use the error handler to convert to appropriate error type
+      throw ErrorHandler.handleError(err);
     }
   }
 
-  /**
-   * Count documents for an index
-   * 
-   * @param index Search index
-   * @returns Document count
-   */
-  private async countDocumentsForIndex(index: SearchIndexDocument): Promise<number> {
-    try {
-      const Model = mongoose.model(index.entityType.charAt(0).toUpperCase() + index.entityType.slice(1));
-      return await Model.countDocuments();
-    } catch (err) {
-      logger.error(`Failed to count documents for index: ${err}`);
-      return 0;
-    }
-  }
 
   /**
    * Send real-time notification about knowledge base changes
@@ -745,7 +957,7 @@ export class KnowledgeBaseService {
     data: any
   ): Promise<void> {
     try {
-      await messageBroker.publish('system', 'knowledge-base-event', {
+      await broker.publish('system', 'knowledge-base-event', {
         type: eventType,
         data,
         timestamp: Date.now()
@@ -767,13 +979,14 @@ export class KnowledgeBaseService {
    * @returns Import results
    */
   public async bulkImportMaterials(
-    materials: Array<Partial<MaterialDocument>>,
+    materials: Array<Partial<MaterialType>>,
     userId: string,
     options: {
       updateExisting?: boolean;
       detectDuplicates?: boolean;
       validateSchema?: boolean;
       collectionId?: string;
+      batchSize?: number;
     } = {}
   ): Promise<{
     imported: number;
@@ -786,7 +999,8 @@ export class KnowledgeBaseService {
       const {
         updateExisting = false,
         detectDuplicates = true,
-        collectionId
+        collectionId,
+        batchSize = 100 // Default batch size
       } = options;
       
       // Get the Material model
@@ -801,116 +1015,294 @@ export class KnowledgeBaseService {
         materialIds: [] as string[]
       };
       
-      // Process each material
+      // Validate materials first
+      const validMaterials: Array<{index: number; data: Partial<MaterialType>}> = [];
+      const invalidMaterials: Array<{index: number; error: string}> = [];
+      
+      // Initial validation pass
       for (let i = 0; i < materials.length; i++) {
         const materialData = materials[i];
-
-        // Add explicit check for undefined to satisfy linter, though loop condition should prevent it
+        
+        // Add explicit check for undefined to satisfy linter
         if (!materialData) {
-            results.failed++;
-            results.errors.push({ index: i, error: 'Material data is undefined' });
-            continue; 
+          invalidMaterials.push({ 
+            index: i, 
+            error: 'Material data is undefined' 
+          });
+          continue; 
         }
         
+        // Validate material has a name
+        if (!materialData.name) {
+          invalidMaterials.push({ 
+            index: i, 
+            error: 'Material name is required' 
+          });
+          continue;
+        }
+        
+        // Add required fields, ensuring materialData is defined
+        materialData.id = materialData.id || uuidv4();
+        materialData.createdBy = materialData.createdBy || userId;
+        materialData.updatedAt = new Date();
+        
+        // Add to collection if specified
+        if (collectionId) {
+          materialData.collectionId = collectionId;
+        }
+        
+        // Add to valid materials
+        validMaterials.push({ index: i, data: materialData });
+      }
+      
+      // Record invalid materials
+      for (const invalid of invalidMaterials) {
+        results.failed++;
+        results.errors.push(invalid);
+      }
+      
+      // Process valid materials in batches
+      for (let i = 0; i < validMaterials.length; i += batchSize) {
+        const batch = validMaterials.slice(i, i + batchSize);
+        
         try {
-          // Check name after ensuring materialData is defined
-          if (!materialData.name) {
-            throw new Error('Material name is required');
-          }
+          // Step 1: Check for duplicates if needed (get all potentially duplicate materials)
+          let existingMaterials: Record<string, MaterialType> = {};
           
-          // Add required fields, ensuring materialData is defined
-          materialData.id = materialData.id || uuidv4();
-          materialData.createdBy = materialData.createdBy || userId;
-          // Removed potentially problematic createdAt assignment:
-          // materialData.createdAt = materialData.createdAt || new Date(); 
-          materialData.updatedAt = new Date();
-          
-          // Add to collection if specified
-          if (collectionId) {
-            materialData.collectionId = collectionId;
-          }
-          
-          // Check for duplicates if needed
           if (detectDuplicates) {
-            const existingMaterial = await Material.findOne({ 
-              $or: [
-                { id: materialData.id },
-                { name: materialData.name }
-              ]
-            });
+            const ids = batch.map(item => item.data.id).filter(Boolean);
+            const names = batch.map(item => item.data.name).filter(Boolean);
             
-            if (existingMaterial) {
-              if (updateExisting) {
-                // Update existing material
-                await Material.updateOne(
-                  { id: existingMaterial.id },
-                  { 
-                    ...materialData,
-                    createdAt: existingMaterial.createdAt,
-                    createdBy: existingMaterial.createdBy,
-                    updatedAt: new Date()
-                  }
-                );
-                
-                results.updated++;
-                results.materialIds.push(existingMaterial.id);
-                continue;
+            const query: any = { $or: [] };
+            if (ids.length > 0) {
+              query.$or.push({ id: { $in: ids } });
+            }
+            if (names.length > 0) {
+              query.$or.push({ name: { $in: names } });
+            }
+            
+            if (query.$or.length > 0) {
+              const existingDocs = await Material.find(query);
+              
+              // Create lookup maps for fast access
+              existingMaterials = existingDocs.reduce((acc: Record<string, MaterialType>, doc: MaterialType) => {
+                acc[doc.id] = doc;
+                acc[doc.name] = doc;
+                return acc;
+              }, {});
+            }
+          }
+          
+          // Step 2: Prepare bulk operations
+          interface BulkWriteOperation {
+            updateOne?: {
+              filter: Record<string, any>;
+              update: Record<string, any>;
+            };
+            insertOne?: {
+              document: Record<string, any>;
+            };
+          }
+          
+          const bulkOperations: BulkWriteOperation[] = [];
+          const batchSuccess: Array<{
+            index: number;
+            id: string;
+            isNew: boolean;
+            name: string;
+            collectionId?: string;
+            description?: string;
+          }> = [];
+          const batchErrors: Array<{index: number; error: string}> = [];
+          
+          // Process each material in the batch
+          for (const item of batch) {
+            const { index, data } = item;
+            
+            try {
+              // Check for duplicate
+              const existingByName = existingMaterials[data.name as string];
+              const existingById = data.id ? existingMaterials[data.id] : undefined;
+              const existingMaterial = existingById || existingByName;
+              
+              if (existingMaterial) {
+                if (updateExisting) {
+                  // Prepare update operation
+                  bulkOperations.push({
+                    updateOne: {
+                      filter: { id: existingMaterial.id },
+                      update: { 
+                        $set: {
+                          ...data,
+                          createdAt: (existingMaterial as any).createdAt,
+                          createdBy: existingMaterial.createdBy,
+                          updatedAt: new Date()
+                        }
+                      }
+                    }
+                  });
+                  
+                  batchSuccess.push({
+                    index,
+                    id: existingMaterial.id,
+                    isNew: false,
+                    name: data.name as string,
+                    collectionId: data.collectionId,
+                    description: data.description
+                  });
+                } else {
+                  // Record as error
+                  batchErrors.push({
+                    index,
+                    error: `Duplicate material found: ${data.name}`
+                  });
+                }
               } else {
-                throw new Error(`Duplicate material found: ${materialData.name}`);
+                // Prepare insert operation
+                bulkOperations.push({
+                  insertOne: {
+                    document: {
+                      ...data,
+                      createdAt: new Date()
+                    }
+                  }
+                });
+                
+                batchSuccess.push({
+                  index,
+                  id: data.id as string,
+                  isNew: true,
+                  name: data.name as string,
+                  collectionId: data.collectionId,
+                  description: data.description
+                });
+              }
+            } catch (err) {
+              batchErrors.push({
+                index,
+                error: err instanceof Error ? err.message : String(err)
+              });
+            }
+          }
+          
+          // Step 3: Execute bulk operation if there are operations
+          if (bulkOperations.length > 0) {
+            await Material.bulkWrite(bulkOperations, { ordered: false });
+          }
+          
+          // Step 4: Process collection memberships in batch (if needed)
+          if (collectionId) {
+            const membershipOperations = batchSuccess
+              .filter(item => item.isNew && item.collectionId && item.collectionId !== collectionId)
+              .map(item => ({
+                materialId: item.id,
+                collectionId,
+                addedBy: userId
+              }));
+            
+            if (membershipOperations.length > 0) {
+              // Create memberships in batch (if method supports it)
+              // Otherwise, can fall back to individual creation
+              for (const membership of membershipOperations) {
+                await createCollectionMembership(membership);
               }
             }
           }
           
-          // Create the material
-          const material = new Material(materialData);
-          await material.save();
+          // Step 5: Process entity linking in batch if possible (or sequentially)
+          // Since entity linking might have dependencies, process sequentially for now
+          for (const item of batchSuccess) {
+            if (item.description) {
+              try {
+                await entityLinkingService.linkEntitiesInDescription(
+                  item.id,
+                  item.description,
+                  { 
+                    linkMaterials: true,
+                    linkCollections: true,
+                    createRelationships: true,
+                    userId
+                  }
+                );
+              } catch (err) {
+                logger.warn(`Entity linking failed for material ${item.id}: ${err}`);
+                // Don't fail the entire import for entity linking issues
+              }
+            }
+          }
           
-          // Send real-time notification
-          await this.sendKnowledgeBaseEvent('material-created', {
-            materialId: material.id,
-            name: material.name,
-            collectionId: material.collectionId
-          });
+          // Step 6: Send notifications in batch when possible
+          // Prepare events for newly created materials
+          const createdEvents = batchSuccess
+            .filter(item => item.isNew)
+            .map(item => ({
+              type: 'material-created' as const,
+              data: {
+                materialId: item.id,
+                name: item.name,
+                collectionId: item.collectionId
+              }
+            }));
           
-          // Track result
-          results.imported++;
-          results.materialIds.push(material.id);
+          // Prepare events for updated materials
+          const updatedEvents = batchSuccess
+            .filter(item => !item.isNew)
+            .map(item => ({
+              type: 'material-updated' as const,
+              data: {
+                materialId: item.id,
+                name: item.name
+              }
+            }));
           
-          // Add to collection membership if different from direct collection
-          if (collectionId && materialData.collectionId && collectionId !== materialData.collectionId) {
-            await createCollectionMembership({
-              materialId: material.id,
-              collectionId,
-              addedBy: userId
+          // Send events in batches if a batch method is available
+          // Otherwise fall back to individual notifications
+          for (const event of [...createdEvents, ...updatedEvents]) {
+            try {
+              await this.sendKnowledgeBaseEvent(
+                event.type,
+                event.data
+              );
+            } catch (err) {
+              logger.warn(`Failed to send event for material ${event.data.materialId}: ${err}`);
+              // Don't fail the entire import for notification issues
+            }
+          }
+          
+          // Step 7: Update results
+          for (const item of batchSuccess) {
+            if (item.isNew) {
+              results.imported++;
+            } else {
+              results.updated++;
+            }
+            results.materialIds.push(item.id);
+          }
+          
+          for (const error of batchErrors) {
+            results.failed++;
+            results.errors.push(error);
+          }
+          
+        } catch (batchErr) {
+          // Handle batch-level errors
+          logger.error(`Batch processing error: ${batchErr}`);
+          
+          // Record all materials in this batch as failed
+          for (const item of batch) {
+            results.failed++;
+            results.errors.push({
+              index: item.index,
+              error: `Batch processing error: ${batchErr instanceof Error ? batchErr.message : String(batchErr)}`
             });
           }
-          
-          // Process entity linking if description is provided (check materialData first)
-          if (materialData.description) {
-            await entityLinkingService.linkEntitiesInDescription(
-              material.id,
-              materialData.description, // Safe to access now
-              { 
-                linkMaterials: true,
-                linkCollections: true,
-                createRelationships: true,
-                userId
-              }
-            );
-          }
-        } catch (err) {
-          results.failed++;
-          results.errors.push({
-            index: i,
-            error: err instanceof Error ? err.message : String(err)
-          });
         }
       }
       
       return results;
     } catch (err) {
       logger.error(`Failed to bulk import materials: ${err}`);
-      throw new Error(`Failed to bulk import materials: ${err instanceof Error ? err.message : String(err)}`);
+      throw ErrorHandler.handleError(err);
     }
   }
 
@@ -923,7 +1315,7 @@ export class KnowledgeBaseService {
    * @returns Update results
    */
   public async bulkUpdateMaterials(
-    updates: Partial<MaterialDocument>,
+    updates: Partial<MaterialType>,
     filter: Record<string, any>,
     userId: string
   ): Promise<{
@@ -938,7 +1330,7 @@ export class KnowledgeBaseService {
       // Find matching materials
       const matchingMaterials = await Material.find(filter, { id: 1 });
       // Add explicit type to map parameter
-      const materialIds = matchingMaterials.map((m: MaterialDocument) => m.id); 
+      const materialIds = matchingMaterials.map((m: MaterialType) => m.id);
       
       // Skip if no materials match
       if (materialIds.length === 0) {
@@ -1019,7 +1411,7 @@ export class KnowledgeBaseService {
       } else if (filter) {
         const matchingMaterials = await Material.find(filter, { id: 1 });
         // Add explicit type to map parameter
-        idsToDelete = matchingMaterials.map((m: MaterialDocument) => m.id); 
+        idsToDelete = matchingMaterials.map((m: MaterialType) => m.id);
       } else {
         throw new Error('Either materialIds or filter must be provided');
       }
@@ -1088,7 +1480,7 @@ export class KnowledgeBaseService {
       if (includeRelationships) {
         materialsWithRelationships = await Promise.all(
           // Add explicit type to map parameter
-          materials.map(async (material: MaterialDocument) => { 
+          materials.map(async (material: MaterialType) => {
             const materialObj = (material as any).toObject();
             const relationships = await getMaterialRelationships(material.id);
             return {

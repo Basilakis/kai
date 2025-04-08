@@ -125,6 +125,134 @@ Steps:
 7. Configure Supabase for queue system
 8. Set up monitoring and logging
 
+### Database Migration System
+
+Kai uses a robust database migration system to manage schema changes across environments. This system ensures that database schema is always in sync with application code and migrations are applied exactly once.
+
+#### Migration Architecture
+
+```
+┌─────────────────────┐     ┌─────────────────────┐     ┌─────────────────────┐
+│                     │     │                     │     │                     │
+│  CI/CD Pipeline     │────▶│  Migration Script   │────▶│  Supabase Database  │
+│                     │     │                     │     │                     │
+└─────────────────────┘     └─────────────────────┘     └─────────────────────┘
+         │                          │                          │
+         │                          │                          │
+         ▼                          ▼                          ▼
+┌─────────────────────┐     ┌─────────────────────┐     ┌─────────────────────┐
+│                     │     │                     │     │                     │
+│  Runs before        │     │  Reads SQL files    │     │  schema_migrations  │
+│  Application Deploy │     │  from migrations/   │     │  tracking table     │
+│                     │     │                     │     │                     │
+└─────────────────────┘     └─────────────────────┘     └─────────────────────┘
+```
+
+#### Migration Files
+
+Migration files are SQL scripts stored in `packages/server/src/services/supabase/migrations/` and follow a sequential naming convention:
+
+```
+001_initial_schema.sql
+002_hybrid_search.sql
+003_dataset_upload.sql
+004_material_metadata_fields.sql
+004_message_broker.sql
+...
+```
+
+Each file represents a set of schema changes that should be applied in order.
+
+#### Migration Tracking
+
+Migrations are tracked in a `schema_migrations` table in the Supabase database:
+
+```sql
+CREATE TABLE schema_migrations (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  applied_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+```
+
+This table records which migrations have already been applied to prevent duplicate execution.
+
+#### Migration Script
+
+The system uses a TypeScript migration script (`packages/server/scripts/run-migrations.ts`) that:
+
+1. Connects to the Supabase database using environment credentials
+2. Creates the `schema_migrations` table if it doesn't exist
+3. Retrieves already applied migrations from the table
+4. Compares available migrations with applied ones to identify pending migrations
+5. Applies pending migrations in sequential order
+6. Records successful migrations in the tracking table
+
+This approach ensures migrations are:
+- Applied only once
+- Applied in the correct order
+- Only executed when needed
+- Tracked for audit purposes
+
+#### Integration with CI/CD Pipeline
+
+Database migrations are integrated into the CI/CD pipeline to ensure they run automatically before deploying application changes:
+
+1. In the GitHub Actions workflow (`.github/workflows/deploy.yml`), a dedicated step runs migrations before the Kubernetes deployment:
+
+```yaml
+# Run database migrations before deployment
+- name: Setup Node.js for migrations
+  uses: actions/setup-node@v3
+  with:
+    node-version: ${{ env.NODE_VERSION }}
+    
+- name: Install dependencies
+  run: yarn install --frozen-lockfile
+  
+- name: Run database migrations (Staging)
+  run: |
+    echo "Running database migrations for staging environment..."
+    yarn tsc -p packages/server/tsconfig.json
+    cd packages/server
+    node dist/scripts/run-migrations.js
+  env:
+    SUPABASE_URL: ${{ secrets.SUPABASE_URL_STAGING }}
+    SUPABASE_KEY: ${{ secrets.SUPABASE_KEY_STAGING }}
+    NODE_ENV: staging
+```
+
+2. Similar steps run for the production environment in the production deployment job.
+
+This ensures:
+- Database schema is updated before application code is deployed
+- Each environment (staging, production) maintains its own migration state
+- Migrations that fail will prevent deployment of incompatible application code
+
+#### Adding a New Migration
+
+To create a new migration:
+
+1. Create a SQL file in `packages/server/src/services/supabase/migrations/` with the next sequential number
+2. Write SQL statements for the schema changes
+3. Commit the migration file to the repository
+4. The CI/CD pipeline will apply it automatically during the next deployment
+
+#### Rollback Strategy
+
+For migration rollbacks:
+
+1. **Development**: Remove the entry from the `schema_migrations` table and create a new migration that reverts the changes
+2. **Production**: Create a new "down" migration that safely reverses the changes without data loss
+
+#### Best Practices
+
+- Always test migrations in development and staging before production
+- Keep migrations focused and atomic (one logical change per file)
+- Include comments in SQL files to explain complex changes
+- Avoid destructive operations (e.g., dropping columns with data) without careful consideration
+- Consider data migration needs alongside schema changes
+
 ### Deployment Process
 
 #### 1. Environment Configuration
@@ -173,6 +301,18 @@ MODEL_CACHE_SIZE=5
 AGENT_INTEGRATION_ENABLED=true
 MAX_BATCH_SIZE=16
 
+# Rate Limiting Configuration
+DEFAULT_RATE_LIMIT=100
+DEFAULT_RATE_WINDOW_MS=60000
+AUTH_RATE_LIMIT=20
+AUTH_RATE_WINDOW_MS=60000
+ML_RATE_LIMIT=10
+ML_RATE_WINDOW_MS=60000
+AGENT_RATE_LIMIT=30
+AGENT_RATE_WINDOW_MS=60000
+PDF_RATE_LIMIT=5
+PDF_RATE_WINDOW_MS=600000
+
 # Frontend Configuration
 GATSBY_API_URL=https://api.yourdomain.com
 GATSBY_SUPABASE_URL=https://your-supabase-project.supabase.co
@@ -183,6 +323,31 @@ GATSBY_GOOGLE_ANALYTICS_ID=your-ga-id
 ```
 
 All KAI components will read from this single centralized environment file. This simplifies configuration management and ensures consistency across services.
+
+#### 1.1 Monitoring Configuration
+
+For optimal monitoring in production, configure the following environment variables:
+
+```
+# Logging Configuration
+LOG_LEVEL=info
+LOG_FORMAT=json
+LOG_TO_FILE=true
+LOG_FILE_PATH=/var/log/kai/server.log
+LOG_ROTATION_INTERVAL=1d
+LOG_MAX_FILES=30
+
+# Monitoring Configuration
+ENABLE_DETAILED_METRICS=true
+METRICS_REPORTING_INTERVAL=60000
+ENABLE_PERFORMANCE_MONITORING=true
+
+# Health Check Configuration
+HEALTH_CHECK_INTERVAL=30000
+COMPONENT_TIMEOUT_MS=5000
+```
+
+These settings enable comprehensive logging, performance metrics collection, and regular health checks for all system components.
 
 #### 2. Database Setup
 
@@ -379,7 +544,34 @@ spec:
           periodSeconds: 10
 ```
 
-2. Apply configurations:
+2. Add health check and liveness probe to your Kubernetes deployment:
+
+```yaml
+spec:
+  template:
+    spec:
+      containers:
+      - name: kai-api-server
+        # ... existing configuration ...
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 2
+```
+
+3. Apply configurations:
 ```bash
 kubectl apply -f api-server-deployment.yaml
 kubectl apply -f ml-services-deployment.yaml
@@ -454,7 +646,53 @@ volumes:
   ml-models:
 ```
 
-#### 6. Frontend Deployment
+#### 6. Monitoring Setup in Production
+
+1. **Configure external monitoring systems to use the health endpoints**
+
+   Set up your monitoring system (Prometheus, Datadog, New Relic, etc.) to regularly poll the health endpoints:
+   
+   ```
+   # Basic health check - for load balancers and simple monitoring
+   GET https://api.yourdomain.com/health
+   
+   # Detailed health check - for comprehensive system monitoring (requires authentication)
+   GET https://api.yourdomain.com/health/detailed
+   ```
+
+2. **Set up alerts based on health endpoint responses**
+
+   Configure alerting rules for:
+   - Non-200 status codes from health endpoints
+   - System status other than "ok" 
+   - Memory usage above 80%
+   - CPU usage above 80%
+   - Component status degradation
+   
+3. **Implement a dashboard for rate limit monitoring**
+
+   Set up a dashboard to monitor:
+   - Rate limit usage across endpoints
+   - Number of rate limited requests
+   - Distribution of requests across API categories
+   
+4. **Deploy admin monitoring dashboard**
+
+   Deploy the admin monitoring interface to enable:
+   - Real-time system logs viewing
+   - Error distribution analysis
+   - Health metrics visualization
+   - Rate limit statistics
+
+5. **Log aggregation setup**
+
+   Configure your log aggregation system (ELK Stack, Graylog, etc.) to:
+   - Collect logs from all Kai components
+   - Parse JSON-formatted logs
+   - Create indexes for efficient searching
+   - Set up log retention policies
+
+#### 7. Frontend Deployment
 
 **Static Hosting (Client App)**
 1. Build the client app: `yarn workspace @kai/client build`
@@ -465,17 +703,49 @@ volumes:
 2. Deploy the contents of `packages/admin/out` to your CDN or static hosting
    (Note: For Next.js with SSR, deploy to Vercel or similar platform)
 
-#### 7. Monitoring Setup
+#### 8. Integrating Monitoring Dashboard
 
-1. Set up monitoring using Prometheus and Grafana
-2. Configure alerts for:
-   - High API server CPU/memory usage
-   - ML service errors
-   - Queue backlogs
-   - Database performance issues
-   - High error rates
+1. **Configure Admin Dashboard Access**
+   
+   Ensure that the admin monitoring dashboard is properly secured:
+   
+   ```yaml
+   # In your ingress or routing configuration
+   apiVersion: networking.k8s.io/v1
+   kind: Ingress
+   metadata:
+     name: kai-admin-ingress
+     annotations:
+       nginx.ingress.kubernetes.io/ssl-redirect: "true"
+       nginx.ingress.kubernetes.io/auth-type: basic
+       nginx.ingress.kubernetes.io/auth-secret: admin-auth
+       nginx.ingress.kubernetes.io/auth-realm: "Authentication Required"
+   spec:
+     rules:
+     - host: admin.yourdomain.com
+       http:
+         paths:
+         - path: /
+           pathType: Prefix
+           backend:
+             service:
+               name: kai-admin-service
+               port:
+                 number: 80
+   ```
 
-#### 8. Backup Strategy
+2. **Connect Admin Dashboard to Monitoring API**
+   
+   Configure the admin application to connect to the monitoring endpoints:
+   
+   ```
+   # In admin app environment configuration
+   MONITORING_API_URL=https://api.yourdomain.com
+   MONITORING_REFRESH_INTERVAL=30000
+   LOG_RETENTION_DAYS=30
+   ```
+
+#### 9. Backup Strategy
 
 1. Configure automated MongoDB backups:
    - Daily full backups

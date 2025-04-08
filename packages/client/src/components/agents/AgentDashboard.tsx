@@ -3,8 +3,9 @@ import styled from '@emotion/styled';
 import RecognitionPanel from './RecognitionPanel';
 import MaterialExpertPanel from './MaterialExpertPanel';
 import ProjectAssistantPanel from './ProjectAssistantPanel';
+import AnalyticsPanel from './AnalyticsPanel';
 
-type AgentType = 'recognition' | 'material' | 'project';
+type AgentType = 'recognition' | 'material' | 'project' | 'analytics';
 
 /**
  * AgentDashboard Component
@@ -26,7 +27,7 @@ const AgentDashboard: React.FC = () => {
       <DashboardHeader>
         <HeaderTitle>KAI Intelligent Assistance</HeaderTitle>
         <HeaderSubtitle>
-          Powered by crewAI agents specialized for material recognition and project management
+          Powered by crewAI agents specialized for material recognition, project management, and analytics
         </HeaderSubtitle>
       </DashboardHeader>
       
@@ -37,6 +38,13 @@ const AgentDashboard: React.FC = () => {
         >
           <TabIcon>🔍</TabIcon>
           <TabLabel>Recognition Assistant</TabLabel>
+        </AgentTab>
+        <AgentTab 
+          active={selectedAgent === 'analytics'}
+          onClick={() => handleAgentSelection('analytics')}
+        >
+          <TabIcon>📊</TabIcon>
+          <TabLabel>Analytics Expert</TabLabel>
         </AgentTab>
         <AgentTab 
           active={selectedAgent === 'material'}
@@ -58,6 +66,7 @@ const AgentDashboard: React.FC = () => {
         {selectedAgent === 'recognition' && <RecognitionPanel />}
         {selectedAgent === 'material' && <MaterialExpertPanel />}
         {selectedAgent === 'project' && <ProjectAssistantPanel />}
+        {selectedAgent === 'analytics' && <AnalyticsPanel />}
       </AgentViewContainer>
     </DashboardContainer>
   );

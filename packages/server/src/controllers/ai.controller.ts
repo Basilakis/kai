@@ -6,17 +6,100 @@
  * dynamically select the best model for each task based on historical performance.
  */
 
-// Import core dependencies
-// Using minimal typing to avoid TypeScript errors
+// Import core dependencies with proper TypeScript types
+import { Request, Response } from '../types/middleware';
 import { modelRouter } from '../services/ai/modelRouter';
-import { logger } from '../utils/logger';
+import { logger, LogMetadata } from '../utils/logger';
+
+// Provider and encoder type definitions from modelRouter
+type AIProvider = 'openai' | 'anthropic' | 'huggingface' | 'local';
+type EncoderType = 'text' | 'image' | 'multimodal';
+type AnalysisTask = 'object-detection' | 'image-classification' | 'image-segmentation';
+
+// Define typed request interface with generic support that correctly extends Request
+interface TypedRequest<
+  P extends Record<string, string> = Record<string, string>, 
+  ReqB = unknown
+> extends Request {
+  params: P;
+  body: ReqB;
+}
+
+// Define interfaces for request bodies with proper type literals
+interface TextGenerationRequest {
+  prompt: string;
+  maxLength?: number;
+  temperature?: number;
+  topP?: number;
+  preferredProvider?: AIProvider;
+  forceEvaluation?: boolean;
+}
+
+interface EmbeddingGenerationRequest {
+  text: string;
+  encoderType?: EncoderType;
+  normalize?: boolean;
+  preferredProvider?: AIProvider;
+  forceEvaluation?: boolean;
+}
+
+// Export for use in other modules and for API documentation
+export interface ImageAnalysisRequest {
+  task?: AnalysisTask;
+  preferredProvider?: AIProvider;
+  forceEvaluation?: boolean;
+}
+
+/**
+ * Interface for file data from multer
+ */
+interface UploadedFile {
+  buffer: Buffer;
+  originalname: string;
+  mimetype: string;
+  size: number;
+  fieldname: string;
+  encoding: string;
+}
+
+/**
+ * Interface for request with file upload (multer)
+ */
+interface FileRequest extends Request {
+  file?: UploadedFile;
+}
+
+interface EvaluationModeRequest {
+  evaluationMode?: boolean;
+  taskCount?: number;
+}
+
+/**
+ * Response shape for text generation
+ * Exported for documentation and usage in client applications
+ */
+export interface TextGenerationResponse {
+  text: string;
+  model: {
+    provider: AIProvider;
+    name: string;
+  };
+  metrics: {
+    latency: number;
+    tokenCount?: number;
+    estimatedCost?: number;
+  };
+}
 
 /**
  * Generate text using the optimal AI model
- * @param req Request object
+ * @param req Request object with text generation parameters
  * @param res Response object
  */
-export const generateText = async (req: any, res: any): Promise<void> => {
+export const generateText = async (
+  req: TypedRequest<Record<string, string>, TextGenerationRequest>, 
+  res: Response
+): Promise<void> => {
   try {
     const { prompt, maxLength, temperature, topP, preferredProvider, forceEvaluation } = req.body;
     
@@ -53,11 +136,31 @@ export const generateText = async (req: any, res: any): Promise<void> => {
 };
 
 /**
+ * Response shape for embedding generation
+ * Exported for documentation and usage in client applications
+ */
+export interface EmbeddingGenerationResponse {
+  embedding: number[];
+  dimensions: number;
+  model: {
+    provider: AIProvider;
+    name: string;
+  };
+  metrics: {
+    latency: number;
+    estimatedCost?: number;
+  };
+}
+
+/**
  * Generate embeddings using the optimal AI model
- * @param req Request object
+ * @param req Request object with embedding generation parameters
  * @param res Response object
  */
-export const generateEmbedding = async (req: any, res: any): Promise<void> => {
+export const generateEmbedding = async (
+  req: TypedRequest<Record<string, string>, EmbeddingGenerationRequest>, 
+  res: Response
+): Promise<void> => {
   try {
     const { text, encoderType, normalize, preferredProvider, forceEvaluation } = req.body;
     
@@ -86,18 +189,41 @@ export const generateEmbedding = async (req: any, res: any): Promise<void> => {
         estimatedCost: (result.metrics.tokenCount ?? 0) * (result.metrics.costPerToken ?? 0)
       }
     });
-  } catch (err) {
-    logger.error(`Error generating embedding: ${err}`);
-    res.status(500).json({ error: 'Failed to generate embedding', details: err instanceof Error ? err.message : String(err) });
-  }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.error(`Error generating embedding: ${errorMessage}`, {
+        service: 'AIController',
+        method: 'generateEmbedding'
+      } as LogMetadata);
+      res.status(500).json({ 
+        error: 'Failed to generate embedding', 
+        details: errorMessage 
+      });
+    }
 };
 
 /**
+ * Response shape for image analysis
+ * Exported for documentation and usage in client applications
+ */
+export interface ImageAnalysisResponse {
+  analysis: unknown;
+  model: {
+    provider: AIProvider;
+    name: string;
+  };
+  metrics: {
+    latency: number;
+    estimatedCost?: number;
+  };
+}
+
+/**
  * Analyze an image using the optimal AI model
- * @param req Request object
+ * @param req Request object with file upload and analysis parameters
  * @param res Response object
  */
-export const analyzeImage = async (req: any, res: any): Promise<void> => {
+export const analyzeImage = async (req: FileRequest, res: Response): Promise<void> => {
   try {
     if (!req.file) {
       res.status(400).json({ error: 'Image file is required' });
@@ -126,18 +252,42 @@ export const analyzeImage = async (req: any, res: any): Promise<void> => {
         estimatedCost: (result.metrics.tokenCount ?? 0) * (result.metrics.costPerToken ?? 0)
       }
     });
-  } catch (err) {
-    logger.error(`Error analyzing image: ${err}`);
-    res.status(500).json({ error: 'Failed to analyze image', details: err instanceof Error ? err.message : String(err) });
-  }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.error(`Error analyzing image: ${errorMessage}`, {
+        service: 'AIController',
+        method: 'analyzeImage'
+      } as LogMetadata);
+      res.status(500).json({ 
+        error: 'Failed to analyze image', 
+        details: errorMessage 
+      });
+    }
 };
+
+/**
+ * Response shape for model metrics
+ * Exported for documentation and usage in client applications
+ */
+export interface ModelMetricsResponse {
+  models: Array<{
+    provider: AIProvider;
+    modelId: string;
+    metrics: {
+      avgLatency: number;
+      successRate: number;
+      costPerToken?: number;
+      totalRequests: number;
+    };
+  }>;
+}
 
 /**
  * Get performance metrics for AI models
  * @param req Request object
  * @param res Response object
  */
-export const getModelMetrics = async (req: any, res: any): Promise<void> => {
+export const getModelMetrics = async (_req: TypedRequest, res: Response): Promise<void> => {
   try {
     // This would be implemented by querying the ModelRegistry
     // But we'll return a placeholder response for now
@@ -145,17 +295,41 @@ export const getModelMetrics = async (req: any, res: any): Promise<void> => {
       message: 'Model metrics endpoint not yet implemented'
     });
   } catch (err) {
-    logger.error(`Error getting model metrics: ${err}`);
-    res.status(500).json({ error: 'Failed to get model metrics', details: err instanceof Error ? err.message : String(err) });
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    logger.error(`Error getting model metrics: ${errorMessage}`, {
+      service: 'AIController',
+      method: 'getModelMetrics'
+    } as LogMetadata);
+    res.status(500).json({ 
+      error: 'Failed to get model metrics', 
+      details: errorMessage 
+    });
   }
 };
 
 /**
+ * Response shape for evaluation mode settings
+ * Exported for documentation and usage in client applications
+ */
+export interface EvaluationModeResponse {
+  success: boolean;
+  message: string;
+  settings?: {
+    evaluationMode: boolean;
+    taskCount: number;
+    remainingTasks: number;
+  };
+}
+
+/**
  * Force evaluation mode for a specific number of tasks
- * @param req Request object
+ * @param req Request object with evaluation mode parameters
  * @param res Response object
  */
-export const setEvaluationMode = async (req: any, res: any): Promise<void> => {
+export const setEvaluationMode = async (
+  _req: TypedRequest<Record<string, string>, EvaluationModeRequest>,
+  res: Response
+): Promise<void> => {
   try {
     // This would be implemented by updating the ModelRegistry configuration
     // But we'll return a placeholder response for now
@@ -163,7 +337,14 @@ export const setEvaluationMode = async (req: any, res: any): Promise<void> => {
       message: 'Evaluation mode endpoint not yet implemented'
     });
   } catch (err) {
-    logger.error(`Error setting evaluation mode: ${err}`);
-    res.status(500).json({ error: 'Failed to set evaluation mode', details: err instanceof Error ? err.message : String(err) });
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    logger.error(`Error setting evaluation mode: ${errorMessage}`, {
+      service: 'AIController',
+      method: 'setEvaluationMode'
+    } as LogMetadata);
+    res.status(500).json({ 
+      error: 'Failed to set evaluation mode', 
+      details: errorMessage 
+    });
   }
 };

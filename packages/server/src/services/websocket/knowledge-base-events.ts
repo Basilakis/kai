@@ -9,7 +9,13 @@
 import { Server } from 'http';
 import WebSocket from 'ws';
 import { logger } from '../../utils/logger';
-import { messageBroker, MessagePayload } from '../messaging/messageBroker';
+import { MessagePayload } from '../messaging/messageBrokerInterface';
+import { messageBrokerFactory, BrokerImplementation } from '../messaging/messageBrokerFactory';
+
+// Get broker instance from factory
+const broker = messageBrokerFactory.createBroker({
+  implementation: BrokerImplementation.BASIC
+});
 
 // WebSocket ready state constants
 const READY_STATE = {
@@ -198,7 +204,7 @@ export class KnowledgeBaseEventsServer {
   private async setupMessageSubscriptions(): Promise<void> {
     try {
       // Subscribe to knowledge base events via the message broker
-      const unsubscribe = await messageBroker.subscribe(
+      const unsubscribe = await broker.subscribe(
         'system', 
         this.handleKnowledgeBaseEvent.bind(this), 
         'knowledge-base-event'
@@ -556,7 +562,7 @@ export class KnowledgeBaseEventsServer {
       };
       
       // Publish to message broker
-      const success = await messageBroker.publish(
+      const success = await broker.publish(
         'system',                // queue
         'knowledge-base-event',  // type
         normalizedEvent,         // data

@@ -13,7 +13,10 @@ import mongoose from 'mongoose';
 import { logger } from '../../utils/logger';
 import { knowledgeBaseService } from './knowledgeBaseService';
 import { entityLinkingService } from './entityLinking.service';
-import { messageBroker } from '../messaging/messageBroker';
+import { messageBrokerFactory } from '../messaging/messageBrokerFactory';
+
+// Get broker instance
+const broker = messageBrokerFactory.createBroker();
 
 // Cache implementation
 class Cache {
@@ -458,7 +461,7 @@ export class ExternalSourceAdapter implements IExternalSourceAdapter {
       );
 
       // Send sync completion event
-      await messageBroker.publish('system', 'knowledge-base-event', {
+      await broker.publish('system', 'knowledge-base-event', {
         type: 'sync-completed',
         sourceId: this.config.id,
         sourceName: this.config.name,
@@ -483,7 +486,7 @@ export class ExternalSourceAdapter implements IExternalSourceAdapter {
       };
 
       // Send sync error event
-      await messageBroker.publish('system', 'knowledge-base-event', {
+      await broker.publish('system', 'knowledge-base-event', {
         type: 'sync-failed',
         sourceId: this.config.id,
         sourceName: this.config.name,

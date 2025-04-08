@@ -4,7 +4,7 @@
  * API routes for dataset management, including upload, listing, retrieval, and operations.
  */
 
-import { Router, Request, Response } from 'express';
+import express, { Request, Response, Router } from 'express';
 import multer from 'multer';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -22,29 +22,39 @@ import { zipExtractorService } from '../../services/datasets/zip-extractor.servi
 import { csvParserService } from '../../services/datasets/csv-parser.service';
 import { datasetManagementService } from '../../services/datasets/dataset-management.service';
 
-const router = Router();
+// Create router
+const router = express.Router();
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
+  destination: (_req, _file, cb) => {
     // Create temporary upload directory
     const uploadDir = path.join(os.tmpdir(), 'kai-uploads');
     fs.mkdirSync(uploadDir, { recursive: true });
     cb(null, uploadDir);
   },
-  filename: (req, file, cb) => {
+  filename: (_req, file, cb) => {
     // Generate unique filename
     const uniqueName = `${uuidv4()}${path.extname(file.originalname)}`;
     cb(null, uniqueName);
   }
 });
 
+// Define a custom type for multer file to avoid the Express.Multer namespace issue
+interface MulterFile {
+  originalname: string;
+  mimetype: string;
+  size: number;
+  buffer?: Buffer;
+  path?: string;
+}
+
 const upload = multer({
   storage,
   limits: {
     fileSize: 500 * 1024 * 1024, // 500MB max file size
   },
-  fileFilter: (req: any, file: Express.Multer.File, cb: any) => {
+  fileFilter: (_req: any, file: MulterFile, cb: any) => {
     // Check file types
     const allowedExtensions = ['.zip', '.csv'];
     const ext = path.extname(file.originalname).toLowerCase();
@@ -67,6 +77,7 @@ router.get('/', async (req: Request, res: Response) => {
     const { 
       query = '', 
       status,
+      source,
       limit = '10', 
       page = '1',
       sort_field = 'created_at',
@@ -88,6 +99,7 @@ router.get('/', async (req: Request, res: Response) => {
     const result = await supabaseDatasetService.searchDatasets({
       query: query as string,
       status: statusFilter as any, // Cast to any to avoid type errors with specific status enum
+      source: source as string, // Source filter parameter 
       limit: limitNum,
       skip,
       sort: {
@@ -156,10 +168,10 @@ router.get('/:id', async (req: Request, res: Response) => {
  * @desc    Get images for a dataset class
  * @access  Admin
  */
-router.get('/:id/classes/:classId/images', async (req: Request, res: Response) => {
+router.get('/:id/classes/:classId/images', async (_req: Request, res: Response) => {
   try {
-    const { classId } = req.params;
-    const { limit = '100', page = '1' } = req.query;
+    const { classId } = _req.params;
+    const { limit = '100', page = '1' } = _req.query;
     
     // Convert parameters
     const limitNum = parseInt(limit as string, 10);
@@ -495,15 +507,15 @@ router.get('/:id/quality', async (req: Request, res: Response) => {
  * @desc    Generate synthetic data to balance or augment a class
  * @access  Admin
  */
-router.post('/:id/synthetic', async (req: Request, res: Response) => {
+router.post('/:id/synthetic', async (_req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const { id } = _req.params;
     const { 
       targetClass,
       targetCount,
       generationMethod = 'random',
       generationParams = {}
-    } = req.body;
+    } = _req.body;
 
     if (!targetClass) {
       return res.status(400).json({ error: 'Target class is required' });

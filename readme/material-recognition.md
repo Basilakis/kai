@@ -236,6 +236,12 @@ The recognition system is tightly integrated with the knowledge base:
 
 ### Basic Recognition
 
+### Implementation Note
+
+All mock implementations previously used during development have been replaced with fully functional real API calls to the backend services. The system now uses actual server endpoints for all recognition functionality, with API fallbacks only when services are temporarily unavailable.
+
+### API Usage
+
 ```typescript
 import { recognizeMaterial } from '@kai/ml';
 
@@ -278,6 +284,36 @@ async function identifyMaterialEnhanced() {
     });
   } catch (error) {
     console.error('Material recognition failed:', error);
+  }
+}
+```
+
+### Client-Side Implementation
+
+The client application now uses a dedicated recognitionService with actual API calls:
+
+```typescript
+// Using the recognition service with real API calls
+import { recognitionService } from '../services/recognitionService';
+
+async function identifyMaterial(imageFile) {
+  try {
+    const formData = new FormData();
+    formData.append('image', imageFile);
+    
+    const result = await recognitionService.identifyMaterial(formData, {
+      confidenceThreshold: 0.6,
+      maxResults: 5
+    });
+    
+    // Process the real API results
+    console.log('Recognized materials:');
+    result.matches.forEach(match => {
+      console.log(`- ${match.materialId} (confidence: ${match.confidence.toFixed(2)})`);
+    });
+  } catch (error) {
+    console.error('Material recognition failed:', error);
+    // API may still provide graceful fallbacks for service unavailability
   }
 }
 ```
@@ -328,8 +364,6 @@ async function visualizeResults() {
   }
 }
 ```
-
-## Performance Considerations
 
 1. **Inference Optimization**
    - Batch processing for multiple images

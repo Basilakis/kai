@@ -5,97 +5,18 @@
  * It stores material specifications, images, and metadata extracted from catalogs.
  */
 
-import mongoose, { Document, Schema } from 'mongoose';
+import mongoose from 'mongoose';
+// Get Schema from mongoose instance
+const { Schema } = mongoose;
+// Use type augmentation approach for TypeScript types
+import type { Document as MongooseDocument } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger';
 
 /**
- * Material document interface
+ * Base material schema definition
  */
-export interface MaterialDocument extends Document {
-  id: string;
-  name: string;
-  description?: string;
-  manufacturer?: string;
-  
-  // Collection organization
-  collectionId?: string; // Reference to collection model
-  seriesId?: string;    // Reference to series within collection
-  
-  // Physical properties
-  dimensions: {
-    width: number;
-    height: number;
-    depth?: number;
-    unit: 'mm' | 'cm' | 'inch' | 'm' | 'ft';
-  };
-  
-  color: {
-    name: string;
-    hex?: string;
-    rgb?: {
-      r: number;
-      g: number;
-      b: number;
-    };
-    primary: boolean;
-    secondary?: string[];
-  };
-  
-  // Category and material type
-  categoryId?: string;  // Reference to category model
-  materialType: 'tile' | 'stone' | 'wood' | 'laminate' | 'vinyl' | 'carpet' | 'metal' | 'glass' | 'concrete' | 'ceramic' | 'porcelain' | 'other';
-  
-  // Surface properties
-  finish: string;
-  pattern?: string;
-  texture?: string;
-  
-  // Technical specifications - varies by material type
-  technicalSpecs?: Record<string, any>;
-  
-  // Images
-  images: Array<{
-    id: string;
-    url: string;
-    type: 'primary' | 'secondary' | 'detail' | 'room-scene';
-    width: number;
-    height: number;
-    fileSize?: number;
-    extractedFrom?: {
-      catalogId: string;
-      page: number;
-      coordinates?: {
-        x: number;
-        y: number;
-        width: number;
-        height: number;
-      };
-    };
-  }>;
-  
-  // Metadata
-  tags: string[];
-  catalogId: string;
-  catalogPage?: number;
-  extractedAt: Date;
-  updatedAt: Date;
-  createdBy?: string;
-  
-  // Vector representation for similarity search
-  vectorRepresentation?: number[];
-  
-  // Structured metadata with field definitions
-  metadata?: Record<string, any>;
-  
-  // Metadata extraction confidence scores
-  metadataConfidence?: Record<string, number>;
-}
-
-/**
- * Base material schema
- */
-const materialSchema = new Schema<MaterialDocument>(
+const materialSchema = new Schema(
   {
     id: {
       type: String,
@@ -334,9 +255,92 @@ materialSchema.index({ collectionId: 1 });
 materialSchema.index({ seriesId: 1 });
 
 /**
+ * Material document type
+ */
+export type MaterialType = MongooseDocument & {
+  id: string;
+  name: string;
+  description?: string;
+  manufacturer?: string;
+  
+  // Collection organization
+  collectionId?: string;
+  seriesId?: string;
+  
+  // Physical properties
+  dimensions: {
+    width: number;
+    height: number;
+    depth?: number;
+    unit: 'mm' | 'cm' | 'inch' | 'm' | 'ft';
+  };
+  
+  color: {
+    name: string;
+    hex?: string;
+    rgb?: {
+      r: number;
+      g: number;
+      b: number;
+    };
+    primary: boolean;
+    secondary?: string[];
+  };
+  
+  // Category and material type
+  categoryId?: string;
+  materialType: 'tile' | 'stone' | 'wood' | 'laminate' | 'vinyl' | 'carpet' | 'metal' | 'glass' | 'concrete' | 'ceramic' | 'porcelain' | 'other';
+  
+  // Surface properties
+  finish: string;
+  pattern?: string;
+  texture?: string;
+  
+  // Technical specifications - varies by material type
+  technicalSpecs?: Record<string, any>;
+  
+  // Images
+  images: Array<{
+    id: string;
+    url: string;
+    type: 'primary' | 'secondary' | 'detail' | 'room-scene';
+    width: number;
+    height: number;
+    fileSize?: number;
+    extractedFrom?: {
+      catalogId: string;
+      page: number;
+      coordinates?: {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      };
+    };
+  }>;
+  
+  // Metadata
+  tags: string[];
+  catalogId: string;
+  catalogPage?: number;
+  extractedAt: Date;
+  updatedAt: Date;
+  createdBy?: string;
+  
+  // Vector representation for similarity search
+  vectorRepresentation?: number[];
+  
+  // Structured metadata with field definitions
+  metadata?: Record<string, any>;
+  
+  // Metadata extraction confidence scores
+  metadataConfidence?: Record<string, number>;
+};
+
+/**
  * Material model
  */
-const Material = mongoose.model<MaterialDocument>('Material', materialSchema);
+const Material = mongoose.model<MaterialType>('Material', materialSchema);
 
 /**
  * Create a new material
@@ -344,7 +348,7 @@ const Material = mongoose.model<MaterialDocument>('Material', materialSchema);
  * @param materialData Material data
  * @returns Created material document
  */
-export async function createMaterial(materialData: Partial<MaterialDocument>): Promise<MaterialDocument> {
+export async function createMaterial(materialData: Partial<MaterialType>): Promise<MaterialType> {
   try {
     const material = new Material(materialData);
     await material.save();
@@ -361,7 +365,7 @@ export async function createMaterial(materialData: Partial<MaterialDocument>): P
  * @param id Material ID
  * @returns Material document
  */
-export async function getMaterialById(id: string): Promise<MaterialDocument | null> {
+export async function getMaterialById(id: string): Promise<MaterialType | null> {
   try {
     return await Material.findOne({ id });
   } catch (err) {
@@ -377,7 +381,7 @@ export async function getMaterialById(id: string): Promise<MaterialDocument | nu
  * @param updateData Update data
  * @returns Updated material document
  */
-export async function updateMaterial(id: string, updateData: Partial<MaterialDocument>): Promise<MaterialDocument | null> {
+export async function updateMaterial(id: string, updateData: Partial<MaterialType>): Promise<MaterialType | null> {
   try {
     return await Material.findOneAndUpdate(
       { id },
@@ -396,7 +400,7 @@ export async function updateMaterial(id: string, updateData: Partial<MaterialDoc
  * @param id Material ID
  * @returns Deleted material document
  */
-export async function deleteMaterial(id: string): Promise<MaterialDocument | null> {
+export async function deleteMaterial(id: string): Promise<MaterialType | null> {
   try {
     return await Material.findOneAndDelete({ id });
   } catch (err) {
@@ -428,7 +432,7 @@ export async function searchMaterials(options: {
   skip?: number;
   sort?: Record<string, 1 | -1>;
 }): Promise<{
-  materials: MaterialDocument[];
+  materials: MaterialType[];
   total: number;
 }> {
   try {
@@ -554,7 +558,7 @@ export async function findSimilarMaterials(
     materialType?: string | string[];
   } = {}
 ): Promise<Array<{
-  material: MaterialDocument;
+  material: MaterialType;
   similarity: number;
 }>> {
   try {
@@ -590,7 +594,7 @@ export async function findSimilarMaterials(
     
     // Calculate similarity scores
     const similarMaterials = materials
-      .map(material => {
+      .map((material: MaterialType) => {
         if (!material.vectorRepresentation || material.vectorRepresentation.length === 0) {
           return { material, similarity: 0 };
         }
@@ -603,8 +607,8 @@ export async function findSimilarMaterials(
         
         return { material, similarity };
       })
-      .filter(({ similarity }) => similarity >= threshold)
-      .sort((a, b) => b.similarity - a.similarity)
+      .filter(({ similarity }: { similarity: number }) => similarity >= threshold)
+      .sort((a: any, b: any) => b.similarity - a.similarity)
       .slice(0, limit);
     
     return similarMaterials;
@@ -631,9 +635,12 @@ function calculateCosineSimilarity(a: number[], b: number[]): number {
   let normB = 0;
   
   for (let i = 0; i < a.length; i++) {
-    dotProduct += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
+    // Add null/undefined checks to prevent "object is possibly undefined" errors
+    const aVal = a[i] || 0;
+    const bVal = b[i] || 0;
+    dotProduct += aVal * bVal;
+    normA += aVal * aVal;
+    normB += bVal * bVal;
   }
   
   normA = Math.sqrt(normA);
@@ -645,6 +652,38 @@ function calculateCosineSimilarity(a: number[], b: number[]): number {
   
   return dotProduct / (normA * normB);
 }
+
+/**
+ * Material information type
+ */
+type ExtractedMaterialInfo = {
+  name?: string;
+  description?: string;
+  materialType?: 'tile' | 'stone' | 'wood' | 'laminate' | 'vinyl' | 'carpet' | 'metal' | 'glass' | 'concrete' | 'ceramic' | 'porcelain' | 'other';
+  dimensions?: {
+    width?: number;
+    height?: number;
+    depth?: number;
+    unit?: 'mm' | 'cm' | 'inch' | 'm' | 'ft';
+  };
+  color?: {
+    name?: string;
+    hex?: string;
+    rgb?: {
+      r: number;
+      g: number;
+      b: number;
+    };
+  };
+  finish?: string;
+  pattern?: string;
+  texture?: string;
+  technicalSpecs?: Record<string, any>;
+  tags?: string[];
+  // Add these fields to match what's used in the function
+  metadata?: Record<string, any>;
+  metadataConfidence?: Record<string, number>;
+};
 
 /**
  * Create a material from an extracted image and associated text
@@ -687,13 +726,13 @@ export async function createMaterialFromImageAndText(
     manufacturer?: string;
     userId?: string;
   }
-): Promise<MaterialDocument> {
+): Promise<MaterialType> {
   try {
     // Extract material information from texts
-    const extractedInfo = extractMaterialInfoFromTexts(texts);
+    const extractedInfo = await extractMaterialInfoFromTexts(texts);
     
     // Create material data
-    const materialData: Partial<MaterialDocument> = {
+    const materialData: Partial<MaterialType> = {
       id: uuidv4(),
       name: extractedInfo.name || `Material from ${options.manufacturer || 'Unknown'} - ${image.fileName}`,
       description: extractedInfo.description,
@@ -758,48 +797,30 @@ export async function createMaterialFromImageAndText(
  * @param categoryId Optional category ID to apply specific extraction rules
  * @returns Extracted material information
  */
-async function extractMaterialInfoFromTexts(texts: Array<{
-  text: string;
-  confidence: number;
-  boundingBox?: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  };
-}>): {
-  name?: string;
-  description?: string;
-  materialType?: 'tile' | 'stone' | 'wood' | 'laminate' | 'vinyl' | 'carpet' | 'metal' | 'glass' | 'concrete' | 'ceramic' | 'porcelain' | 'other';
-  dimensions?: {
-    width?: number;
-    height?: number;
-    depth?: number;
-    unit?: 'mm' | 'cm' | 'inch' | 'm' | 'ft';
-  };
-  color?: {
-    name?: string;
-    hex?: string;
-    rgb?: {
-      r: number;
-      g: number;
-      b: number;
+async function extractMaterialInfoFromTexts(
+  texts: Array<{
+    text: string;
+    confidence: number;
+    boundingBox?: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
     };
-  };
-  finish?: string;
-  pattern?: string;
-  texture?: string;
-  technicalSpecs?: Record<string, any>;
-  tags?: string[];
-} {
+  }>, 
+  categoryId?: string
+): Promise<ExtractedMaterialInfo> {
   // This is a simplified implementation
   // In a real-world scenario, this would use NLP and more sophisticated text analysis
+  
+  let combinedText = '';
   
   try {
     // Get metadata fields for the category if provided
     let metadataFields = [];
     const MetadataField = mongoose.model('MetadataField');
     
+    // Provide categoryId parameter explicitly
     if (categoryId) {
       metadataFields = await MetadataField.find({ categories: categoryId });
     } else {
@@ -807,114 +828,114 @@ async function extractMaterialInfoFromTexts(texts: Array<{
     }
     
     // Combine all texts into a single string for basic extraction
-    const combinedText = texts
+    combinedText = texts
       .filter(t => t.confidence > 0.7) // Filter out low-confidence texts
       .map(t => t.text)
       .join(' ');
   
-  // Extract material type
-  const materialTypePatterns = {
-    tile: /\b(tile|tiles|ceramic|porcelain|mosaic)\b/i,
-    stone: /\b(stone|marble|granite|travertine|limestone|slate|quartzite)\b/i,
-    wood: /\b(wood|hardwood|timber|oak|maple|walnut|pine)\b/i,
-    laminate: /\b(laminate|laminated)\b/i,
-    vinyl: /\b(vinyl|lvt|luxury vinyl)\b/i,
-    carpet: /\b(carpet|rug|carpeting)\b/i,
-    metal: /\b(metal|steel|aluminum|copper|brass|bronze)\b/i,
-    glass: /\b(glass|mosaic glass)\b/i,
-    concrete: /\b(concrete|cement)\b/i
-  };
-  
-  let materialType: any = undefined;
-  for (const [type, pattern] of Object.entries(materialTypePatterns)) {
-    if (pattern.test(combinedText)) {
-      materialType = type;
-      break;
+    // Extract material type
+    const materialTypePatterns = {
+      tile: /\b(tile|tiles|ceramic|porcelain|mosaic)\b/i,
+      stone: /\b(stone|marble|granite|travertine|limestone|slate|quartzite)\b/i,
+      wood: /\b(wood|hardwood|timber|oak|maple|walnut|pine)\b/i,
+      laminate: /\b(laminate|laminated)\b/i,
+      vinyl: /\b(vinyl|lvt|luxury vinyl)\b/i,
+      carpet: /\b(carpet|rug|carpeting)\b/i,
+      metal: /\b(metal|steel|aluminum|copper|brass|bronze)\b/i,
+      glass: /\b(glass|mosaic glass)\b/i,
+      concrete: /\b(concrete|cement)\b/i
+    };
+    
+    let materialType: string | undefined = undefined;
+    for (const [type, pattern] of Object.entries(materialTypePatterns)) {
+      if (pattern.test(combinedText)) {
+        materialType = type as any;
+        break;
+      }
     }
-  }
-  
-  // Extract dimensions
-  const dimensionsPattern = /\b(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)\s*(?:x\s*(\d+(?:\.\d+)?))?\s*(mm|cm|inch|in|m|ft)?\b/;
-  const dimensionsMatch = combinedText.match(dimensionsPattern);
-  
-  const dimensions = dimensionsMatch ? {
-    width: parseFloat(dimensionsMatch[1]),
-    height: parseFloat(dimensionsMatch[2]),
-    depth: dimensionsMatch[3] ? parseFloat(dimensionsMatch[3]) : undefined,
-    unit: dimensionsMatch[4] ? 
-      (dimensionsMatch[4] === 'in' ? 'inch' : dimensionsMatch[4]) as 'mm' | 'cm' | 'inch' | 'm' | 'ft' : 
-      'mm'
-  } : undefined;
-  
-  // Extract color
-  const colorPattern = /\b(white|black|gray|grey|beige|brown|red|blue|green|yellow|orange|purple|pink|ivory|cream|tan|gold|silver|bronze|multicolor)\b/i;
-  const colorMatch = combinedText.match(colorPattern);
-  
-  const color = colorMatch ? {
-    name: colorMatch[1]
-  } : undefined;
-  
-  // Extract finish
-  const finishPattern = /\b(matte|glossy|polished|honed|textured|brushed|lappato|satin|natural|semi-polished)\b/i;
-  const finishMatch = combinedText.match(finishPattern);
-  
-  // Extract name (use the first line or first few words)
-  const lines = combinedText.split('\n');
-  const name = lines[0]?.trim() || combinedText.split(' ').slice(0, 5).join(' ');
-  
-  // Extract technical specs
-  const technicalSpecs: Record<string, any> = {};
-  
-  // Water absorption
-  const waterAbsorptionPattern = /water\s*absorption\s*(?:rate|value)?:?\s*(<|>|≤|≥)?\s*(\d+(?:\.\d+)?)\s*%?/i;
-  const waterAbsorptionMatch = combinedText.match(waterAbsorptionPattern);
-  if (waterAbsorptionMatch) {
-    technicalSpecs.waterAbsorption = parseFloat(waterAbsorptionMatch[2]);
-  }
-  
-  // Slip resistance
-  const slipResistancePattern = /slip\s*resistance:?\s*(R\d+|A\+B\+C|[A-C]|[0-9]+)/i;
-  const slipResistanceMatch = combinedText.match(slipResistancePattern);
-  if (slipResistanceMatch) {
-    technicalSpecs.slipResistance = slipResistanceMatch[1];
-  }
-  
-  // Frost resistance
-  const frostResistancePattern = /frost\s*resistance:?\s*(yes|no|resistant|not\s*resistant)/i;
-  const frostResistanceMatch = combinedText.match(frostResistancePattern);
-  if (frostResistanceMatch) {
-    technicalSpecs.frostResistance = /yes|resistant/i.test(frostResistanceMatch[1]);
-  }
-  
-  // Extract tags
-  const tags = new Set<string>();
-  
-  // Add material type as tag
-  if (materialType) {
-    tags.add(materialType);
-  }
-  
-  // Add color as tag
-  if (color?.name) {
-    tags.add(color.name.toLowerCase());
-  }
-  
-  // Add finish as tag
-  if (finishMatch) {
-    tags.add(finishMatch[1].toLowerCase());
-  }
-  
-  // Add size as tag
-  if (dimensions) {
-    const sizeTag = `${dimensions.width}x${dimensions.height}${dimensions.depth ? 'x' + dimensions.depth : ''}${dimensions.unit}`;
-    tags.add(sizeTag);
-  }
-  
+    
+    // Extract dimensions
+    const dimensionsPattern = /\b(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)\s*(?:x\s*(\d+(?:\.\d+)?))?\s*(mm|cm|inch|in|m|ft)?\b/;
+    const dimensionsMatch = combinedText.match(dimensionsPattern);
+    
+    const dimensions = dimensionsMatch ? {
+      width: parseFloat(dimensionsMatch[1] || '0'),
+      height: parseFloat(dimensionsMatch[2] || '0'),
+      depth: dimensionsMatch[3] ? parseFloat(dimensionsMatch[3]) : undefined,
+      unit: dimensionsMatch[4] ? 
+        (dimensionsMatch[4] === 'in' ? 'inch' : dimensionsMatch[4]) as 'mm' | 'cm' | 'inch' | 'm' | 'ft' : 
+        'mm'
+    } : undefined;
+    
+    // Extract color
+    const colorPattern = /\b(white|black|gray|grey|beige|brown|red|blue|green|yellow|orange|purple|pink|ivory|cream|tan|gold|silver|bronze|multicolor)\b/i;
+    const colorMatch = combinedText.match(colorPattern);
+    
+    const color = colorMatch ? {
+      name: colorMatch[1]
+    } : undefined;
+    
+    // Extract finish
+    const finishPattern = /\b(matte|glossy|polished|honed|textured|brushed|lappato|satin|natural|semi-polished)\b/i;
+    const finishMatch = combinedText.match(finishPattern);
+    
+    // Extract name (use the first line or first few words)
+    const lines = combinedText.split('\n');
+    const name = lines[0]?.trim() || combinedText.split(' ').slice(0, 5).join(' ');
+    
+    // Extract technical specs
+    const technicalSpecs: Record<string, any> = {};
+    
+    // Water absorption
+    const waterAbsorptionPattern = /water\s*absorption\s*(?:rate|value)?:?\s*(<|>|≤|≥)?\s*(\d+(?:\.\d+)?)\s*%?/i;
+    const waterAbsorptionMatch = combinedText.match(waterAbsorptionPattern);
+    if (waterAbsorptionMatch && waterAbsorptionMatch[2]) {
+      technicalSpecs.waterAbsorption = parseFloat(waterAbsorptionMatch[2]);
+    }
+    
+    // Slip resistance
+    const slipResistancePattern = /slip\s*resistance:?\s*(R\d+|A\+B\+C|[A-C]|[0-9]+)/i;
+    const slipResistanceMatch = combinedText.match(slipResistancePattern);
+    if (slipResistanceMatch) {
+      technicalSpecs.slipResistance = slipResistanceMatch[1];
+    }
+    
+    // Frost resistance
+    const frostResistancePattern = /frost\s*resistance:?\s*(yes|no|resistant|not\s*resistant)/i;
+    const frostResistanceMatch = combinedText.match(frostResistancePattern);
+    if (frostResistanceMatch && frostResistanceMatch[1]) {
+      technicalSpecs.frostResistance = /yes|resistant/i.test(frostResistanceMatch[1]);
+    }
+    
+    // Extract tags
+    const tags = new Set<string>();
+    
+    // Add material type as tag
+    if (materialType) {
+      tags.add(materialType);
+    }
+    
+    // Add color as tag
+    if (color?.name) {
+      tags.add(color.name.toLowerCase());
+    }
+    
+    // Add finish as tag
+    if (finishMatch && finishMatch[1]) {
+      tags.add(finishMatch[1].toLowerCase());
+    }
+    
+    // Add size as tag
+    if (dimensions) {
+      const sizeTag = `${dimensions.width}x${dimensions.height}${dimensions.depth ? 'x' + dimensions.depth : ''}${dimensions.unit}`;
+      tags.add(sizeTag);
+    }
+    
     // Initialize extraction result
-    const result: any = {
+    const result: ExtractedMaterialInfo = {
       name,
       description: lines.slice(1, 3).join(' ').trim() || undefined,
-      materialType,
+      materialType: materialType as any,
       dimensions,
       color,
       finish: finishMatch ? finishMatch[1] : undefined,
@@ -940,22 +961,27 @@ async function extractMaterialInfoFromTexts(texts: Array<{
     // Add metadata if any fields were extracted
     if (Object.keys(metadata).length > 0) {
       result.metadata = metadata;
-      result.metadataConfidence = metadataConfidence;
+      result.metadataConfidence = metadataConfidence as any;
     }
     
     return result;
   } catch (err) {
     logger.error(`Error in extractMaterialInfoFromTexts: ${err}`);
+    
     // Return basic extraction if advanced extraction fails
+    const localLines = combinedText ? combinedText.split('\n') : [];
+    // Add null check to avoid potential undefined access
+    const localName = localLines.length > 0 && localLines[0] ? localLines[0].trim() : '';
+    
     return {
-      name,
-      description: lines.slice(1, 3).join(' ').trim() || undefined,
-      materialType,
-      dimensions,
-      color,
-      finish: finishMatch ? finishMatch[1] : undefined,
-      technicalSpecs: Object.keys(technicalSpecs).length > 0 ? technicalSpecs : undefined,
-      tags: Array.from(tags)
+      name: localName,
+      description: localLines.slice(1, 3).join(' ').trim() || undefined,
+      materialType: undefined,
+      dimensions: undefined,
+      color: undefined,
+      finish: undefined,
+      technicalSpecs: {},
+      tags: []
     };
   }
 }
@@ -1001,7 +1027,7 @@ function extractFieldValueUsingHint(
           // Extract dimensions
           const dimensionRegex = new RegExp(`\\b(\\d+(?:\\.\\d+)?)\\s*(?:${hint.includes('unit') ? '(?:mm|cm|m|inch|in|ft)' : ''})\\b`, 'i');
           const match = combinedText.match(dimensionRegex);
-          if (match) {
+          if (match && match[1]) {
             value = parseFloat(match[1]);
             confidence = 0.8;
           }
@@ -1009,7 +1035,7 @@ function extractFieldValueUsingHint(
           // Generic number extraction
           const numberRegex = /\b(\d+(?:\.\d+)?)\b/;
           const match = combinedText.match(numberRegex);
-          if (match) {
+          if (match && match[1]) {
             value = parseFloat(match[1]);
             confidence = 0.7;
           }
@@ -1026,7 +1052,7 @@ function extractFieldValueUsingHint(
           const dropdownRegex = new RegExp(`\\b(${optionsPattern})\\b`, 'i');
           const match = combinedText.match(dropdownRegex);
           
-          if (match) {
+          if (match && match[1]) {
             value = match[1];
             // Find exact match in options for correct casing
             const exactOption = field.options.find((opt: any) => 
@@ -1047,11 +1073,11 @@ function extractFieldValueUsingHint(
         if (hint.includes('near')) {
           // Extract text near a keyword
           const keywordMatch = /near ['"]([^'"]+)['"]/.exec(hint);
-          if (keywordMatch) {
+          if (keywordMatch && keywordMatch[1]) {
             const keyword = keywordMatch[1];
             const keywordRegex = new RegExp(`${keyword}\\s*(?::)?\\s*([^\\n\\.,]+)`, 'i');
             const match = combinedText.match(keywordRegex);
-            if (match) {
+            if (match && match[1]) {
               value = match[1].trim();
               confidence = 0.75;
             }
@@ -1059,7 +1085,7 @@ function extractFieldValueUsingHint(
         } else if (hint.includes('pattern')) {
           // Extract text matching a pattern
           const patternMatch = /pattern ['"]([^'"]+)['"]/.exec(hint);
-          if (patternMatch) {
+          if (patternMatch && patternMatch[1]) {
             const pattern = patternMatch[1];
             try {
               const customRegex = new RegExp(pattern, 'i');
@@ -1069,14 +1095,14 @@ function extractFieldValueUsingHint(
                 confidence = 0.85;
               }
             } catch (e) {
-              logger.error(`Invalid regex pattern in hint: ${pattern}`);
+              logger.error(`Invalid regex pattern in hint: ${pattern || 'undefined'}`);
             }
           }
         } else {
           // Generic text extraction - look for field name in the text
           const fieldNameRegex = new RegExp(`${field.displayName}\\s*(?::)?\\s*([^\\n\\.,]+)`, 'i');
           const match = combinedText.match(fieldNameRegex);
-          if (match) {
+          if (match && match[1]) {
             value = match[1].trim();
             confidence = 0.6;
           }

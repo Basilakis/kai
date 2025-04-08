@@ -2,23 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { navigate } from 'gatsby';
 import Layout from '../components/Layout';
 import SEO from '../components/SEO';
-
-// Material types for the catalog
-interface MaterialProperty {
-  name: string;
-  value: string;
-}
-
-interface Material {
-  id: string;
-  name: string;
-  description: string;
-  category: string;
-  manufacturer: string;
-  imageUrl: string;
-  properties: Record<string, string>;
-  createdAt: string;
-}
+import materialService, { 
+  Material,
+  MaterialFilters, 
+  MaterialsResponse
+} from '../services/materialService';
 
 interface Filter {
   categories: string[];
@@ -34,7 +22,6 @@ interface Filter {
  */
 const CatalogPage: React.FC = () => {
   // State for materials and loading
-  const [materials, setMaterials] = useState<Material[]>([]);
   const [filteredMaterials, setFilteredMaterials] = useState<Material[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -58,6 +45,10 @@ const CatalogPage: React.FC = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [selectedMaterial, setSelectedMaterial] = useState<Material | null>(null);
   const [comparisonList, setComparisonList] = useState<string[]>([]);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [limit] = useState(10);
   
   // Fetch materials
   useEffect(() => {
@@ -65,150 +56,50 @@ const CatalogPage: React.FC = () => {
       try {
         setIsLoading(true);
         
-        // In a real app, this would be an API call
-        // Mocked data for now
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // Real API call
+        let response: MaterialsResponse;
         
-        const mockMaterials: Material[] = [
-          {
-            id: '1',
-            name: 'Carrara White Marble',
-            description: 'Classic Italian white marble with gray veining',
-            category: 'Tiles',
-            manufacturer: 'LuxStone',
-            imageUrl: 'https://example.com/marble1.jpg',
-            properties: {
-              material: 'Natural Stone',
-              finish: 'Polished',
-              color: 'White/Gray',
-              size: '12" x 24"',
-              thickness: '10mm'
-            },
-            createdAt: '2024-01-15'
-          },
-          {
-            id: '2',
-            name: 'Walnut Hardwood',
-            description: 'Premium walnut hardwood flooring',
-            category: 'Wood',
-            manufacturer: 'TimberlandCo',
-            imageUrl: 'https://example.com/wood1.jpg',
-            properties: {
-              material: 'Hardwood',
-              finish: 'Matte',
-              color: 'Brown',
-              size: '5" width',
-              thickness: '12mm'
-            },
-            createdAt: '2024-02-10'
-          },
-          {
-            id: '3',
-            name: 'Slate Grey Porcelain',
-            description: 'Contemporary porcelain tile with slate appearance',
-            category: 'Tiles',
-            manufacturer: 'TileWorks',
-            imageUrl: 'https://example.com/porcelain1.jpg',
-            properties: {
-              material: 'Porcelain',
-              finish: 'Textured',
-              color: 'Grey',
-              size: '24" x 24"',
-              thickness: '8mm'
-            },
-            createdAt: '2024-01-05'
-          },
-          {
-            id: '4',
-            name: 'Maple Engineered Wood',
-            description: 'Engineered maple wood flooring',
-            category: 'Wood',
-            manufacturer: 'TimberlandCo',
-            imageUrl: 'https://example.com/wood2.jpg',
-            properties: {
-              material: 'Engineered Wood',
-              finish: 'Satin',
-              color: 'Light Brown',
-              size: '6" width',
-              thickness: '14mm'
-            },
-            createdAt: '2024-03-01'
-          },
-          {
-            id: '5',
-            name: 'Travertine Beige',
-            description: 'Natural travertine stone with beige tones',
-            category: 'Tiles',
-            manufacturer: 'LuxStone',
-            imageUrl: 'https://example.com/travertine1.jpg',
-            properties: {
-              material: 'Natural Stone',
-              finish: 'Honed',
-              color: 'Beige',
-              size: '16" x 16"',
-              thickness: '12mm'
-            },
-            createdAt: '2024-01-20'
-          },
-          {
-            id: '6',
-            name: 'White Oak Laminate',
-            description: 'Durable white oak laminate flooring',
-            category: 'Laminate',
-            manufacturer: 'FloorMaster',
-            imageUrl: 'https://example.com/laminate1.jpg',
-            properties: {
-              material: 'Laminate',
-              finish: 'Matte',
-              color: 'Light Oak',
-              size: '7" width',
-              thickness: '8mm'
-            },
-            createdAt: '2024-02-15'
-          },
-          {
-            id: '7',
-            name: 'Blue Pearl Granite',
-            description: 'Elegant blue pearl granite for countertops',
-            category: 'Stone',
-            manufacturer: 'StoneCrafters',
-            imageUrl: 'https://example.com/granite1.jpg',
-            properties: {
-              material: 'Granite',
-              finish: 'Polished',
-              color: 'Blue/Grey',
-              size: 'Slab',
-              thickness: '30mm'
-            },
-            createdAt: '2024-01-25'
-          },
-          {
-            id: '8',
-            name: 'Luxury Vinyl Plank',
-            description: 'Waterproof luxury vinyl flooring with wood appearance',
-            category: 'Vinyl',
-            manufacturer: 'FloorMaster',
-            imageUrl: 'https://example.com/vinyl1.jpg',
-            properties: {
-              material: 'Vinyl',
-              finish: 'Embossed',
-              color: 'Medium Oak',
-              size: '7" x 48"',
-              thickness: '5mm'
-            },
-            createdAt: '2024-03-05'
+        // If no filters are applied, use basic getMaterials
+        if (
+          !filters.search && 
+          filters.categories.length === 0 && 
+          filters.manufacturers.length === 0 && 
+          Object.keys(filters.properties).length === 0
+        ) {
+          response = await materialService.getMaterials(page, limit);
+        } else {
+          // Convert filters to API format
+          const apiFilters: MaterialFilters = {};
+          
+          if (filters.search) {
+            apiFilters.search = filters.search;
           }
-        ];
+          
+          if (filters.categories.length > 0) {
+            apiFilters.categories = filters.categories;
+          }
+          
+          if (filters.manufacturers.length > 0) {
+            apiFilters.manufacturers = filters.manufacturers;
+          }
+          
+          if (Object.keys(filters.properties).length > 0) {
+            apiFilters.properties = filters.properties;
+          }
+          
+          response = await materialService.searchMaterials(apiFilters, page, limit);
+        }
         
-        setMaterials(mockMaterials);
-        setFilteredMaterials(mockMaterials);
+        setFilteredMaterials(response.data);
+        setTotalPages(response.pagination.totalPages);
+        setTotalCount(response.total);
         
-        // Extract available filters
+        // Extract available filters from results
         const categories = new Set<string>();
         const manufacturers = new Set<string>();
         const propertyTypes = {} as Record<string, Set<string>>;
         
-        mockMaterials.forEach(material => {
+        response.data.forEach(material => {
           categories.add(material.category);
           manufacturers.add(material.manufacturer);
           
@@ -236,54 +127,7 @@ const CatalogPage: React.FC = () => {
     };
     
     fetchMaterials();
-  }, []);
-  
-  // Apply filters whenever they change
-  useEffect(() => {
-    if (materials.length === 0) return;
-    
-    const applyFilters = () => {
-      let result = [...materials];
-      
-      // Apply search filter
-      if (filters.search) {
-        const searchLower = filters.search.toLowerCase();
-        result = result.filter(material => 
-          material.name.toLowerCase().includes(searchLower) ||
-          material.description.toLowerCase().includes(searchLower) ||
-          material.manufacturer.toLowerCase().includes(searchLower)
-        );
-      }
-      
-      // Apply category filter
-      if (filters.categories.length > 0) {
-        result = result.filter(material => 
-          filters.categories.includes(material.category)
-        );
-      }
-      
-      // Apply manufacturer filter
-      if (filters.manufacturers.length > 0) {
-        result = result.filter(material => 
-          filters.manufacturers.includes(material.manufacturer)
-        );
-      }
-      
-      // Apply property filters
-      Object.entries(filters.properties).forEach(([propName, propValues]) => {
-        if (propValues.length > 0) {
-          result = result.filter(material => 
-            material.properties[propName] && 
-            propValues.includes(material.properties[propName])
-          );
-        }
-      });
-      
-      setFilteredMaterials(result);
-    };
-    
-    applyFilters();
-  }, [filters, materials]);
+  }, [filters, page, limit]);
   
   // Handle checkbox filter change
   const handleFilterChange = (type: 'categories' | 'manufacturers', value: string) => {
@@ -298,6 +142,9 @@ const CatalogPage: React.FC = () => {
         [type]: newValues
       };
     });
+    
+    // Reset to first page when filters change
+    setPage(1);
   };
   
   // Handle property filter change
@@ -316,6 +163,9 @@ const CatalogPage: React.FC = () => {
         }
       };
     });
+    
+    // Reset to first page when filters change
+    setPage(1);
   };
   
   // Handle search input change
@@ -324,6 +174,9 @@ const CatalogPage: React.FC = () => {
       ...prev,
       search: e.target.value
     }));
+    
+    // Reset to first page when search changes
+    setPage(1);
   };
   
   // Reset all filters
@@ -334,6 +187,9 @@ const CatalogPage: React.FC = () => {
       properties: {},
       search: ''
     });
+    
+    // Reset to first page
+    setPage(1);
   };
   
   // View material details
@@ -362,6 +218,11 @@ const CatalogPage: React.FC = () => {
   const handleCloseModal = () => {
     setSelectedMaterial(null);
   };
+  
+  // Handle pagination
+  const handlePageChange = (newPage: number) => {
+    setPage(newPage);
+  };
 
   return (
     <Layout>
@@ -372,7 +233,7 @@ const CatalogPage: React.FC = () => {
           <div>
             <h1 className="text-3xl font-bold">Material Catalog</h1>
             <p className="text-gray-600 mt-1">
-              Browse our collection of {materials.length} materials
+              Browse our collection of {totalCount} materials
             </p>
           </div>
           
@@ -522,7 +383,8 @@ const CatalogPage: React.FC = () => {
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filteredMaterials.map((material) => (
                   <div key={material.id} className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow">
                     {/* Material image - using placeholder for mock */}
@@ -591,7 +453,74 @@ const CatalogPage: React.FC = () => {
                     </div>
                   </div>
                 ))}
-              </div>
+                </div>
+                
+                {/* Pagination */}
+                {totalPages > 1 && (
+                  <div className="flex justify-center mt-8">
+                    <nav className="inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                      <button
+                        onClick={() => handlePageChange(Math.max(1, page - 1))}
+                        disabled={page === 1}
+                        className={`relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium ${
+                          page === 1 
+                            ? 'text-gray-300 cursor-not-allowed' 
+                            : 'text-gray-500 hover:bg-gray-50'
+                        }`}
+                      >
+                        <span className="sr-only">Previous</span>
+                        <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                          <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                      
+                      {/* Page numbers */}
+                      {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                        // Calculate page numbers to show (centered around current page)
+                        let pageNum;
+                        if (totalPages <= 5) {
+                          pageNum = i + 1;
+                        } else if (page <= 3) {
+                          pageNum = i + 1;
+                        } else if (page >= totalPages - 2) {
+                          pageNum = totalPages - 4 + i;
+                        } else {
+                          pageNum = page - 2 + i;
+                        }
+                        
+                        return (
+                          <button
+                            key={pageNum}
+                            onClick={() => handlePageChange(pageNum)}
+                            className={`relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium ${
+                              page === pageNum
+                                ? 'z-10 bg-blue-50 border-blue-500 text-blue-600'
+                                : 'bg-white text-gray-500 hover:bg-gray-50'
+                            }`}
+                          >
+                            {pageNum}
+                          </button>
+                        );
+                      })}
+                      
+                      <button
+                        onClick={() => handlePageChange(Math.min(totalPages, page + 1))}
+                        disabled={page === totalPages}
+                        className={`relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium ${
+                          page === totalPages 
+                            ? 'text-gray-300 cursor-not-allowed' 
+                            : 'text-gray-500 hover:bg-gray-50'
+                        }`}
+                      >
+                        <span className="sr-only">Next</span>
+                        <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                          <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                    </nav>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>

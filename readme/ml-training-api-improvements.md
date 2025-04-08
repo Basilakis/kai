@@ -206,12 +206,16 @@ Required Supabase Tables:
 - `active_learning_batches`: Stores labeling batches
 - `retraining_triggers`: Stores retraining triggers
 
+## Implementation Note
+
+All mock implementations previously used during development have been replaced with fully functional real API calls to the backend services. The training API now uses actual server endpoints for all operations, including distributed training, parameter optimization, and progress tracking.
+
 ## Performance Considerations
 
 - **Memory Usage**: The unified API automatically adapts to available memory
 - **Scaling**: Distributed training can scale to multiple machines through Supabase
 - **Storage**: Efficient storage of models and training artifacts
-- **Fallbacks**: Each feature has fallbacks for limited environments
+- **Real API Integration**: All components now use actual backend implementations instead of fallbacks
 
 ## Error Handling
 

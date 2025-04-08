@@ -12,11 +12,39 @@
  * comparable to dedicated message brokers like Redis or RabbitMQ.
  */
 
-import { SupabaseClient } from '@supabase/supabase-js';
+import { PostgrestFilterBuilder, SupabaseClient } from '@supabase/supabase-js';
 import { v4 as uuidv4 } from 'uuid';
-import { logger } from '../../utils/logger';
+import { logger, LogMetadata } from '../../utils/logger';
 import { supabaseClient } from '../supabase/supabaseClient';
 
+/**
+ * Error type for Supabase errors with proper typing
+ */
+interface SupabaseError extends Error {
+  code?: string;
+  details?: string;
+  hint?: string;
+}
+
+/**
+ * Type definitions for Supabase query operations
+ */
+interface SupabaseQueryResponse<T> {
+  data: T | null;
+  error: SupabaseError | null;
+}
+
+// Extended PostgrestFilter interface with proper typing 
+interface PostgrestBuilder<T> {
+  select(columns?: string): PostgrestFilterBuilder<T>;
+  insert(values: Record<string, unknown>, options?: Record<string, unknown>): PostgrestFilterBuilder<T>;
+  update(values: Record<string, unknown>, options?: Record<string, unknown>): PostgrestFilterBuilder<T>;
+  delete(): PostgrestFilterBuilder<T>;
+  eq(column: string, value: unknown): PostgrestFilterBuilder<T>;
+  lt(column: string, value: unknown): PostgrestFilterBuilder<T>;
+  not(column: string, operator: string, value: unknown): PostgrestFilterBuilder<T>;
+  single(): Promise<SupabaseQueryResponse<T>>;
+}
 /**
  * Message types for the broker
  */
@@ -47,9 +75,9 @@ export enum MessageDeliveryStatus {
 }
 
 /**
- * Message payload interface
+ * Message payload interface with stronger typing
  */
-export interface MessagePayload<T = any> {
+export interface MessagePayload<T = unknown> {
   id: string;
   queue: QueueType;
   type: string;
@@ -63,11 +91,16 @@ export interface MessagePayload<T = any> {
 }
 
 /**
- * Message handler type definition
+ * Acknowledge function type definition
  */
-export type MessageHandler<T = any> = (
+export type AcknowledgeFunction = () => Promise<void>;
+
+/**
+ * Message handler type definition with stronger typing
+ */
+export type MessageHandler<T = unknown> = (
   message: MessagePayload<T>, 
-  acknowledge?: () => void
+  acknowledge?: AcknowledgeFunction
 ) => Promise<void>;
 
 /**
@@ -105,12 +138,85 @@ export interface MessageStats {
   newestPending?: Date;
 }
 
+// Database message record type
+interface MessageRecord {
+  id: string;
+  queue: string;
+  type: string;
+  data: unknown;
+  source: string;
+  timestamp: number;
+  priority?: number;
+  expiresAt?: number;
+  attempts?: number;
+  status?: string;
+}
+
+// Broadcast record for direct message broadcasting
+export interface BroadcastRecord {
+  id: string;
+  payload: MessagePayload;
+}
+
+/**
+ * Postgres changes payload structure
+ */
+interface PostgresChangesPayload<T> {
+  new: T;
+  old?: T;
+  eventType: 'INSERT' | 'UPDATE' | 'DELETE';
+}
+
+/**
+ * Supabase channel configuration
+ */
+interface ChannelConfiguration {
+  event: string;
+  schema: string;
+  table: string;
+  filter?: string;
+}
+
+/**
+ * Supabase channel interface with proper typing
+ */
+interface SupabaseChannel {
+  on<T>(event: string, config: ChannelConfiguration, callback: (payload: PostgresChangesPayload<T>) => void): SupabaseChannel;
+  subscribe(): Promise<{ error?: SupabaseError }>;
+  unsubscribe(): Promise<void>;
+}
+
+/**
+ * Pending publish operation
+ */
+export interface PendingPublish<T = unknown> {
+  queue: QueueType;
+  type: string;
+  data: T;
+  source: string;
+  priority?: number;
+  expiresAt?: number;
+  resolve: (success: boolean) => void;
+}
+
+/**
+ * Batch message operation definition
+ */
+interface BatchMessage<T = unknown> {
+  queue: QueueType;
+  type: string;
+  data: T;
+  source: string;
+  priority?: number;
+  expiresAt?: number;
+}
+
 /**
  * Enhanced Message Broker class with reliability features
  */
 export class EnhancedMessageBroker {
   private supabase: SupabaseClient;
-  private subscriptions: Map<string, { handler: MessageHandler, options: SubscriptionOptions }> = new Map();
+  private subscriptions: Map<string, { handler: MessageHandler<unknown>, options: SubscriptionOptions }> = new Map();
   private connected: boolean = false;
   private reconnecting: boolean = false;
   private channelSubscriptions: Map<string, { unsubscribe: () => void }> = new Map();
@@ -118,7 +224,7 @@ export class EnhancedMessageBroker {
   private pendingPublishes: Array<{
     queue: QueueType;
     type: string;
-    data: any;
+    data: unknown;
     source: string;
     priority?: number;
     expiresAt?: number;
@@ -156,12 +262,9 @@ export class EnhancedMessageBroker {
     this.heartbeatInterval = setInterval(async () => {
       try {
         // Try a simple query to check connection
-        // Use single() without limit for TypeScript compatibility
-        // Use type assertion to bypass TypeScript errors with method chaining
-        const { error } = await (this.supabase
-          .from('message_broker_status')
-          .select('status') as any)
-          .single();
+        const query = this.supabase
+          .from('message_broker_status') as unknown as PostgrestBuilder<{ status: string }>;
+        const { error } = await query.select('status').single();
         
         if (error) {
           logger.warn(`Supabase connection check failed: ${error.message}`);
@@ -179,7 +282,8 @@ export class EnhancedMessageBroker {
           }
         }
       } catch (err) {
-        logger.error(`Error in heartbeat check: ${err}`);
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        logger.error(`Error in heartbeat check: ${errorMessage}`);
         this.connected = false;
         this.handleConnectionLoss();
       }
@@ -189,7 +293,7 @@ export class EnhancedMessageBroker {
   /**
    * Start periodic cleanup of processed/expired messages
    */
-  private startMessageCleanup(): void {
+  private async startMessageCleanup(): Promise<void> {
     if (this.messageCleanupInterval) {
       clearInterval(this.messageCleanupInterval);
     }
@@ -200,10 +304,10 @@ export class EnhancedMessageBroker {
         const oneDayAgo = new Date();
         oneDayAgo.setDate(oneDayAgo.getDate() - 1);
         
-        // Use type assertion to bypass TypeScript errors with method chaining
-        const { error } = await (this.supabase
-          .from('message_broker_messages')
-          .delete() as any)
+        const deleteQuery = this.supabase
+          .from('message_broker_messages') as unknown as PostgrestBuilder<MessageRecord>;
+        const { error } = await deleteQuery
+          .delete()
           .eq('status', MessageDeliveryStatus.ACKNOWLEDGED)
           .lt('timestamp', oneDayAgo.getTime());
         
@@ -213,18 +317,21 @@ export class EnhancedMessageBroker {
         
         // Mark expired messages
         const now = new Date().getTime();
-        // Use type assertion to bypass TypeScript errors with method chaining
-        const { error: expiryError } = await (this.supabase
-          .from('message_broker_messages')
-          .update({ status: MessageDeliveryStatus.EXPIRED }) as any)
-          .lt('expiresAt', now)
-          .not('status', 'eq', MessageDeliveryStatus.ACKNOWLEDGED);
+        const updateQuery = this.supabase
+          .from('message_broker_messages') as unknown as PostgrestBuilder<MessageRecord>;
         
-        if (expiryError) {
-          logger.error(`Failed to mark expired messages: ${expiryError.message}`);
+        // Type casting is necessary here due to Supabase's API structure
+        // We're updating expired messages
+        const updateResult = await updateQuery
+          .update({ status: MessageDeliveryStatus.EXPIRED })
+          .lt('expiresAt', now);
+          
+        if (updateResult.error) {
+          logger.error(`Failed to mark expired messages: ${updateResult.error.message}`);
         }
       } catch (err) {
-        logger.error(`Error in message cleanup: ${err}`);
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        logger.error(`Error in message cleanup: ${errorMessage}`);
       }
     }, 3600000); // 1 hour
   }
@@ -261,10 +368,9 @@ export class EnhancedMessageBroker {
       this.supabase = supabaseClient.getClient();
       
       // Check connection with a simple query
-      // Use type assertion to bypass TypeScript errors with method chaining
       const { error } = await (this.supabase
-        .from('message_broker_status')
-        .select('status') as any)
+        .from('message_broker_status') as unknown as PostgrestBuilder<{ status: string }>)
+        .select('status')
         .single();
       
       if (error) {
@@ -290,7 +396,11 @@ export class EnhancedMessageBroker {
         this.processPendingPublishes();
       }
     } catch (err) {
-      logger.error(`Reconnection attempt failed with exception: ${err}`);
+      const metadata: LogMetadata = {
+        context: 'messageBroker.attemptReconnection',
+        error: err instanceof Error ? err : new Error(String(err))
+      };
+      logger.error(`Reconnection attempt failed with exception: ${err}`, metadata);
       
       // Schedule another attempt
       if (this.reconnectTimeout) {
@@ -302,6 +412,7 @@ export class EnhancedMessageBroker {
       }, 15000); // 15 seconds (increase on subsequent failures)
     }
   }
+
 
   /**
    * Reestablish all subscriptions after reconnection
@@ -361,23 +472,22 @@ export class EnhancedMessageBroker {
   /**
    * Internal method to subscribe to a channel
    */
-  private async subscribeInternal(
+  private async subscribeInternal<T = unknown>(
     queue: QueueType,
-    handler: MessageHandler,
+    handler: MessageHandler<T>,
     type?: string,
     options: SubscriptionOptions = DEFAULT_SUBSCRIPTION_OPTIONS
   ): Promise<() => Promise<void>> {
     // Create a channel for this subscription
-    // Note: This is a mock implementation since we need proper typings
-    // In a real implementation this would use Supabase Realtime properly
-    const channel = {
-      on: (event: string, config: any, callback: (payload: any) => void) => {
+    // Using the SupabaseChannel interface for better typing
+    const channel: SupabaseChannel = {
+      on<T>(_event: string, _config: ChannelConfiguration, _callback: (payload: PostgresChangesPayload<T>) => void): SupabaseChannel {
         // Mock implementation
         return channel;
       },
       subscribe: () => {
         // Mock implementation
-        return Promise.resolve();
+        return Promise.resolve({});
       },
       unsubscribe: () => {
         // Mock implementation
@@ -391,12 +501,12 @@ export class EnhancedMessageBroker {
       : `queue=eq.${queue}`;
     
     channel
-      .on('postgres_changes', {
+      .on<MessagePayload>('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
         table: 'message_broker_messages',
         filter
-      }, async (payload: { new: MessagePayload }) => {
+      }, async (payload: PostgresChangesPayload<MessagePayload>) => {
         const message = payload.new as MessagePayload;
         
         // Skip if already processing
@@ -420,7 +530,7 @@ export class EnhancedMessageBroker {
         try {
           if (options.useAcknowledgment) {
             // With acknowledgment
-            await handler(message, () => this.acknowledgeMessage(message.id));
+            await handler(message as unknown as MessagePayload<T>, () => this.acknowledgeMessage(message.id));
             
             // Auto-acknowledge if enabled
             if (options.autoAcknowledge) {
@@ -428,7 +538,7 @@ export class EnhancedMessageBroker {
             }
           } else {
             // Without acknowledgment
-            await handler(message);
+            await handler(message as unknown as MessagePayload<T>);
             
             // If persistence enabled, mark as delivered
             if (this.persistenceEnabled) {
@@ -441,9 +551,10 @@ export class EnhancedMessageBroker {
           if (this.persistenceEnabled) {
             // Increment attempts and maybe retry
             const attempts = (message.attempts || 0) + 1;
-            const maxRetries = options.maxRetries || DEFAULT_SUBSCRIPTION_OPTIONS.maxRetries || 3;
+            // Use class property maxRetries with fallback to options and defaults
+            const maxAttempts = this.maxRetries;
             
-            if (attempts <= maxRetries) {
+            if (attempts <= maxAttempts) {
               // Mark for retry
               await this.updateMessageForRetry(message.id, attempts);
               
@@ -471,7 +582,7 @@ export class EnhancedMessageBroker {
       this.channelSubscriptions.delete(key);
     };
     
-    this.subscriptions.set(key, { handler, options });
+    this.subscriptions.set(key, { handler: handler as unknown as MessageHandler<unknown>, options });
     this.channelSubscriptions.set(key, { unsubscribe });
     
     return unsubscribe;
@@ -484,10 +595,9 @@ export class EnhancedMessageBroker {
     if (!this.persistenceEnabled) return;
     
     try {
-      // Use type assertion to bypass TypeScript errors with method chaining
       await (this.supabase
-        .from('message_broker_messages')
-        .update({ status }) as any)
+        .from('message_broker_messages') as unknown as PostgrestBuilder<MessageRecord>)
+        .update({ status })
         .eq('id', messageId);
     } catch (err) {
       logger.error(`Failed to update message status: ${err}`);
@@ -501,13 +611,12 @@ export class EnhancedMessageBroker {
     if (!this.persistenceEnabled) return;
     
     try {
-      // Use type assertion to bypass TypeScript errors with method chaining
       await (this.supabase
-        .from('message_broker_messages')
+        .from('message_broker_messages') as unknown as PostgrestBuilder<MessageRecord>)
         .update({ 
           status: MessageDeliveryStatus.PENDING,
           attempts
-        }) as any)
+        })
         .eq('id', messageId);
     } catch (err) {
       logger.error(`Failed to update message for retry: ${err}`);
@@ -524,10 +633,9 @@ export class EnhancedMessageBroker {
     if (!this.persistenceEnabled) return;
     
     try {
-      // Use type assertion to bypass TypeScript errors with method chaining
       await (this.supabase
-        .from('message_broker_messages')
-        .update({ status: MessageDeliveryStatus.ACKNOWLEDGED }) as any)
+        .from('message_broker_messages') as unknown as PostgrestBuilder<MessageRecord>)
+        .update({ status: MessageDeliveryStatus.ACKNOWLEDGED })
         .eq('id', messageId);
     } catch (err) {
       logger.error(`Failed to acknowledge message: ${err}`);
@@ -537,10 +645,10 @@ export class EnhancedMessageBroker {
   /**
    * Internal method to publish a message
    */
-  private async publishInternal(
+  private async publishInternal<T = unknown>(
     queue: QueueType,
     type: string,
-    data: any,
+    data: T,
     source: string,
     priority: number = 5,
     expiresAt?: number
@@ -611,9 +719,9 @@ export class EnhancedMessageBroker {
    * @param useAcknowledgment Whether to use acknowledgment for reliability
    * @returns Unsubscribe function
    */
-  public async subscribe(
+  public async subscribe<T = unknown>(
     queue: QueueType,
-    handler: MessageHandler,
+    handler: MessageHandler<T>,
     type?: string,
     useAcknowledgment: boolean = false
   ): Promise<() => Promise<void>> {
@@ -622,7 +730,7 @@ export class EnhancedMessageBroker {
       useAcknowledgment
     };
     
-    return this.subscribeInternal(queue, handler, type, options);
+    return this.subscribeInternal<T>(queue, handler, type, options);
   }
 
   /**
@@ -634,13 +742,13 @@ export class EnhancedMessageBroker {
    * @param type Optional message type filter
    * @returns Unsubscribe function
    */
-  public async subscribeWithOptions(
+  public async subscribeWithOptions<T = unknown>(
     queue: QueueType,
-    handler: MessageHandler,
+    handler: MessageHandler<T>,
     options: SubscriptionOptions,
     type?: string
   ): Promise<() => Promise<void>> {
-    return this.subscribeInternal(
+    return this.subscribeInternal<T>(
       queue,
       handler,
       type,
@@ -659,24 +767,24 @@ export class EnhancedMessageBroker {
    * @param expiresAt Optional expiration timestamp
    * @returns Success indicator
    */
-  public async publish(
+  public async publish<T = unknown>(
     queue: QueueType,
     type: string,
-    data: any,
+    data: T,
     source: string,
     priority: number = 5,
     expiresAt?: number
   ): Promise<boolean> {
     // If not connected, queue the publish for later
     if (!this.connected) {
-      return new Promise((resolve) => {
+      return new Promise<boolean>((resolve) => {
         this.pendingPublishes.push({
           queue, type, data, source, priority, expiresAt, resolve
         });
       });
     }
     
-    return this.publishInternal(queue, type, data, source, priority, expiresAt);
+    return this.publishInternal<T>(queue, type, data, source, priority, expiresAt);
   }
 
   /**
@@ -685,19 +793,12 @@ export class EnhancedMessageBroker {
    * @param messages Array of messages to publish
    * @returns Number of successfully published messages
    */
-  public async publishBatch(
-    messages: Array<{
-      queue: QueueType;
-      type: string;
-      data: any;
-      source: string;
-      priority?: number;
-      expiresAt?: number;
-    }>
+  public async publishBatch<T = unknown>(
+    messages: Array<BatchMessage<T>>
   ): Promise<number> {
     if (!this.connected && !this.persistenceEnabled) {
       // Queue the publishes for later
-      return new Promise((resolve) => {
+      return new Promise<number>((resolve) => {
         let successCount = 0;
         const resolvers: (() => void)[] = [];
         
@@ -717,33 +818,43 @@ export class EnhancedMessageBroker {
     }
     
     if (this.persistenceEnabled) {
-      // Use batch insert for efficiency
+      // Use batch insert for efficiency with configured batch size
       try {
-        const batch = messages.map(msg => ({
-          id: uuidv4(),
-          queue: msg.queue,
-          type: msg.type,
-          data: msg.data,
-          source: msg.source,
-          timestamp: Date.now(),
-          priority: msg.priority || 5,
-          expiresAt: msg.expiresAt,
-          status: MessageDeliveryStatus.PENDING,
-          attempts: 0
-        }));
+        // Process messages in smaller batches according to batchSize
+        let totalSuccess = 0;
         
-        // Insert the batch
-        const { error } = await this.supabase
-          .from('message_broker_messages')
-          .insert(batch);
-        
-        if (error) {
-          logger.error(`Failed to publish batch: ${error.message}`);
-          return 0;
+        // Split messages into chunks based on batchSize
+        for (let i = 0; i < messages.length; i += this.batchSize) {
+          const messageBatch = messages.slice(i, i + this.batchSize);
+          
+          const batch = messageBatch.map(msg => ({
+            id: uuidv4(),
+            queue: msg.queue,
+            type: msg.type,
+            data: msg.data,
+            source: msg.source,
+            timestamp: Date.now(),
+            priority: msg.priority || 5,
+            expiresAt: msg.expiresAt,
+            status: MessageDeliveryStatus.PENDING,
+            attempts: 0
+          }));
+          
+          // Insert the batch
+          const { error } = await this.supabase
+            .from('message_broker_messages')
+            .insert(batch);
+          
+          if (error) {
+            logger.error(`Failed to publish batch chunk: ${error.message}`);
+            // Continue with next batch even if this one failed
+          } else {
+            totalSuccess += batch.length;
+          }
         }
         
-        // Return the batch size as success count
-        return batch.length;
+        // Return the total successful count
+        return totalSuccess;
       } catch (err) {
         logger.error(`Error publishing batch: ${err}`);
         return 0;
@@ -890,13 +1001,13 @@ export class EnhancedMessageBroker {
    * 
    * @param queue Optional queue to filter by
    * @param type Optional message type to filter by
-   * @param filterFn Optional filter function
+   * @param filterFn Optional filter function with improved typing
    * @returns Number of replayed messages
    */
   public async replayMissedMessages(
     queue?: QueueType,
     type?: string,
-    filterFn?: (message: MessagePayload) => boolean
+    filterFn?: (message: MessagePayload<unknown>) => boolean
   ): Promise<number> {
     if (!this.persistenceEnabled) {
       return 0;
@@ -904,7 +1015,6 @@ export class EnhancedMessageBroker {
     
     try {
       // Build query to get pending and processing messages
-      // Use a simpler approach to avoid TypeScript issues with filter chains
       const { data, error } = await this.supabase
         .from('message_broker_messages')
         .select('*');
@@ -918,8 +1028,21 @@ export class EnhancedMessageBroker {
         return 0;
       }
       
-      // Filter in memory instead of database queries to avoid TypeScript errors
-      let filteredMessages = data.filter((msg: MessagePayload) => 
+      // Type guard function to ensure data has correct MessagePayload shape
+      const isMessagePayload = (item: unknown): item is MessagePayload => {
+        return typeof item === 'object' && 
+               item !== null && 
+               'id' in item && 
+               'queue' in item && 
+               'type' in item &&
+               'status' in item;
+      };
+      
+      // Filter in memory with type safety
+      const validMessages = data.filter(isMessagePayload);
+      
+      // Filter to get pending and processing messages
+      let filteredMessages = validMessages.filter((msg: MessagePayload) =>
         msg.status === MessageDeliveryStatus.PENDING || 
         msg.status === MessageDeliveryStatus.PROCESSING
       );
@@ -953,7 +1076,8 @@ export class EnhancedMessageBroker {
       
       return replayCount;
     } catch (err) {
-      logger.error(`Failed to replay missed messages: ${err}`);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.error(`Failed to replay missed messages: ${errorMessage}`);
       return 0;
     }
   }
@@ -976,13 +1100,26 @@ export class EnhancedMessageBroker {
         .from('message_broker_messages')
         .select('*');
       
-      // Filter to only get the requested message IDs
-      const filteredData = data ? data.filter((msg: MessagePayload) => messageIds.includes(msg.id)) : [];
-      
       if (error) {
         logger.error(`Failed to get messages by ID: ${error.message}`);
         return 0;
       }
+      
+      if (!data || data.length === 0) {
+        return 0;
+      }
+      
+      // Type guard to ensure correct shape
+      const isMessagePayload = (item: unknown): item is MessagePayload => {
+        return typeof item === 'object' && 
+               item !== null && 
+               'id' in item && 
+               typeof (item as Record<string, unknown>).id === 'string';
+      };
+      
+      // Filter to only get the requested message IDs with type safety
+      const validData = data.filter(isMessagePayload);
+      const filteredData = validData.filter((msg: MessagePayload) => messageIds.includes(msg.id));
       
       if (filteredData.length === 0) {
         return 0;
@@ -1004,7 +1141,8 @@ export class EnhancedMessageBroker {
       
       return replayCount;
     } catch (err) {
-      logger.error(`Failed to replay messages by ID: ${err}`);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.error(`Failed to replay messages by ID: ${errorMessage}`);
       return 0;
     }
   }

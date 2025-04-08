@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { Link } from 'gatsby';
+import { useUser } from '../providers/UserProvider';
 
 /**
  * Header component for the application
  */
 const Header: React.FC = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const { user, isLoading } = useUser();
 
   const toggleMenu = () => {
     setIsMenuOpen(!isMenuOpen);
@@ -53,14 +55,26 @@ const Header: React.FC = () => {
               </li>
             </ul>
             
-            <div className="auth-buttons">
-              <Link to="/login" className="button secondary">
-                Log In
-              </Link>
-              <Link to="/register" className="button primary">
-                Sign Up
-              </Link>
-            </div>
+            {!isLoading && (
+              <div className="auth-buttons">
+                {user ? (
+                  <div className="user-profile-menu">
+                    <Link to="/profile" className="button secondary user-profile-link">
+                      My Profile
+                    </Link>
+                  </div>
+                ) : (
+                  <>
+                    <Link to="/login" className="button secondary">
+                      Log In
+                    </Link>
+                    <Link to="/register" className="button primary">
+                      Sign Up
+                    </Link>
+                  </>
+                )}
+              </div>
+            )}
           </nav>
         </div>
       </div>

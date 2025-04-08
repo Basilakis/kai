@@ -6,13 +6,19 @@
  * better cross-referencing between materials, and bulk operations support.
  */
 
-import { createMaterial, updateMaterial, deleteMaterial, getMaterialById, searchMaterials, MaterialDocument } from '../../models/material.model';
+import { createMaterial, updateMaterial, deleteMaterial, getMaterialById, searchMaterials, MaterialType } from '../../models/material.model';
 import { createMaterialRelationship, getMaterialRelationships } from '../../models/materialRelationship.model';
-import { createCollection, updateCollection, deleteCollection, getCollection, getCollectionTree } from '../../models/collection.model';
+import { createCollection, updateCollection, deleteCollection, getCollectionTree } from '../../models/collection.model';
 import { getMembershipsForCollection, getMaterialsInCollection } from '../../models/collectionMembership.model';
 import { entityLinkingService } from './entityLinking.service';
 import { logger } from '../../utils/logger';
-import { scalableMessageBroker, MessageType, QueueType } from '../messaging/scalableMessageBroker';
+import { MessageType, QueueType } from '../messaging/messageBrokerInterface';
+import { messageBrokerFactory, BrokerImplementation } from '../messaging/messageBrokerFactory';
+
+// Get broker instance with advanced features
+const broker = messageBrokerFactory.createBroker({
+  implementation: BrokerImplementation.ADVANCED
+});
 
 /**
  * Notification types for knowledge base events
@@ -58,7 +64,7 @@ export class RealTimeKnowledgeBaseService {
    * Set up listener for client subscriptions to track usage
    */
   private setupSubscriptionListener(): void {
-    scalableMessageBroker.subscribeWithOptions(
+    broker.subscribeWithOptions(
       'system' as QueueType,
       async (message) => {
         if (message.type === 'client.connected') {
@@ -81,7 +87,7 @@ export class RealTimeKnowledgeBaseService {
   /**
    * Create a new material with real-time notification
    */
-  public async createMaterial(materialData: any): Promise<MaterialDocument> {
+  public async createMaterial(materialData: any): Promise<MaterialType> {
     try {
       // Create material using model function
       const material = await createMaterial(materialData);
@@ -107,7 +113,7 @@ export class RealTimeKnowledgeBaseService {
   /**
    * Update a material with real-time notification
    */
-  public async updateMaterial(id: string, materialData: any): Promise<MaterialDocument | null> {
+  public async updateMaterial(id: string, materialData: any): Promise<MaterialType | null> {
     try {
       // Update material using model function
       const updatedMaterial = await updateMaterial(id, materialData);
@@ -279,7 +285,7 @@ export class RealTimeKnowledgeBaseService {
   /**
    * Process entity linking for a material
    */
-  private async processEntityLinking(material: MaterialDocument): Promise<void> {
+  private async processEntityLinking(material: MaterialType): Promise<void> {
     try {
       // Skip if no description
       if (!material.description) return;
@@ -343,7 +349,7 @@ export class RealTimeKnowledgeBaseService {
     }
     
     try {
-      await scalableMessageBroker.publish(
+      await broker.publish(
         'system' as QueueType,
         MessageType.KNOWLEDGE_BASE_EVENT,
         {
@@ -362,10 +368,10 @@ export class RealTimeKnowledgeBaseService {
   /**
    * Bulk import materials with real-time notification
    */
-  public async bulkImportMaterials(materials: any[]): Promise<MaterialDocument[]> {
+  public async bulkImportMaterials(materials: any[]): Promise<MaterialType[]> {
     try {
       // Process materials in batches to avoid overwhelming the database
-      const importedMaterials: MaterialDocument[] = [];
+      const importedMaterials: MaterialType[] = [];
       const batchSize = 50;
       
       for (let i = 0; i < materials.length; i += batchSize) {
@@ -384,7 +390,7 @@ export class RealTimeKnowledgeBaseService {
         );
         
         // Filter out nulls and add to results
-        const validResults = batchResults.filter((result): result is MaterialDocument => result !== null);
+        const validResults = batchResults.filter((result: unknown): result is MaterialType => result !== null);
         importedMaterials.push(...validResults);
       }
       
@@ -408,9 +414,9 @@ export class RealTimeKnowledgeBaseService {
   /**
    * Bulk update materials with real-time notification
    */
-  public async bulkUpdateMaterials(updates: Array<{ id: string, data: any }>): Promise<MaterialDocument[]> {
+  public async bulkUpdateMaterials(updates: Array<{ id: string, data: any }>): Promise<MaterialType[]> {
     try {
-      const updatedMaterials: MaterialDocument[] = [];
+      const updatedMaterials: MaterialType[] = [];
       const batchSize = 50;
       
       for (let i = 0; i < updates.length; i += batchSize) {
@@ -429,7 +435,7 @@ export class RealTimeKnowledgeBaseService {
         );
         
         // Filter out nulls and add to results
-        const validResults = batchResults.filter((result): result is MaterialDocument => result !== null);
+        const validResults = batchResults.filter((result: unknown): result is MaterialType => result !== null);
         updatedMaterials.push(...validResults);
       }
       
@@ -516,19 +522,19 @@ export class RealTimeKnowledgeBaseService {
   ): Promise<any> {
     try {
       // Determine which materials to export
-      let materialsToExport: MaterialDocument[] = [];
+      let materialsToExport: MaterialType[] = [];
       
       if (options.collectionId) {
         // Export by collection
         const materialIds = await getMaterialsInCollection(options.collectionId, true);
         const materialsPromises = materialIds.map(id => getMaterialById(id));
         const materials = await Promise.all(materialsPromises);
-        materialsToExport = materials.filter((m): m is MaterialDocument => m !== null);
+        materialsToExport = materials.filter((m: unknown): m is MaterialType => m !== null);
       } else if (options.ids && options.ids.length > 0) {
         // Export specific materials
         const materialsPromises = options.ids.map(id => getMaterialById(id));
         const materials = await Promise.all(materialsPromises);
-        materialsToExport = materials.filter((m): m is MaterialDocument => m !== null);
+        materialsToExport = materials.filter((m: unknown): m is MaterialType => m !== null);
       } else {
         throw new Error('Either collectionId or ids must be provided for export');
       }
@@ -568,7 +574,7 @@ export class RealTimeKnowledgeBaseService {
   /**
    * Format materials as CSV for export
    */
-  private formatMaterialsAsCSV(materials: MaterialDocument[], options: any): string {
+  private formatMaterialsAsCSV(materials: MaterialType[], options: any): string {
     // Create header row based on first material and options
     const headerFields = ['id', 'name', 'description', 'manufacturer', 'materialType', 'finish', 'createdAt', 'updatedAt'];
     

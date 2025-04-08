@@ -36,7 +36,8 @@ export enum AgentType {
   RECOGNITION = 'recognition',
   MATERIAL_EXPERT = 'material_expert',
   PROJECT_ASSISTANT = 'project_assistant',
-  THREE_D_DESIGNER = '3d_designer'
+  THREE_D_DESIGNER = '3d_designer',
+  ANALYTICS = 'analytics'
 }
 
 // Message interfaces
@@ -635,9 +636,11 @@ class AgentService {
         }
         
         return response.data.results;
-      } catch (error: any) { // Type error as any for compatibility
+      } catch (error) {
+        // Properly type the error as AxiosError when applicable
+        const axiosError = error as AxiosError;
         // Handle timeout and network errors specifically
-        if (error.code === 'ECONNABORTED' || (error.message && error.message.includes('timeout'))) {
+        if (axiosError.code === 'ECONNABORTED' || (axiosError.message && axiosError.message.includes('timeout'))) {
           // Add timeout message
           const timeoutMessage: AgentMessage = {
             id: `timeout-${Date.now()}`,

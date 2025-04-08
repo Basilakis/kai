@@ -7,47 +7,108 @@
 
 import { createLogger } from './logger';
 
-// Skip type guards for now since we can't resolve the imports
-// We'll implement our own simple type checking logic
-type MaterialMetadata = Record<string, any>;
+// Define more precise types for material metadata with index signatures
+interface MaterialData {
+  type?: string;
+  materialType?: string;
+  name?: string;
+  description?: string;
+  manufacturer?: string;
+  collectionId?: string;
+  color?: string | { 
+    primary?: string; 
+    secondary?: string; 
+    accent?: string; 
+  };
+  technicalSpecs?: Record<string, any>;
+  finish?: string;
+  pattern?: string;
+  texture?: string;
+  dimensions?: string | {
+    width?: any;
+    length?: any;
+    height?: any;
+    thickness?: any;
+    availableSizes?: string[];
+  };
+  metadata?: {
+    manufacturer?: string;
+    collection?: string;
+    color?: string[] | string;
+    size?: string[] | string;
+    width?: any;
+    length?: any;
+    height?: any;
+    thickness?: any;
+    [key: string]: any;
+  };
+  [key: string]: any;
+}
+
+interface MaterialMetadata {
+  [key: string]: any;
+}
 
 const logger = createLogger('MaterialMetadataFormatter');
 
-// Simple type checks for different material types
-function isTileMetadata(metadata: any): boolean {
-  return metadata && 
-    (metadata.vRating !== undefined || 
-     metadata.rRating !== undefined || 
-     (metadata.material && 
-      ['Ceramic', 'Porcelain', 'Marble', 'Granite', 'Terracotta', 'Quartzite', 'Limestone', 'Slate', 'Glass', 'Cement'].includes(metadata.material)));
+// Type-safe checks for different material types
+function isTileMetadata(metadata: unknown): boolean {
+  if (!metadata || typeof metadata !== 'object') return false;
+  
+  const meta = metadata as Record<string, unknown>;
+  return (
+    'vRating' in meta || 
+    'rRating' in meta || 
+    ('material' in meta && 
+     typeof meta.material === 'string' && 
+     ['Ceramic', 'Porcelain', 'Marble', 'Granite', 'Terracotta', 'Quartzite', 'Limestone', 'Slate', 'Glass', 'Cement'].includes(meta.material))
+  );
 }
 
-function isWoodMetadata(metadata: any): boolean {
-  return metadata && 
-    (metadata.woodType !== undefined || 
-     metadata.construction !== undefined ||
-     (metadata.material && metadata.material.toLowerCase().includes('wood')));
+function isWoodMetadata(metadata: unknown): boolean {
+  if (!metadata || typeof metadata !== 'object') return false;
+  
+  const meta = metadata as Record<string, unknown>;
+  return (
+    'woodType' in meta || 
+    'construction' in meta ||
+    ('material' in meta && 
+     typeof meta.material === 'string' && 
+     meta.material.toLowerCase().includes('wood'))
+  );
 }
 
-function isLightingMetadata(metadata: any): boolean {
-  return metadata && 
-    (metadata.lightingType !== undefined || 
-     metadata.bulbType !== undefined ||
-     metadata.wattage !== undefined);
+function isLightingMetadata(metadata: unknown): boolean {
+  if (!metadata || typeof metadata !== 'object') return false;
+  
+  const meta = metadata as Record<string, unknown>;
+  return (
+    'lightingType' in meta || 
+    'bulbType' in meta ||
+    'wattage' in meta
+  );
 }
 
-function isFurnitureMetadata(metadata: any): boolean {
-  return metadata && 
-    (metadata.furnitureType !== undefined || 
-     metadata.cushionFilling !== undefined ||
-     metadata.weightCapacity !== undefined);
+function isFurnitureMetadata(metadata: unknown): boolean {
+  if (!metadata || typeof metadata !== 'object') return false;
+  
+  const meta = metadata as Record<string, unknown>;
+  return (
+    'furnitureType' in meta || 
+    'cushionFilling' in meta ||
+    'weightCapacity' in meta
+  );
 }
 
-function isDecorationMetadata(metadata: any): boolean {
-  return metadata && 
-    (metadata.decorationType !== undefined || 
-     metadata.mountingType !== undefined ||
-     metadata.setSize !== undefined);
+function isDecorationMetadata(metadata: unknown): boolean {
+  if (!metadata || typeof metadata !== 'object') return false;
+  
+  const meta = metadata as Record<string, unknown>;
+  return (
+    'decorationType' in meta || 
+    'mountingType' in meta ||
+    'setSize' in meta
+  );
 }
 
 /**
@@ -74,7 +135,7 @@ export interface FormattedMaterialResponse {
  * @param materialData The raw material data from the API
  * @returns A formatted material response with comprehensive metadata
  */
-export function formatMaterialMetadata(materialData: any): FormattedMaterialResponse {
+export function formatMaterialMetadata(materialData: MaterialData): FormattedMaterialResponse {
   logger.debug(`Formatting metadata for material: ${materialData.name}`);
   
   // Initialize the formatted response with basic information
@@ -88,7 +149,7 @@ export function formatMaterialMetadata(materialData: any): FormattedMaterialResp
   };
   
   // Extract metadata based on available fields
-  const metadata = materialData.metadata || {};
+  const metadata = materialData.metadata || {} as MaterialMetadata;
   
   // Extract global metadata (common across all material types)
   if (metadata.manufacturer) formattedResponse.manufacturer = metadata.manufacturer;
@@ -137,7 +198,7 @@ export function formatMaterialMetadata(materialData: any): FormattedMaterialResp
 /**
  * Extracts size information from material data
  */
-function extractSizeInformation(materialData: any): string[] {
+function extractSizeInformation(materialData: MaterialData): string[] {
   const sizes: string[] = [];
   
   // Check if dimensions object exists
@@ -197,8 +258,8 @@ function extractSizeInformation(materialData: any): string[] {
  */
 function addMaterialSpecificMetadata(
   formattedResponse: FormattedMaterialResponse, 
-  materialData: any, 
-  metadata: any
+  materialData: MaterialData, 
+  metadata: MaterialMetadata
 ): void {
   // Determine the material type
   const materialType = formattedResponse.materialType.toLowerCase();
@@ -323,8 +384,8 @@ function addMaterialSpecificMetadata(
  */
 function extractGenericTileMetadata(
   formattedResponse: FormattedMaterialResponse, 
-  materialData: any, 
-  metadata: any
+  materialData: MaterialData, 
+  metadata: MaterialMetadata
 ): void {
   // Extract common tile properties from both materialData and metadata
   const properties = {
@@ -352,8 +413,8 @@ function extractGenericTileMetadata(
  */
 function extractGenericWoodMetadata(
   formattedResponse: FormattedMaterialResponse, 
-  materialData: any, 
-  metadata: any
+  materialData: MaterialData, 
+  metadata: MaterialMetadata
 ): void {
   // Extract common wood properties from both materialData and metadata
   const properties = {
@@ -380,8 +441,8 @@ function extractGenericWoodMetadata(
  */
 function extractGenericLightingMetadata(
   formattedResponse: FormattedMaterialResponse, 
-  materialData: any, 
-  metadata: any
+  materialData: MaterialData, 
+  metadata: MaterialMetadata
 ): void {
   // Extract common lighting properties from both materialData and metadata
   const properties = {
@@ -412,8 +473,8 @@ function extractGenericLightingMetadata(
  */
 function extractGenericFurnitureMetadata(
   formattedResponse: FormattedMaterialResponse, 
-  materialData: any, 
-  metadata: any
+  materialData: MaterialData, 
+  metadata: MaterialMetadata
 ): void {
   // Extract common furniture properties from both materialData and metadata
   const properties = {
@@ -442,8 +503,8 @@ function extractGenericFurnitureMetadata(
  */
 function extractGenericDecorationMetadata(
   formattedResponse: FormattedMaterialResponse, 
-  materialData: any, 
-  metadata: any
+  materialData: MaterialData, 
+  metadata: MaterialMetadata
 ): void {
   // Extract common decoration properties from both materialData and metadata
   const properties = {
@@ -582,7 +643,7 @@ export function generateMaterialDescription(formattedMaterial: FormattedMaterial
  * @param materials Array of material search results
  * @returns An array of formatted material responses
  */
-export function formatMaterialSearchResults(materials: any[]): FormattedMaterialResponse[] {
+export function formatMaterialSearchResults(materials: MaterialData[]): FormattedMaterialResponse[] {
   return materials.map(material => formatMaterialMetadata(material));
 }
 

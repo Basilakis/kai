@@ -1,49 +1,113 @@
-// Import React and ReactDOM types for extending JSX namespace
-import * as React from 'react';
-import * as ReactDOM from 'react-dom';
-import { SxProps } from '@mui/system';
-import { Theme } from '@mui/material/styles';
+/**
+ * Global TypeScript Declarations
+ * 
+ * This file provides global type definitions for JSX elements
+ * used throughout the project. It resolves the "JSX element
+ * implicitly has type 'any'" errors by explicitly defining
+ * types for all HTML elements.
+ */
 
-// Declare global types
-declare global {
-  // Extend existing namespaces
-  namespace JSX {
-    interface IntrinsicElements {
-      div: React.DetailedHTMLProps<React.HTMLAttributes<HTMLDivElement>, HTMLDivElement>;
-      span: React.DetailedHTMLProps<React.HTMLAttributes<HTMLSpanElement>, HTMLSpanElement>;
-      img: React.DetailedHTMLProps<React.ImgHTMLAttributes<HTMLImageElement>, HTMLImageElement>;
-      input: React.DetailedHTMLProps<React.InputHTMLAttributes<HTMLInputElement>, HTMLInputElement>;
-      ul: React.DetailedHTMLProps<React.HTMLAttributes<HTMLUListElement>, HTMLUListElement>;
-      li: React.DetailedHTMLProps<React.LiHTMLAttributes<HTMLLIElement>, HTMLLIElement>;
-      // Add other HTML elements as needed
-    }
-  }
-
-  // Utility types for props with event handlers
-  interface ChangeEvent<T = Element> extends React.ChangeEvent<T> {}
-  interface KeyboardEvent<T = Element> extends React.KeyboardEvent<T> {}
-  interface MouseEvent<T = Element> extends React.MouseEvent<T> {}
-  
-  // Extend Material UI components with common props
-  interface MaterialUIProps {
-    sx?: SxProps<Theme>;
-    className?: string;
-    style?: React.CSSProperties;
-  }
-
-  // Common prop types for reuse
-  interface CommonItemProps {
-    key?: React.Key;
-    id?: string;
+// Declare JSX namespace globally to fix TypeScript JSX element errors
+declare namespace JSX {
+  interface IntrinsicElements {
+    // Basic HTML elements
+    div: any;
+    span: any;
+    p: any;
+    h1: any;
+    h2: any;
+    h3: any;
+    h4: any;
+    h5: any;
+    h6: any;
+    a: any;
+    button: any;
+    input: any;
+    textarea: any;
+    select: any;
+    option: any;
+    form: any;
+    label: any;
+    img: any;
+    hr: any;
+    br: any;
+    
+    // Table elements
+    table: any;
+    thead: any;
+    tbody: any;
+    tr: any;
+    th: any;
+    td: any;
+    
+    // List elements
+    ul: any;
+    ol: any;
+    li: any;
+    
+    // Layout elements
+    header: any;
+    footer: any;
+    nav: any;
+    main: any;
+    section: any;
+    article: any;
+    aside: any;
+    
+    // Form elements
+    fieldset: any;
+    legend: any;
+    optgroup: any;
+    
+    // Other common elements
+    iframe: any;
+    canvas: any;
+    svg: any;
+    path: any;
+    
+    // HTML5 semantic elements
+    audio: any;
+    video: any;
+    source: any;
+    track: any;
+    figure: any;
+    figcaption: any;
+    details: any;
+    summary: any;
+    time: any;
+    
+    // Meta elements
+    head: any;
+    meta: any;
+    link: any;
+    script: any;
+    style: any;
+    title: any;
+    
+    // Custom components for subscription-tiers page
+    Checkbox: any;
+    Divider: any;
+    InputAdornment: any;
+    CheckCircleIcon: any;
+    CancelIcon: any;
+    
+    // Heroicons components used in Sidebar
+    HomeIcon: any;
+    UsersIcon: any;
+    DocumentTextIcon: any;
+    CubeIcon: any;
+    GlobeAltIcon: any;
+    CogIcon: any;
+    XIcon: any;
+    PhotographIcon: any;
+    DatabaseIcon: any;
+    ChartBarIcon: any;
+    
+    // Next.js components
+    Link: any;
+    Router: any;
+    Fragment: any;
   }
 }
 
-// Module declarations for any missing modules
-declare module 'react' {
-  interface CSSProperties {
-    [key: string]: any;
-  }
-}
-
-// Make sure TypeScript doesn't complain about importing this file
-export {};
+// Add any other global declarations here

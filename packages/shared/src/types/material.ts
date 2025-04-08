@@ -22,50 +22,32 @@ export interface Material {
   vectorRepresentation?: number[];
   tags?: string[];
   metadata?: Record<string, any>;
-}
 
-/**
- * Material Document Interface
- * Represents a material in the system
- */
-export interface MaterialDocument {
-  id: string;
-  name: string;
-  description?: string;
-  type: string;
-  properties: Record<string, any>;
-  createdBy?: string;
-  createdAt: Date;
-  updatedAt: Date;
-  vectorRepresentation?: number[];
-  tags?: string[];
-  metadata?: Record<string, any>;
-  
   // Organization
   manufacturer?: string;
   collectionId?: string;
   seriesId?: string;
   categoryId?: string;
-  
+
   // Classification
   materialType?: string;
   finish?: string;
   pattern?: string;
   texture?: string;
-  
+
   // Source
   catalogId?: string;
   catalogPage?: number;
   extractedAt?: Date;
-  
+
   // Physical properties
   dimensions?: Record<string, any>;
   color?: Record<string, any>;
   technicalSpecs?: Record<string, any>;
-  
+
   // Media and references
   images?: Array<Record<string, any>>;
-  
+
   // Additional data
   metadataConfidence?: Record<string, number>;
 }
@@ -74,7 +56,7 @@ export interface MaterialDocument {
  * Material with Relations
  * Material document with related data
  */
-export interface MaterialWithRelations extends MaterialDocument {
+export interface MaterialWithRelations extends Material {
   creator?: User;
   collections?: string[];
 }

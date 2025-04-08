@@ -2,26 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { navigate } from 'gatsby';
 import Layout from '../components/Layout';
 import SEO from '../components/SEO';
-
-// Recognition result type
-interface RecognitionResult {
-  id: string;
-  name: string;
-  category: string;
-  manufacturer: string;
-  confidence: number;
-}
-
-// History item type
-interface HistoryItem {
-  id: string;
-  timestamp: string;
-  imageUrl: string;
-  fileType: 'image' | 'pdf';
-  fileName: string;
-  fileSize: number;
-  results: RecognitionResult[];
-}
+import historyService, { HistoryItem } from '../services/historyService';
 
 /**
  * History Page
@@ -33,6 +14,9 @@ const HistoryPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<HistoryItem | null>(null);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [limit] = useState(10);
 
   // Fetch history items
   useEffect(() => {
@@ -41,97 +25,15 @@ const HistoryPage: React.FC = () => {
         setIsLoading(true);
         setError(null);
         
-        // In a real app, this would be an API call to fetch the user's history
-        // Using mock data for now
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // Fetch history data from API
+        const response = await historyService.getRecognitionHistory(page, limit);
         
-        // Mock history data
-        const mockHistory: HistoryItem[] = [
-          {
-            id: '1',
-            timestamp: '2024-03-15T14:30:00Z',
-            imageUrl: 'https://example.com/uploads/marble1.jpg',
-            fileType: 'image',
-            fileName: 'marble-sample.jpg',
-            fileSize: 2.4, // MB
-            results: [
-              {
-                id: '1',
-                name: 'Carrara White Marble',
-                category: 'Tiles',
-                manufacturer: 'LuxStone',
-                confidence: 0.95
-              },
-              {
-                id: '3',
-                name: 'Slate Grey Porcelain',
-                category: 'Tiles',
-                manufacturer: 'TileWorks',
-                confidence: 0.78
-              }
-            ]
-          },
-          {
-            id: '2',
-            timestamp: '2024-03-10T09:45:00Z',
-            imageUrl: 'https://example.com/uploads/wood1.jpg',
-            fileType: 'image',
-            fileName: 'floor-sample.jpg',
-            fileSize: 1.8,
-            results: [
-              {
-                id: '2',
-                name: 'Walnut Hardwood',
-                category: 'Wood',
-                manufacturer: 'TimberlandCo',
-                confidence: 0.92
-              },
-              {
-                id: '4',
-                name: 'Maple Engineered Wood',
-                category: 'Wood',
-                manufacturer: 'TimberlandCo',
-                confidence: 0.85
-              }
-            ]
-          },
-          {
-            id: '3',
-            timestamp: '2024-03-05T16:15:00Z',
-            imageUrl: 'https://example.com/uploads/spec1.pdf',
-            fileType: 'pdf',
-            fileName: 'material-specs.pdf',
-            fileSize: 3.2,
-            results: [
-              {
-                id: '5',
-                name: 'Travertine Beige',
-                category: 'Tiles',
-                manufacturer: 'LuxStone',
-                confidence: 0.88
-              }
-            ]
-          },
-          {
-            id: '4',
-            timestamp: '2024-03-01T11:20:00Z',
-            imageUrl: 'https://example.com/uploads/vinyl1.jpg',
-            fileType: 'image',
-            fileName: 'kitchen-floor.jpg',
-            fileSize: 2.1,
-            results: [
-              {
-                id: '8',
-                name: 'Luxury Vinyl Plank',
-                category: 'Vinyl',
-                manufacturer: 'FloorMaster',
-                confidence: 0.91
-              }
-            ]
-          }
-        ];
+        setHistoryItems(response.data);
         
-        setHistoryItems(mockHistory);
+        // Set pagination if available
+        if (response.pagination) {
+          setTotalPages(response.pagination.totalPages);
+        }
       } catch (err) {
         setError('Failed to load history. Please try again later.');
         console.error('Error loading history:', err);
@@ -141,7 +43,7 @@ const HistoryPage: React.FC = () => {
     };
     
     fetchHistory();
-  }, []);
+  }, [page, limit]);
   
   // Format date for display
   const formatDate = (dateString: string) => {
@@ -179,12 +81,24 @@ const HistoryPage: React.FC = () => {
     navigate(`/comparison?ids=${materialIds.join(',')}`);
   };
   
-  // Delete history item (would make an API call in a real app)
-  const handleDeleteItem = (itemId: string) => {
-    setHistoryItems(items => items.filter(item => item.id !== itemId));
-    
-    if (selectedItem?.id === itemId) {
-      setSelectedItem(null);
+  // Delete history item
+  const handleDeleteItem = async (itemId: string) => {
+    try {
+      const success = await historyService.deleteHistoryItem(itemId);
+      
+      if (success) {
+        // Remove from local state
+        setHistoryItems(items => items.filter(item => item.id !== itemId));
+        
+        // Close modal if the deleted item was selected
+        if (selectedItem?.id === itemId) {
+          setSelectedItem(null);
+        }
+      }
+    } catch (err) {
+      console.error(`Error deleting history item ${itemId}:`, err);
+      // Provide feedback to user (could use a toast notification)
+      alert('Failed to delete history item. Please try again.');
     }
   };
 
@@ -259,8 +173,9 @@ const HistoryPage: React.FC = () => {
                           {/* Quick-view overlay */}
                           <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 flex items-center justify-center transition-all duration-200 opacity-0 group-hover:opacity-100">
                             <button 
-                              onClick={(e) => {
-                                e.stopPropagation();
+                              onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
+                                // Use type casting to access DOM event methods
+                                (e as any).stopPropagation();
                                 handleViewItem(item);
                               }}
                               className="p-1.5 bg-white rounded-full shadow-md"
@@ -298,17 +213,17 @@ const HistoryPage: React.FC = () => {
                           {item.results.length > 0 && (
                             <div className="mt-2">
                               <p className="text-sm font-medium text-gray-700">
-                                Top match: {item.results[0].name}
+                                Top match: {item.results[0]?.name ?? 'Unknown'}
                               </p>
                               <div className="flex items-center">
                                 <div className="flex-1 bg-gray-200 rounded-full h-2 mt-1 mb-1">
                                   <div 
                                     className="bg-blue-600 h-2 rounded-full" 
-                                    style={{ width: `${item.results[0].confidence * 100}%` }}
+                                    style={{ width: `${(item.results[0]?.confidence ?? 0) * 100}%` }}
                                   ></div>
                                 </div>
                                 <span className="text-xs font-semibold text-gray-700 ml-2">
-                                  {Math.round(item.results[0].confidence * 100)}%
+                                  {Math.round((item.results[0]?.confidence ?? 0) * 100)}%
                                 </span>
                               </div>
                             </div>
@@ -378,6 +293,72 @@ const HistoryPage: React.FC = () => {
                 </div>
               </div>
             ))}
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex justify-center mt-8">
+                <nav className="inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                  <button
+                    onClick={() => setPage(Math.max(1, page - 1))}
+                    disabled={page === 1}
+                    className={`relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium ${
+                      page === 1 
+                        ? 'text-gray-300 cursor-not-allowed' 
+                        : 'text-gray-500 hover:bg-gray-50'
+                    }`}
+                  >
+                    <span className="sr-only">Previous</span>
+                    <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                      <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                  
+                  {/* Page numbers */}
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    // Calculate page numbers to show (centered around current page)
+                    let pageNum;
+                    if (totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (page <= 3) {
+                      pageNum = i + 1;
+                    } else if (page >= totalPages - 2) {
+                      pageNum = totalPages - 4 + i;
+                    } else {
+                      pageNum = page - 2 + i;
+                    }
+                    
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => setPage(pageNum)}
+                        className={`relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium ${
+                          page === pageNum
+                            ? 'z-10 bg-blue-50 border-blue-500 text-blue-600'
+                            : 'bg-white text-gray-500 hover:bg-gray-50'
+                        }`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+                  
+                  <button
+                    onClick={() => setPage(Math.min(totalPages, page + 1))}
+                    disabled={page === totalPages}
+                    className={`relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium ${
+                      page === totalPages 
+                        ? 'text-gray-300 cursor-not-allowed' 
+                        : 'text-gray-500 hover:bg-gray-50'
+                    }`}
+                  >
+                    <span className="sr-only">Next</span>
+                    <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                      <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                </nav>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -434,12 +415,16 @@ const HistoryPage: React.FC = () => {
                                   const height = 25 + ((hash * 3) % 20);
                                   
                                   // Use different colors for different materials
-                                  const colors = [
+                                  const colors: string[] = [
                                     'rgba(0, 128, 255, 0.3)',
                                     'rgba(255, 128, 0, 0.3)',
                                     'rgba(0, 192, 64, 0.3)',
                                     'rgba(128, 0, 255, 0.3)'
                                   ];
+                                  
+                                  // Get color with guaranteed value
+                                  const color = colors[idx % colors.length] || 'rgba(0, 0, 0, 0.3)';
+                                  const borderColor = color.replace('0.3', '0.7');
                                   
                                   return (
                                     <div
@@ -451,7 +436,7 @@ const HistoryPage: React.FC = () => {
                                         width: `${width}%`,
                                         height: `${height}%`,
                                         backgroundColor: colors[idx % colors.length],
-                                        borderColor: colors[idx % colors.length].replace('0.3', '0.7'),
+                                        borderColor: borderColor,
                                       }}
                                     >
                                       <div className="bg-white bg-opacity-80 text-xs px-1 py-0.5 rounded shadow max-w-full">
@@ -474,11 +459,12 @@ const HistoryPage: React.FC = () => {
                           )}
                         </div>
                         <div className="w-full sm:w-1/2">
-                        <div>
-                          <p className="font-medium">{selectedItem.fileName}</p>
-                          <p className="text-sm text-gray-500">
-                            {formatDate(selectedItem.timestamp)} • {selectedItem.fileSize.toFixed(1)} MB
-                          </p>
+                          <div>
+                            <p className="font-medium">{selectedItem.fileName}</p>
+                            <p className="text-sm text-gray-500">
+                              {formatDate(selectedItem.timestamp)} • {selectedItem.fileSize.toFixed(1)} MB
+                            </p>
+                          </div>
                         </div>
                       </div>
                       

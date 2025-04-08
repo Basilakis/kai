@@ -1,27 +1,42 @@
-FROM node:16-alpine AS builder
+# Optimized Dockerfile for API Server
+# Uses BuildKit features for faster builds
 
+# STAGE 1: Base dependencies
+FROM node:20-alpine AS base
+
+# Set working directory
 WORKDIR /app
+
+# Add non-root user
+RUN addgroup -g 1001 nodejs && \
+    adduser -D -u 1001 -G nodejs nodeuser
+
+# Install build dependencies
+RUN apk add --no-cache python3 make g++ tzdata curl
+
+# STAGE 2: Dependencies
+FROM base AS deps
 
 # Copy package files
 COPY package.json yarn.lock ./
 COPY packages/shared/package.json ./packages/shared/
 COPY packages/server/package.json ./packages/server/
 
-# Install dependencies
+# Install all dependencies (including dev)
 RUN yarn install --frozen-lockfile
 
+# STAGE 3: Builder
+FROM deps AS builder
+
 # Copy source code
-COPY packages/shared ./packages/shared/
-COPY packages/server ./packages/server/
+COPY --chown=nodeuser:nodejs . .
 
 # Build packages
-RUN yarn workspace @kai/shared build
-RUN yarn workspace @kai/server build
+RUN yarn workspace @kai/shared build && \
+    yarn workspace @kai/server build
 
-# Production image
-FROM node:16-alpine
-
-WORKDIR /app
+# STAGE 4: Production dependencies
+FROM base AS prod-deps
 
 # Copy package files
 COPY package.json yarn.lock ./
@@ -31,20 +46,46 @@ COPY packages/server/package.json ./packages/server/
 # Install production dependencies only
 RUN yarn install --frozen-lockfile --production
 
-# Copy built files
-COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
-COPY --from=builder /app/packages/server/dist ./packages/server/dist
+# STAGE 5: Production image
+FROM node:20-alpine AS runner
 
 # Set environment variables
 ENV NODE_ENV=production
 ENV PORT=3000
+ENV TZ=UTC
+
+# Set working directory
+WORKDIR /app
+
+# Add non-root user
+RUN addgroup -g 1001 nodejs && \
+    adduser -D -u 1001 -G nodejs nodeuser
+
+# Security hardening
+RUN apk add --no-cache dumb-init tzdata curl && \
+    echo "nodeuser:x:1001:1001::/home/nodeuser:/sbin/nologin" >> /etc/passwd
+
+# Copy production dependencies
+COPY --from=prod-deps --chown=nodeuser:nodejs /app/node_modules ./node_modules
+COPY --from=prod-deps --chown=nodeuser:nodejs /app/packages/shared/node_modules ./packages/shared/node_modules
+COPY --from=prod-deps --chown=nodeuser:nodejs /app/packages/server/node_modules ./packages/server/node_modules
+
+# Copy built files
+COPY --from=builder --chown=nodeuser:nodejs /app/packages/shared/dist ./packages/shared/dist
+COPY --from=builder --chown=nodeuser:nodejs /app/packages/shared/package.json ./packages/shared/
+COPY --from=builder --chown=nodeuser:nodejs /app/packages/server/dist ./packages/server/dist
+COPY --from=builder --chown=nodeuser:nodejs /app/packages/server/package.json ./packages/server/
+COPY --chown=nodeuser:nodejs package.json ./
 
 # Expose port
 EXPOSE 3000
 
 # Add healthcheck
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-  CMD wget -qO- http://localhost:3000/health || exit 1
+  CMD curl -f http://localhost:3000/health || exit 1
 
-# Start server
-CMD ["node", "packages/server/dist/server.js"]
+# Set user
+USER nodeuser
+
+# Start server with dumb-init to handle signals properly
+CMD ["dumb-init", "node", "packages/server/dist/server.js"]

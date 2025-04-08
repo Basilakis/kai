@@ -50,15 +50,81 @@ The CI/CD pipeline is implemented using GitHub Actions. The workflow is defined 
    - Build packages
 
 2. **Deploy to Staging**: Triggered on `staging` branch
+   - Run database migrations for staging environment
    - Deploy frontend to staging environment
    - Deploy backend to staging environment
    - Run integration tests
 
 3. **Deploy to Production**: Triggered ONLY on `main` branch
+   - Run database migrations for production environment
    - Deploy frontend to production
    - Deploy backend to production
    - Run smoke tests
    - Monitor deployment
+
+## Database Migrations in CI/CD
+
+A critical component of the deployment process is the automated database migration system that ensures schema changes are applied consistently across environments:
+
+### Migration Process
+
+1. **Migration Files**: SQL migration files stored in `packages/server/src/services/supabase/migrations/` follow a sequential naming convention (001_initial_schema.sql, 002_hybrid_search.sql, etc.)
+
+2. **Migration Execution**:
+   - During deployment, before any application containers are updated
+   - Migrations use a TypeScript script (`packages/server/scripts/run-migrations.ts`) 
+   - Each environment (staging, production) has its own migration state
+
+3. **Migration Tracking**:
+   - A `schema_migrations` table in Supabase records applied migrations
+   - Prevents duplicate execution of migrations across deployments
+   - Maintains an audit trail with timestamps for each applied migration
+
+### Migration CI/CD Integration
+
+The workflow includes dedicated steps for running migrations before deploying application changes:
+
+```yaml
+# Run database migrations before deployment
+- name: Setup Node.js for migrations
+  uses: actions/setup-node@v3
+  with:
+    node-version: ${{ env.NODE_VERSION }}
+    
+- name: Install dependencies
+  run: yarn install --frozen-lockfile
+  
+- name: Run database migrations (Staging)
+  run: |
+    echo "Running database migrations for staging environment..."
+    yarn tsc -p packages/server/tsconfig.json
+    cd packages/server
+    node dist/scripts/run-migrations.js
+  env:
+    SUPABASE_URL: ${{ secrets.SUPABASE_URL_STAGING }}
+    SUPABASE_KEY: ${{ secrets.SUPABASE_KEY_STAGING }}
+    NODE_ENV: staging
+```
+
+Similar steps are included in the production deployment job with production-specific credentials.
+
+### Migration Safety Features
+
+The migration system includes several safety features:
+
+1. **Idempotency**: Migrations are only applied once per environment
+2. **Fail-Fast**: If a migration fails, the deployment is halted to prevent inconsistent states
+3. **Sequentiality**: Migrations are always applied in the correct order
+4. **Environment Isolation**: Each environment maintains its own migration state
+5. **Transaction Support**: SQL migrations can use transactions for atomicity
+
+### Adding New Migrations
+
+To add a new database schema change:
+
+1. Create a new SQL file in the migrations directory with the next sequential number
+2. Commit the file to the repository
+3. The CI/CD pipeline will automatically apply the migration during the next deployment
 
 ## Setting Up Branch Protection
 
@@ -106,8 +172,12 @@ The workflow requires the following secrets to be set in your GitHub repository:
 
 ### Database and API Secrets
 - `MONGODB_URI`: MongoDB connection string
-- `SUPABASE_URL`: Supabase project URL
-- `SUPABASE_KEY`: Supabase service role key
+- `SUPABASE_URL`: Supabase project URL (for general use)
+- `SUPABASE_KEY`: Supabase service role key (for general use)
+- `SUPABASE_URL_STAGING`: Supabase project URL for staging environment migrations
+- `SUPABASE_KEY_STAGING`: Supabase service role key for staging environment migrations
+- `SUPABASE_URL_PRODUCTION`: Supabase project URL for production environment migrations
+- `SUPABASE_KEY_PRODUCTION`: Supabase service role key for production environment migrations
 - `JWT_SECRET`: Secret for JWT token generation
 
 ## Adding GitHub Secrets

@@ -2,6 +2,10 @@
 
 This package provides a TypeScript client for interacting with the Model Context Protocol (MCP) server, implementing the hybrid approach for model management and inference in the Kai system.
 
+## Implementation Status
+
+All mock implementations previously used during development have been replaced with fully functional real API calls. The client now connects to actual API endpoints for all operations, providing proper error handling and performance optimizations.
+
 ## Overview
 
 The MCP system centralizes model management, provides optimized inference capabilities, and facilitates agent communication. This package implements the client-side SDK for communicating with the Python-based MCP server.

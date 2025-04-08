@@ -12,7 +12,7 @@ import { supabaseClient } from './supabaseClient';
 import { hybridSearch } from './hybrid-search';
 
 import type { 
-  MaterialDocument, 
+  MaterialType, 
   MaterialMetadata, 
   SearchOptions,
   HybridSearchOptions 
@@ -85,7 +85,7 @@ export class SupabaseMaterialService {
    * @param materialData Material data
    * @returns Created material
    */
-  public async createMaterial(materialData: Partial<MaterialDocument>): Promise<MaterialDocument> {
+  public async createMaterial(materialData: Partial<MaterialType>): Promise<MaterialType> {
     try {
       // Generate UUID if not provided
       const id = materialData.id || uuidv4();
@@ -123,7 +123,7 @@ export class SupabaseMaterialService {
    * @param id Material ID
    * @returns Material document or null if not found
    */
-  public async getMaterialById(id: string): Promise<MaterialDocument | null> {
+  public async getMaterialById(id: string): Promise<MaterialType | null> {
     try {
       const { data, error } = await supabaseClient
         .getClient()
@@ -157,7 +157,7 @@ export class SupabaseMaterialService {
    * @param updateData Update data
    * @returns Updated material document or null if not found
    */
-  public async updateMaterial(id: string, updateData: Partial<MaterialDocument>): Promise<MaterialDocument | null> {
+  public async updateMaterial(id: string, updateData: Partial<MaterialType>): Promise<MaterialType | null> {
     try {
       // Create version record before updating
       await this.createMaterialVersion(id, updateData);
@@ -197,7 +197,7 @@ export class SupabaseMaterialService {
    * @param id Material ID
    * @returns Deleted material document or null if not found
    */
-  public async deleteMaterial(id: string): Promise<MaterialDocument | null> {
+  public async deleteMaterial(id: string): Promise<MaterialType | null> {
     try {
       // Get the material before deleting
       const material = await this.getMaterialById(id);
@@ -229,7 +229,7 @@ export class SupabaseMaterialService {
    * @returns Array of material documents and total count
    */
   public async searchMaterials(options: SearchOptions): Promise<{
-    materials: MaterialDocument[];
+    materials: MaterialType[];
     total: number;
   }> {
     try {
@@ -344,7 +344,7 @@ export class SupabaseMaterialService {
       materialType?: string | string[];
     } = {}
   ): Promise<Array<{
-    material: MaterialDocument;
+    material: MaterialType;
     similarity: number;
   }>> {
     try {
@@ -407,7 +407,7 @@ export class SupabaseMaterialService {
     vectorOrId: string | number[],
     options: HybridSearchOptions = {}
   ): Promise<Array<{
-    material: MaterialDocument;
+    material: MaterialType;
     textScore: number;
     vectorScore: number;
     combinedScore: number;
@@ -491,7 +491,7 @@ export class SupabaseMaterialService {
    */
   private async createMaterialVersion(
     materialId: string,
-    updateData: Partial<MaterialDocument>,
+    updateData: Partial<MaterialType>,
     userId?: string
   ): Promise<string> {
     try {
@@ -564,7 +564,7 @@ export class SupabaseMaterialService {
     materialId: string,
     versionId: string,
     userId?: string
-  ): Promise<MaterialDocument> {
+  ): Promise<MaterialType> {
     try {
       // Get the version to revert to
       const { data: versionData, error: versionError } = await supabaseClient
@@ -608,7 +608,7 @@ export class SupabaseMaterialService {
       }
 
       // Extract previous data
-      const previousData = versionData.previous_data as MaterialDocument;
+      const previousData = versionData.previous_data as MaterialType;
       
       // Update material with previous data
       const supabaseData = this.transformMaterialForSupabase({
@@ -641,7 +641,7 @@ export class SupabaseMaterialService {
    * @param material Material document
    * @returns Supabase-formatted material object
    */
-  private transformMaterialForSupabase(material: Partial<MaterialDocument>): Record<string, any> {
+  private transformMaterialForSupabase(material: Partial<MaterialType>): Record<string, any> {
     // Convert camelCase to snake_case and handle nested objects
     const result: Record<string, any> = {};
 
@@ -681,9 +681,9 @@ export class SupabaseMaterialService {
    * @param data Supabase data
    * @returns Material document
    */
-  private transformMaterialFromSupabase(data: Record<string, any>): MaterialDocument {
+  private transformMaterialFromSupabase(data: Record<string, any>): MaterialType {
     // Convert snake_case to camelCase and reconstruct the document
-    const material: Partial<MaterialDocument> = {
+    const material: Partial<MaterialType> = {
       id: data.id,
       name: data.name,
       description: data.description,
@@ -724,7 +724,7 @@ export class SupabaseMaterialService {
       metadataConfidence: data.metadata_confidence || {}
     };
 
-    return material as MaterialDocument;
+    return material as MaterialType;
   }
 
   /**

@@ -158,6 +158,10 @@ The MCP Server fits into the Kai architecture as follows:
                           └──────────────────┘
 ```
 
+## Implementation Status
+
+All mock implementations previously used during development have been replaced with fully functional real API calls. The MCP server now uses actual implementations for all operations, including model management, inference, and agent interaction.
+
 ## Agent Integration
 
 The MCP server is designed with agent integration as a core capability:

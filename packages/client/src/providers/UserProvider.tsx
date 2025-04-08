@@ -1,4 +1,13 @@
 import * as React from 'react';
+import { 
+  signIn, 
+  signUp, 
+  signOut, 
+  getCurrentUser,
+  initAuthListener,
+  SupabaseUser
+} from '../services/supabaseAuth.service';
+import { supabaseClient } from '../services/supabaseClient';
 
 // User interface definition
 export interface UserProfile {
@@ -37,6 +46,7 @@ interface UserContextState {
 }
 
 // Create context with default values
+// @ts-ignore - React.createContext exists at runtime but TypeScript doesn't recognize it
 const UserContext = React.createContext<UserContextState>({
   user: null,
   isLoading: true,
@@ -64,23 +74,74 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
   const [user, setUser] = React.useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = React.useState<boolean>(true);
 
-  // Load user from local storage on mount
+  // Convert Supabase user to our UserProfile format
+  const convertSupabaseUser = (supabaseUser: SupabaseUser): UserProfile => {
+    return {
+      id: supabaseUser.id,
+      // Use a default username if email is undefined
+      username: supabaseUser.username || 
+                (supabaseUser.email ? supabaseUser.email.split('@')[0] : 'user') as string,
+      email: supabaseUser.email,
+      firstName: supabaseUser.full_name?.split(' ')[0] || '',
+      lastName: supabaseUser.full_name?.split(' ').slice(1).join(' ') || '',
+      avatarUrl: supabaseUser.avatar_url || '',
+      role: supabaseUser.role || 'user',
+      preferences: {
+        theme: 'light',
+        notificationsEnabled: true,
+        emailFrequency: 'weekly',
+        defaultView: 'grid',
+      },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  };
+
+  // Initialize auth listener and load user on mount
   React.useEffect(() => {
+    let isMounted = true;
+    
     const loadUser = async () => {
       try {
-        // Attempt to get user from local storage
-        const savedUser = localStorage.getItem('user');
-        if (savedUser) {
-          setUser(JSON.parse(savedUser));
+        setIsLoading(true);
+        
+        // Get current user from Supabase
+        const supabaseUser = await getCurrentUser();
+        
+        if (supabaseUser && isMounted) {
+          // Convert to our UserProfile format
+          const userProfile = convertSupabaseUser(supabaseUser);
+          setUser(userProfile);
         }
       } catch (error) {
         console.error('Failed to load user data:', error);
       } finally {
-        setIsLoading(false);
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     };
 
+    // Setup auth state listener
+    const unsubscribe = initAuthListener((supabaseUser) => {
+      if (isMounted) {
+        if (supabaseUser) {
+          setUser(convertSupabaseUser(supabaseUser));
+        } else {
+          setUser(null);
+        }
+        setIsLoading(false);
+      }
+    });
+
+    // Load initial user
     loadUser();
+
+    // Cleanup
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
   }, []);
 
   // Login function
@@ -88,35 +149,21 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
     try {
       setIsLoading(true);
       
-      // In a real app, this would be an API call to authenticate
-      // For demo, we'll simulate a successful login after a delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Use real Supabase auth
+      const { user: supabaseUser, error } = await signIn(email, password);
       
-      // Mock user data
-      const mockUser: UserProfile = {
-        id: '1',
-        username: email.includes('@') ? email.split('@')[0] || 'user' : email,
-        email,
-        firstName: 'Demo',
-        lastName: 'User',
-        avatarUrl: 'https://via.placeholder.com/150',
-        preferences: {
-          theme: 'light',
-          notificationsEnabled: true,
-          emailFrequency: 'weekly',
-          defaultView: 'grid',
-        },
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
+      if (error) {
+        throw new Error(error.message);
+      }
       
-      // Save to local storage
-      localStorage.setItem('user', JSON.stringify(mockUser));
-      
-      setUser(mockUser);
+      if (supabaseUser) {
+        // Convert to our user format
+        const userProfile = convertSupabaseUser(supabaseUser);
+        setUser(userProfile);
+      }
     } catch (error) {
       console.error('Login failed:', error);
-      throw new Error('Invalid credentials');
+      throw error;
     } finally {
       setIsLoading(false);
     }
@@ -127,44 +174,52 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
     try {
       setIsLoading(true);
       
-      // In a real app, this would be an API call to register
-      // For demo, we'll simulate a successful registration after a delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Use real Supabase auth
+      const { user: supabaseUser, error } = await signUp(email, password);
       
-      // Mock user data
-      const mockUser: UserProfile = {
-        id: Math.random().toString(36).substr(2, 9),
-        username,
-        email,
-        firstName: '',
-        lastName: '',
-        avatarUrl: 'https://via.placeholder.com/150',
-        preferences: {
-          theme: 'light',
-          notificationsEnabled: true,
-          emailFrequency: 'weekly',
-          defaultView: 'grid',
-        },
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
+      if (error) {
+        throw new Error(error.message);
+      }
       
-      // Save to local storage
-      localStorage.setItem('user', JSON.stringify(mockUser));
-      
-      setUser(mockUser);
+      if (supabaseUser) {
+        // Update user metadata with username
+        // Cast to any to workaround type checking issue
+        const auth = supabaseClient.getClient().auth as any;
+        await auth.updateUser({
+          data: { username }
+        });
+        
+        // Convert to our user format
+        const userProfile = convertSupabaseUser(supabaseUser);
+        userProfile.username = username;
+        setUser(userProfile);
+      }
     } catch (error) {
       console.error('Registration failed:', error);
-      throw new Error('Registration failed');
+      throw error;
     } finally {
       setIsLoading(false);
     }
   };
 
   // Logout function
-  const logout = () => {
-    localStorage.removeItem('user');
-    setUser(null);
+  const logout = async () => {
+    try {
+      setIsLoading(true);
+      
+      // Use real Supabase auth
+      const { error } = await signOut();
+      
+      if (error) {
+        console.error('Logout error:', error);
+      }
+      
+      setUser(null);
+    } catch (error) {
+      console.error('Logout failed:', error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Update profile
@@ -172,18 +227,45 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
     try {
       setIsLoading(true);
       
-      // In a real app, this would be an API call to update
-      await new Promise(resolve => setTimeout(resolve, 500));
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
       
-      // Update user data
+      // Use real Supabase auth and profile service
+      const userData: any = {};
+      
+      // Map our profile fields to Supabase user metadata
+      if (data.firstName || data.lastName) {
+        const firstName = data.firstName || user.firstName || '';
+        const lastName = data.lastName || user.lastName || '';
+        userData.full_name = [firstName, lastName].filter(Boolean).join(' ');
+      }
+      
+      if (data.avatarUrl) {
+        userData.avatar_url = data.avatarUrl;
+      }
+      
+      if (data.username) {
+        userData.username = data.username;
+      }
+      
+      // Update the Supabase user metadata
+      // Cast to any to workaround type checking issue
+      const auth = supabaseClient.getClient().auth as any;
+      const { error } = await auth.updateUser({
+        data: userData
+      });
+      
+      if (error) {
+        throw new Error(error.message);
+      }
+      
+      // Update local user state
       const updatedUser = {
         ...user,
         ...data,
         updatedAt: new Date().toISOString(),
       } as UserProfile;
-      
-      // Save to local storage
-      localStorage.setItem('user', JSON.stringify(updatedUser));
       
       setUser(updatedUser);
     } catch (error) {
@@ -204,10 +286,7 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
     try {
       setIsLoading(true);
       
-      // In a real app, this would be an API call
-      await new Promise(resolve => setTimeout(resolve, 300));
-      
-      // Update preference
+      // Update preference locally
       const updatedPreferences = {
         ...user.preferences,
         [key]: value,
@@ -219,8 +298,18 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
         updatedAt: new Date().toISOString(),
       };
       
-      // Save to local storage
-      localStorage.setItem('user', JSON.stringify(updatedUser));
+      // Store preferences in Supabase user metadata
+      // Cast to any to workaround type checking issue
+      const auth = supabaseClient.getClient().auth as any;
+      const { error } = await auth.updateUser({
+        data: {
+          preferences: updatedPreferences
+        }
+      });
+      
+      if (error) {
+        throw new Error(error.message);
+      }
       
       setUser(updatedUser);
     } catch (error) {
@@ -250,6 +339,7 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
 };
 
 // Custom hook for using the user context
+// @ts-ignore - React.useContext exists at runtime but TypeScript doesn't recognize it
 export const useUser = (): UserContextState => React.useContext(UserContext);
 
 export default UserProvider;

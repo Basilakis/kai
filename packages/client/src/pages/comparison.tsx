@@ -2,18 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { navigate } from 'gatsby';
 import Layout from '../components/Layout';
 import SEO from '../components/SEO';
-
-// Material interface - same as in catalog.tsx
-interface Material {
-  id: string;
-  name: string;
-  description: string;
-  category: string;
-  manufacturer: string;
-  imageUrl: string;
-  properties: Record<string, string>;
-  createdAt: string;
-}
+import materialService, { Material } from '../services/materialService';
 
 /**
  * Comparison Page
@@ -49,146 +38,14 @@ const ComparisonPage: React.FC = () => {
       try {
         setIsLoading(true);
         
-        // In a real app, this would be an API call to fetch specific materials by ID
-        // For now, use mock data
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // Fetch each material by ID using the API
+        const materialPromises = selectedIds.map(id => materialService.getMaterialById(id));
+        const materialResults = await Promise.allSettled(materialPromises);
         
-        // Mock materials (same as in catalog.tsx)
-        const mockMaterialsData: Material[] = [
-          {
-            id: '1',
-            name: 'Carrara White Marble',
-            description: 'Classic Italian white marble with gray veining',
-            category: 'Tiles',
-            manufacturer: 'LuxStone',
-            imageUrl: 'https://example.com/marble1.jpg',
-            properties: {
-              material: 'Natural Stone',
-              finish: 'Polished',
-              color: 'White/Gray',
-              size: '12" x 24"',
-              thickness: '10mm'
-            },
-            createdAt: '2024-01-15'
-          },
-          {
-            id: '2',
-            name: 'Walnut Hardwood',
-            description: 'Premium walnut hardwood flooring',
-            category: 'Wood',
-            manufacturer: 'TimberlandCo',
-            imageUrl: 'https://example.com/wood1.jpg',
-            properties: {
-              material: 'Hardwood',
-              finish: 'Matte',
-              color: 'Brown',
-              size: '5" width',
-              thickness: '12mm'
-            },
-            createdAt: '2024-02-10'
-          },
-          {
-            id: '3',
-            name: 'Slate Grey Porcelain',
-            description: 'Contemporary porcelain tile with slate appearance',
-            category: 'Tiles',
-            manufacturer: 'TileWorks',
-            imageUrl: 'https://example.com/porcelain1.jpg',
-            properties: {
-              material: 'Porcelain',
-              finish: 'Textured',
-              color: 'Grey',
-              size: '24" x 24"',
-              thickness: '8mm'
-            },
-            createdAt: '2024-01-05'
-          },
-          {
-            id: '4',
-            name: 'Maple Engineered Wood',
-            description: 'Engineered maple wood flooring',
-            category: 'Wood',
-            manufacturer: 'TimberlandCo',
-            imageUrl: 'https://example.com/wood2.jpg',
-            properties: {
-              material: 'Engineered Wood',
-              finish: 'Satin',
-              color: 'Light Brown',
-              size: '6" width',
-              thickness: '14mm'
-            },
-            createdAt: '2024-03-01'
-          },
-          {
-            id: '5',
-            name: 'Travertine Beige',
-            description: 'Natural travertine stone with beige tones',
-            category: 'Tiles',
-            manufacturer: 'LuxStone',
-            imageUrl: 'https://example.com/travertine1.jpg',
-            properties: {
-              material: 'Natural Stone',
-              finish: 'Honed',
-              color: 'Beige',
-              size: '16" x 16"',
-              thickness: '12mm'
-            },
-            createdAt: '2024-01-20'
-          },
-          {
-            id: '6',
-            name: 'White Oak Laminate',
-            description: 'Durable white oak laminate flooring',
-            category: 'Laminate',
-            manufacturer: 'FloorMaster',
-            imageUrl: 'https://example.com/laminate1.jpg',
-            properties: {
-              material: 'Laminate',
-              finish: 'Matte',
-              color: 'Light Oak',
-              size: '7" width',
-              thickness: '8mm'
-            },
-            createdAt: '2024-02-15'
-          },
-          {
-            id: '7',
-            name: 'Blue Pearl Granite',
-            description: 'Elegant blue pearl granite for countertops',
-            category: 'Stone',
-            manufacturer: 'StoneCrafters',
-            imageUrl: 'https://example.com/granite1.jpg',
-            properties: {
-              material: 'Granite',
-              finish: 'Polished',
-              color: 'Blue/Grey',
-              size: 'Slab',
-              thickness: '30mm'
-            },
-            createdAt: '2024-01-25'
-          },
-          {
-            id: '8',
-            name: 'Luxury Vinyl Plank',
-            description: 'Waterproof luxury vinyl flooring with wood appearance',
-            category: 'Vinyl',
-            manufacturer: 'FloorMaster',
-            imageUrl: 'https://example.com/vinyl1.jpg',
-            properties: {
-              material: 'Vinyl',
-              finish: 'Embossed',
-              color: 'Medium Oak',
-              size: '7" x 48"',
-              thickness: '5mm'
-            },
-            createdAt: '2024-03-05'
-          }
-        ];
-        
-        // Filter to get only the selected materials
-        const selectedMaterials = mockMaterialsData.filter(
-          material => selectedIds.includes(material.id)
-        );
+        // Filter successful fetches and extract the materials
+        const selectedMaterials = materialResults
+          .filter((result): result is PromiseFulfilledResult<Material> => result.status === 'fulfilled')
+          .map(result => result.value);
         
         if (selectedMaterials.length === 0) {
           setError('No materials found for comparison');
@@ -206,7 +63,7 @@ const ComparisonPage: React.FC = () => {
           setAllPropertyKeys(Array.from(propKeys));
         }
       } catch (err) {
-        setError('Failed to load comparison data');
+        setError('Failed to load comparison data. Please try again later.');
         console.error('Error loading comparison data:', err);
       } finally {
         setIsLoading(false);

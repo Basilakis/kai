@@ -1,0 +1,1 @@
+// This file is deliberately empty. Heroicon declarations now in jsx-intrinsic.d.ts

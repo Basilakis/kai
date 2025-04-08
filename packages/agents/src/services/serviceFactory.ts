@@ -10,6 +10,7 @@ import { ServiceConfig } from './baseService';
 import { MaterialService } from './materialService';
 import { MLService } from './mlService';
 import { VectorService } from './vectorService';
+import { AnalyticsService } from './analyticsService';
 
 // Default service configurations
 const defaultServiceConfigs = {
@@ -25,6 +26,10 @@ const defaultServiceConfigs = {
     baseURL: env.services.mlServiceUrl,
     timeout: 60000,
   },
+  analytics: {
+    baseURL: env.services.kaiApiUrl,
+    timeout: 30000,
+  },
 };
 
 /**
@@ -35,6 +40,7 @@ export class ServiceFactory {
   private static materialService: MaterialService | null = null;
   private static mlService: MLService | null = null;
   private static vectorService: VectorService | null = null;
+  private static analyticsService: AnalyticsService | null = null;
 
   /**
    * Get or create a MaterialService instance
@@ -76,6 +82,19 @@ export class ServiceFactory {
   }
 
   /**
+   * Get or create an AnalyticsService instance
+   */
+  static getAnalyticsService(config?: Partial<ServiceConfig>): AnalyticsService {
+    if (!this.analyticsService) {
+      this.analyticsService = new AnalyticsService({
+        ...defaultServiceConfigs.analytics,
+        ...(config || {}),
+      });
+    }
+    return this.analyticsService;
+  }
+
+  /**
    * Reset all service instances
    * Useful for testing or when configuration changes
    */
@@ -83,6 +102,7 @@ export class ServiceFactory {
     this.materialService = null;
     this.mlService = null;
     this.vectorService = null;
+    this.analyticsService = null;
   }
 }
 
@@ -105,6 +125,13 @@ export function getMLService(config?: Partial<ServiceConfig>): MLService {
  */
 export function getVectorService(config?: Partial<ServiceConfig>): VectorService {
   return ServiceFactory.getVectorService(config);
+}
+
+/**
+ * Get a configured AnalyticsService instance
+ */
+export function getAnalyticsService(config?: Partial<ServiceConfig>): AnalyticsService {
+  return ServiceFactory.getAnalyticsService(config);
 }
 
 export default ServiceFactory;

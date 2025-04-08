@@ -6,7 +6,6 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { PostgrestError } from '@supabase/supabase-js';
 import { logger } from '../../utils/logger';
 import { supabaseClient } from './supabaseClient';
 
@@ -96,6 +95,7 @@ export interface DatasetImage {
 export interface DatasetSearchOptions {
   query?: string;
   status?: 'created' | 'processing' | 'ready' | 'error' | Array<'created' | 'processing' | 'ready' | 'error'>;
+  source?: string;
   limit?: number;
   skip?: number;
   sort?: {
@@ -148,9 +148,9 @@ export class SupabaseDatasetService {
       });
 
       // Insert dataset into Supabase
-      const { data, error } = await supabaseClient
+      const { data, error } = await (supabaseClient
         .getClient()
-        .from('datasets')
+        .from('datasets') as any)
         .insert(supabaseData)
         .select()
         .single();
@@ -174,9 +174,9 @@ export class SupabaseDatasetService {
    */
   public async getDatasetById(id: string): Promise<Dataset | null> {
     try {
-      const { data, error } = await supabaseClient
+      const { data, error } = await (supabaseClient
         .getClient()
-        .from('datasets')
+        .from('datasets') as any)
         .select('*')
         .eq('id', id)
         .single();
@@ -215,9 +215,9 @@ export class SupabaseDatasetService {
       });
 
       // Update dataset in Supabase
-      const { data, error } = await supabaseClient
+      const { data, error } = await (supabaseClient
         .getClient()
-        .from('datasets')
+        .from('datasets') as any)
         .update(supabaseData)
         .eq('id', id)
         .select()
@@ -255,26 +255,26 @@ export class SupabaseDatasetService {
       // Start a transaction
       const deleteDataset = async (client: any) => {
         // Delete all associated images from dataset_images
-        const { error: imagesError } = await client
+        const { error: imagesError } = await (client
           .from('dataset_images')
           .delete()
-          .eq('dataset_id', id);
+          .eq('dataset_id', id) as any);
 
         if (imagesError) throw imagesError;
 
         // Delete all associated classes from dataset_classes
-        const { error: classesError } = await client
+        const { error: classesError } = await (client
           .from('dataset_classes')
           .delete()
-          .eq('dataset_id', id);
+          .eq('dataset_id', id) as any);
 
         if (classesError) throw classesError;
 
         // Delete the dataset itself
-        const { error: datasetError } = await client
+        const { error: datasetError } = await (client
           .from('datasets')
           .delete()
-          .eq('id', id);
+          .eq('id', id) as any);
 
         if (datasetError) throw datasetError;
       };
@@ -286,10 +286,10 @@ export class SupabaseDatasetService {
       // Clean up storage files associated with this dataset
       // This requires listing all storage objects with path prefix matching dataset ID
       try {
-        const { data: storageData, error: storageError } = await client
+        const { data: storageData, error: storageError } = await (client
           .storage
           .from('datasets')
-          .list(id);
+          .list(id) as any);
 
         if (storageError) {
           logger.warn(`Error listing dataset storage files: ${storageError}`);
@@ -297,7 +297,7 @@ export class SupabaseDatasetService {
           // For each folder, recursively delete files
           for (const item of storageData) {
             if (item.id) {
-              await client.storage.from('datasets').remove([`${id}/${item.name}`]);
+              await (client.storage.from('datasets').remove([`${id}/${item.name}`]) as any);
             }
           }
         }
@@ -325,15 +325,16 @@ export class SupabaseDatasetService {
       const {
         query,
         status,
+        source,
         limit = 10,
         skip = 0,
         sort = { field: 'created_at', direction: 'desc' }
       } = options;
 
       // Build query
-      let supabaseQuery = supabaseClient
+      let supabaseQuery: any = (supabaseClient
         .getClient()
-        .from('datasets')
+        .from('datasets') as any)
         .select('*', { count: 'exact' });
 
       // Text search
@@ -348,6 +349,12 @@ export class SupabaseDatasetService {
         } else {
           supabaseQuery = supabaseQuery.eq('status', status);
         }
+      }
+      
+      // Source filter
+      if (source) {
+        // Filter by the source field directly
+        supabaseQuery = supabaseQuery.eq('source', source);
       }
 
       // Apply sorting
@@ -399,9 +406,9 @@ export class SupabaseDatasetService {
       });
 
       // Insert class into Supabase
-      const { data, error } = await supabaseClient
+      const { data, error } = await (supabaseClient
         .getClient()
-        .from('dataset_classes')
+        .from('dataset_classes') as any)
         .insert(supabaseData)
         .select()
         .single();
@@ -428,9 +435,9 @@ export class SupabaseDatasetService {
    */
   public async getDatasetClasses(datasetId: string): Promise<DatasetClass[]> {
     try {
-      const { data, error } = await supabaseClient
+      const { data, error } = await (supabaseClient
         .getClient()
-        .from('dataset_classes')
+        .from('dataset_classes') as any)
         .select('*')
         .eq('dataset_id', datasetId);
 
@@ -453,9 +460,9 @@ export class SupabaseDatasetService {
   public async deleteDatasetClass(classId: string): Promise<DatasetClass | null> {
     try {
       // Get the class before deleting to know the dataset ID
-      const { data: classData, error: classGetError } = await supabaseClient
+      const { data: classData, error: classGetError } = await (supabaseClient
         .getClient()
-        .from('dataset_classes')
+        .from('dataset_classes') as any)
         .select('*')
         .eq('id', classId)
         .single();
@@ -471,9 +478,9 @@ export class SupabaseDatasetService {
       const deletedClass = this.transformDatasetClassFromSupabase(classData);
 
       // Delete all images in this class first
-      const { error: imagesDeleteError } = await supabaseClient
+      const { error: imagesDeleteError } = await (supabaseClient
         .getClient()
-        .from('dataset_images')
+        .from('dataset_images') as any)
         .delete()
         .eq('class_id', classId);
 
@@ -482,9 +489,9 @@ export class SupabaseDatasetService {
       }
 
       // Now delete the class
-      const { error: classDeleteError } = await supabaseClient
+      const { error: classDeleteError } = await (supabaseClient
         .getClient()
-        .from('dataset_classes')
+        .from('dataset_classes') as any)
         .delete()
         .eq('id', classId);
 
@@ -521,9 +528,9 @@ export class SupabaseDatasetService {
       });
 
       // Insert image into Supabase
-      const { data, error } = await supabaseClient
+      const { data, error } = await (supabaseClient
         .getClient()
-        .from('dataset_images')
+        .from('dataset_images') as any)
         .insert(supabaseData)
         .select()
         .single();
@@ -553,9 +560,9 @@ export class SupabaseDatasetService {
    */
   public async getDatasetClassImages(classId: string, limit = 100, offset = 0): Promise<DatasetImage[]> {
     try {
-      const { data, error } = await supabaseClient
+      const { data, error } = await (supabaseClient
         .getClient()
-        .from('dataset_images')
+        .from('dataset_images') as any)
         .select('*')
         .eq('class_id', classId)
         .range(offset, offset + limit - 1);
@@ -579,9 +586,9 @@ export class SupabaseDatasetService {
   public async deleteDatasetImage(imageId: string): Promise<DatasetImage | null> {
     try {
       // Get the image before deleting to know the class and dataset IDs
-      const { data: imageData, error: imageGetError } = await supabaseClient
+      const { data: imageData, error: imageGetError } = await (supabaseClient
         .getClient()
-        .from('dataset_images')
+        .from('dataset_images') as any)
         .select('*')
         .eq('id', imageId)
         .single();
@@ -599,9 +606,9 @@ export class SupabaseDatasetService {
       const deletedImage = this.transformDatasetImageFromSupabase(imageData);
 
       // Delete the image record
-      const { error: imageDeleteError } = await supabaseClient
+      const { error: imageDeleteError } = await (supabaseClient
         .getClient()
-        .from('dataset_images')
+        .from('dataset_images') as any)
         .delete()
         .eq('id', imageId);
 
@@ -612,11 +619,11 @@ export class SupabaseDatasetService {
       // Try to delete the file from storage if it exists
       try {
         if (storagePath) {
-          const { error: storageError } = await supabaseClient
+          const { error: storageError } = await (supabaseClient
             .getClient()
             .storage
             .from('datasets')
-            .remove([storagePath]);
+            .remove([storagePath]) as any);
 
           if (storageError) {
             logger.warn(`Failed to delete image file from storage: ${storageError}`);
@@ -644,9 +651,9 @@ export class SupabaseDatasetService {
   private async updateClassImageCount(classId: string): Promise<void> {
     try {
       // Count images in the class
-      const { count, error: countError } = await supabaseClient
+      const { count, error: countError } = await (supabaseClient
         .getClient()
-        .from('dataset_images')
+        .from('dataset_images') as any)
         .select('*', { count: 'exact', head: true })
         .eq('class_id', classId);
 
@@ -655,9 +662,9 @@ export class SupabaseDatasetService {
       }
 
       // Update the class's image count
-      const { error: updateError } = await supabaseClient
+      const { error: updateError } = await (supabaseClient
         .getClient()
-        .from('dataset_classes')
+        .from('dataset_classes') as any)
         .update({ image_count: count || 0, updated_at: new Date().toISOString() })
         .eq('id', classId);
 
@@ -677,9 +684,9 @@ export class SupabaseDatasetService {
   private async updateDatasetCounters(datasetId: string): Promise<void> {
     try {
       // Count classes in the dataset
-      const { count: classCount, error: classCountError } = await supabaseClient
+      const { count: classCount, error: classCountError } = await (supabaseClient
         .getClient()
-        .from('dataset_classes')
+        .from('dataset_classes') as any)
         .select('*', { count: 'exact', head: true })
         .eq('dataset_id', datasetId);
 
@@ -688,9 +695,9 @@ export class SupabaseDatasetService {
       }
 
       // Count images in the dataset
-      const { count: imageCount, error: imageCountError } = await supabaseClient
+      const { count: imageCount, error: imageCountError } = await (supabaseClient
         .getClient()
-        .from('dataset_images')
+        .from('dataset_images') as any)
         .select('*', { count: 'exact', head: true })
         .eq('dataset_id', datasetId);
 
@@ -699,9 +706,9 @@ export class SupabaseDatasetService {
       }
 
       // Update the dataset's counters
-      const { error: updateError } = await supabaseClient
+      const { error: updateError } = await (supabaseClient
         .getClient()
-        .from('datasets')
+        .from('datasets') as any)
         .update({
           class_count: classCount || 0,
           image_count: imageCount || 0,
@@ -727,10 +734,10 @@ export class SupabaseDatasetService {
   public async getSignedImageUrl(storagePath: string, expiresIn = 3600): Promise<string> {
     try {
       // Get a signed URL from Supabase storage
-      const { data, error } = await supabaseClient
+      const { data, error } = await (supabaseClient
         .getClient()
         .storage
-        .from('datasets')
+        .from('datasets') as any)
         .createSignedUrl(storagePath, expiresIn);
 
       if (error) {
@@ -760,26 +767,25 @@ export class SupabaseDatasetService {
   }> {
     try {
       // Get total datasets count
-      const { count: datasetsCount, error: datasetsError } = await supabaseClient
+      const { count: datasetsCount, error: datasetsError } = await (supabaseClient
         .getClient()
-        .from('datasets')
+        .from('datasets') as any)
         .select('*', { count: 'exact', head: true });
       
       if (datasetsError) throw datasetsError;
 
       // Get total images count
-      const { count: imagesCount, error: imagesError } = await supabaseClient
+      const { count: imagesCount, error: imagesError } = await (supabaseClient
         .getClient()
-        .from('dataset_images')
+        .from('dataset_images') as any)
         .select('*', { count: 'exact', head: true });
       
       if (imagesError) throw imagesError;
 
       // Get datasets by status
-      const { data: statusData, error: statusError } = await supabaseClient
+      const { data: statusData, error: statusError } = await (supabaseClient
         .getClient()
-        .from('datasets')
-        .select('status')
+        .from('datasets') as any)
         .select('status, count(*)')
         .group('status');
       
@@ -791,9 +797,9 @@ export class SupabaseDatasetService {
       });
 
       // Get largest datasets
-      const { data: largestData, error: largestError } = await supabaseClient
+      const { data: largestData, error: largestError } = await (supabaseClient
         .getClient()
-        .from('datasets')
+        .from('datasets') as any)
         .select('id, name, image_count')
         .order('image_count', { ascending: false })
         .limit(5);

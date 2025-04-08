@@ -69,7 +69,9 @@ jobs:
       (github.ref == 'refs/heads/staging') || 
       (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
     runs-on: ubuntu-latest
-    environment: staging
+    # Using environment variables instead of environment setting
+    env:
+      DEPLOY_ENV: staging
     concurrency: staging_environment
     steps:
       - name: Checkout code
@@ -143,7 +145,7 @@ jobs:
           cache-from: type=registry,ref=${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-ml-services:staging-cache
           cache-to: type=registry,ref=${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-ml-services:staging-cache,mode=max
 
-      # Deploy to Digital Ocean Kubernetes staging environment
+      # Install kubectl for Kubernetes operations
       - name: Install kubectl
         uses: azure/setup-kubectl@v3
         with:
@@ -155,6 +157,27 @@ jobs:
           echo "${{ secrets.KUBE_CONFIG_DATA }}" | base64 -d > ~/.kube/config
           chmod 600 ~/.kube/config
 
+      # Run database migrations before deployment
+      - name: Setup Node.js for migrations
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+        
+      - name: Run database migrations (Staging)
+        run: |
+          echo "Running database migrations for staging environment..."
+          yarn tsc -p packages/server/tsconfig.json
+          cd packages/server
+          node dist/scripts/run-migrations.js
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL_STAGING }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY_STAGING }}
+          NODE_ENV: staging
+
+      # Deploy to Kubernetes staging environment
       - name: Update Kubernetes deployments (Staging)
         run: |
           kubectl set image deployment/kai-api-server-staging api-server=${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-api-server:${{ github.sha }} -n kai-staging
@@ -194,7 +217,9 @@ jobs:
       (github.ref == 'refs/heads/main') || 
       (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
     runs-on: ubuntu-latest
-    environment: production
+    # Using environment variables instead of environment setting
+    env:
+      DEPLOY_ENV: production
     concurrency: production_environment
     steps:
       - name: Checkout code
@@ -266,7 +291,7 @@ jobs:
           cache-from: type=registry,ref=${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-ml-services:build-cache
           cache-to: type=registry,ref=${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-ml-services:build-cache,mode=max
 
-      # Deploy to Digital Ocean Kubernetes production environment
+      # Install kubectl for Kubernetes operations
       - name: Install kubectl
         uses: azure/setup-kubectl@v3
         with:
@@ -278,6 +303,27 @@ jobs:
           echo "${{ secrets.KUBE_CONFIG_DATA }}" | base64 -d > ~/.kube/config
           chmod 600 ~/.kube/config
 
+      # Run database migrations before deployment
+      - name: Setup Node.js for migrations
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+        
+      - name: Run database migrations (Production)
+        run: |
+          echo "Running database migrations for production environment..."
+          yarn tsc -p packages/server/tsconfig.json
+          cd packages/server
+          node dist/scripts/run-migrations.js
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL_PRODUCTION }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY_PRODUCTION }}
+          NODE_ENV: production
+
+      # Deploy to Kubernetes production environment
       - name: Update Kubernetes deployments (Production)
         run: |
           kubectl set image deployment/kai-api-server api-server=${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-api-server:${{ github.sha }} -n kai

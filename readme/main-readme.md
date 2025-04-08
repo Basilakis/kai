@@ -12,11 +12,11 @@ All detailed documentation is available in the `readme` folder:
 - [Datasets and AI Models](./datasets-and-models.md) - Integration of premade datasets with AI models
 - [PDF Processing](./pdf-processing.md) - Catalog extraction capabilities
 - [Queue System](./queue-system.md) - Message broker and async processing
-- [API Reference](./api-reference.md) - Comprehensive API endpoints
+- [Monitoring System](./monitoring-system.md) - System health monitoring and operational visibility
+- [API Reference](./api-reference.md) - Comprehensive API endpoints including health checks and rate limiting
 - [Deployment & Development](./deployment-and-development.md) - Production deployment and development setup
 - [CrewAI Integration](./agents-crewai.md) - Intelligent agent capabilities powered by crewAI
 - [CrewAI Implementation](./agents-crewai-implementation.md) - Implementation details for crewAI agents
-- [CrewAI Development Steps](./agents-crewai-next-steps.md) - Next steps for enhancing crewAI integration
 
 ## Quick Start
 
@@ -36,6 +36,17 @@ yarn dev
 ```
 
 For detailed setup instructions, deployment guides, and development workflows, see the [Deployment & Development](./deployment-and-development.md) documentation.
+
+## System Health Monitoring
+
+Kai includes comprehensive health monitoring capabilities:
+
+- **Health Endpoints**: Basic `/health` and detailed `/health/detailed` endpoints for monitoring
+- **Environment Validation**: Automatic validation of required environment variables
+- **Rate Limiting**: Specialized rate limiting for different API endpoints
+- **Monitoring Dashboard**: Admin panel for system monitoring with logs, errors, and metrics
+
+See the [Monitoring System](./monitoring-system.md) documentation for details.
 
 ## License
 

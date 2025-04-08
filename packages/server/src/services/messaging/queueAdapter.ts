@@ -7,7 +7,13 @@
  */
 
 import { logger } from '../../utils/logger';
-import { messageBroker, MessageQueueType, MessageType, MessageHandler, MessagePayload } from './messageBroker';
+import { MessageQueueType, MessageType, MessageHandler } from './messageBrokerInterface';
+import { messageBrokerFactory, BrokerImplementation } from './messageBrokerFactory';
+
+// Get default broker instance
+const defaultBroker = messageBrokerFactory.createBroker({
+  implementation: BrokerImplementation.BASIC
+});
 
 /**
  * Queue event types that map to MessageType in the broker
@@ -61,7 +67,7 @@ export class QueueAdapter {
     jobData: QueueJobData
   ): Promise<boolean> {
     try {
-      await messageBroker.publish(
+      await defaultBroker.publish(
         this.queueType,
         eventType as MessageType,
         jobData,
@@ -87,7 +93,7 @@ export class QueueAdapter {
     handler: MessageHandler<T>,
     eventType?: QueueEventType
   ): Promise<() => Promise<void>> {
-    const unsubscribe = await messageBroker.subscribe<T>(
+    const unsubscribe = await defaultBroker.subscribe<T>(
       queueType,
       handler,
       eventType as MessageType | undefined

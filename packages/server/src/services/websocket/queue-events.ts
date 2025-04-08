@@ -17,7 +17,13 @@ const READY_STATE = {
 };
 
 import { logger } from '../../utils/logger';
-import { messageBroker, MessagePayload, MessageQueueType } from '../messaging/messageBroker';
+import { MessagePayload, MessageQueueType } from '../messaging/messageBrokerInterface';
+import { messageBrokerFactory, BrokerImplementation } from '../messaging/messageBrokerFactory';
+
+// Get broker instance from factory
+const broker = messageBrokerFactory.createBroker({
+  implementation: BrokerImplementation.BASIC
+});
 
 // Client data structure for managing WebSocket connections
 interface ClientData {
@@ -98,15 +104,15 @@ export class QueueEventsServer {
   private async setupMessageSubscriptions(): Promise<void> {
     try {
       // Subscribe to PDF queue events
-      const pdfUnsubscribe = await messageBroker.subscribe('pdf', this.handleQueueEvent.bind(this));
+      const pdfUnsubscribe = await broker.subscribe('pdf', this.handleQueueEvent.bind(this));
       this.messageSubscriptions.push(pdfUnsubscribe);
       
       // Subscribe to Crawler queue events
-      const crawlerUnsubscribe = await messageBroker.subscribe('crawler', this.handleQueueEvent.bind(this));
+      const crawlerUnsubscribe = await broker.subscribe('crawler', this.handleQueueEvent.bind(this));
       this.messageSubscriptions.push(crawlerUnsubscribe);
       
       // Subscribe to System events
-      const systemUnsubscribe = await messageBroker.subscribe('system', this.handleQueueEvent.bind(this));
+      const systemUnsubscribe = await broker.subscribe('system', this.handleQueueEvent.bind(this));
       this.messageSubscriptions.push(systemUnsubscribe);
       
       logger.info('Supabase Realtime subscriptions established for WebSocket server');

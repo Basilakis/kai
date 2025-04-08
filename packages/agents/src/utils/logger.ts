@@ -3,6 +3,7 @@
  * 
  * Provides a consistent logging interface for agent operations
  * with configurable log levels, file output, and formatting.
+ * Integrated with analytics service to track agent activities.
  */
 
 import { Logger as SharedLogger, LogLevel } from '@kai/shared/utils/logger';
@@ -11,6 +12,7 @@ import * as process from 'process';
 import * as fs from 'fs';
 import winston from 'winston';
 import type { Logger as WinstonLogger } from 'winston';
+import { analyticsService, AnalyticsSourceType } from '../services/analyticsService';
 
 // Define internal types for Winston transports
 type WinstonTransport = {
@@ -249,11 +251,59 @@ export function configureLogger(options: AgentLoggerOptions): void {
 export function logAgentActivity(agentId: string, activity: AgentActivity): void {
   const logger = createLogger(`Agent:${agentId}`);
   logger.logActivity(activity);
+  
+  // Also track in analytics service
+  try {
+    // Extract agent type from agentId or details
+    const agentType = activity.details?.type || 'unknown';
+    
+    // Track the agent activity in analytics
+    analyticsService.trackCrewAIAgentActivity(
+      agentId,
+      agentType,
+      activity.action,
+      activity.status,
+      {
+        ...activity.details,
+        error: activity.error ? activity.error.message : undefined
+      }
+    ).catch((err: unknown) => {
+      logger.error(`Failed to track agent activity in analytics: ${err instanceof Error ? err.message : String(err)}`);
+    });
+  } catch (err: unknown) {
+    logger.error(`Error tracking agent activity in analytics: ${err instanceof Error ? err.message : String(err)}`);
+    // Don't break agent operations if analytics tracking fails
+  }
 }
 
 export function logToolExecution(agentId: string, toolName: string, execution: ToolExecution): void {
   const logger = createLogger(`Agent:${agentId}`);
   logger.logToolExecution(toolName, execution);
+  
+  // Also track tool executions in analytics for agent performance analysis
+  try {
+    if (execution.status === 'success' || execution.status === 'error') {
+      analyticsService.trackCrewAIAgentActivity(
+        agentId,
+        'tool-execution',
+        `tool:${toolName}`,
+        execution.status,
+        {
+          input: execution.input,
+          output: typeof execution.output === 'string' ? 
+            (execution.output.length > 1000 ? `${execution.output.substring(0, 1000)}... [truncated]` : execution.output) : 
+            'complex-output',
+          error: execution.error ? execution.error.message : undefined,
+          duration: execution.duration
+        }
+      ).catch((err: unknown) => {
+        logger.error(`Failed to track tool execution in analytics: ${err instanceof Error ? err.message : String(err)}`);
+      });
+    }
+  } catch (err: unknown) {
+    logger.error(`Error tracking tool execution in analytics: ${err instanceof Error ? err.message : String(err)}`);
+    // Don't break tool operations if analytics tracking fails
+  }
 }
 
 export default {

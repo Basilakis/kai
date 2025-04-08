@@ -14,7 +14,8 @@ import {
   Tabs,
   Paper,
   Alert,
-  Snackbar 
+  Snackbar,
+  CircularProgress 
 } from '@mui/material';
 import AddCircleIcon from '@mui/icons-material/AddCircle';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -25,6 +26,7 @@ import MemoryIcon from '@mui/icons-material/Memory';
 import SchoolIcon from '@mui/icons-material/School';
 import ModelImporter from '../../components/models/ModelImporter';
 import ModelTrainingConnector from '../../components/models/ModelTrainingConnector';
+import modelsService, { Model, TrainingParams, TrainingResult, ImportModelParams, TrainingConfig } from '../../services/modelsService';
 
 /**
  * Models Page Component
@@ -35,15 +37,16 @@ import ModelTrainingConnector from '../../components/models/ModelTrainingConnect
  */
 const ModelsPage: React.FC = () => {
   // State for models
-  const [models, setModels] = React.useState<any[]>([]);
+  const [models, setModels] = React.useState<Model[]>([]);
   const [importOpen, setImportOpen] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [activeTab, setActiveTab] = React.useState(0);
   const [trainingSuccess, setTrainingSuccess] = React.useState(false);
-  const [trainingResult, setTrainingResult] = React.useState<any>(null);
+  const [trainingResult, setTrainingResult] = React.useState<TrainingResult | null>(null);
+  const [deleteInProgress, setDeleteInProgress] = React.useState<string | null>(null);
 
-  // Sample model frameworks for visualization
+  // Model frameworks for visualization
   const frameworkColors: Record<string, string> = {
     tensorflow: '#FF6F00',
     pytorch: '#EE4C2C',
@@ -53,45 +56,17 @@ const ModelsPage: React.FC = () => {
 
   // Fetch models on component mount
   React.useEffect(() => {
-    // Simulate API call to fetch models
     const fetchModels = async () => {
       try {
-        // This would be an actual API call in a real implementation
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        // Mock models data
-        const mockModels = [
-          {
-            id: 'model-1',
-            name: 'MobileNet V2',
-            description: 'Lightweight image classification model',
-            framework: 'tensorflow',
-            type: 'repository',
-            source: 'https://tfhub.dev/google/imagenet/mobilenet_v2_130_224/classification/5',
-            status: 'ready',
-            accuracy: 72.8,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          },
-          {
-            id: 'model-2',
-            name: 'ResNet50',
-            description: 'Deep residual network for image recognition',
-            framework: 'pytorch',
-            type: 'repository',
-            source: 'https://pytorch.org/hub/pytorch_vision_resnet/',
-            status: 'ready',
-            accuracy: 79.3,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          }
-        ];
-        
-        setModels(mockModels);
-        setLoading(false);
+        setLoading(true);
+        setError(null);
+        // Call the real API service
+        const modelsList = await modelsService.getModels();
+        setModels(modelsList);
       } catch (err) {
         console.error('Error fetching models:', err);
-        setError('Failed to load models');
+        setError('Failed to load models: ' + (err instanceof Error ? err.message : String(err)));
+      } finally {
         setLoading(false);
       }
     };
@@ -100,14 +75,34 @@ const ModelsPage: React.FC = () => {
   }, []);
 
   // Handle importing a new model
-  const handleImportModel = (model: any) => {
-    setModels(prev => [model, ...prev]);
-    setImportOpen(false);
+  const handleImportModel = async (modelData: ImportModelParams) => {
+    try {
+      setLoading(true);
+      // Call the real API service
+      const importedModel = await modelsService.importModel(modelData);
+      setModels(prev => [importedModel, ...prev]);
+      setImportOpen(false);
+    } catch (err) {
+      console.error('Error importing model:', err);
+      setError('Failed to import model: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Handle deleting a model
-  const handleDeleteModel = (modelId: string) => {
-    setModels(prev => prev.filter(model => model.id !== modelId));
+  const handleDeleteModel = async (modelId: string) => {
+    try {
+      setDeleteInProgress(modelId);
+      // Call the real API service
+      await modelsService.deleteModel(modelId);
+      setModels(prev => prev.filter(model => model.id !== modelId));
+    } catch (err) {
+      console.error(`Error deleting model ${modelId}:`, err);
+      setError('Failed to delete model: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setDeleteInProgress(null);
+    }
   };
 
   // Format date for display
@@ -120,17 +115,35 @@ const ModelsPage: React.FC = () => {
   };
 
   // Handle tab change
+  // @ts-ignore - SyntheticEvent is used but not exported from React namespace
   const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
     setActiveTab(newValue);
   };
 
   // Handle training start
-  const handleTrainingStart = (config: any) => {
-    console.log('Training started with config:', config);
+  const handleTrainingStart = async (config: TrainingConfig) => {
+    try {
+      setLoading(true);
+      // Call the real API service
+      const result = await modelsService.trainModel(config);
+      setTrainingResult(result);
+      setTrainingSuccess(true);
+      
+      // Refresh the models list to include the newly trained model
+      if (result.success) {
+        const modelsList = await modelsService.getModels();
+        setModels(modelsList);
+      }
+    } catch (err) {
+      console.error('Error training model:', err);
+      setError('Failed to train model: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Handle training complete
-  const handleTrainingComplete = (results: any) => {
+  const handleTrainingComplete = (results: TrainingResult) => {
     console.log('Training completed with results:', results);
     setTrainingResult(results);
     setTrainingSuccess(true);
@@ -144,7 +157,12 @@ const ModelsPage: React.FC = () => {
   // Render models list
   const renderModelsList = () => {
     if (loading) {
-      return <Typography>Loading models...</Typography>;
+      return (
+        <Box display="flex" justifyContent="center" alignItems="center" py={8}>
+          <CircularProgress />
+          <Typography sx={{ ml: 2 }}>Loading models...</Typography>
+        </Box>
+      );
     }
 
     if (models.length === 0) {
@@ -195,14 +213,17 @@ const ModelsPage: React.FC = () => {
                 </Typography>
                 
                 <Typography variant="body2" color="textSecondary">
+                  {/* @ts-ignore - JSX.IntrinsicElements strong element */}
                   <strong>Source:</strong> {model.type}
                 </Typography>
                 
                 <Typography variant="body2" color="textSecondary">
+                  {/* @ts-ignore - JSX.IntrinsicElements strong element */}
                   <strong>Accuracy:</strong> {model.accuracy ? `${model.accuracy.toFixed(1)}%` : 'Not evaluated'}
                 </Typography>
                 
                 <Typography variant="body2" color="textSecondary">
+                  {/* @ts-ignore - JSX.IntrinsicElements strong element */}
                   <strong>Added:</strong> {formatDate(model.createdAt)}
                 </Typography>
               </CardContent>
@@ -232,9 +253,14 @@ const ModelsPage: React.FC = () => {
                     color="error"
                     size="small"
                     onClick={() => handleDeleteModel(model.id)}
+                    disabled={deleteInProgress === model.id}
                     aria-label="Delete model"
                   >
-                    <DeleteIcon />
+                    {deleteInProgress === model.id ? (
+                      <CircularProgress size={20} />
+                    ) : (
+                      <DeleteIcon />
+                    )}
                   </IconButton>
                 </Tooltip>
               </Box>
@@ -261,9 +287,9 @@ const ModelsPage: React.FC = () => {
       </Box>
 
       {error && (
-        <Typography color="error" paragraph>
+        <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
           {error}
-        </Typography>
+        </Alert>
       )}
 
       {/* Main content with tabs */}
@@ -328,7 +354,7 @@ const ModelsPage: React.FC = () => {
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       >
         <Alert onClose={handleCloseSnackbar} severity="success" sx={{ width: '100%' }}>
-          Model training completed successfully! Accuracy: {trainingResult?.finalAccuracy ? `${(trainingResult.finalAccuracy * 100).toFixed(1)}%` : 'N/A'}
+          Model training completed successfully! Accuracy: {trainingResult?.accuracy ? `${(trainingResult.accuracy * 100).toFixed(1)}%` : 'N/A'}
         </Alert>
       </Snackbar>
     </Box>

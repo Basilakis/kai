@@ -161,136 +161,547 @@ Coordinates machine learning model training:
    - `training.job.failed`: Training failed
    - `training.model.deployed`: New model has been deployed
 
-## Message Broker Implementation
+## Unified Message Broker Architecture
 
-The message broker is implemented using Supabase Realtime:
+The Queue System now uses a unified message broker architecture with a factory pattern that provides tiered implementation options based on application requirements:
+
+```
+┌───────────────────┐     ┌────────────────────────┐     ┌───────────────┐
+│                   │     │                        │     │               │
+│  Client Services  │────▶│  Message Broker        │────▶│  PDF Queue    │
+│                   │     │  Factory               │     │               │
+└───────────────────┘     └────────────────────────┘     └───────────────┘
+        │                            │                            │
+        │                            ▼                            ▼
+        │                  ┌───────────────────┐        ┌───────────────┐
+        │                  │                   │        │               │
+        ▼                  │  IMessageBroker   │        │  PDF Worker   │
+┌───────────────────┐      │  Implementation   │        │               │
+│                   │      │                   │        └───────────────┘
+│  Admin Analytics  │      └───────────────────┘
+│                   │                │
+└───────────────────┘                │
+                                     ▼
+                            ┌───────────────────┐
+                            │                   │
+                            │  Supabase Client  │
+                            │                   │
+                            └───────────────────┘
+```
+
+### Message Broker Interface
+
+The system uses a standardized interface that all message broker implementations must implement:
 
 ```typescript
-// Core Message Broker
-export class MessageBroker {
-  private supabase: SupabaseClient;
-  private channels: Record<string, RealtimeChannel> = {};
-  private handlers: Record<string, Record<string, Array<(payload: any) => Promise<void>>>> = {};
+// Common types for message queuing
+export enum QueueType {
+  PDF = 'pdf',
+  CRAWLER = 'crawler',
+  SYSTEM = 'system',
+  TRAINING = 'training',
+  KNOWLEDGE_BASE = 'knowledge-base'
+}
 
-  constructor(supabaseClient: SupabaseClient) {
-    this.supabase = supabaseClient;
-  }
+export enum MessageType {
+  JOB_QUEUED = 'job.queued',
+  JOB_STARTED = 'job.started',
+  JOB_PROGRESS = 'job.progress',
+  JOB_COMPLETED = 'job.completed',
+  JOB_FAILED = 'job.failed',
+  SYSTEM_STATUS = 'system.status',
+  CUSTOM = 'custom'
+}
 
-  /**
-   * Initialize a channel for a specific queue
-   */
-  public initChannel(channelName: string): RealtimeChannel {
-    if (this.channels[channelName]) {
-      return this.channels[channelName];
-    }
+export interface MessagePayload {
+  [key: string]: any;
+  timestamp?: number;
+}
 
-    const channel = this.supabase.channel(channelName);
-    
-    // Initialize handlers container for this channel
-    if (!this.handlers[channelName]) {
-      this.handlers[channelName] = {};
-    }
-    
-    // Setup channel with handlers
-    Object.entries(this.handlers[channelName]).forEach(([eventType, handlers]) => {
-      channel.on('broadcast', { event: eventType }, async (payload) => {
-        try {
-          await Promise.all(handlers.map(handler => handler(payload)));
-        } catch (error) {
-          logger.error(`Error handling event ${eventType} on channel ${channelName}:`, error);
-        }
-      });
+export interface SubscriptionOptions {
+  persistent?: boolean;
+  priority?: 'high' | 'normal' | 'low';
+  ackRequired?: boolean;
+  retryOnReconnect?: boolean;
+  buffer?: number;
+}
+
+// Core Message Broker Interface
+export interface IMessageBroker {
+  // Core functionality
+  init(): Promise<void>;
+  shutdown(): Promise<void>;
+  
+  // Basic pub/sub operations
+  publish(queue: QueueType | string, messageType: MessageType | string, payload: MessagePayload): Promise<boolean>;
+  subscribe<T = MessagePayload>(
+    queue: QueueType | string, 
+    messageType: MessageType | string, 
+    handler: MessageHandler<T>
+  ): Promise<() => Promise<void>>;
+  
+  // Advanced subscription with options
+  subscribeWithOptions<T = MessagePayload>(
+    queue: QueueType | string,
+    messageType: MessageType | string,
+    handler: MessageHandler<T>,
+    options: SubscriptionOptions
+  ): Promise<() => Promise<void>>;
+  
+  // Monitoring and statistics
+  getStats(): MessageBrokerStats;
+  flush(): Promise<void>;
+}
+```
+
+### Message Broker Factory
+
+The system uses a factory pattern to create appropriate message broker instances:
+
+```typescript
+// Implementation tiers
+export enum BrokerImplementation {
+  BASIC = 'basic',       // Basic pub/sub functionality
+  ENHANCED = 'enhanced', // Added persistence and delivery guarantees
+  ADVANCED = 'advanced'  // Full feature set with optimized performance
+}
+
+// Factory for creating message brokers
+export class MessageBrokerFactory {
+  // Create a broker with specified implementation
+  public static createBroker(implementation: BrokerImplementation = BrokerImplementation.BASIC): IMessageBroker {
+    // Get the broker implementation based on requirements
+    return new UnifiedMessageBroker({
+      implementation,
+      clientManager: SupabaseClientManager.getInstance()
     });
+  }
+  
+  // Create with options
+  public static createBrokerWithOptions(options: BrokerOptions): IMessageBroker {
+    const implementation = this.determineBrokerImplementation(options);
+    return new UnifiedMessageBroker({
+      implementation,
+      ...options
+    });
+  }
+  
+  // Determine appropriate implementation based on requirements
+  private static determineBrokerImplementation(options: BrokerOptions): BrokerImplementation {
+    // If implementation explicitly specified, use it
+    if (options.implementation) {
+      return options.implementation;
+    }
     
-    // Subscribe to the channel
-    channel.subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
-        logger.info(`Subscribed to channel: ${channelName}`);
-      } else if (status === 'CLOSED') {
-        logger.warn(`Channel closed: ${channelName}`);
-      } else if (status === 'CHANNEL_ERROR') {
-        logger.error(`Channel error: ${channelName}`);
+    // If persistence is required, at least ENHANCED is needed
+    if (options.persistence === true) {
+      // If horizontal scaling is needed, use ADVANCED
+      if (options.scaling === true) {
+        return BrokerImplementation.ADVANCED;
       }
-    });
+      return BrokerImplementation.ENHANCED;
+    }
     
-    this.channels[channelName] = channel;
-    return channel;
+    // If only basic pub/sub is needed
+    return BrokerImplementation.BASIC;
   }
+}
+```
 
-  /**
-   * Publish a message to a channel
-   */
-  public async publish(channelName: string, eventType: string, payload: any): Promise<void> {
+### Unified Message Broker Implementation
+
+The UnifiedMessageBroker combines the best features of previous implementations:
+
+```typescript
+// Unified Message Broker Implementation
+export class UnifiedMessageBroker implements IMessageBroker {
+  private supabase: SupabaseClient;
+  private config: BrokerConfig;
+  private implementation: BrokerImplementation;
+  private channels: Record<string, RealtimeChannel> = {};
+  private handlers: Record<string, Record<string, Array<HandlerWrapper>>> = {};
+  private persistentStorage: Record<string, any> = {};
+  private initialized: boolean = false;
+  private stats: MessageBrokerStats = this.getDefaultStats();
+  
+  constructor(options: BrokerOptions) {
+    this.implementation = options.implementation || BrokerImplementation.BASIC;
+    this.config = this.getConfigForImplementation(this.implementation);
+    this.supabase = options.clientManager.getClient();
+    
+    logger.info(`Unified Message Broker created with implementation: ${this.implementation}`);
+  }
+  
+  // Initialize the broker
+  public async init(): Promise<void> {
+    if (this.initialized) {
+      return;
+    }
+    
     try {
-      // Ensure channel exists
-      const channel = this.initChannel(channelName);
+      if (this.config.persistence) {
+        await this.initPersistentStorage();
+      }
       
+      this.initialized = true;
+      logger.info(`Unified Message Broker initialized (${this.implementation})`);
+    } catch (error) {
+      logger.error(`Failed to initialize message broker: ${error instanceof Error ? error.message : String(error)}`);
+      throw error;
+    }
+  }
+  
+  // Publish a message
+  public async publish(
+    queue: QueueType | string, 
+    messageType: MessageType | string, 
+    payload: MessagePayload
+  ): Promise<boolean> {
+    if (!this.initialized) {
+      await this.init();
+    }
+    
+    try {
       // Add timestamp if not present
       const messagePayload = {
         ...payload,
         timestamp: payload.timestamp || Date.now()
       };
       
+      // Get or create channel
+      const channel = await this.getChannel(queue);
+      
+      // Update stats
+      this.stats.messagesSent++;
+      this.stats.lastMessageSent = new Date();
+      
+      // If persistence is enabled, store message first
+      if (this.config.persistence) {
+        await this.persistMessage(queue, messageType, messagePayload);
+      }
+      
       // Send the message
       await channel.send({
         type: 'broadcast',
-        event: eventType,
+        event: messageType,
         payload: messagePayload
       });
       
-      logger.debug(`Published message to ${channelName}:${eventType}`, { messageId: messagePayload.id });
+      logger.debug(`Published message to ${queue}:${messageType}`, { 
+        implementation: this.implementation,
+        messageId: messagePayload.id 
+      });
+      
+      return true;
     } catch (error) {
-      logger.error(`Failed to publish message to ${channelName}:${eventType}`, error);
+      this.stats.errors++;
+      logger.error(`Failed to publish message to ${queue}:${messageType}`, error);
+      
+      // If advanced error handling enabled, handle the error
+      if (this.config.advancedErrorHandling) {
+        // Retry logic would go here
+      }
+      
       throw new Error(`Message publishing failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-
-  /**
-   * Subscribe to events on a channel
-   */
-  public subscribe(
-    channelName: string, 
-    eventType: string, 
-    handler: (payload: any) => Promise<void>
-  ): () => void {
-    // Ensure channel and handlers exist
-    if (!this.handlers[channelName]) {
-      this.handlers[channelName] = {};
+  
+  // Subscribe to messages
+  public async subscribe<T = MessagePayload>(
+    queue: QueueType | string, 
+    messageType: MessageType | string, 
+    handler: MessageHandler<T>
+  ): Promise<() => Promise<void>> {
+    // Default subscription with basic options
+    return this.subscribeWithOptions(queue, messageType, handler, {
+      persistent: false,
+      priority: 'normal',
+      ackRequired: false,
+      retryOnReconnect: this.implementation !== BrokerImplementation.BASIC
+    });
+  }
+  
+  // Subscribe with advanced options
+  public async subscribeWithOptions<T = MessagePayload>(
+    queue: QueueType | string,
+    messageType: MessageType | string,
+    handler: MessageHandler<T>,
+    options: SubscriptionOptions
+  ): Promise<() => Promise<void>> {
+    if (!this.initialized) {
+      await this.init();
     }
     
-    if (!this.handlers[channelName][eventType]) {
-      this.handlers[channelName][eventType] = [];
+    // Ensure handlers exist for this queue and message type
+    if (!this.handlers[queue]) {
+      this.handlers[queue] = {};
     }
     
-    // Add the handler
-    this.handlers[channelName][eventType].push(handler);
+    if (!this.handlers[queue][messageType]) {
+      this.handlers[queue][messageType] = [];
+    }
     
-    // Ensure channel is initialized
-    this.initChannel(channelName);
+    // Create handler wrapper with options
+    const handlerWrapper: HandlerWrapper = {
+      handler,
+      options,
+      timestamp: Date.now()
+    };
+    
+    // Add handler to the list
+    this.handlers[queue][messageType].push(handlerWrapper);
+    
+    // Get or create the channel
+    const channel = await this.getChannel(queue);
+    
+    // Update stats
+    this.stats.subscriptions++;
     
     // Return unsubscribe function
-    return () => {
-      if (this.handlers[channelName] && this.handlers[channelName][eventType]) {
-        this.handlers[channelName][eventType] = this.handlers[channelName][eventType]
-          .filter(h => h !== handler);
+    return async () => {
+      if (this.handlers[queue] && this.handlers[queue][messageType]) {
+        this.handlers[queue][messageType] = this.handlers[queue][messageType]
+          .filter(h => h.handler !== handler);
+          
+        // If no more handlers for this message type, clean up
+        if (this.handlers[queue][messageType].length === 0) {
+          delete this.handlers[queue][messageType];
+          
+          // If no more handlers for this queue, clean up channel
+          if (Object.keys(this.handlers[queue]).length === 0) {
+            delete this.handlers[queue];
+            if (this.channels[queue]) {
+              await this.channels[queue].unsubscribe();
+              delete this.channels[queue];
+            }
+          }
+        }
+        
+        this.stats.subscriptions--;
       }
     };
   }
-
-  /**
-   * Close all channels
-   */
-  public async close(): Promise<void> {
-    await Promise.all(
-      Object.values(this.channels).map(channel => channel.unsubscribe())
-    );
-    this.channels = {};
-    this.handlers = {};
+  
+  // Shutdown the broker
+  public async shutdown(): Promise<void> {
+    try {
+      // Unsubscribe from all channels
+      await Promise.all(
+        Object.values(this.channels).map(channel => channel.unsubscribe())
+      );
+      
+      this.channels = {};
+      this.handlers = {};
+      this.initialized = false;
+      
+      logger.info(`Unified Message Broker shutdown complete (${this.implementation})`);
+    } catch (error) {
+      logger.error(`Error during message broker shutdown: ${error instanceof Error ? error.message : String(error)}`);
+      throw error;
+    }
   }
+  
+  // Get broker statistics
+  public getStats(): MessageBrokerStats {
+    return {
+      ...this.stats,
+      implementation: this.implementation,
+      activeChannels: Object.keys(this.channels).length,
+      activeSubscriptions: this.stats.subscriptions
+    };
+  }
+  
+  // Flush any pending messages
+  public async flush(): Promise<void> {
+    if (this.config.persistence) {
+      await this.flushPersistentStorage();
+    }
+  }
+  
+  // Helper methods for different implementations
+  private async getChannel(queue: QueueType | string): Promise<RealtimeChannel> {
+    if (this.channels[queue]) {
+      return this.channels[queue];
+    }
+    
+    // Create new channel
+    const channel = this.supabase.channel(`queue:${queue}`);
+    
+    // Set up handlers
+    if (this.handlers[queue]) {
+      Object.entries(this.handlers[queue]).forEach(([eventType, handlers]) => {
+        channel.on('broadcast', { event: eventType }, async (payload) => {
+          try {
+            // Update stats
+            this.stats.messagesReceived++;
+            this.stats.lastMessageReceived = new Date();
+            
+            // Execute handlers based on priority if using advanced implementation
+            const sortedHandlers = [...handlers];
+            if (this.implementation === BrokerImplementation.ADVANCED) {
+              sortedHandlers.sort((a, b) => {
+                const priorityMap = { high: 3, normal: 2, low: 1 };
+                return (priorityMap[b.options.priority || 'normal'] || 2) - 
+                       (priorityMap[a.options.priority || 'normal'] || 2);
+              });
+            }
+            
+            // Execute each handler
+            await Promise.all(sortedHandlers.map(handlerWrapper => {
+              try {
+                return handlerWrapper.handler(payload.payload);
+              } catch (error) {
+                logger.error(`Handler error for ${queue}:${eventType}`, error);
+                return Promise.resolve();
+              }
+            }));
+          } catch (error) {
+            this.stats.errors++;
+            logger.error(`Error handling event ${eventType} on channel ${queue}:`, error);
+          }
+        });
+      });
+    }
+    
+    // Subscribe to the channel with appropriate options
+    channel.subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        logger.info(`Subscribed to channel: ${queue} (${this.implementation})`);
+        
+        // If using advanced implementation and retry on reconnect
+        if (this.implementation !== BrokerImplementation.BASIC && 
+            this.config.retryOnReconnect && 
+            this.handlers[queue]) {
+          this.handleReconnection(queue);
+        }
+      } else if (status === 'CLOSED') {
+        logger.warn(`Channel closed: ${queue}`);
+      } else if (status === 'CHANNEL_ERROR') {
+        this.stats.errors++;
+        logger.error(`Channel error: ${queue}`);
+      }
+    });
+    
+    this.channels[queue] = channel;
+    return channel;
+  }
+  
+  // Additional implementation-specific methods would be here
+  // ...
 }
 
-// Export singleton instance
-export const messageBroker = new MessageBroker(supabaseClient);
+// Export factory as the primary access point
+export const messageBrokerFactory = MessageBrokerFactory;
+```
+
+### Implementation Tiers
+
+The system provides three tiers of implementation:
+
+#### Basic Implementation
+
+The **BASIC** implementation provides fundamental pub/sub capabilities:
+- Simple message publishing and subscription
+- No persistence or guaranteed delivery
+- No automatic reconnection
+- Minimal overhead and resource usage
+- Suitable for non-critical messaging needs
+
+Example use case: Status updates, notifications, and informational messages where some loss is acceptable.
+
+#### Enhanced Implementation
+
+The **ENHANCED** implementation adds reliability features:
+- Message persistence with storage in Supabase tables
+- Delivery guarantees with acknowledgments
+- Automatic reconnection with message replay
+- Error handling with retry logic
+- Performance optimizations with batching
+- Metrics and statistics tracking
+
+Example use case: Job processing queues where message delivery is important but not absolutely critical.
+
+#### Advanced Implementation
+
+The **ADVANCED** implementation adds enterprise features:
+- All Enhanced features plus:
+- Priority-based message handling
+- Message ordering guarantees
+- Connection pooling for high-throughput
+- Advanced error handling with circuit breakers
+- Performance optimization with database indexing and caching
+- Support for horizontal scaling
+
+Example use case: Mission-critical workflows, financial operations, and high-volume processing where message loss cannot be tolerated.
+
+### Migration and Usage
+
+Services can access the message broker through the factory:
+
+```typescript
+import { messageBrokerFactory, BrokerImplementation, QueueType, MessageType } from '../messaging/messageBrokerFactory';
+
+// Get a basic broker for simple use cases
+const basicBroker = messageBrokerFactory.createBroker();
+
+// Get an enhanced broker for more reliable messaging
+const enhancedBroker = messageBrokerFactory.createBroker(BrokerImplementation.ENHANCED);
+
+// Get an advanced broker for mission-critical operations
+const advancedBroker = messageBrokerFactory.createBroker(BrokerImplementation.ADVANCED);
+
+// Or specify requirements and let the factory determine the implementation
+const broker = messageBrokerFactory.createBrokerWithOptions({
+  persistence: true,
+  scaling: true,
+  retryOnReconnect: true
+});
+
+// Initialize the broker
+await broker.init();
+
+// Publish a message
+await broker.publish(
+  QueueType.PDF,
+  MessageType.JOB_QUEUED,
+  {
+    jobId: 'pdf-123',
+    fileName: 'catalog.pdf'
+  }
+);
+
+// Subscribe to messages
+const unsubscribe = await broker.subscribe(
+  QueueType.PDF,
+  MessageType.JOB_COMPLETED,
+  async (payload) => {
+    console.log(`Job completed: ${payload.jobId}`);
+  }
+);
+
+// Advanced subscription with options
+const unsubscribeAdvanced = await broker.subscribeWithOptions(
+  QueueType.PDF,
+  MessageType.JOB_PROGRESS,
+  async (payload) => {
+    console.log(`Job progress: ${payload.progress}%`);
+  },
+  {
+    persistent: true,
+    priority: 'high',
+    ackRequired: true,
+    retryOnReconnect: true
+  }
+);
+
+// Get broker statistics
+const stats = broker.getStats();
+console.log(`Messages sent: ${stats.messagesSent}, received: ${stats.messagesReceived}`);
+
+// Clean up
+await unsubscribe();
+await unsubscribeAdvanced();
+await broker.shutdown();
 ```
 
 ## Queue Adapter Implementation

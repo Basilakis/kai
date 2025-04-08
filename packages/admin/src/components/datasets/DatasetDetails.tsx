@@ -43,6 +43,7 @@ interface DatasetDetailsProps {
     status: 'processing' | 'ready' | 'error';
     classCount: number;
     imageCount: number;
+    source?: string;
     createdAt: string;
     updatedAt: string;
   };
@@ -188,6 +189,16 @@ const DatasetDetails: React.FC<DatasetDetailsProps> = ({ dataset }) => {
                     <Grid item xs={8}>
                       <Typography variant="body2">
                         {dataset.description || 'No description provided'}
+                      </Typography>
+                    </Grid>
+                    <Grid item xs={4}>
+                      <Typography variant="body2" color="textSecondary">
+                        Source / Company:
+                      </Typography>
+                    </Grid>
+                    <Grid item xs={8}>
+                      <Typography variant="body2">
+                        {dataset.source || 'Not specified'}
                       </Typography>
                     </Grid>
                     <Grid item xs={4}>
