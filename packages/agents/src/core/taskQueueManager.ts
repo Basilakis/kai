@@ -53,14 +53,21 @@ export class TaskQueueManager {
     if (!config) return;
 
     try {
+      // Create Redis client using proper factory pattern
       this.redisClient = Redis.createClient({
         socket: {
           host: config.host,
           port: config.port
         },
         password: config.password
-      }) as Redis;
+      });
 
+      // Set up error handler before connecting
+      (this.redisClient as any).on('error', (err: Error) => {
+        this.logger.error(`Redis client error: ${err.message}`);
+      });
+
+      // Connect to Redis
       await this.redisClient.connect();
       this.logger.info('Redis connected successfully');
     } catch (error) {

@@ -6,11 +6,16 @@
  * the agent system backend.
  */
 
-import type Request from 'express';
-import type Response from 'express';
-import type NextFunction from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { initializeAgentSystem, AgentType } from '@kai/agents';
+import { 
+  uploadToStorage, 
+  generateUniqueStorageKey 
+} from '../services/storage/supabaseStorageService';
+import path from 'path';
+import fs from 'fs';
+import { logger } from '../utils/logger';
 
 // Store active sessions
 interface AgentSession {
@@ -57,7 +62,7 @@ const initializeAgents = async () => {
 /**
  * Create a new agent session
  */
-export const createSession = async (req: Request, res: Response, next: typeof NextFunction) => {
+export const createSession = async (req: Request, res: Response, next: NextFunction): Promise<void | Response> => {
   try {
     // Initialize agent system if needed
     if (!isAgentSystemInitialized) {
@@ -107,7 +112,7 @@ export const createSession = async (req: Request, res: Response, next: typeof Ne
 /**
  * Send a message to an agent
  */
-export const sendMessage = async (req: Request, res: Response, next: NextFunction) => {
+export const sendMessage = async (req: Request, res: Response, next: NextFunction): Promise<void | Response> => {
   try {
     const { sessionId } = req.params;
     const { message } = req.body;
@@ -164,7 +169,7 @@ export const sendMessage = async (req: Request, res: Response, next: NextFunctio
 /**
  * Get messages for a session
  */
-export const getMessages = async (req: Request, res: Response, next: NextFunction) => {
+export const getMessages = async (req: Request, res: Response, next: NextFunction): Promise<void | Response> => {
   try {
     const { sessionId } = req.params;
     
@@ -190,7 +195,7 @@ export const getMessages = async (req: Request, res: Response, next: NextFunctio
 /**
  * Upload image for recognition agent
  */
-export const uploadImage = async (req: Request, res: Response, next: NextFunction) => {
+export const uploadImage = async (req: Request, res: Response, next: NextFunction): Promise<void | Response> => {
   try {
     const { sessionId } = req.params;
     const imageFile = req.file;
@@ -211,10 +216,30 @@ export const uploadImage = async (req: Request, res: Response, next: NextFunctio
       return res.status(400).json({ error: 'Image upload is only supported for recognition agent' });
     }
     
+  try {
+    // Upload file to Supabase storage (user-facing storage)
+    const fileName = path.basename(imageFile.originalname);
+    const storagePath = await generateUniqueStorageKey('uploads', 'agent-images', fileName);
+    const uploadResult = await uploadToStorage(imageFile.path, storagePath, {
+      isPublic: true, // Make public since this is user-facing content
+      metadata: {
+        originalName: imageFile.originalname,
+        size: String(imageFile.size),
+        mimetype: imageFile.mimetype
+      }
+    });
+    
     // Process image with recognition agent
-    // In a real implementation, this would call the agent system
-    const imageUrl = `/uploads/${imageFile.filename}`;
+    // In a real implementation, this would call the agent system with the Supabase URL
+    const imageUrl = uploadResult.url;
     const analysisResult = await processImageAnalysis(imageUrl);
+    
+    // Clean up the local uploaded file after processing
+    try {
+      fs.unlinkSync(imageFile.path);
+    } catch (err) {
+      logger.warn(`Failed to clean up local uploaded file: ${err}`);
+    }
     
     // Add agent response to session
     const agentMessageId = uuidv4();
@@ -232,8 +257,24 @@ export const uploadImage = async (req: Request, res: Response, next: NextFunctio
     res.status(200).json({
       url: imageUrl,
       analysis: analysisResult,
-      messages: session.messages
+      messages: session.messages,
+      storage: {
+        key: uploadResult.key,
+        url: uploadResult.url
+      }
     });
+  } catch (error) {
+    // Clean up the uploaded file in case of error
+    try {
+      if (imageFile && imageFile.path) {
+        fs.unlinkSync(imageFile.path);
+      }
+    } catch (cleanupErr) {
+      logger.warn(`Failed to clean up uploaded file: ${cleanupErr}`);
+    }
+    
+    next(error);
+  }
   } catch (error) {
     next(error);
   }
@@ -242,7 +283,7 @@ export const uploadImage = async (req: Request, res: Response, next: NextFunctio
 /**
  * Close a session
  */
-export const closeSession = async (req: Request, res: Response, next: NextFunction) => {
+export const closeSession = async (req: Request, res: Response, next: NextFunction): Promise<void | Response> => {
   try {
     const { sessionId } = req.params;
     
@@ -320,7 +361,7 @@ const processAgentRequest = async (agentType: AgentType, message: string): Promi
 /**
  * Process image analysis (mock implementation)
  */
-const processImageAnalysis = async (imageUrl: string) => {
+const processImageAnalysis = async (_imageUrl: string): Promise<any> => {
   // Simulate processing time
   await new Promise(resolve => setTimeout(resolve, 2000));
   

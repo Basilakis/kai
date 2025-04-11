@@ -12,6 +12,7 @@ import knowledgeBaseRoutes from './admin/knowledgeBase.routes';
 import datasetRoutes from './admin/dataset.routes';
 import analyticsRoutes from './admin/analytics.routes';
 import networkAccessRoutes from './admin/networkAccess.routes';
+import enhancedVectorRoutes from './admin/enhancedVector.routes';
 
 // Note: These imports would be implemented in a real application
 // For now, we'll create placeholder functions
@@ -43,6 +44,7 @@ router.use('/knowledge-base', knowledgeBaseRoutes);
 router.use('/datasets', datasetRoutes);
 router.use('/analytics', analyticsRoutes);
 router.use('/network-access', networkAccessRoutes);
+router.use('/enhanced-vector', enhancedVectorRoutes);
 
 /**
  * @route   GET /api/admin/dashboard

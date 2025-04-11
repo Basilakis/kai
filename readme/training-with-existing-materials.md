@@ -73,6 +73,47 @@ After importing materials, you can train recognition models:
 5. Monitor progress in real-time
 6. Evaluate model performance with validation metrics
 
+### Detailed Training Process
+
+The training process involves several sophisticated steps:
+
+1. **Model Initialization**
+   - Base models are loaded dynamically from ML framework libraries (not stored in our repo)
+   - TensorFlow or PyTorch pre-trained architectures (MobileNetV2, ResNet, EfficientNet)
+   - Classification layers are replaced with custom layers for material recognition
+
+2. **Transfer Learning Optimization**
+   - Initial layers of base models are frozen to preserve general features
+   - Only the top classification layers are trained initially
+   - Sparse categorical cross-entropy loss is used for classification tasks
+   - Adam optimizer with carefully tuned learning rate (typically 0.0001)
+   - Later training phases gradually unfreeze more layers for fine-tuning
+
+3. **Training Enhancement Techniques**
+   - Early stopping with validation loss monitoring
+   - Learning rate reduction on plateau
+   - Data augmentation specific to material properties
+   - Regularization to prevent overfitting (dropout, L2)
+
+4. **Model Storage and Versioning**
+   - Trained models are saved with metadata in the output directory structure:
+   ```
+   /models/
+     ├── {model_id}/
+     │   ├── model.h5 (or .pt for PyTorch)
+     │   ├── metadata.json
+     │   ├── training_history.json
+     │   └── hyperparameters.json
+   ```
+   - Complete training history is preserved for analysis
+   - Models are versioned for tracking improvements
+
+5. **Vector Database Integration**
+   - The trained models generate embeddings for all materials
+   - These embeddings (not the models themselves) are stored in the vector database
+   - FAISS indexing enables efficient similarity search
+   - Each material's embedding links to knowledge base entries through material IDs
+
 ## Example: Training with MINC-2500
 
 For the MINC-2500 dataset, which contains material images across 10 categories:
@@ -87,11 +128,20 @@ For the MINC-2500 dataset, which contains material images across 10 categories:
    - Configure 10-20 epochs for good results
    - Enable data augmentation for improved generalization
    - Set learning rate to ~0.0001 for stable training
+   - Apply sparse categorical cross-entropy loss for classification
 
 3. Evaluate results:
    - The system will display accuracy per material category
    - Review performance metrics to identify areas for improvement
    - Test with sample images to verify recognition quality
+   - Analyze confusion matrix to understand misclassifications
+   - Review embedding quality metrics for similarity search applications
+
+4. Model Deployment:
+   - The trained model is automatically versioned and stored
+   - Embeddings are generated for all materials in the dataset
+   - Vector database is updated with new embeddings
+   - Recognition system starts using the new model immediately
 
 ## Implementation Notes
 

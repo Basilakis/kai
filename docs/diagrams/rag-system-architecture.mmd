@@ -1,0 +1,38 @@
+graph TD
+    subgraph Frontend
+        UserQuery[User Query] --> TypeScriptBridge[TypeScript Bridge]
+        TypeScriptBridge --> PythonBridge[Python Bridge Handler]
+        Response[Response to User] <-- Results --- TypeScriptBridge
+    end
+    
+    subgraph RAGSystem[RAG System Core]
+        PythonBridge --> |Query| UnifiedService[Unified RAG Service]
+        
+        UnifiedService --> Embedding[Enhanced Text Embeddings]
+        Embedding -->|Vector| Retrieval[Hybrid Retrieval System]
+        
+        Retrieval --> |Materials & Knowledge| ContextAssembly[Context Assembly System]
+        
+        ContextAssembly --> |Structured Context| GenerativeEnhancer[Generative Enhancement Layer]
+        
+        GenerativeEnhancer --> |Enhanced Response| UnifiedService
+        
+        UnifiedService -.->|Cache Results| Cache[(Cache)]
+        UnifiedService <-.->|Check Cache| Cache
+    end
+    
+    subgraph Storage
+        Retrieval <--> |Vector Search| SupabaseVectors[(Supabase pgvector)]
+        Retrieval <--> |Knowledge Lookup| KnowledgeBase[(Knowledge Base)]
+        ContextAssembly <--> |Relationships| KnowledgeGraph[(Knowledge Graph)]
+    end
+    
+    classDef system fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
+    classDef storage fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
+    classDef frontend fill:#fff3e0,stroke:#e65100,stroke-width:2px;
+    classDef component fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px;
+    
+    class UnifiedService,Cache system;
+    class SupabaseVectors,KnowledgeBase,KnowledgeGraph storage;
+    class UserQuery,TypeScriptBridge,PythonBridge,Response frontend;
+    class Embedding,Retrieval,ContextAssembly,GenerativeEnhancer component;

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { PythonShell, Options } from 'python-shell';
 import * as path from 'path';
+import * as fs from 'fs';
 import { MaterialDetails } from '../materialService';
 
 // Get the directory path for the Python scripts
@@ -83,37 +84,90 @@ export class FurniturePlacementService {
     const pythonScript = path.join(PYTHON_SCRIPT_DIR, 'physics_server.py');
     
     try {
+      // Verify that Python script exists first
+      if (!fs.existsSync(pythonScript)) {
+        throw new Error(`Physics server script not found at: ${pythonScript}`);
+      }
+      
+      // Define a timeout to handle hanging process initialization
+      const initializationTimeout = 30000; // 30 seconds
+      
       const options: Options = {
         mode: 'json',
-        pythonPath: 'python3',
-        pythonOptions: ['-u'],
+        pythonPath: process.env.PYTHON_PATH || 'python3',
+        pythonOptions: ['-u'], // Unbuffered stdout and stderr
         args: [this.threeDFrontDatasetPath]
       };
 
+      // Create the Python process
       this.pythonProcess = new PythonShell(pythonScript, options);
 
-      if (this.pythonProcess) {
-        this.pythonProcess.on('error', (err: Error) => {
-          console.error('Failed to start PyBullet server:', err);
-        });
+      if (!this.pythonProcess) {
+        throw new Error('Failed to create Python process');
       }
-
-      await new Promise<void>((resolve, reject) => {
-        if (!this.pythonProcess) {
-          reject(new Error('PyBullet process not initialized'));
-          return;
-        }
-
-        this.pythonProcess.once('message', (message: { status: string }) => {
-          if (message.status === 'ready') {
-            resolve();
-          } else {
-            reject(new Error('Failed to initialize PyBullet server'));
-          }
-        });
+      
+      // Set up error handler that persists after initialization
+      this.pythonProcess.on('error', (err: Error) => {
+        console.error('PyBullet server error:', err);
       });
+      
+      // Handle unexpected process exit
+      this.pythonProcess.on('close', (code: number) => {
+        if (code !== 0) {
+          console.error(`PyBullet server exited with code ${code}`);
+        }
+        this.pythonProcess = null; // Clear the reference
+      });
+
+      // Wait for initialization with timeout
+      await Promise.race([
+        new Promise<void>((resolve, reject) => {
+          if (!this.pythonProcess) {
+            reject(new Error('PyBullet process not initialized'));
+            return;
+          }
+
+          // Use a flag to ensure we only process the first message
+          let messageProcessed = false;
+          
+          // Listen for the ready message
+          const messageHandler = (message: { status: string }) => {
+            // Skip if we've already processed a message
+            if (messageProcessed) return;
+            
+            // Mark as processed to ignore future messages
+            messageProcessed = true;
+            
+            if (message && message.status === 'ready') {
+              console.log('PyBullet server ready');
+              resolve();
+            } else {
+              reject(new Error(`Invalid initialization response: ${JSON.stringify(message)}`));
+            }
+          };
+          
+          // Register message handler
+          this.pythonProcess.on('message', messageHandler);
+        }),
+        new Promise<never>((_, reject) => {
+          setTimeout(() => {
+            reject(new Error(`PyBullet initialization timed out after ${initializationTimeout}ms`));
+          }, initializationTimeout);
+        })
+      ]);
     } catch (error) {
-      console.error('Error initializing PyBullet:', error);
+      // Clean up if initialization fails
+      if (this.pythonProcess) {
+        try {
+          this.pythonProcess.kill();
+          this.pythonProcess = null;
+        } catch (cleanupError) {
+          console.error('Error cleaning up Python process:', cleanupError);
+        }
+      }
+      
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error(`Error initializing PyBullet: ${errorMessage}`);
       throw error;
     }
   }
@@ -299,13 +353,44 @@ export class FurniturePlacementService {
         }
       };
 
-      this.pythonProcess.send(JSON.stringify(message));
-      this.pythonProcess.once('message', (response: { 
+      // Use a flag-based approach to handle message processing
+      let messageProcessed = false;
+      let timeoutId: number | null = null;
+      
+      // Set up a response handler with flag-based "once" behavior
+      const messageHandler = (response: { 
         isValid: boolean; 
         collisions?: CollisionData[];
       }) => {
+        // Skip if we've already processed a response
+        if (messageProcessed) return;
+        
+        // Mark as processed to ignore future messages
+        messageProcessed = true;
+        
+        // Clear timeout if it exists
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+        
+        // Resolve with the response
         resolve(response);
-      });
+      };
+      
+      // Set up a timeout to handle potential hangs
+      const messageTimeoutMs = 10000; // 10 seconds
+      timeoutId = setTimeout(() => {
+        // Only timeout if we haven't received a response yet
+        if (!messageProcessed && this.pythonProcess) {
+          messageProcessed = true; // Mark as processed to ignore late responses
+          reject(new Error('Physics simulation timed out'));
+        }
+      }, messageTimeoutMs);
+      
+      // Register the message handler and send the command
+      this.pythonProcess.on('message', messageHandler);
+      this.pythonProcess.send(JSON.stringify(message));
     });
   }
 

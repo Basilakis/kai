@@ -2,6 +2,32 @@
 
 This document outlines the improvements made to the Material Recognition training API, enhancing its capabilities with state-of-the-art machine learning techniques.
 
+## Model Storage and Management
+
+Our training system handles models in a sophisticated way:
+
+1. **Base Pre-trained Models**: 
+   - Loaded dynamically from ML framework libraries (TensorFlow, PyTorch)
+   - Not stored directly in our application repository for efficiency
+   - Frameworks automatically download and cache weights as needed
+
+2. **Fine-tuned Models**:
+   - Trained models are saved with metadata in the specified output directory
+   - Models are versioned and can be retrieved for inference or further training
+   - Training results and configurations are persisted alongside the model
+
+3. **Model Storage Location**:
+   ```
+   /models/
+     ├── {model_id}/
+     │   ├── model.h5 (or .pt for PyTorch)
+     │   ├── metadata.json
+     │   ├── training_history.json
+     │   └── hyperparameters.json
+   ```
+
+This approach provides an optimal balance between leveraging existing pre-trained architectures and maintaining our own specialized fine-tuned versions.
+
 ## Overview of Improvements
 
 The following improvements have been implemented:
@@ -12,6 +38,7 @@ The following improvements have been implemented:
 4. **Training Progress Visualization**: Enhanced progress reporting with real-time charts and metrics
 5. **Active Learning Integration**: Prioritize samples for manual labeling based on model uncertainty
 6. **Automated Model Retraining Triggers**: Automatically retrain when data changes significantly
+7. **Vector Database Integration**: Store and retrieve embeddings for efficient similarity search
 
 ## Architecture
 
@@ -23,6 +50,8 @@ The improved training API consists of several interconnected modules:
 - **Training Visualization Module** (`training_visualization.py`): Provides enhanced visualizations of training metrics
 - **Active Learning Module** (`active_learning.py`): Implements uncertainty-based sample selection for labeling
 - **Unified Training API** (`training_api.py`): Integrates all improvements into a cohesive system
+- **Model Storage Manager** (`model_storage.py`): Handles model persistence and retrieval
+- **Vector Database Connector** (`vector_db_connector.py`): Manages embedding storage and retrieval
 
 ## Features
 
@@ -35,6 +64,7 @@ Features:
 - Customizable fine-tuning strategies
 - Layer freezing options to control what gets retrained
 - Data augmentation techniques for small datasets
+- Automatic saving of fine-tuned models for later use
 
 ### Hyperparameter Optimization
 
@@ -45,6 +75,8 @@ Supported optimization strategies:
 - Random Search: Randomly samples from parameter distributions
 - Bayesian Optimization: Uses probabilistic models to guide the search process
 
+Each strategy uses sparse categorical cross-entropy loss for classification tasks and applies early stopping with validation loss monitoring.
+
 ### Distributed Training with Supabase
 
 The distributed training module replaces Redis with Supabase for coordination and parameter sharing, providing:
@@ -54,6 +86,7 @@ The distributed training module replaces Redis with Supabase for coordination an
 - Parameter sharing across nodes
 - Progress tracking and monitoring
 - Fault tolerance and job recovery
+- Real-time parameter updates during training
 
 ### Training Progress Visualization
 
@@ -205,6 +238,47 @@ Required Supabase Tables:
 - `active_learning_candidates`: Stores sample candidates for labeling
 - `active_learning_batches`: Stores labeling batches
 - `retraining_triggers`: Stores retraining triggers
+
+## Vector Database Integration
+
+The vector database system stores and indexes embeddings generated from our trained models:
+
+1. **Embedding Generation**:
+   - Models process material images to create feature vector embeddings 
+   - These represent materials in a high-dimensional space optimized for similarity comparison
+
+2. **Vector Storage**:
+   - Embeddings are stored in the vector database for efficient similarity search
+   - Indexed using FAISS for fast approximate nearest neighbor search
+   - Typically 256-dimensional vectors for each material sample
+
+3. **Knowledge Base Integration**:
+   - Vector database links with knowledge base through material IDs
+   - Enables rich material metadata to be associated with visual similarities
+   - Search results combine vector similarity with structured material data
+
+The vector database is not storing the ML models themselves, but rather the output vectors produced by those models when processing material images.
+
+## Knowledge Base Integration
+
+Our knowledge base is tightly coupled with the ML training system:
+
+1. **Material Metadata Source**:
+   - Provides rich context for training data
+   - Supplies detailed material specifications and categorization
+   - Enables better model training through contextual understanding
+
+2. **Training Enhancement**:
+   - Material relationships inform data augmentation strategies
+   - Category structures guide model architecture decisions
+   - Historical usage patterns influence sample weighting
+
+3. **Feedback Loop**:
+   - Recognition results are recorded in the knowledge base
+   - User feedback on predictions enrich the training data
+   - Automated retraining triggers based on feedback patterns
+
+This bidirectional integration creates a continuously improving system where ML models and knowledge base mutually enhance each other.
 
 ## Implementation Note
 

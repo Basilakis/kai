@@ -199,19 +199,46 @@ The recognition models are trained on a diverse dataset of material images:
      └── ...
    ```
 
-2. **Training Process**
-   - Data augmentation (rotation, scaling, color shifts)
-   - Transfer learning from pre-trained models
-   - Fine-tuning on material-specific datasets
-   - Hyperparameter optimization
-   - Validation on test dataset
+2. **Training Process in Detail**
+   - **Base Model Selection**: 
+     - TensorFlow or PyTorch pre-trained models are loaded dynamically
+     - Popular architectures include MobileNetV2, ResNet18/50, and EfficientNet
+     - Base models are not stored in our repository but loaded from the frameworks
+   
+   - **Transfer Learning Approach**:
+     - Initial layers of base models are frozen to preserve general features
+     - Classification layers are replaced with custom layers for material recognition
+     - Gradual unfreezing during training for fine-tuning
+   
+   - **Data Processing Pipeline**:
+     - Comprehensive data augmentation (rotation, scaling, color shifts, flips)
+     - Material-specific augmentation strategies based on material properties
+     - Normalization specific to each model architecture
+   
+   - **Training Optimization**:
+     - Sparse categorical cross-entropy loss for classification tasks
+     - Bayesian hyperparameter optimization for learning rate, batch size, etc.
+     - Early stopping with validation loss monitoring
+     - Learning rate reduction on plateau
+   
+   - **Model Storage**:
+     - Trained models are saved with metadata in the specified output directory
+     - Complete with training history and hyperparameters for reproducibility
+     - Versioned for tracking improvements
 
 3. **Performance Metrics**
-   - Top-1 and Top-5 accuracy
-   - Precision and recall
-   - Confusion matrix
-   - Mean Average Precision (mAP)
-   - Inference time
+   - Top-1 and Top-5 accuracy across different material categories
+   - Precision and recall per material type
+   - Confusion matrix for understanding misclassifications
+   - Mean Average Precision (mAP) for ranked results
+   - Inference time on various hardware profiles
+   - Embedding quality metrics for similarity search applications
+
+4. **Model-to-Vector Pipeline**
+   - Trained models generate embeddings for material images
+   - These embeddings are stored in the vector database (not the models themselves)
+   - FAISS indexing enables efficient similarity search
+   - Embeddings link to knowledge base entries through material IDs
 
 ### Integration with Knowledge Base
 
@@ -226,11 +253,13 @@ The recognition system is tightly integrated with the knowledge base:
    - User feedback on recognition results improves system over time
    - Incorrect matches are analyzed to improve training
    - Confidence scoring is adjusted based on feedback
+   - Active learning selects ambiguous samples for expert labeling
 
 3. **Continuous Improvement**
    - New materials added to the knowledge base are incorporated into training
    - Recognition models are periodically retrained with enhanced datasets
    - Feature extractors are fine-tuned based on performance analysis
+   - Automated retraining triggers monitor system performance metrics
 
 ## API Usage
 

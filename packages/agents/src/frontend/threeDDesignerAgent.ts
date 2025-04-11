@@ -6,6 +6,7 @@ import { VectorService } from '../services/vectorService';
 import { ServiceConfig } from '../services/baseService';
 import { FurniturePlacementService } from '../services/3d-designer/furniturePlacementService';
 
+// Ensure this matches the expected ModelEndpoints interface in ThreeDService
 interface ThreeDDesignerConfig {
   knowledgeBaseUrl: string;
   modelEndpoints: {
@@ -17,8 +18,17 @@ interface ThreeDDesignerConfig {
     blenderProc: string;
     architecturalRecognition: string;
     roomLayoutGenerator: string;
+    controlNet: string; // Required by ModelEndpoints type
+    text2material: string; // Required by ModelEndpoints type
+    clip: string; // Required by ModelEndpoints type
   };
   threeDFrontPath: string; // Path to 3D-FRONT dataset for furniture models
+}
+
+// Define the extended search response type to match what the API actually returns
+interface ExtendedSearchResponse {
+  materials: Array<{ id: string }>;
+  [key: string]: any;
 }
 
 export class ThreeDDesignerAgent extends Agent {
@@ -173,15 +183,15 @@ export class ThreeDDesignerAgent extends Agent {
         query: requirements.query,
         filters: requirements.filters
       });
+      
+      // Handle case where search result doesn't have expected structure
+      if (!searchResult || !searchResult.results || !Array.isArray(searchResult.results)) {
+        console.warn('Search result missing results array:', searchResult);
+        return [];
+      }
 
-      // Get detailed information for each material
-      const detailedMaterials = await Promise.all(
-        searchResult.materials.map((material: { id: string }) => 
-          this.materialService.getMaterial(material.id)
-        )
-      );
-
-      return detailedMaterials;
+      // Results are already MaterialDetails[], no need to fetch details again
+      return searchResult.results;
     } catch (error) {
       console.error('Error searching materials:', error);
       return [];
@@ -280,18 +290,33 @@ export class ThreeDDesignerAgent extends Agent {
       // Search for each material in the knowledge base
       const materials = await Promise.all(
         materialReferences.map(async (ref) => {
-          const searchResult = await this.vectorService.searchMaterials({
-            query: ref,
-            filters: { exact_match: true }
-          });
+          try {
+            const searchResult = await this.vectorService.searchMaterials({
+              query: ref,
+              filters: { exact_match: true }
+            });
+            
+            // Handle case where search result doesn't have expected structure
+            if (!searchResult || !searchResult.results || !Array.isArray(searchResult.results) || searchResult.results.length === 0) {
+              console.warn(`No matching materials found for reference: ${ref}`);
+              return null;
+            }
 
-          if (searchResult.materials.length > 0) {
-            return this.materialService.getMaterial(searchResult.materials[0].id);
+            const materialId = searchResult.results[0]?.id;
+            if (!materialId) {
+              console.warn('Material found but missing ID:', searchResult.results[0]);
+              return null;
+            }
+
+            return await this.materialService.getMaterial(materialId);
+          } catch (searchError) {
+            console.error(`Error searching for material reference "${ref}":`, searchError);
+            return null;
           }
-          return null;
         })
       );
 
+      // Filter out any null values from failed material fetches
       return materials.filter((m): m is MaterialDetails => m !== null);
     } catch (error) {
       console.error('Error extracting materials:', error);
@@ -300,11 +325,19 @@ export class ThreeDDesignerAgent extends Agent {
   }
 
   private extractMaterialReferences(description: string): string[] {
+    // Handle edge cases for empty or invalid input
+    if (!description || typeof description !== 'string') {
+      console.warn('Invalid description provided to extractMaterialReferences:', description);
+      return [];
+    }
+
     // Use regex or NLP to find material references
     const materialPatterns = [
       /tile\s+([A-Za-z0-9\s]+)/i,
       /floor(?:ing)?\s+([A-Za-z0-9\s]+)/i,
-      /material\s+([A-Za-z0-9\s]+)/i
+      /material\s+([A-Za-z0-9\s]+)/i,
+      /surface\s+([A-Za-z0-9\s]+)/i,
+      /wall\s+([A-Za-z0-9\s]+)/i
     ];
 
     const references = new Set<string>();
@@ -340,18 +373,36 @@ export class ThreeDDesignerAgent extends Agent {
     };
   }
 
-  private mapMaterialsToSurfaces(layout: any, materials: MaterialDetails[]): any {
+  private mapMaterialsToSurfaces(layout: any, materials: MaterialDetails[]): Record<string, MaterialDetails> {
     // Map materials to appropriate surfaces in the layout
     const surfaceMappings: Record<string, MaterialDetails> = {};
     
+    // Handle edge case of empty materials array
+    if (!Array.isArray(materials) || materials.length === 0) {
+      console.warn('No materials provided for mapping to surfaces');
+      return surfaceMappings;
+    }
+    
     for (const material of materials) {
-      if (material.applicationAreas?.includes('floor')) {
-        surfaceMappings.floor = material;
+      // Validate material and its properties before accessing them
+      if (!material) continue;
+      
+      const applicationAreas = material.applicationAreas || [];
+      
+      if (Array.isArray(applicationAreas)) {
+        if (applicationAreas.includes('floor')) {
+          surfaceMappings.floor = material;
+        }
+        if (applicationAreas.includes('wall')) {
+          surfaceMappings.walls = material;
+        }
+        if (applicationAreas.includes('ceiling')) {
+          surfaceMappings.ceiling = material;
+        }
+        if (applicationAreas.includes('countertop')) {
+          surfaceMappings.countertop = material;
+        }
       }
-      if (material.applicationAreas?.includes('wall')) {
-        surfaceMappings.walls = material;
-      }
-      // Add more mappings as needed
     }
 
     return surfaceMappings;

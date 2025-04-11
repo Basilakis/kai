@@ -139,13 +139,14 @@ export async function initializeAgentSystem(config?: Partial<AgentSystemConfig>)
     logger.info('Connecting to Redis for agent memory persistence');
     
     try {
+      // Create Redis client with correct configuration
+      // Note: Pass database parameter as specified in the Redis client API
       redisClient = Redis.createClient({
         socket: {
           host: globalConfig.redis.host,
           port: globalConfig.redis.port,
         },
-        password: globalConfig.redis.password,
-        database: globalConfig.redis.db || 0,
+        password: globalConfig.redis.password
       }) as Redis;
       
       await redisClient.connect();

@@ -4,6 +4,8 @@
 
 The Adaptive Hybrid Embedding System provides a sophisticated approach to generating high-quality embeddings for material recognition by dynamically selecting and switching between embedding methods based on real-time quality assessment. The system continuously evaluates embedding quality and adapts its approach to optimize results without requiring human intervention.
 
+This system represents a significant advancement in material recognition technology, as it overcomes the limitations of using a single embedding approach by intelligently combining multiple techniques based on their strengths.
+
 ## Key Features
 
 - **Dynamic Method Selection**: Automatically switches between feature-based, ML-based, and hybrid embedding approaches based on quality metrics
@@ -13,9 +15,29 @@ The Adaptive Hybrid Embedding System provides a sophisticated approach to genera
 - **Robust Fallbacks**: Gracefully handles failures with a cascade of fallback methods
 - **Self-Improving**: Continuously refines its decision-making through performance history
 
+### Embedding Approaches in Detail
+
+1. **Feature-based approach**
+   - Uses enhanced SIFT/SURF algorithms to extract distinctive visual features
+   - Focuses on texture, pattern, and color characteristics 
+   - Works well even with partial images or varying lighting conditions
+   - Particularly strong for materials with distinctive surface patterns
+
+2. **ML-based approach**
+   - Uses deep neural networks (TensorFlow/PyTorch) to generate high-dimensional feature vectors
+   - Trained specifically for material recognition tasks
+   - Excels at category classification and semantic understanding
+   - Provides excellent general material identification capabilities
+
+3. **Hybrid approach**
+   - Combines feature-based and ML-based methods with a sophisticated confidence fusion system
+   - Uses weighted scoring to merge results based on confidence levels
+   - Dynamically adjusts the influence of each method based on historical performance
+   - Superior performance for specialized material types and challenging recognition scenarios
+
 ## Architecture
 
-The system consists of three primary components:
+The system consists of three primary components that work together to create an intelligent embedding selection system:
 
 1. **Embedding Generators**: Multiple embedding generation approaches (feature-based, ML-based, hybrid)
 2. **Quality Evaluation System**: Real-time assessment of embedding quality with multiple metrics

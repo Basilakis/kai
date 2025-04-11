@@ -257,7 +257,7 @@ function enhanceAgentWithMCP(agentInstance: any, agentId: string): any {
       // Fallback to non-MCP processing if there was an error
       if (mcpEnabled) {
         logger.warn(`Falling back to non-MCP processing for agent ${agentId}`);
-        return await originalProcessUserInput.call(agentInstance, userInput);
+        return await originalProcessUserInput.call(this, userInput);
       }
       
       throw error;
@@ -351,7 +351,7 @@ export async function createImageCapableMaterialExpert(
   }, modelSettings);
   
   // Import the image analysis adapter
-  const imageAnalysisAdapter = await import('../services/adapters/imageAnalysisMcpAdapter').then(
+  const imageAnalysisAdapter = await import('../services/adapters/imageAnalysisMcpAdapter.js').then(
     module => module.default
   );
   

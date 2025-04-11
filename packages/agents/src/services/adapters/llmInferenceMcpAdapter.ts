@@ -126,14 +126,24 @@ async function generateCompletionWithMCP(
         finishReason: 'stop'
       };
       
-      // Simulate streaming
-      streamingCallback('This is a ', false);
-      await new Promise(resolve => setTimeout(resolve, 100));
-      streamingCallback('simulated ', false);
-      await new Promise(resolve => setTimeout(resolve, 100));
-      streamingCallback('streaming ', false);
-      await new Promise(resolve => setTimeout(resolve, 100));
-      streamingCallback('response.', true);
+      // Simulate streaming with a non-blocking approach
+      const chunks = ['This is a ', 'simulated ', 'streaming ', 'response.'];
+      let currentIndex = 0;
+      
+      const streamNextChunk = () => {
+        if (currentIndex >= chunks.length) return;
+        
+        const isLast = currentIndex === chunks.length - 1;
+        streamingCallback(chunks[currentIndex], isLast);
+        currentIndex++;
+        
+        if (!isLast) {
+          setTimeout(streamNextChunk, 100);
+        }
+      };
+      
+      // Start streaming
+      streamNextChunk();
       
       return simulatedResult;
     }
@@ -194,16 +204,25 @@ async function generateCompletionLocally(
       finishReason: 'stop'
     };
     
-    // Simulate streaming if requested
+    // Simulate streaming if requested - using non-blocking approach
     if (options.streaming && streamingCallback) {
       const chunks = mockResult.text.split(' ');
-      for (let i = 0; i < chunks.length; i++) {
-        const isLast = i === chunks.length - 1;
-        streamingCallback(chunks[i] + (isLast ? '' : ' '), isLast);
+      let currentIndex = 0;
+      
+      const streamNextChunk = () => {
+        if (currentIndex >= chunks.length) return;
+        
+        const isLast = currentIndex === chunks.length - 1;
+        streamingCallback(chunks[currentIndex] + (isLast ? '' : ' '), isLast);
+        currentIndex++;
+        
         if (!isLast) {
-          await new Promise(resolve => setTimeout(resolve, 100));
+          setTimeout(streamNextChunk, 100);
         }
-      }
+      };
+      
+      // Start streaming
+      streamNextChunk();
     }
     
     return mockResult;
@@ -242,18 +261,25 @@ async function generateChatCompletionWithMCP(
         { messages, options }
       );
       
-      // Simulate streaming
+      // Simulate streaming with a non-blocking approach
       const simulatedResponse = 'This is a simulated streaming chat response.';
-      
-      // Simulate streaming chunks
       const words = simulatedResponse.split(' ');
-      for (let i = 0; i < words.length; i++) {
-        const isLast = i === words.length - 1;
-        streamingCallback(words[i] + (isLast ? '' : ' '), isLast);
+      let currentIndex = 0;
+      
+      const streamNextWord = () => {
+        if (currentIndex >= words.length) return;
+        
+        const isLast = currentIndex === words.length - 1;
+        streamingCallback(words[currentIndex] + (isLast ? '' : ' '), isLast);
+        currentIndex++;
+        
         if (!isLast) {
-          await new Promise(resolve => setTimeout(resolve, 100));
+          setTimeout(streamNextWord, 100);
         }
-      }
+      };
+      
+      // Start streaming
+      streamNextWord();
       
       return {
         message: {
@@ -322,16 +348,25 @@ async function generateChatCompletionLocally(
     // For now, return a mock implementation
     const mockResponse = `This is a mock chat response to: "${lastUserMessage.substring(0, 30)}..."`;
     
-    // Simulate streaming if requested
+    // Simulate streaming if requested - using non-blocking approach
     if (options.streaming && streamingCallback) {
       const chunks = mockResponse.split(' ');
-      for (let i = 0; i < chunks.length; i++) {
-        const isLast = i === chunks.length - 1;
-        streamingCallback(chunks[i] + (isLast ? '' : ' '), isLast);
+      let currentIndex = 0;
+      
+      const streamNextChunk = () => {
+        if (currentIndex >= chunks.length) return;
+        
+        const isLast = currentIndex === chunks.length - 1;
+        streamingCallback(chunks[currentIndex] + (isLast ? '' : ' '), isLast);
+        currentIndex++;
+        
         if (!isLast) {
-          await new Promise(resolve => setTimeout(resolve, 100));
+          setTimeout(streamNextChunk, 100);
         }
-      }
+      };
+      
+      // Start streaming
+      streamNextChunk();
     }
     
     return {

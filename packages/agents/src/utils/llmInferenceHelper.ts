@@ -90,11 +90,32 @@ export async function executeChat(
   options: ExtendedLLMChatOptions = {}
 ): Promise<LLMChatResult> {
   try {
+    // Validate input messages
+    if (!messages || !Array.isArray(messages) || messages.length === 0) {
+      logger.warn('Invalid or empty messages array provided to executeChat');
+      throw new Error('Invalid input: messages must be a non-empty array');
+    }
+    
+    // Validate each message has required fields
+    const validMessages = messages.every(msg => 
+      msg && typeof msg === 'object' && 
+      msg.role && typeof msg.role === 'string' &&
+      msg.content && typeof msg.content === 'string'
+    );
+    
+    if (!validMessages) {
+      logger.warn('Invalid message format in executeChat');
+      throw new Error('Invalid message format: each message must have role and content properties');
+    }
+    
+    // Create a copy to avoid mutating the input
+    let messagesCopy = [...messages];
+    
     // Ensure system message is present
-    if (!messages.some(msg => msg.role === 'system')) {
-      messages = [
+    if (!messagesCopy.some(msg => msg.role === 'system')) {
+      messagesCopy = [
         createChatMessage('system', DEFAULT_SYSTEM_MESSAGE),
-        ...messages
+        ...messagesCopy
       ];
     }
     
@@ -111,12 +132,12 @@ export async function executeChat(
       streaming: options.streaming ?? false
     };
     
-    logger.debug(`Executing chat with model: ${fullOptions.model}`);
+    logger.debug(`Executing chat with model: ${fullOptions.model}, messages: ${messagesCopy.length}`);
     
     // If streaming is requested, handle it specially
     if (fullOptions.streaming && options.streamingCallback) {
       return llmInferenceAdapter.generateChatCompletion(
-        messages,
+        messagesCopy,
         fullOptions,
         options.streamingCallback
       );
@@ -124,7 +145,7 @@ export async function executeChat(
     
     // Normal non-streaming execution
     return llmInferenceAdapter.generateChatCompletion(
-      messages,
+      messagesCopy,
       fullOptions
     );
   } catch (error) {
@@ -159,6 +180,22 @@ export async function executeCompletion(
   options: ExtendedLLMCompletionOptions = {}
 ): Promise<LLMCompletionResult> {
   try {
+    // Validate input prompt
+    if (prompt === undefined || prompt === null) {
+      logger.warn('Invalid prompt provided to executeCompletion: null or undefined');
+      throw new Error('Invalid input: prompt cannot be null or undefined');
+    }
+    
+    if (typeof prompt !== 'string') {
+      logger.warn(`Invalid prompt type provided to executeCompletion: ${typeof prompt}`);
+      throw new Error('Invalid input: prompt must be a string');
+    }
+    
+    if (prompt.trim().length === 0) {
+      logger.warn('Empty prompt provided to executeCompletion');
+      throw new Error('Invalid input: prompt cannot be empty');
+    }
+    
     // Set default options
     const fullOptions: LLMCompletionOptions = {
       model: options.model || DEFAULT_CHAT_MODEL,
@@ -172,7 +209,7 @@ export async function executeCompletion(
       streaming: options.streaming ?? false
     };
     
-    logger.debug(`Executing completion with model: ${fullOptions.model}`);
+    logger.debug(`Executing completion with model: ${fullOptions.model}, prompt length: ${prompt.length}`);
     
     // If streaming is requested, handle it specially
     if (fullOptions.streaming && options.streamingCallback) {
@@ -259,14 +296,14 @@ export function getChatResponseContent(result: LLMChatResult): string {
 }
 
 /**
- * Generate a function call prompt
+ * Generate a function call prompt with options
  * 
- * Helper to create a prompt for structured function calling
+ * Helper to create a prompt and options for structured function calling
  * 
  * @param systemMessage System message providing context
  * @param userQuery The user's query
  * @param functionDefinitions The available functions
- * @returns Formatted messages for function calling
+ * @returns Object containing messages and options for function calling
  */
 export function createFunctionCallPrompt(
   systemMessage: string,
@@ -276,11 +313,23 @@ export function createFunctionCallPrompt(
     description: string;
     parameters: Record<string, any>;
   }>
-): LLMChatMessage[] {
-  return [
+): { messages: LLMChatMessage[], options: Partial<LLMChatOptions> } {
+  if (!functionDefinitions || functionDefinitions.length === 0) {
+    logger.warn('Function definitions missing in function call prompt');
+  }
+  
+  const messages = [
     createChatMessage('system', systemMessage),
     createChatMessage('user', userQuery)
   ];
+  
+  const options: Partial<LLMChatOptions> = {
+    functions: functionDefinitions,
+    // Lower temperature for more deterministic function selection
+    temperature: 0.2
+  };
+  
+  return { messages, options };
 }
 
 /**
@@ -288,7 +337,7 @@ export function createFunctionCallPrompt(
  * 
  * Call this at application startup to prepare the LLM environment
  */
-export async function initializeLLMEnvironment(): Promise<void> {
+export async function initializeLLMEnvironment(): Promise<boolean> {
   logger.info('Initializing LLM environment');
   
   try {
@@ -297,10 +346,13 @@ export async function initializeLLMEnvironment(): Promise<void> {
       createChatMessage('user', 'Hello, this is a test message')
     ], { temperature: 0.1 });
     
+    // Only log success after the call completes without error
     logger.info(`LLM environment initialized successfully using ${DEFAULT_CHAT_MODEL}`);
+    return true;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     logger.error(`Failed to initialize LLM environment: ${errorMessage}`);
+    return false;
   }
 }
 

@@ -73,6 +73,7 @@ import aiRoutes from './routes/ai.routes';
 import searchRoutes from './routes/search.routes';
 import analyticsRoutes from './routes/analytics.routes';
 import subscriptionRoutes from './routes/subscription.routes';
+import enhancedVectorRoutes from './routes/enhancedVector.routes';
 
 // Create Express app
 const app = express();
@@ -119,6 +120,7 @@ app.use('/api/ai', authMiddleware, aiRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
+app.use('/api/vector/enhanced', enhancedVectorRoutes);
 
 /**
  * Enhanced health check endpoint - public access

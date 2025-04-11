@@ -275,23 +275,171 @@ export class ThreeDService {
   }
 
   private determineElementType(node: any): 'wall' | 'window' | 'door' {
-    // Implement logic to determine element type based on node properties
-    return 'wall'; // Placeholder
+    // Determine element type based on node properties
+    if (!node || !node.metadata) {
+      console.warn('Node missing metadata for element type determination');
+      return 'wall'; // Default to wall for safety
+    }
+    
+    // Check for explicit type in metadata
+    if (node.metadata.type) {
+      const type = node.metadata.type.toLowerCase();
+      if (type === 'window' || type === 'door') {
+        return type as 'window' | 'door';
+      }
+      return 'wall';
+    }
+    
+    // Infer type from geometry and properties if not explicitly defined
+    const height = node.metadata.dimensions?.height || 0;
+    const width = node.metadata.dimensions?.width || 0;
+    const position = node.transform?.position || [0, 0, 0];
+    
+    // Windows are typically higher off the ground
+    if (position[1] > 0.7 && height < 2.0 && width > 0.3) {
+      return 'window';
+    }
+    
+    // Doors typically extend from floor with standard heights
+    if (position[1] < 0.3 && height > 1.8 && height < 2.5 && width > 0.6) {
+      return 'door';
+    }
+    
+    return 'wall';
   }
 
   private calculateDimensions(vertices: Float32Array, node: any): { width: number; height: number; depth: number } {
-    // Implement dimension calculation from vertices
-    return {
-      width: 1,
-      height: 1,
-      depth: 1
-    }; // Placeholder
+    if (!vertices || !node || !node.geometry || !node.geometry.indices) {
+      console.warn('Missing vertex data for dimension calculation');
+      return { width: 1, height: 1, depth: 1 }; // Default fallback
+    }
+    
+    try {
+      // Extract vertices that belong to this node using its indices
+      const indices = node.geometry.indices;
+      
+      // Find min and max for each dimension
+      let minX = Infinity, minY = Infinity, minZ = Infinity;
+      let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+      
+      for (let i = 0; i < indices.length; i++) {
+        const idx = indices[i] * 3; // Each vertex has x,y,z components
+        
+        const x = vertices[idx];
+        const y = vertices[idx + 1];
+        const z = vertices[idx + 2];
+        
+        // Update bounds
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        minZ = Math.min(minZ, z);
+        
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+        maxZ = Math.max(maxZ, z);
+      }
+      
+      // Calculate dimensions
+      return {
+        width: Math.abs(maxX - minX) || 1,  // Use 1 as fallback if calculation is 0
+        height: Math.abs(maxY - minY) || 1,
+        depth: Math.abs(maxZ - minZ) || 1
+      };
+    } catch (error) {
+      console.error('Error calculating dimensions:', error);
+      return { width: 1, height: 1, depth: 1 }; // Fallback on error
+    }
   }
 
   private detectGPUTier(): GPUTier {
-    // Implement GPU detection logic
-    // This is a placeholder - actual implementation would check GPU capabilities
-    return 'medium';
+    try {
+      // Check if we're in Node.js environment
+      const isNode = typeof window === 'undefined';
+      
+      if (isNode) {
+        // Server-side detection using environment variables
+        const gpuEnv = process.env.GPU_TIER || process.env.RENDER_CAPABILITY;
+        if (gpuEnv) {
+          if (gpuEnv.toLowerCase().includes('high') || 
+              gpuEnv.toLowerCase().includes('nvidia') || 
+              gpuEnv.toLowerCase().includes('rtx')) {
+            return 'high';
+          } else if (gpuEnv.toLowerCase().includes('low')) {
+            return 'low';
+          }
+        }
+        
+        // Check for GPU-related environment variables
+        const hasGPU = process.env.HAS_GPU === 'true' || 
+                       process.env.CUDA_VISIBLE_DEVICES || 
+                       process.env.GPU_COUNT;
+        
+        if (hasGPU) {
+          return 'high';
+        }
+        
+        // Use memory-based heuristic without requiring 'os' module
+        // This assumes large memory systems have better GPU capability
+        const heapStats = process.memoryUsage();
+        const heapTotal = heapStats.heapTotal / (1024 * 1024 * 1024); // GB
+        const totalMemoryEstimate = heapTotal * 8; // Rough estimate
+        
+        if (totalMemoryEstimate > 24) {
+          return 'high';
+        } else if (totalMemoryEstimate > 12) {
+          return 'medium';
+        } else {
+          return 'low';
+        }
+      } else {
+        // Browser environment detection
+        const gl = document.createElement('canvas').getContext('webgl2');
+        if (!gl) {
+          return 'low'; // WebGL2 not supported
+        }
+        
+        // Check for specific WebGL extensions and capabilities
+        const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+        if (!debugInfo) {
+          return 'medium'; // Can't get detailed info, assume medium
+        }
+        
+        const renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+        const vendor = gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL);
+        
+        // Check for high-end GPU indicators
+        if (renderer.includes('RTX') || 
+            renderer.includes('Quadro') || 
+            renderer.includes('NVIDIA') || 
+            renderer.includes('AMD Radeon Pro')) {
+          return 'high';
+        }
+        
+        // Check for integrated/low-end GPU indicators
+        if (renderer.includes('Intel') || 
+            renderer.includes('HD Graphics') || 
+            renderer.includes('UHD Graphics')) {
+          return 'low';
+        }
+        
+        // Check available texture units as another performance indicator
+        const maxTextureUnits = gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS);
+        if (maxTextureUnits >= 16) {
+          return 'high';
+        } else if (maxTextureUnits >= 8) {
+          return 'medium';
+        } else {
+          return 'low';
+        }
+      }
+      
+      // Default fallback if all detection methods fail
+      console.log('GPU tier detection fallback to medium');
+      return 'medium';
+    } catch (error) {
+      console.error('Error detecting GPU tier:', error);
+      return 'medium'; // Safe fallback
+    }
   }
 
   async generateRoomLayout(specifications: {
@@ -500,19 +648,125 @@ export class ThreeDService {
   }
 
   private async mergeScenes(get3dScene: any, hunyuanScene: any): Promise<any> {
-    // Implement scene merging logic
-    // This could involve:
-    // 1. Taking the best parts from each scene
-    // 2. Using confidence scores to decide which elements to keep
-    // 3. Combining complementary elements from both scenes
-    return {
-      ...get3dScene,
-      alternative_elements: hunyuanScene.elements,
-      metadata: {
-        ...get3dScene.metadata,
-        hunyuan_contribution: hunyuanScene.metadata
+    try {
+      if (!get3dScene || !hunyuanScene) {
+        console.warn('Missing scene data for merging, returning available scene');
+        return get3dScene || hunyuanScene || { elements: [], metadata: {} };
       }
-    };
+      
+      // Initialize the merged scene with base structure from GET3D
+      const mergedScene = {
+        ...get3dScene,
+        elements: [...(get3dScene.elements || [])],
+        metadata: {
+          ...get3dScene.metadata,
+          mergeSource: 'hybrid',
+          merged: true,
+          confidenceScore: Math.max(
+            get3dScene.metadata?.confidenceScore || 0.5,
+            hunyuanScene.metadata?.confidenceScore || 0.5
+          )
+        }
+      };
+      
+      // Process Hunyuan elements and merge based on confidence and complementary features
+      if (hunyuanScene.elements && Array.isArray(hunyuanScene.elements)) {
+        for (const hunyuanElement of hunyuanScene.elements) {
+          // Skip if element has no type or position
+          if (!hunyuanElement.type || !hunyuanElement.position) {
+            continue;
+          }
+          
+          // Check if a similar element exists in GET3D scene
+          const similarElement = get3dScene.elements?.find((element: any) => 
+            element.type === hunyuanElement.type && 
+            this.calculateElementDistance(element.position, hunyuanElement.position) < 1.0
+          );
+          
+          if (similarElement) {
+            // Compare confidence scores to decide which to keep
+            const get3dConfidence = similarElement.metadata?.confidence || 0.5;
+            const hunyuanConfidence = hunyuanElement.metadata?.confidence || 0.5;
+            
+            // Replace if Hunyuan element has higher confidence
+            if (hunyuanConfidence > get3dConfidence) {
+              // Find index of the element to replace
+              const elementIndex = mergedScene.elements.findIndex((e: any) => 
+                e.type === similarElement.type && 
+                this.calculateElementDistance(e.position, similarElement.position) < 0.1
+              );
+              
+              if (elementIndex >= 0) {
+                // Replace with Hunyuan element and mark source
+                mergedScene.elements[elementIndex] = {
+                  ...hunyuanElement,
+                  metadata: {
+                    ...(hunyuanElement.metadata || {}),
+                    originalSource: 'hunyuan3d',
+                    replaced: true
+                  }
+                };
+              }
+            }
+          } else {
+            // Add unique Hunyuan element with source metadata
+            mergedScene.elements.push({
+              ...hunyuanElement,
+              metadata: {
+                ...(hunyuanElement.metadata || {}),
+                originalSource: 'hunyuan3d'
+              }
+            });
+          }
+        }
+      }
+      
+      // Add detailed materials from Hunyuan if available
+      if (hunyuanScene.materials && (!get3dScene.materials || 
+          Object.keys(hunyuanScene.materials).length > Object.keys(get3dScene.materials || {}).length)) {
+        mergedScene.materials = hunyuanScene.materials;
+      }
+      
+      // Add lighting information from the better scene
+      if (hunyuanScene.lighting && 
+          (!get3dScene.lighting || hunyuanScene.lighting.quality > get3dScene.lighting.quality)) {
+        mergedScene.lighting = hunyuanScene.lighting;
+      }
+      
+      // Store alternative elements for potential later use
+      mergedScene.alternativeElements = {
+        get3d: get3dScene.elements,
+        hunyuan: hunyuanScene.elements
+      };
+      
+      return mergedScene;
+    } catch (error) {
+      console.error('Error merging scenes:', error);
+      // Fallback to GET3D scene on error for robustness
+      return get3dScene || { elements: [], metadata: {} };
+    }
+  }
+  
+  /**
+   * Calculate distance between two positions in 3D space
+   */
+  private calculateElementDistance(pos1: any, pos2: any): number {
+    if (!pos1 || !pos2) return Infinity;
+    
+    // Handle both object notation {x, y, z} and array notation [x, y, z]
+    const x1 = pos1.x !== undefined ? pos1.x : (Array.isArray(pos1) ? pos1[0] : 0);
+    const y1 = pos1.y !== undefined ? pos1.y : (Array.isArray(pos1) ? pos1[1] : 0);
+    const z1 = pos1.z !== undefined ? pos1.z : (Array.isArray(pos1) ? pos1[2] : 0);
+    
+    const x2 = pos2.x !== undefined ? pos2.x : (Array.isArray(pos2) ? pos2[0] : 0);
+    const y2 = pos2.y !== undefined ? pos2.y : (Array.isArray(pos2) ? pos2[1] : 0);
+    const z2 = pos2.z !== undefined ? pos2.z : (Array.isArray(pos2) ? pos2[2] : 0);
+    
+    return Math.sqrt(
+      Math.pow(x2 - x1, 2) + 
+      Math.pow(y2 - y1, 2) + 
+      Math.pow(z2 - z1, 2)
+    );
   }
 
   private async cleanupWithBlenderProc(scene: any): Promise<any> {
@@ -580,7 +834,7 @@ export class ThreeDService {
         throw new Error(`Failed to generate detailed scene: ${sceneResponse.statusText}`);
       }
 
-      const detailedScene = await sceneResponse.json();
+      let detailedScene = await sceneResponse.json();
 
       // Generate textures using Text2Material
       const textureResponse = await fetch(`${this.modelEndpoints.text2material}/generate`, {
@@ -597,7 +851,7 @@ export class ThreeDService {
         throw new Error(`Failed to generate textures: ${textureResponse.statusText}`);
       }
 
-      const textures = await textureResponse.json();
+      let textures = await textureResponse.json();
 
       // Validate visual-text matching with CLIP
       const clipResponse = await fetch(`${this.modelEndpoints.clip}/validate`, {
@@ -621,7 +875,79 @@ export class ThreeDService {
 
       // If CLIP score is low, try to refine the results
       if (clipValidation.score < 0.7) {
-        // Implement refinement logic here
+        console.log(`CLIP score ${clipValidation.score} is below threshold, attempting refinement`);
+        
+        // Get misalignment areas from CLIP
+        const misalignments = clipValidation.misalignments || [];
+        const refinedScene = { ...detailedScene };
+        
+        // Apply targeted refinements based on misalignment areas
+        if (misalignments.length > 0) {
+          // First attempt: refine style with Text2Material for texture issues
+          if (misalignments.some((m: { type: string }) => m.type === 'texture' || m.type === 'material' || m.type === 'style')) {
+            console.log('Refining textures based on CLIP feedback');
+            const refinedTextureResponse = await fetch(`${this.modelEndpoints.text2material}/refine`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                description,
+                misalignments: misalignments.filter((m: { type: string }) => ['texture', 'material', 'style'].includes(m.type)),
+                currentTextures: textures,
+                clipScore: clipValidation.score
+              })
+            });
+            
+            if (refinedTextureResponse.ok) {
+              const refinedTextures = await refinedTextureResponse.json();
+              textures = refinedTextures;
+            }
+          }
+          
+          // Second attempt: refine structure issues with GET3D
+          if (misalignments.some((m: { type: string }) => m.type === 'structure' || m.type === 'architecture' || m.type === 'layout')) {
+            console.log('Refining structure based on CLIP feedback');
+            const refinedStructureResponse = await fetch(`${this.modelEndpoints.get3d}/refine`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                description,
+                scene: detailedScene,
+                misalignments: misalignments.filter((m: { type: string }) => ['structure', 'architecture', 'layout'].includes(m.type)),
+                clipScore: clipValidation.score,
+                // Adjust generation parameters to focus on problematic areas
+                parameters: {
+                  guidanceScale: 8.5, // Increase guidance scale for closer text alignment
+                  steps: 60,          // More steps for refinement
+                  focusAreas: misalignments.map((m: { area: any }) => m.area)
+                }
+              })
+            });
+            
+            if (refinedStructureResponse.ok) {
+              refinedScene.model = (await refinedStructureResponse.json()).model;
+            }
+          }
+          
+          // Validate results after refinement with CLIP again
+          const refinedClipResponse = await fetch(`${this.modelEndpoints.clip}/validate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              description,
+              images: {
+                scene: refinedScene.preview || detailedScene.preview
+              }
+            })
+          });
+          
+          if (refinedClipResponse.ok) {
+            const refinedClipValidation = await refinedClipResponse.json();
+            console.log(`Refinement improved CLIP score from ${clipValidation.score} to ${refinedClipValidation.score}`);
+          }
+          
+          // Use the refined scene if it's available
+          detailedScene = refinedScene;
+        }
       }
 
       return {

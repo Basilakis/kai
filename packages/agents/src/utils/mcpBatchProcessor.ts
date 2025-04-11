@@ -39,7 +39,7 @@ interface BatchConfig {
 const batchQueues: Record<string, Array<BatchQueueItem<any, any>>> = {};
 
 // Timeout handles for each component type
-const batchTimeouts: Record<string, number> = {};
+const batchTimeouts: Record<string, ReturnType<typeof setTimeout>> = {};
 
 // Component-specific batch configurations
 const batchConfigs: Record<string, BatchConfig> = {
@@ -88,6 +88,9 @@ export function isBatchingEnabled(componentType: 'vectorSearch' | 'imageAnalysis
          batchConfigs[componentType] !== undefined;
 }
 
+// Maximum age (in ms) for items in the queue before they're considered stale
+const MAX_ITEM_AGE_MS = parseInt(process.env.MCP_MAX_ITEM_AGE_MS || '60000', 10); // Default: 1 minute
+
 /**
  * Process a batch of operations for a specific component type
  * 
@@ -108,8 +111,55 @@ async function processBatch(componentType: string): Promise<void> {
     return;
   }
 
-  // Get items to process in this batch
-  const itemsToProcess = queue.splice(0, config.maxBatchSize);
+  // Check for stale items and process them separately (either remove or process)
+  const now = Date.now();
+  const staleItemIndices: number[] = [];
+
+  // Identify stale items
+  for (let i = 0; i < queue.length; i++) {
+    if (now - queue[i].addedAt > MAX_ITEM_AGE_MS) {
+      staleItemIndices.push(i);
+    }
+  }
+
+  // Handle stale items if any
+  if (staleItemIndices.length > 0) {
+    // Extract stale items (from end to beginning to avoid index shifts)
+    const staleItems: BatchQueueItem<any, any>[] = [];
+    for (let i = staleItemIndices.length - 1; i >= 0; i--) {
+      staleItems.unshift(queue.splice(staleItemIndices[i], 1)[0]);
+    }
+    
+    logger.warn(`Found ${staleItems.length} stale items in ${componentType} queue (older than ${MAX_ITEM_AGE_MS}ms)`);
+    
+    // Process stale items individually to avoid blocking the main batch
+    for (const item of staleItems) {
+      try {
+        // Attempt to process individually
+        const result = await callMCPEndpoint(
+          componentType as 'vectorSearch' | 'imageAnalysis' | 'ocr' | 'agentInference',
+          config.endpoint.replace('_batch', ''), // Use non-batch endpoint
+          { single: item.data }
+        );
+        item.resolve(result);
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Stale item processing failed';
+        logger.error(`Failed to process stale ${componentType} item: ${errorMessage}`);
+        item.reject(new Error(`Stale item processing failed: ${errorMessage}`));
+      }
+    }
+    
+    // If no regular items remain, return
+    if (queue.length === 0) {
+      return;
+    }
+  }
+
+  // Determine how many items to process (up to maxBatchSize)
+  const itemCount = Math.min(queue.length, config.maxBatchSize);
+  
+  // Create a copy of the items to process WITHOUT removing them from the queue yet
+  const itemsToProcess = queue.slice(0, itemCount);
   const batchData = itemsToProcess.map(item => item.data);
 
   logger.debug(`Processing batch of ${itemsToProcess.length} ${componentType} operations`);
@@ -117,7 +167,7 @@ async function processBatch(componentType: string): Promise<void> {
   try {
     // Call the MCP endpoint with the batch data
     const results = await callMCPEndpoint<any[]>(
-      componentType as any, // Type cast to make TypeScript happy
+      componentType as 'vectorSearch' | 'imageAnalysis' | 'ocr' | 'agentInference',
       config.endpoint,
       { batch: batchData }
     );
@@ -126,6 +176,9 @@ async function processBatch(componentType: string): Promise<void> {
     if (results.length !== itemsToProcess.length) {
       throw new Error(`Expected ${itemsToProcess.length} results, but got ${results.length}`);
     }
+
+    // Now that we have successful results, we can safely remove items from the queue
+    queue.splice(0, itemCount);
 
     // Resolve each item's promise with its corresponding result
     for (let i = 0; i < itemsToProcess.length; i++) {
@@ -136,8 +189,33 @@ async function processBatch(componentType: string): Promise<void> {
     const errorMessage = error instanceof Error ? error.message : 'Unknown batch processing error';
     logger.error(`Batch processing failed for ${componentType}: ${errorMessage}`);
     
-    for (const item of itemsToProcess) {
-      item.reject(error instanceof Error ? error : new Error(errorMessage));
+    // Individual error handling approach: retry each item individually
+    for (let i = 0; i < itemsToProcess.length; i++) {
+      try {
+        // Attempt to process individually as fallback
+        const result = await callMCPEndpoint(
+          componentType as 'vectorSearch' | 'imageAnalysis' | 'ocr' | 'agentInference',
+          config.endpoint.replace('_batch', ''), // Use non-batch endpoint
+          { single: itemsToProcess[i].data }
+        );
+        itemsToProcess[i].resolve(result);
+        
+        // Remove the successfully processed item from the queue
+        const index = queue.indexOf(itemsToProcess[i]);
+        if (index !== -1) {
+          queue.splice(index, 1);
+        }
+      } catch (individualError) {
+        const individualErrorMessage = individualError instanceof Error ? individualError.message : 'Unknown error';
+        logger.error(`Individual processing also failed for ${componentType} item: ${individualErrorMessage}`);
+        itemsToProcess[i].reject(new Error(`Batch and individual processing failed: ${individualErrorMessage}`));
+        
+        // Remove the failed item from the queue to prevent blocking
+        const index = queue.indexOf(itemsToProcess[i]);
+        if (index !== -1) {
+          queue.splice(index, 1);
+        }
+      }
     }
   }
 

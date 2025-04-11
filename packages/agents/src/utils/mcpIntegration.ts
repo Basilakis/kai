@@ -96,6 +96,23 @@ const metrics: MCPMetrics = {
   componentMetrics: {}
 };
 
+// Type definitions for client configuration to improve type safety
+interface MCPClientAuthConfig {
+  token: string;
+  type: string;
+}
+
+interface MCPClientMetricsConfig {
+  enabled: boolean;
+  sampleRate: number;
+}
+
+interface MCPClientConfig {
+  auth?: MCPClientAuthConfig;
+  metrics?: MCPClientMetricsConfig;
+  timeout?: number;
+}
+
 /**
  * Create or get the MCP client instance
  * 
@@ -103,44 +120,86 @@ const metrics: MCPMetrics = {
  * @throws Error if client cannot be created
  */
 export async function createMCPClient(): Promise<MCPClient> {
-  if (!mcpClientInstance) {
+  // Return cached instance if available
+  if (mcpClientInstance) {
+    return mcpClientInstance;
+  }
+  
+  try {
+    // Dynamic import with more specific error handling
+    let MCPClientModule;
     try {
-      // Dynamic import to avoid circular dependencies
-      const module = await import('@kai/mcp-client');
-      const MCPClientClass = module.MCPClient as new (url: string, config?: any) => MCPClientType;
+      // Import the module with specific error handling for module loading
+      MCPClientModule = await import('@kai/mcp-client');
       
-      // Create the client with auth configuration if enabled
-      const clientConfig: Record<string, any> = {};
-      
-      if (MCP_AUTH_ENABLED && MCP_AUTH_TOKEN) {
-        clientConfig.auth = {
-          token: MCP_AUTH_TOKEN,
-          type: MCP_AUTH_TYPE
-        };
-        logger.info('MCP client created with authentication');
+      // Validate that the module has the expected exports
+      if (!MCPClientModule.MCPClient) {
+        throw new Error('MCPClient class not found in the imported module');
       }
-      
-      if (MCP_METRICS_ENABLED) {
-        clientConfig.metrics = {
-          enabled: true,
-          sampleRate: MCP_METRICS_SAMPLE_RATE
-        };
-        logger.info(`MCP metrics enabled with sample rate ${MCP_METRICS_SAMPLE_RATE}`);
-      }
-      
-      mcpClientInstance = new MCPClientClass(MCP_SERVER_URL, clientConfig);
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      logger.error(`Failed to create MCP client: ${errorMessage}`);
-      throw new Error(`Failed to initialize MCP client: ${errorMessage}`);
+    } catch (importError) {
+      const errorMessage = importError instanceof Error ? importError.message : 'Unknown module import error';
+      logger.error(`Failed to import MCP client module: ${errorMessage}`);
+      throw new Error(`Failed to load MCP client module: ${errorMessage}`);
     }
+    
+    // Create a properly typed configuration object
+    const clientConfig: MCPClientConfig = {
+      timeout: MCP_HEALTH_CHECK_TIMEOUT // Add timeout for all client operations
+    };
+    
+    // Add authentication if enabled
+    if (MCP_AUTH_ENABLED && MCP_AUTH_TOKEN) {
+      clientConfig.auth = {
+        token: MCP_AUTH_TOKEN,
+        type: MCP_AUTH_TYPE
+      };
+      logger.info(`MCP client created with ${MCP_AUTH_TYPE} authentication`);
+    }
+    
+    // Add metrics configuration if enabled
+    if (MCP_METRICS_ENABLED) {
+      clientConfig.metrics = {
+        enabled: true,
+        sampleRate: MCP_METRICS_SAMPLE_RATE
+      };
+      logger.info(`MCP metrics enabled with sample rate ${MCP_METRICS_SAMPLE_RATE}`);
+    }
+    
+    // Create the client instance with explicit type checking
+    const MCPClientClass = MCPClientModule.MCPClient as unknown as new (url: string, config: MCPClientConfig) => MCPClientType;
+    
+    // Validate server URL before creating client
+    if (!MCP_SERVER_URL) {
+      throw new Error('MCP server URL is not configured');
+    }
+    
+    // Create client instance with proper error handling
+    try {
+      mcpClientInstance = new MCPClientClass(MCP_SERVER_URL, clientConfig);
+      logger.info(`MCP client successfully created for server: ${MCP_SERVER_URL}`);
+    } catch (instantiationError) {
+      const errorMessage = instantiationError instanceof Error ? instantiationError.message : 'Unknown instantiation error';
+      logger.error(`Failed to instantiate MCP client: ${errorMessage}`);
+      throw new Error(`Failed to create MCP client instance: ${errorMessage}`);
+    }
+    
+    // Return the newly created instance
+    return mcpClientInstance;
+  } catch (error) {
+    // Enhanced error handling with more context
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    logger.error(`Failed to create MCP client: ${errorMessage}`, { 
+      serverUrl: MCP_SERVER_URL,
+      authEnabled: MCP_AUTH_ENABLED,
+      metricsEnabled: MCP_METRICS_ENABLED
+    });
+    
+    // Clear the instance if creation failed
+    mcpClientInstance = null;
+    
+    // Rethrow with more context
+    throw new Error(`Failed to initialize MCP client: ${errorMessage}`);
   }
-  
-  if (!mcpClientInstance) {
-    throw new Error('Failed to initialize MCP client');
-  }
-  
-  return mcpClientInstance;
 }
 
 /**
@@ -206,21 +265,51 @@ export async function checkMCPServerAvailability(): Promise<boolean> {
     try {
       const mcpClient = await createMCPClient();
       
-      // Add timeout to health check
-      const timeoutPromise = new Promise<boolean>((_, reject) => {
-        setTimeout(() => reject(new Error('MCP server health check timeout')), MCP_HEALTH_CHECK_TIMEOUT);
-      });
+      // Use AbortController for proper cleanup of the timeout
+      const controller = new AbortController();
+      const { signal } = controller;
       
-      // Check server health
-      const healthCheckPromise = mcpClient.checkHealth().then(() => true);
+      // Set up timeout that aborts the health check if it takes too long
+      const timeoutId = setTimeout(() => {
+        controller.abort(new Error('MCP server health check timeout'));
+      }, MCP_HEALTH_CHECK_TIMEOUT);
       
-      // Wait for either health check or timeout
-      mcpServerAvailable = await Promise.race([healthCheckPromise, timeoutPromise]) as boolean;
-      
-      if (mcpServerAvailable) {
+      try {
+        // Wrap the health check in a fetch-like pattern with abort signal handling
+        const healthCheckWithTimeout = async () => {
+          // Check for abortion before starting
+          if (signal.aborted) {
+            throw signal.reason || new Error('Operation aborted');
+          }
+          
+          // Define a listener for abort events
+          const abortListener = () => {
+            throw signal.reason || new Error('Operation aborted');
+          };
+          
+          try {
+            // Add the abort listener
+            signal.addEventListener('abort', abortListener);
+            
+            // Check server health
+            await mcpClient.checkHealth();
+            return true;
+          } finally {
+            // Clean up the abort listener
+            signal.removeEventListener('abort', abortListener);
+          }
+        };
+        
+        // Execute the health check with timeout
+        mcpServerAvailable = await healthCheckWithTimeout();
         logger.info('MCP server is available');
-      } else {
-        logger.warn('MCP server health check failed');
+      } catch (healthError) {
+        const errorMessage = healthError instanceof Error ? healthError.message : 'Unknown error';
+        logger.warn(`MCP server health check failed: ${errorMessage}`);
+        mcpServerAvailable = false;
+      } finally {
+        // Always clear the timeout to prevent memory leaks
+        clearTimeout(timeoutId);
       }
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -245,59 +334,212 @@ export function resetMCPAvailabilityCheck(): void {
 }
 
 /**
- * Generic proxy function for component functions
- * 
- * @param mcpFunction Function to call if MCP is enabled
- * @param originalFunction Original function to call if MCP is disabled
- * @param args Arguments for the function
- * @returns Result of the function call
+ * Error class for MCP fallback scenarios with detailed context
  */
-export async function withMCPFallback<T, Args extends any[]>(
+export class MCPFallbackError extends Error {
+  readonly componentType: string;
+  readonly cause?: unknown;
+  readonly context?: Record<string, unknown>;
+
+  constructor(
+    componentType: string,
+    message: string,
+    cause?: unknown,
+    context?: Record<string, unknown>
+  ) {
+    const fullMessage = `MCP ${componentType} fallback error: ${message}`;
+    super(fullMessage);
+    
+    this.name = 'MCPFallbackError';
+    this.componentType = componentType;
+    this.cause = cause;
+    this.context = context;
+  }
+}
+
+/**
+ * Generic proxy function for component functions with improved error handling and type safety
+ * 
+ * @param componentType The type of component making the operation
+ * @param mcpFunction Function to call if MCP is enabled and available
+ * @param originalFunction Function to call as fallback if MCP is disabled or unavailable
+ * @param args Arguments to pass to the selected function
+ * @returns Result of the function call
+ * @throws Error if both implementations fail
+ */
+export async function withMCPFallback<T, Args extends unknown[]>(
   componentType: 'vectorSearch' | 'ocr' | 'imageAnalysis' | 'training' | 'agentInference',
   mcpFunction: (...args: Args) => Promise<T>,
   originalFunction: (...args: Args) => Promise<T>,
   ...args: Args
 ): Promise<T> {
+  // Track fallback reason for logging
+  let fallbackReason = 'MCP disabled';
+  
   if (isMCPEnabledForComponent(componentType)) {
     try {
-      // Force availability check on first call
+      // Force availability check on first call with proper error handling
       if (!mcpServerAvailabilityChecked) {
-        await checkMCPServerAvailability();
+        try {
+          await checkMCPServerAvailability();
+        } catch (availabilityError) {
+          const errorMessage = availabilityError instanceof Error ? availabilityError.message : 'Unknown error';
+          logger.warn(`MCP server availability check failed: ${errorMessage}`);
+          fallbackReason = `availability check failed: ${errorMessage}`;
+          // Continue to fallback rather than throw here
+        }
       }
       
-      // If server is available, use MCP
+      // If server is available, use MCP with proper timeout and error handling
       if (mcpServerAvailable) {
-        logger.debug(`Using MCP for ${componentType}`);
-        return await mcpFunction(...args);
+        logger.debug(`Using MCP for ${componentType} operation`);
+        
+        try {
+          return await mcpFunction(...args);
+        } catch (mcpError) {
+          // Handle errors from MCP function
+          const errorMessage = mcpError instanceof Error ? mcpError.message : 'Unknown error';
+          logger.warn(`MCP ${componentType} operation failed: ${errorMessage}`);
+          fallbackReason = `operation failed: ${errorMessage}`;
+          
+          // If the error is a timeout or connection issue, mark server as potentially unavailable
+          if (
+            mcpError instanceof Error && 
+            (
+              mcpError.message.includes('timeout') || 
+              mcpError.message.includes('connection') ||
+              mcpError.message.includes('network')
+            )
+          ) {
+            logger.warn('Connection issue detected, resetting MCP availability check for next operation');
+            // Don't reset immediately to avoid thrashing, but allow a recheck on next operation
+            setTimeout(() => {
+              resetMCPAvailabilityCheck();
+            }, 5000);
+          }
+        }
+      } else {
+        fallbackReason = 'server unavailable';
       }
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      logger.warn(`MCP ${componentType} function call failed, falling back to original: ${errorMessage}`);
+      logger.warn(`MCP ${componentType} fallback decision error: ${errorMessage}`);
+      fallbackReason = `initialization error: ${errorMessage}`;
     }
   }
   
-  // Fall back to original implementation
-  logger.debug(`Using original implementation for ${componentType}`);
-  return originalFunction(...args);
+  // Log the fallback with reason
+  logger.debug(`Using original implementation for ${componentType} (reason: ${fallbackReason})`);
+  
+  // Try the fallback implementation with proper error handling
+  try {
+    return await originalFunction(...args);
+  } catch (fallbackError) {
+    // If the fallback also fails, provide a comprehensive error with context
+    const fallbackErrorMsg = fallbackError instanceof Error ? fallbackError.message : 'Unknown error';
+    logger.error(`${componentType} fallback implementation also failed: ${fallbackErrorMsg}`);
+    
+    // Create context for debugging
+    const errorContext = {
+      mcpEnabled: isMCPEnabled(),
+      componentEnabled: isMCPEnabledForComponent(componentType),
+      serverAvailable: mcpServerAvailable,
+      fallbackReason,
+      argsTypes: args.map(arg => typeof arg)
+    };
+    
+    // Throw a detailed error with the original error as cause
+    throw new MCPFallbackError(
+      componentType,
+      `Both MCP and fallback implementations failed. MCP: ${fallbackReason}, Fallback: ${fallbackErrorMsg}`,
+      fallbackError,
+      errorContext
+    );
+  }
+}
+
+// Define a custom error class for MCP endpoint errors with better context
+class MCPEndpointError extends Error {
+  readonly componentType: string;
+  readonly endpoint: string;
+  readonly cause?: unknown;
+  readonly context?: Record<string, unknown>;
+
+  constructor(
+    componentType: string,
+    endpoint: string,
+    message: string,
+    cause?: unknown,
+    context?: Record<string, unknown>
+  ) {
+    // Create a detailed error message with component and endpoint
+    const fullMessage = `MCP ${componentType} endpoint ${endpoint} error: ${message}`;
+    super(fullMessage);
+    
+    this.name = 'MCPEndpointError';
+    this.componentType = componentType;
+    this.endpoint = endpoint;
+    this.cause = cause;
+    this.context = context;
+  }
 }
 
 /**
- * Helper function to call MCP endpoints with appropriate error handling
+ * Helper function to call MCP endpoints with comprehensive error handling and validation
+ *
+ * @param componentType The type of component calling the endpoint
+ * @param endpoint The endpoint to call on the MCP server
+ * @param data The data to send to the endpoint
+ * @returns Promise that resolves with the endpoint response
+ * @throws MCPEndpointError if the operation fails
  */
 export async function callMCPEndpoint<T>(
   componentType: 'vectorSearch' | 'ocr' | 'imageAnalysis' | 'training' | 'agentInference',
   endpoint: string,
-  data: any
+  data: unknown
 ): Promise<T> {
+  // Validate inputs
+  if (!componentType) {
+    throw new MCPEndpointError('unknown', 'unknown', 'Component type is required');
+  }
+  
+  if (!endpoint) {
+    throw new MCPEndpointError(componentType, 'unknown', 'Endpoint is required');
+  }
+  
+  // Check if MCP is enabled for this component
   if (!isMCPEnabledForComponent(componentType)) {
-    throw new Error(`MCP integration for ${componentType} is not enabled`);
+    throw new MCPEndpointError(
+      componentType, 
+      endpoint, 
+      `MCP integration for ${componentType} is not enabled`,
+      undefined,
+      { enabled: isMCPEnabled() }
+    );
   }
   
   // Check server availability if not checked yet
   if (!mcpServerAvailabilityChecked) {
-    const available = await checkMCPServerAvailability();
-    if (!available) {
-      throw new Error('MCP server is not available');
+    try {
+      const available = await checkMCPServerAvailability();
+      if (!available) {
+        throw new MCPEndpointError(
+          componentType, 
+          endpoint, 
+          'MCP server is not available',
+          undefined,
+          { serverUrl: MCP_SERVER_URL }
+        );
+      }
+    } catch (availabilityError) {
+      const errorMessage = availabilityError instanceof Error ? availabilityError.message : 'Unknown error';
+      throw new MCPEndpointError(
+        componentType, 
+        endpoint, 
+        'Failed to check MCP server availability',
+        availabilityError,
+        { serverUrl: MCP_SERVER_URL }
+      );
     }
   }
   
@@ -310,7 +552,7 @@ export async function callMCPEndpoint<T>(
     };
   }
   
-  // Track metrics
+  // Track request metrics
   const startTime = Date.now();
   metrics.totalRequests++;
   metrics.lastRequestTime = startTime;
@@ -320,6 +562,7 @@ export async function callMCPEndpoint<T>(
   }
   
   try {
+    // Create client and make the request
     const mcpClient = await createMCPClient();
     const result = await mcpClient.callEndpoint<T>(endpoint, data);
     
@@ -335,6 +578,9 @@ export async function callMCPEndpoint<T>(
       metrics.componentMetrics[componentType].latency += latency;
     }
     
+    // Log success with appropriate detail level
+    logger.debug(`MCP ${componentType} endpoint ${endpoint} call successful (${latency}ms)`);
+    
     return result;
   } catch (error: unknown) {
     // Track error metrics
@@ -344,9 +590,36 @@ export async function callMCPEndpoint<T>(
       metrics.componentMetrics[componentType].errors++;
     }
     
+    // Create a detailed error context for debugging
+    const errorContext: Record<string, unknown> = {
+      serverUrl: MCP_SERVER_URL,
+      dataType: typeof data,
+      timestamp: new Date().toISOString()
+    };
+    
+    // Include summary of data for debugging but avoid exposing sensitive info
+    if (typeof data === 'object' && data !== null) {
+      try {
+        const keys = Object.keys(data as Record<string, unknown>);
+        errorContext.dataKeys = keys;
+        errorContext.dataSize = JSON.stringify(data).length;
+      } catch (jsonError) {
+        errorContext.dataError = 'Failed to process data for error context';
+      }
+    }
+    
+    // Format the error message
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    logger.error(`MCP ${componentType} endpoint call failed: ${errorMessage}`);
-    throw error;
+    logger.error(`MCP ${componentType} endpoint ${endpoint} call failed: ${errorMessage}`, errorContext);
+    
+    // Throw a detailed error with context
+    throw new MCPEndpointError(
+      componentType,
+      endpoint,
+      errorMessage,
+      error,
+      errorContext
+    );
   }
 }
 

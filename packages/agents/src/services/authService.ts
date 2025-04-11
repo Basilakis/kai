@@ -224,16 +224,26 @@ export class AuthService extends BaseService {
     }
   }
   
+  // Memory storage for credentials in Node.js environment
+  private static memoryCredentialStorage: Record<string, string> = {};
+
   /**
    * Save credentials to secure storage
    */
   private saveCredentials(credentials: AuthCredentials): void {
     try {
-      // In a real implementation, this would securely store the credentials
-      // For now, we'll use localStorage in browser environments
+      const serializedCredentials = JSON.stringify(credentials);
+
+      // Use localStorage in browser environments
       if (typeof window !== 'undefined' && window.localStorage) {
-        window.localStorage.setItem('kai_auth_credentials', JSON.stringify(credentials));
+        window.localStorage.setItem('kai_auth_credentials', serializedCredentials);
+      } 
+      // Use memory storage in Node.js environment
+      else {
+        AuthService.memoryCredentialStorage['kai_auth_credentials'] = serializedCredentials;
       }
+      
+      logger.debug('Credentials saved to storage');
     } catch (error) {
       logger.error(`Failed to save credentials: ${error}`);
     }
@@ -244,15 +254,20 @@ export class AuthService extends BaseService {
    */
   private loadCredentials(): void {
     try {
-      // In a real implementation, this would securely retrieve the credentials
-      // For now, we'll use localStorage in browser environments
+      let savedCredentials: string | null = null;
+      
+      // Try to load from localStorage in browser environments
       if (typeof window !== 'undefined' && window.localStorage) {
-        const savedCredentials = window.localStorage.getItem('kai_auth_credentials');
-        
-        if (savedCredentials) {
-          this.credentials = JSON.parse(savedCredentials);
-          logger.info('Loaded authentication credentials from storage');
-        }
+        savedCredentials = window.localStorage.getItem('kai_auth_credentials');
+      }
+      // Try to load from memory storage in Node.js environment
+      else if (AuthService.memoryCredentialStorage['kai_auth_credentials']) {
+        savedCredentials = AuthService.memoryCredentialStorage['kai_auth_credentials'];
+      }
+      
+      if (savedCredentials) {
+        this.credentials = JSON.parse(savedCredentials);
+        logger.info('Loaded authentication credentials from storage');
       }
     } catch (error) {
       logger.error(`Failed to load credentials: ${error}`);
@@ -264,11 +279,17 @@ export class AuthService extends BaseService {
    */
   private clearSavedCredentials(): void {
     try {
-      // In a real implementation, this would securely clear the credentials
-      // For now, we'll use localStorage in browser environments
+      // Clear from localStorage in browser environments
       if (typeof window !== 'undefined' && window.localStorage) {
         window.localStorage.removeItem('kai_auth_credentials');
       }
+      
+      // Clear from memory storage in Node.js environment
+      if ('kai_auth_credentials' in AuthService.memoryCredentialStorage) {
+        delete AuthService.memoryCredentialStorage['kai_auth_credentials'];
+      }
+      
+      logger.debug('Credentials cleared from storage');
     } catch (error) {
       logger.error(`Failed to clear saved credentials: ${error}`);
     }
