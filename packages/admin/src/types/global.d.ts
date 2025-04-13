@@ -1,6 +1,6 @@
 /**
  * Global TypeScript Declarations
- * 
+ *
  * This file provides global type definitions for JSX elements
  * used throughout the project. It resolves the "JSX element
  * implicitly has type 'any'" errors by explicitly defining
@@ -31,7 +31,7 @@ declare namespace JSX {
     img: any;
     hr: any;
     br: any;
-    
+
     // Table elements
     table: any;
     thead: any;
@@ -39,12 +39,15 @@ declare namespace JSX {
     tr: any;
     th: any;
     td: any;
-    
+
     // List elements
     ul: any;
     ol: any;
     li: any;
-    
+    dl: any;
+    dt: any;
+    dd: any;
+
     // Layout elements
     header: any;
     footer: any;
@@ -53,18 +56,18 @@ declare namespace JSX {
     section: any;
     article: any;
     aside: any;
-    
+
     // Form elements
     fieldset: any;
     legend: any;
     optgroup: any;
-    
+
     // Other common elements
     iframe: any;
     canvas: any;
     svg: any;
     path: any;
-    
+
     // HTML5 semantic elements
     audio: any;
     video: any;
@@ -75,7 +78,7 @@ declare namespace JSX {
     details: any;
     summary: any;
     time: any;
-    
+
     // Meta elements
     head: any;
     meta: any;
@@ -83,14 +86,14 @@ declare namespace JSX {
     script: any;
     style: any;
     title: any;
-    
+
     // Custom components for subscription-tiers page
     Checkbox: any;
     Divider: any;
     InputAdornment: any;
     CheckCircleIcon: any;
     CancelIcon: any;
-    
+
     // Heroicons components used in Sidebar
     HomeIcon: any;
     UsersIcon: any;
@@ -102,7 +105,7 @@ declare namespace JSX {
     PhotographIcon: any;
     DatabaseIcon: any;
     ChartBarIcon: any;
-    
+
     // Next.js components
     Link: any;
     Router: any;

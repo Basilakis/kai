@@ -596,16 +596,6 @@ export function safeJsonStringify(obj: any, fallback: string = '{}'): string {
 }
 
 /**
- * Format a date as an ISO string without milliseconds
- * 
- * @param date The date to format
- * @returns Formatted date string
- */
-export function formatDate(date: Date = new Date()): string {
-  return date.toISOString().replace(/\.\d{3}Z$/, 'Z');
-}
-
-/**
  * Sleep for a specified number of milliseconds
  * 
  * @param ms Milliseconds to sleep
@@ -614,6 +604,14 @@ export function formatDate(date: Date = new Date()): string {
 export function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
+
+// Re-export formatting utilities from shared package for consistency
+export { 
+  formatISODate,
+  formatDate,
+  formatLocalizedDate,
+  formatLocalizedDateTime
+} from '@kai/shared/utils/formatting';
 
 export {
   createLogger
@@ -625,7 +623,6 @@ export default {
   hasProperty,
   safeJsonParse,
   safeJsonStringify,
-  formatDate,
   sleep,
 };
 EOF

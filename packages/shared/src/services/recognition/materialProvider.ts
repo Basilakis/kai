@@ -10,20 +10,14 @@ import {
   isServiceError
 } from './types';
 
-/**
- * Material-specific recognition options
- */
 export interface MaterialRecognitionOptions extends RecognitionOptions {
   materialType?: string;
   includeMetadata?: boolean;
   similarityThreshold?: number;
 }
 
-/**
- * Material-specific recognition match
- */
 export interface ExtractedColor {
-  color: string; // HEX or HSL color code
+  color: string;
   percentage: number;
   name?: string;
 }
@@ -37,9 +31,6 @@ export interface MaterialRecognitionMatch extends RecognitionMatch {
   extractedColors?: ExtractedColor[];
 }
 
-/**
- * Material data from database
- */
 interface MaterialData {
   id: string;
   name: string;
@@ -49,16 +40,10 @@ interface MaterialData {
   images?: Array<{ url: string }>;
 }
 
-/**
- * Response from match_materials RPC
- */
 interface MatchMaterialsResponse extends Pick<MaterialData, 'id' | 'name' | 'type' | 'metadata'> {
   similarity: number;
 }
 
-/**
- * Material recognition provider implementation
- */
 export class MaterialRecognitionProvider extends BaseRecognitionProvider<MaterialRecognitionMatch> {
   private static instance: MaterialRecognitionProvider;
   private readonly storageBucket = 'material-recognition';
@@ -74,12 +59,6 @@ export class MaterialRecognitionProvider extends BaseRecognitionProvider<Materia
     return MaterialRecognitionProvider.instance;
   }
 
-  /**
-   * Extract dominant colors from an image
-   */
-  /**
-   * Convert Buffer to Blob if needed
-   */
   private bufferToBlob(buffer: Buffer | Blob): Blob {
     if (buffer instanceof Blob) return buffer;
     return new Blob([buffer], { type: 'application/octet-stream' });
@@ -130,11 +109,9 @@ export class MaterialRecognitionProvider extends BaseRecognitionProvider<Materia
             this.logger.error(`Error extracting colors (attempt ${attempt}/${this.maxRetries}):`, errorDetails);
           }
         }
-
         if (attempt === this.maxRetries) {
-          return []; // Return empty array instead of throwing
+          return [];
         }
-
         await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
       }
     }
@@ -148,7 +125,6 @@ export class MaterialRecognitionProvider extends BaseRecognitionProvider<Materia
     let contentPath: string | undefined;
     let content = input;
 
-    // Upload content if it's a file/blob
     if (input instanceof File || input instanceof Blob) {
       const uploadResult = await this.uploadContent(input, this.storageBucket);
       if (uploadResult.error) {
@@ -162,32 +138,27 @@ export class MaterialRecognitionProvider extends BaseRecognitionProvider<Materia
     }
 
     try {
-      // Extract colors and generate embeddings in parallel
       const [colors, embeddings] = await Promise.all([
         input instanceof File || input instanceof Blob ? this.extractColors(input) : [],
         this.generateEmbeddings(content)
       ]);
 
-      // Search for similar materials
       const matches = await this.findSimilarMaterials(
         embeddings,
         options.materialType,
         options.similarityThreshold || options.confidenceThreshold
       );
 
-      // Filter and process matches
       const filteredMatches = this.filterMatchesByConfidence(matches, options.confidenceThreshold!) as MaterialRecognitionMatch[];
       const sortedMatches = this.sortMatchesByConfidence(filteredMatches) as MaterialRecognitionMatch[];
       const limitedMatches = this.limitMatches(sortedMatches, options.maxResults!) as MaterialRecognitionMatch[];
 
-      // Add extracted colors to matches
       if (colors.length > 0) {
         limitedMatches.forEach(match => {
           match.extractedColors = colors;
         });
       }
 
-      // Enrich matches with metadata if requested
       const enrichedMatches = options.includeMetadata
         ? await this.enrichMatchesWithMetadata(limitedMatches)
         : limitedMatches;
@@ -201,7 +172,6 @@ export class MaterialRecognitionProvider extends BaseRecognitionProvider<Materia
         }
       };
     } finally {
-      // Clean up uploaded content
       if (contentPath) {
         await storage.delete([contentPath], { bucket: this.storageBucket }).catch(error => {
           this.logger.warn('Failed to delete temporary content', { error, contentPath });
@@ -210,9 +180,6 @@ export class MaterialRecognitionProvider extends BaseRecognitionProvider<Materia
     }
   }
 
-  /**
-   * Upload recognition content
-   */
   protected override async uploadContent(content: File | Blob, bucket: string): Promise<UploadResult> {
     try {
       const filename = content instanceof File ? content.name : `${crypto.randomUUID()}.bin`;
@@ -228,10 +195,7 @@ export class MaterialRecognitionProvider extends BaseRecognitionProvider<Materia
     }
   }
 
-  /**
-   * Generate embeddings for content
-   */
-  private readonly requestTimeout = 30000; // 30 second timeout
+  private readonly requestTimeout = 30000;
   private readonly maxRetries = 3;
 
   private async generateEmbeddings(content: string | File | Blob): Promise<number[]> {
@@ -241,10 +205,8 @@ export class MaterialRecognitionProvider extends BaseRecognitionProvider<Materia
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), this.requestTimeout);
 
-        // Convert content to proper format
         let formData = new FormData();
         if (typeof content === 'string') {
-          // If it's a URL or base64
           formData.append('content_url', content);
         } else {
           formData.append('content', content);
@@ -264,7 +226,6 @@ export class MaterialRecognitionProvider extends BaseRecognitionProvider<Materia
 
         const result = await response.json();
         
-        // Validate response format
         if (!Array.isArray(result.embeddings) || result.embeddings.length === 0) {
           throw new Error('Invalid embeddings response format');
         }
@@ -282,24 +243,18 @@ export class MaterialRecognitionProvider extends BaseRecognitionProvider<Materia
             this.logger.error(`Error generating embeddings (attempt ${attempt}/${this.maxRetries}):`, errorDetails);
           }
         }
-
         if (attempt === this.maxRetries) {
           throw new RecognitionError(
             'Failed to generate embeddings after multiple attempts',
             'EMBEDDING_GENERATION_FAILED'
           );
         }
-
-        // Exponential backoff
         await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
       }
     }
     throw new RecognitionError('Unexpected error in embedding generation', 'UNEXPECTED_ERROR');
   }
 
-  /**
-   * Find similar materials using vector search
-   */
   private async findSimilarMaterials(
     embeddings: number[],
     materialType?: string,
@@ -309,7 +264,7 @@ export class MaterialRecognitionProvider extends BaseRecognitionProvider<Materia
       .rpc<MatchMaterialsResponse>('match_materials', {
         query_embedding: embeddings,
         similarity_threshold: similarityThreshold,
-        match_count: 100 // Get more than we need for filtering
+        match_count: 100
       });
 
     if (materialType) {
@@ -336,9 +291,6 @@ export class MaterialRecognitionProvider extends BaseRecognitionProvider<Materia
     }));
   }
 
-  /**
-   * Enrich matches with additional metadata
-   */
   protected override async enrichMatchesWithMetadata(
     matches: MaterialRecognitionMatch[]
   ): Promise<MaterialRecognitionMatch[]> {
@@ -367,8 +319,5 @@ export class MaterialRecognitionProvider extends BaseRecognitionProvider<Materia
   }
 }
 
-// Export singleton instance
-export const materialRecognitionProvider = MaterialRecognitionProvider.getInstance();
-
-// Export default for convenience
-export default materialRecognitionProvider;
+export const materialRecognizerProvider = MaterialRecognitionProvider.getInstance();
+export default materialRecognizerProvider;

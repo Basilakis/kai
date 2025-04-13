@@ -18,6 +18,8 @@
   "devDependencies": {
     "@types/node": "^18.0.0",
     "@types/jest": "^28.1.1",
+    "@types/form-data": "^2.5.0",
+    "@types/axios": "^0.14.0",
     "typescript": "^4.7.3",
     "eslint": "^8.17.0",
     "jest": "^28.1.1",

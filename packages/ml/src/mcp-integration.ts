@@ -27,17 +27,14 @@
 
 import { MCPClient, RecognitionOptions, RecognitionResult } from '@kai/mcp-client';
 
-// Environment variable for MCP server URL
-const MCP_SERVER_URL = process.env.MCP_SERVER_URL || 'http://localhost:8000';
-
-// Environment variable to enable/disable MCP integration
-const USE_MCP_SERVER = process.env.USE_MCP_SERVER === 'true';
-
-// Environment variable for MCP server health check timeout
-const MCP_HEALTH_CHECK_TIMEOUT = parseInt(process.env.MCP_HEALTH_CHECK_TIMEOUT || '5000', 10);
+import { env } from '../../shared/src/utils/environment';
 
 // Cache for MCP client instance
 let mcpClientInstance: MCPClient | null = null;
+
+const MCP_SERVER_URL = env.ml.mcpServerUrl;
+const USE_MCP_SERVER = env.ml.useMcpServer;
+const MCP_HEALTH_CHECK_TIMEOUT = env.ml.mcpHealthCheckTimeout;
 
 // Flag to track if we've tried to connect to MCP server
 let mcpServerAvailabilityChecked = false;

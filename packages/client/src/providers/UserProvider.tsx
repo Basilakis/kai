@@ -5,6 +5,7 @@ import {
   signOut, 
   getCurrentUser,
   initAuthListener,
+  setupTokenRefresh,
   SupabaseUser
 } from '../services/supabaseAuth.service';
 import { supabaseClient } from '../services/supabaseClient';
@@ -97,9 +98,10 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
     };
   };
 
-  // Initialize auth listener and load user on mount
+  // Initialize auth listener, token refresh, and load user on mount
   React.useEffect(() => {
     let isMounted = true;
+    let tokenRefreshCleanup: (() => void) | null = null;
     
     const loadUser = async () => {
       try {
@@ -112,6 +114,9 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
           // Convert to our UserProfile format
           const userProfile = convertSupabaseUser(supabaseUser);
           setUser(userProfile);
+          
+          // Setup token refresh when user is authenticated
+          tokenRefreshCleanup = setupTokenRefresh();
         }
       } catch (error) {
         console.error('Failed to load user data:', error);
@@ -127,8 +132,19 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
       if (isMounted) {
         if (supabaseUser) {
           setUser(convertSupabaseUser(supabaseUser));
+          
+          // Setup token refresh when user is authenticated
+          if (!tokenRefreshCleanup) {
+            tokenRefreshCleanup = setupTokenRefresh();
+          }
         } else {
           setUser(null);
+          
+          // Cleanup token refresh when user logs out
+          if (tokenRefreshCleanup) {
+            tokenRefreshCleanup();
+            tokenRefreshCleanup = null;
+          }
         }
         setIsLoading(false);
       }
@@ -141,6 +157,11 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
     return () => {
       isMounted = false;
       unsubscribe();
+      
+      // Clean up token refresh
+      if (tokenRefreshCleanup) {
+        tokenRefreshCleanup();
+      }
     };
   }, []);
 

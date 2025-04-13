@@ -143,6 +143,21 @@ This section lists all available API endpoints, grouped by category. For each en
 | POST | /api/search/vector | Vector similarity search | EXTERNAL_ALLOWED |
 | GET | /api/search/recent | Get recent searches | EXTERNAL_ALLOWED |
 
+### MoodBoard Endpoints
+
+| Method | Endpoint | Description | Default Access |
+|--------|----------|-------------|----------------|
+| GET | /api/boards | Get all boards for current user | EXTERNAL_ALLOWED |
+| GET | /api/boards/:boardId | Get board by ID | EXTERNAL_ALLOWED |
+| POST | /api/boards | Create a new board | EXTERNAL_ALLOWED |
+| PUT | /api/boards/:boardId | Update board details | EXTERNAL_ALLOWED |
+| DELETE | /api/boards/:boardId | Delete a board | EXTERNAL_ALLOWED |
+| GET | /api/boards/:boardId/items | Get all items in a board | EXTERNAL_ALLOWED |
+| POST | /api/boards/:boardId/items | Add an item to a board | EXTERNAL_ALLOWED |
+| PUT | /api/boards/:boardId/items/:itemId | Update item details | EXTERNAL_ALLOWED |
+| DELETE | /api/boards/:boardId/items/:itemId | Remove an item from a board | EXTERNAL_ALLOWED |
+| GET | /api/users/:userId/boards | Get public boards for a user | EXTERNAL_ALLOWED |
+
 ### Recognition Endpoints
 
 | Method | Endpoint | Description | Default Access |
@@ -234,12 +249,12 @@ async function login(email, password) {
     },
     body: JSON.stringify({ email, password })
   });
-  
+
   const data = await response.json();
   if (!data.success) {
     throw new Error(data.error);
   }
-  
+
   // Store token
   localStorage.setItem('token', data.token);
   return data.user;
@@ -248,18 +263,18 @@ async function login(email, password) {
 // API call with authentication
 async function getMaterials() {
   const token = localStorage.getItem('token');
-  
+
   const response = await fetch('/api/materials', {
     headers: {
       'Authorization': `Bearer ${token}`
     }
   });
-  
+
   const data = await response.json();
   if (!data.success) {
     throw new Error(data.error);
   }
-  
+
   return data.materials;
 }
 
@@ -268,7 +283,7 @@ async function recognizeMaterial(imageFile) {
   const token = localStorage.getItem('token');
   const formData = new FormData();
   formData.append('image', imageFile);
-  
+
   const response = await fetch('/api/recognition', {
     method: 'POST',
     headers: {
@@ -276,12 +291,12 @@ async function recognizeMaterial(imageFile) {
     },
     body: formData
   });
-  
+
   const data = await response.json();
   if (!data.success) {
     throw new Error(data.error);
   }
-  
+
   return data.results;
 }
 ```
@@ -301,10 +316,10 @@ def login(email, password):
         json={'email': email, 'password': password}
     )
     data = response.json()
-    
+
     if not data.get('success'):
         raise Exception(data.get('error', 'Login failed'))
-        
+
     token = data['token']
     return data['user']
 
@@ -312,26 +327,26 @@ def get_materials():
     headers = {'Authorization': f'Bearer {token}'}
     response = requests.get(f'{base_url}/api/materials', headers=headers)
     data = response.json()
-    
+
     if not data.get('success'):
         raise Exception(data.get('error', 'Failed to get materials'))
-        
+
     return data['materials']
 
 def recognize_material(image_path):
     headers = {'Authorization': f'Bearer {token}'}
     files = {'image': open(image_path, 'rb')}
-    
+
     response = requests.post(
         f'{base_url}/api/recognition',
         headers=headers,
         files=files
     )
     data = response.json()
-    
+
     if not data.get('success'):
         raise Exception(data.get('error', 'Recognition failed'))
-        
+
     return data['results']
 ```
 

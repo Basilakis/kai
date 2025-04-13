@@ -36,6 +36,13 @@ declare module 'react' {
     target: T;
     currentTarget: T;
   };
+  export type DragEvent<T = Element> = {
+    target: T;
+    currentTarget: T;
+    dataTransfer: DataTransfer;
+    preventDefault(): void;
+    stopPropagation(): void;
+  };
 }
 
 declare module '@mui/material' {

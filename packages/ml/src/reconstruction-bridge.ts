@@ -7,20 +7,14 @@ import type {
   PipelineConfig,
   ProcessingError 
 } from '@kai/shared/src/types/reconstruction';
-
-declare const process: {
-  env: {
-    PYTHON_PATH?: string;
-    [key: string]: string | undefined;
-  };
-};
+import { env } from '../../shared/src/utils/environment';
 
 export class ReconstructionBridge {
   private pythonPath: string;
   private scriptPath: string;
 
   constructor() {
-    this.pythonPath = process.env.PYTHON_PATH || 'python';
+    this.pythonPath = env.ml.pythonPath;
     this.scriptPath = path.join(__dirname, '../python/room_reconstruction_pipeline.py');
   }
 

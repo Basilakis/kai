@@ -6,34 +6,17 @@
  * the agent system backend.
  */
 
-import type { Request, Response, NextFunction } from 'express';
+import { Request, Response, NextFunction } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { initializeAgentSystem, AgentType } from '@kai/agents';
 import { 
   uploadToStorage, 
   generateUniqueStorageKey 
 } from '../services/storage/supabaseStorageService';
+import { agentSessionService } from '../services/agents/agentSessionService';
 import path from 'path';
 import fs from 'fs';
 import { logger } from '../utils/logger';
-
-// Store active sessions
-interface AgentSession {
-  id: string;
-  agentType: AgentType;
-  userId: string;
-  createdAt: Date;
-  lastActivity: Date;
-  messages: Array<{
-    id: string;
-    content: string;
-    sender: 'user' | 'agent';
-    timestamp: Date;
-  }>;
-}
-
-// In-memory session storage (would use Redis in production)
-const sessions: Map<string, AgentSession> = new Map();
 
 // Initialize agent system
 let isAgentSystemInitialized = false;
@@ -70,38 +53,33 @@ export const createSession = async (req: Request, res: Response, next: NextFunct
     }
     
     const { agentType } = req.body;
-    const userId = req.user?.id || 'anonymous';
+    const userId = req.user?.id;
+    
+    // Ensure user is authenticated
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required to create an agent session' });
+    }
     
     // Validate agent type
     if (!Object.values(AgentType).includes(agentType)) {
       return res.status(400).json({ error: 'Invalid agent type' });
     }
     
-    // Create new session
-    const sessionId = uuidv4();
-    const session: AgentSession = {
-      id: sessionId,
+    // Create new session using service
+    const session = await agentSessionService.createSession({
       agentType,
       userId,
-      createdAt: new Date(),
-      lastActivity: new Date(),
-      messages: [
-        {
-          id: uuidv4(),
-          content: getWelcomeMessage(agentType),
-          sender: 'agent',
-          timestamp: new Date()
-        }
-      ]
-    };
-    
-    // Store session
-    sessions.set(sessionId, session);
+      metadata: {
+        userAgent: req.headers['user-agent'],
+        ipAddress: req.ip,
+        createdAt: new Date().toISOString()
+      }
+    });
     
     // Return session info
     res.status(201).json({
-      sessionId,
-      agentType,
+      sessionId: session.id,
+      agentType: session.agentType,
       messages: session.messages
     });
   } catch (error) {
@@ -110,56 +88,36 @@ export const createSession = async (req: Request, res: Response, next: NextFunct
 };
 
 /**
- * Send a message to an agent
+ * Get all sessions for the current user
  */
-export const sendMessage = async (req: Request, res: Response, next: NextFunction): Promise<void | Response> => {
+export const getUserSessions = async (req: Request, res: Response, next: NextFunction): Promise<void | Response> => {
   try {
-    const { sessionId } = req.params;
-    const { message } = req.body;
+    const userId = req.user?.id;
     
-    // Validate request
-    if (!sessionId || !message) {
-      return res.status(400).json({ error: 'Session ID and message are required' });
+    // User must be authenticated to access their sessions
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required to access sessions' });
     }
     
-    // Check if session exists
-    if (!sessionId) {
-      return res.status(400).json({ error: 'Session ID is required' });
-    }
+    // Get pagination parameters
+    const limit = parseInt(req.query.limit as string) || 20;
+    const offset = parseInt(req.query.offset as string) || 0;
     
-    const session = sessions.get(sessionId);
-    if (!session) {
-      return res.status(404).json({ error: 'Session not found' });
-    }
-    
-    // Add user message to session
-    const userMessageId = uuidv4();
-    session.messages.push({
-      id: userMessageId,
-      content: message,
-      sender: 'user',
-      timestamp: new Date()
+    // Get sessions from service
+    const { sessions, total } = await agentSessionService.getUserSessions(userId, {
+      limit,
+      offset,
+      orderBy: 'lastActivity',
+      order: 'desc'
     });
     
-    // Process message with corresponding agent
-    // In a real implementation, this would call the agent system
-    const agentResponse = await processAgentRequest(session.agentType, message);
-    
-    // Add agent response to session
-    const agentMessageId = uuidv4();
-    session.messages.push({
-      id: agentMessageId,
-      content: agentResponse,
-      sender: 'agent',
-      timestamp: new Date()
-    });
-    
-    // Update session last activity
-    session.lastActivity = new Date();
-    
-    // Return updated messages
     res.status(200).json({
-      messages: session.messages
+      sessions,
+      pagination: {
+        total,
+        limit,
+        offset
+      }
     });
   } catch (error) {
     next(error);
@@ -172,21 +130,88 @@ export const sendMessage = async (req: Request, res: Response, next: NextFunctio
 export const getMessages = async (req: Request, res: Response, next: NextFunction): Promise<void | Response> => {
   try {
     const { sessionId } = req.params;
+    const userId = req.user?.id;
     
-    // Check if session exists and sessionId is defined
+    // Check if parameters are valid
     if (!sessionId) {
       return res.status(400).json({ error: 'Session ID is required' });
     }
     
-    const session = sessions.get(sessionId);
-    if (!session) {
-      return res.status(404).json({ error: 'Session not found' });
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required to access messages' });
     }
     
-    // Return session messages
-    res.status(200).json({
-      messages: session.messages
-    });
+    // Get messages from service
+    try {
+      const messages = await agentSessionService.getMessages(sessionId, userId);
+      
+      // Return session messages
+      res.status(200).json({
+        messages
+      });
+    } catch (error) {
+      // Handle service-specific errors
+      if ((error as Error).message === 'Session not found or access denied') {
+        return res.status(404).json({ error: 'Session not found or you do not have permission to access it' });
+      }
+      throw error;
+    }
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Send a message to an agent
+ */
+export const sendMessage = async (req: Request, res: Response, next: NextFunction): Promise<void | Response> => {
+  try {
+    const { sessionId } = req.params;
+    const { message } = req.body;
+    const userId = req.user?.id;
+    
+    // Validate request
+    if (!sessionId || !message) {
+      return res.status(400).json({ error: 'Session ID and message are required' });
+    }
+    
+    // Ensure user is authenticated
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required to send messages' });
+    }
+    
+    try {
+      // Add user message to session
+      await agentSessionService.addMessage(sessionId, userId, message, 'user');
+      
+      // Process message with corresponding agent
+      // Get current session to access agent type
+      const session = await agentSessionService.getSession(sessionId, userId);
+      if (!session) {
+        return res.status(404).json({ error: 'Session not found' });
+      }
+      
+      // Process message with corresponding agent
+      // In a real implementation, this would call the agent system
+      const agentResponse = await processAgentRequest(session.agentType, message);
+      
+      // Add agent response to session
+      await agentSessionService.addMessage(sessionId, userId, agentResponse, 'agent');
+      
+      // Get updated messages
+      const messages = await agentSessionService.getMessages(sessionId, userId);
+      
+      // Return updated messages
+      res.status(200).json({
+        messages
+      });
+    } catch (error) {
+      // Handle service-specific errors
+      if ((error as Error).message === 'Session not found or access denied') {
+        return res.status(404).json({ error: 'Session not found or you do not have permission to access it' });
+      }
+      throw error;
+    }
   } catch (error) {
     next(error);
   }
@@ -199,16 +224,22 @@ export const uploadImage = async (req: Request, res: Response, next: NextFunctio
   try {
     const { sessionId } = req.params;
     const imageFile = req.file;
+    const userId = req.user?.id;
     
     // Validate request
     if (!sessionId || !imageFile) {
       return res.status(400).json({ error: 'Session ID and image file are required' });
     }
     
-    // Check if session exists
-    const session = sessions.get(sessionId);
+    // Ensure user is authenticated
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required to upload images' });
+    }
+    
+    // Get session to verify ownership and agent type
+    const session = await agentSessionService.getSession(sessionId, userId);
     if (!session) {
-      return res.status(404).json({ error: 'Session not found' });
+      return res.status(404).json({ error: 'Session not found or you do not have permission to access it' });
     }
     
     // Check if session is for recognition agent
@@ -225,7 +256,8 @@ export const uploadImage = async (req: Request, res: Response, next: NextFunctio
       metadata: {
         originalName: imageFile.originalname,
         size: String(imageFile.size),
-        mimetype: imageFile.mimetype
+        mimetype: imageFile.mimetype,
+        userId: userId // Add user ID to track ownership
       }
     });
     
@@ -242,22 +274,24 @@ export const uploadImage = async (req: Request, res: Response, next: NextFunctio
     }
     
     // Add agent response to session
-    const agentMessageId = uuidv4();
-    session.messages.push({
-      id: agentMessageId,
-      content: `I've analyzed your image and identified it as ${analysisResult.materialName} with ${analysisResult.confidence}% confidence. Would you like more details about this material?`,
-      sender: 'agent',
-      timestamp: new Date()
-    });
+    const responseContent = `I've analyzed your image and identified it as ${analysisResult.materialName} with ${analysisResult.confidence}% confidence. Would you like more details about this material?`;
+    await agentSessionService.addMessage(sessionId, userId, responseContent, 'agent', [{
+      id: uuidv4(),
+      type: 'image',
+      url: imageUrl,
+      metadata: {
+        analysis: analysisResult
+      }
+    }]);
     
-    // Update session last activity
-    session.lastActivity = new Date();
+    // Get updated messages
+    const messages = await agentSessionService.getMessages(sessionId, userId);
     
     // Return result
     res.status(200).json({
       url: imageUrl,
       analysis: analysisResult,
-      messages: session.messages,
+      messages,
       storage: {
         key: uploadResult.key,
         url: uploadResult.url
@@ -286,18 +320,24 @@ export const uploadImage = async (req: Request, res: Response, next: NextFunctio
 export const closeSession = async (req: Request, res: Response, next: NextFunction): Promise<void | Response> => {
   try {
     const { sessionId } = req.params;
+    const userId = req.user?.id;
     
-    // Check if session exists
+    // Check if session ID is provided
     if (!sessionId) {
       return res.status(400).json({ error: 'Session ID is required' });
     }
     
-    if (!sessions.has(sessionId)) {
-      return res.status(404).json({ error: 'Session not found' });
+    // Ensure user is authenticated
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required to close a session' });
     }
     
-    // Remove session
-    sessions.delete(sessionId);
+    // Close session using service
+    const success = await agentSessionService.closeSession(sessionId, userId);
+    
+    if (!success) {
+      return res.status(404).json({ error: 'Session not found or you do not have permission to close it' });
+    }
     
     res.status(200).json({ message: 'Session closed successfully' });
   } catch (error) {
@@ -387,29 +427,25 @@ const processImageAnalysis = async (_imageUrl: string): Promise<any> => {
 };
 
 /**
- * Get welcome message based on agent type
+ * Schedule periodic cleanup of old sessions
+ * Run daily to remove sessions older than 30 days
  */
-const getWelcomeMessage = (agentType: AgentType): string => {
-  switch (agentType) {
-    case AgentType.RECOGNITION:
-      return "Hi there! I'm your Recognition Assistant. I can help you identify materials from images and provide information about their properties. Upload an image to get started, or ask me any questions about material recognition.";
-    
-    case AgentType.MATERIAL_EXPERT:
-      return "Hello! I'm your Material Expert. I can provide detailed information about various building materials, their properties, applications, and maintenance requirements. What materials would you like to learn about today?";
-    
-    case AgentType.PROJECT_ASSISTANT:
-      return "Hi there! I'm your Project Assistant. I can help you plan your renovation or construction project, organize materials by room, calculate quantities, and recommend suitable materials. How can I assist with your project today?";
-    
-    case AgentType.KNOWLEDGE_BASE:
-      return "Welcome to the Knowledge Base Agent. I can help you navigate our extensive material database and provide insights on material properties, applications, and relationships.";
-    
-    case AgentType.ANALYTICS:
-      return "Analytics Agent initialized. This agent helps administrators analyze system metrics, user behavior, and material trends to derive actionable insights.";
-    
-    case AgentType.OPERATIONS:
-      return "Operations Agent initialized. This agent monitors system health, performance, and resource utilization to ensure optimal operation of the KAI platform.";
-    
-    default:
-      return "Hello! I'm an AI assistant that can help you with materials, projects, and recognition. How can I assist you today?";
-  }
+export const scheduleSessionCleanup = (): void => {
+  const CLEANUP_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
+  const SESSION_MAX_AGE = 30 * 24 * 60 * 60 * 1000; // 30 days
+  
+  setInterval(async () => {
+    try {
+      const olderThan = new Date(Date.now() - SESSION_MAX_AGE);
+      const deletedCount = await agentSessionService.cleanupOldSessions(olderThan);
+      
+      if (deletedCount > 0) {
+        logger.info(`Cleaned up ${deletedCount} old agent sessions`);
+      }
+    } catch (error) {
+      logger.error('Failed to clean up old sessions:', error);
+    }
+  }, CLEANUP_INTERVAL);
+  
+  logger.info('Scheduled agent session cleanup job');
 };

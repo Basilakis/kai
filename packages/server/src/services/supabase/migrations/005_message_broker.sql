@@ -1,4 +1,4 @@
--- Migration: 004_message_broker.sql
+-- Migration: 005_message_broker.sql
 -- Message Broker Tables and Infrastructure for Scalable Real-time Updates
 -- This migration adds tables, indexes, and RPC functions for the enhanced
 -- message broker system optimized for Supabase.
@@ -82,51 +82,51 @@ ALTER TABLE message_broker_metrics ENABLE ROW LEVEL SECURITY;
 -- Create policies for message_broker_messages
 CREATE POLICY "message_insert_policy"
 ON message_broker_messages
-FOR INSERT 
+FOR INSERT
 TO authenticated
 WITH CHECK (true);
 
 CREATE POLICY "message_read_policy"
 ON message_broker_messages
-FOR SELECT 
+FOR SELECT
 TO authenticated
 USING (true);
 
 CREATE POLICY "message_update_policy"
 ON message_broker_messages
-FOR UPDATE 
+FOR UPDATE
 TO authenticated
 USING (true);
 
 CREATE POLICY "message_delete_policy"
 ON message_broker_messages
-FOR DELETE 
+FOR DELETE
 TO authenticated
 USING (true);
 
 -- Create policies for message_broker_broadcasts
 CREATE POLICY "broadcast_insert_policy"
 ON message_broker_broadcasts
-FOR INSERT 
+FOR INSERT
 TO authenticated
 WITH CHECK (true);
 
 CREATE POLICY "broadcast_read_policy"
 ON message_broker_broadcasts
-FOR SELECT 
+FOR SELECT
 TO authenticated
 USING (true);
 
 -- Create policies for message_broker_metrics
 CREATE POLICY "metrics_insert_policy"
 ON message_broker_metrics
-FOR INSERT 
+FOR INSERT
 TO authenticated
 WITH CHECK (true);
 
 CREATE POLICY "metrics_read_policy"
 ON message_broker_metrics
-FOR SELECT 
+FOR SELECT
 TO authenticated
 USING (true);
 
@@ -144,17 +144,17 @@ DECLARE
 BEGIN
   -- Calculate cutoff timestamp for acknowledged messages
   cutoff_timestamp := (EXTRACT(EPOCH FROM (now() - INTERVAL '1 day' * acknowledgment_cutoff_days)) * 1000)::BIGINT;
-  
+
   -- Delete old acknowledged messages
   DELETE FROM message_broker_messages
   WHERE status = 'acknowledged'
   AND timestamp < cutoff_timestamp;
-  
+
   -- Update expired messages
   IF expired_cutoff_timestamp IS NULL THEN
     expired_cutoff_timestamp := (EXTRACT(EPOCH FROM now()) * 1000)::BIGINT;
   END IF;
-  
+
   UPDATE message_broker_messages
   SET status = 'expired'
   WHERE expires_at < expired_cutoff_timestamp
@@ -183,38 +183,38 @@ DECLARE
 BEGIN
   -- Count by status
   SELECT COUNT(*) INTO total_count FROM message_broker_messages;
-  
-  SELECT COUNT(*) INTO delivered_count 
+
+  SELECT COUNT(*) INTO delivered_count
   FROM message_broker_messages WHERE status = 'delivered';
-  
-  SELECT COUNT(*) INTO pending_count 
+
+  SELECT COUNT(*) INTO pending_count
   FROM message_broker_messages WHERE status = 'pending';
-  
-  SELECT COUNT(*) INTO failed_count 
+
+  SELECT COUNT(*) INTO failed_count
   FROM message_broker_messages WHERE status = 'failed';
-  
-  SELECT COUNT(*) INTO processing_count 
+
+  SELECT COUNT(*) INTO processing_count
   FROM message_broker_messages WHERE status = 'processing';
-  
-  SELECT COUNT(*) INTO acknowledged_count 
+
+  SELECT COUNT(*) INTO acknowledged_count
   FROM message_broker_messages WHERE status = 'acknowledged';
-  
-  SELECT COUNT(*) INTO expired_count 
+
+  SELECT COUNT(*) INTO expired_count
   FROM message_broker_messages WHERE status = 'expired';
-  
+
   -- Get oldest and newest pending timestamps
-  SELECT MIN(timestamp) INTO oldest_pending 
+  SELECT MIN(timestamp) INTO oldest_pending
   FROM message_broker_messages WHERE status = 'pending';
-  
-  SELECT MAX(timestamp) INTO newest_pending 
+
+  SELECT MAX(timestamp) INTO newest_pending
   FROM message_broker_messages WHERE status = 'pending';
-  
+
   -- Calculate average processing time (if metrics are being tracked)
-  SELECT AVG(duration_ms) INTO avg_processing_time 
-  FROM message_broker_metrics 
-  WHERE event_type = 'acknowledged' 
+  SELECT AVG(duration_ms) INTO avg_processing_time
+  FROM message_broker_metrics
+  WHERE event_type = 'acknowledged'
   AND duration_ms IS NOT NULL;
-  
+
   -- Build result JSON
   result := json_build_object(
     'total', total_count,
@@ -228,7 +228,7 @@ BEGIN
     'newest_pending', newest_pending,
     'avg_processing_time', avg_processing_time
   );
-  
+
   RETURN result;
 END;
 $$;

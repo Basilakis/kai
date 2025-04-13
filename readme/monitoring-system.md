@@ -132,3 +132,14 @@ To enable all monitoring features, ensure the following:
 2. **Alert Configuration**: Set up alerts for critical error thresholds
 3. **Log Rotation**: Configure log rotation to prevent storage issues
 4. **Permission Management**: Restrict monitoring access to authorized administrators
+
+## ML Training Monitoring Integration
+
+The monitoring system integrates with the ML Training Monitoring System, providing specialized visualizations and controls for machine learning training processes:
+
+- **Training Metrics Visualization**: Real-time charts showing loss, accuracy, and custom metrics
+- **Checkpoint Management**: Interface for creating, comparing, and rolling back to model checkpoints
+- **Parameter Tuning**: Controls for adjusting hyperparameters during training
+- **Training Job Control**: Status monitoring and control for training jobs
+
+For complete details on these capabilities, see the [Training Monitoring System](./training-monitoring-system.md) documentation.

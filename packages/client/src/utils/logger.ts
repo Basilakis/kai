@@ -1,5 +1,6 @@
 import { Logger as SharedLogger, LogLevel as SharedLogLevel, LoggerConfig as SharedLoggerConfig } from '@kai/shared/utils/logger';
 import { EnhancedError, ErrorCategory, reportError } from './errorHandling';
+import { env } from '../../../shared/src/utils/environment';
 
 export type { SharedLogLevel as LogLevel };
 
@@ -27,9 +28,9 @@ export class ClientLogger extends SharedLogger {
 
   constructor(config?: Partial<ClientLoggerConfig>) {
     const loggerConfig = {
-      minLevel: config?.minLevel || (process.env.NODE_ENV === 'production' ? 'info' : 'debug'),
+      minLevel: config?.minLevel || (env.nodeEnv === 'production' ? 'info' : 'debug'),
       enableConsole: config?.enableConsole ?? true,
-      environment: process.env.NODE_ENV as 'development' | 'production' | 'test'
+      environment: env.nodeEnv as 'development' | 'production' | 'test'
     };
     
     super(loggerConfig);

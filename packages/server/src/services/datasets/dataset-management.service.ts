@@ -1,6 +1,6 @@
 /**
  * Dataset Management Service
- * 
+ *
  * Advanced service for dataset management features including data cleaning,
  * augmentation, versioning, quality metrics, and more.
  */
@@ -8,7 +8,8 @@
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../../utils/logger';
 import supabaseDatasetService, { Dataset, DatasetClass, DatasetImage } from '../supabase/supabase-dataset-service';
-import { supabaseClient } from '../supabase/supabaseClient';
+import { supabase } from '../supabase/supabaseClient';
+import { handleSupabaseError } from '../../../../shared/src/utils/supabaseErrorHandler';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -238,7 +239,7 @@ export interface IncrementalLearningResult {
 
 /**
  * Dataset Management Service
- * Service for advanced dataset operations including cleaning, augmentation, 
+ * Service for advanced dataset operations including cleaning, augmentation,
  * versioning, and quality metrics
  */
 export class DatasetManagementService {
@@ -347,7 +348,7 @@ export class DatasetManagementService {
       for (const cls of classes) {
         // Get images for class
         const images = await supabaseDatasetService.getDatasetClassImages(cls.id, 1000, 0);
-        
+
         // Analyze class for issues
         if (options.detectDuplicates && cls.id && classIssues[cls.id]) {
           const duplicates = await this.detectDuplicateImages(images);
@@ -375,8 +376,8 @@ export class DatasetManagementService {
 
         if (options.checkResolution && options.checkResolution.enabled && cls.id && classIssues[cls.id]) {
           const lowRes = await this.detectLowResolutionImages(
-            images, 
-            options.checkResolution.minWidth || 224, 
+            images,
+            options.checkResolution.minWidth || 224,
             options.checkResolution.minHeight || 224
           );
           // Since we've verified cls.id and classIssues[cls.id] exist in the if condition
@@ -400,7 +401,7 @@ export class DatasetManagementService {
         const maxSize = Math.max(...classValues);
         const minSize = Math.min(...classValues);
         const imbalanceThreshold = 0.5; // If smallest class is less than 50% of largest
-        
+
         // Count imbalanced classes
         for (const cls of classes) {
           const classSize = cls.id && classSizes[cls.id];
@@ -424,37 +425,37 @@ export class DatasetManagementService {
 
           // Get all images for this class
           const images = await supabaseDatasetService.getDatasetClassImages(cls.id, 1000, 0);
-          
+
           // Filter out problematic images
           const imagesToKeep = images.filter(img => {
             // Skip duplicates if option enabled
-            if (cls.id && classIssues[cls.id] && options.removeDuplicates && 
+            if (cls.id && classIssues[cls.id] && options.removeDuplicates &&
                 classIssues[cls.id]?.duplicates.some(d => d.id === img.id)) {
               result.issuesFixed.duplicatesRemoved++;
               return false;
             }
-            
+
             // Skip corrupted if option enabled
-            if (cls.id && classIssues[cls.id] && options.removeCorrupted && 
+            if (cls.id && classIssues[cls.id] && options.removeCorrupted &&
                 classIssues[cls.id]?.corrupted.some(c => c.id === img.id)) {
               result.issuesFixed.corruptedRemoved++;
               return false;
             }
-            
+
             // Skip outliers if option enabled
-            if (cls.id && classIssues[cls.id] && options.removeOutliers && 
+            if (cls.id && classIssues[cls.id] && options.removeOutliers &&
                 classIssues[cls.id]?.outliers.some(o => o.id === img.id)) {
               result.issuesFixed.outliersRemoved++;
               return false;
             }
-            
+
             // Skip low resolution if option enabled
-            if (cls.id && classIssues[cls.id] && options.checkResolution?.enabled && 
+            if (cls.id && classIssues[cls.id] && options.checkResolution?.enabled &&
                 classIssues[cls.id]?.lowResolution.some(l => l.id === img.id)) {
               result.issuesFixed.lowResolutionRemoved++;
               return false;
             }
-            
+
             return true;
           });
 
@@ -466,7 +467,7 @@ export class DatasetManagementService {
               .storage
               .from('datasets')
               .download(img.storagePath);
-            
+
             if (error || !data) {
               logger.warn(`Failed to download image ${img.id} at ${img.storagePath}: ${error}`);
               continue;
@@ -474,14 +475,14 @@ export class DatasetManagementService {
 
             // Create new storage path
             const newStoragePath = `${targetDatasetId}/${newClass.id}/${img.filename}`;
-            
+
             // Upload to storage
             const uploadResult = await supabaseClient
               .getClient()
               .storage
               .from('datasets')
               .upload(newStoragePath, data);
-            
+
             if (uploadResult.error) {
               logger.warn(`Failed to upload image to ${newStoragePath}: ${uploadResult.error}`);
               continue;
@@ -529,7 +530,7 @@ export class DatasetManagementService {
         result.issuesDetected.outliers +
         result.issuesDetected.lowResolution +
         result.issuesDetected.labelIssues;
-      
+
       const totalIssuesFixed = result.issuesFixed.duplicatesRemoved +
         result.issuesFixed.corruptedRemoved +
         result.issuesFixed.outliersRemoved +
@@ -583,15 +584,15 @@ export class DatasetManagementService {
 
       // Get classes for the dataset
       const classes = await supabaseDatasetService.getDatasetClasses(datasetId);
-      
+
       // Create new dataset version if requested
       let targetDatasetId = datasetId;
       let augmentedDataset: Dataset | null = null;
 
       if (createNewVersion) {
         augmentedDataset = await this.createDatasetCopy(
-          dataset, 
-          `${dataset.name} (Augmented)`, 
+          dataset,
+          `${dataset.name} (Augmented)`,
           'Augmented version with additional transformations'
         );
         targetDatasetId = augmentedDataset.id;
@@ -601,7 +602,7 @@ export class DatasetManagementService {
       for (const cls of classes) {
         // Get images for class
         const images = await supabaseDatasetService.getDatasetClassImages(cls.id, 1000, 0);
-        
+
         // Create corresponding class in new dataset if using new version
         let targetClassId = cls.id;
         if (createNewVersion) {
@@ -612,7 +613,7 @@ export class DatasetManagementService {
             metadata: cls.metadata
           });
           targetClassId = newClass.id;
-          
+
           // First copy all original images
           for (const img of images) {
             await this.copyImageToNewDataset(img, targetDatasetId, targetClassId);
@@ -620,10 +621,10 @@ export class DatasetManagementService {
         }
 
         // Calculate how many augmentations to generate
-        const imagesToGenerate = options.targetSamplesPerClass 
-          ? Math.max(0, options.targetSamplesPerClass - images.length) 
+        const imagesToGenerate = options.targetSamplesPerClass
+          ? Math.max(0, options.targetSamplesPerClass - images.length)
           : Math.ceil(images.length * 0.5); // Default to increasing class size by 50%
-        
+
         // Limit by maxAugmentationPerImage if specified
         const maxAugPerImage = options.maxAugmentationPerImage || 5;
         const availableImages = images.length;
@@ -631,10 +632,10 @@ export class DatasetManagementService {
           imagesToGenerate,
           availableImages * maxAugPerImage
         );
-        
+
         // Track augmentation count for this class
         result.augmentationsByClass[cls.name] = actualToGenerate;
-        
+
         if (actualToGenerate > 0) {
           // Generate augmentations
           const generatedCount = await this.generateAugmentations(
@@ -644,14 +645,14 @@ export class DatasetManagementService {
             actualToGenerate,
             options.transformations
           );
-          
+
           result.augmentedImageCount += generatedCount;
         }
       }
 
       // Update result stats
       result.totalImageCount = result.originalImageCount + result.augmentedImageCount;
-      
+
       // Update dataset status if using new version
       if (createNewVersion && augmentedDataset) {
         await supabaseDatasetService.updateDataset(targetDatasetId, {
@@ -778,22 +779,19 @@ export class DatasetManagementService {
    */
   public async getDatasetVersions(datasetId: string): Promise<DatasetVersion[]> {
     try {
-      // First get the Supabase client instance
-      const supabase = supabaseClient.getClient();
-      
-      // Then build and execute the query
+      // Build and execute the query
       // Create a properly-typed query builder instance
-      const query = supabase
+      const query = supabase.getClient()
         .from('dataset_versions')
         .select('*');
-        
+
       // Execute the query with filtering and ordering
       const { data, error } = await query
         .eq('dataset_id', datasetId)
         .order('version_number', { ascending: false });
 
       if (error) {
-        throw error;
+        throw handleSupabaseError(error, 'getDatasetVersions', { datasetId });
       }
 
       return (data || []).map((item: any) => ({
@@ -835,7 +833,7 @@ export class DatasetManagementService {
 
       // Get classes for the dataset
       const classes = await supabaseDatasetService.getDatasetClasses(datasetId);
-      
+
       // Initialize metrics
       const metrics: DatasetQualityMetrics = {
         datasetId,
@@ -889,20 +887,20 @@ export class DatasetManagementService {
       let totalImages = 0;
       let minClassSize = Number.MAX_SAFE_INTEGER;
       let maxClassSize = 0;
-      
+
       for (const cls of classes) {
         classCounts[cls.name] = cls.imageCount;
         totalImages += cls.imageCount;
         minClassSize = Math.min(minClassSize, cls.imageCount);
         maxClassSize = Math.max(maxClassSize, cls.imageCount);
       }
-      
+
       metrics.classBalance.details.classCounts = classCounts;
       metrics.classBalance.details.maxToMinRatio = maxClassSize / (minClassSize || 1);
-      
+
       // Calculate Gini coefficient for class balance
       metrics.classBalance.details.giniCoefficient = this.calculateGiniCoefficient(Object.values(classCounts));
-      
+
       // Calculate class balance score (0-100)
       const balanceNormalization = Math.min(1, 1 / metrics.classBalance.details.maxToMinRatio);
       metrics.classBalance.score = Math.round((1 - metrics.classBalance.details.giniCoefficient) * 100 * balanceNormalization);
@@ -911,42 +909,42 @@ export class DatasetManagementService {
       let totalWidth = 0;
       let totalHeight = 0;
       let totalAnalyzedImages = 0;
-      
+
       for (const cls of classes) {
         const images = await supabaseDatasetService.getDatasetClassImages(cls.id, 100, 0); // Sample up to 100 images
-        
+
         for (const img of images) {
           totalAnalyzedImages++;
-          
+
           // Track resolution statistics
           if (img.width && img.height) {
             totalWidth += img.width;
             totalHeight += img.height;
-            
+
             // Check for low resolution (less than 224x224)
             if (img.width < 224 || img.height < 224) {
               metrics.imageQuality.details.lowResolutionImages++;
             }
           }
-          
+
           // Here we would implement more sophisticated image quality checks
           // For now, we'll use simple heuristics based on img metadata if available
           if (img.metadata) {
             if (img.metadata.blurScore && img.metadata.blurScore > 0.5) {
               metrics.imageQuality.details.blurryImages++;
             }
-            
+
             if (img.metadata.brightness && img.metadata.brightness < 0.2) {
               metrics.imageQuality.details.poorLightingImages++;
             }
-            
+
             if (img.metadata.brightness && img.metadata.brightness > 0.9) {
               metrics.imageQuality.details.overexposedImages++;
             }
           }
         }
       }
-      
+
       // Calculate average resolution
       if (totalAnalyzedImages > 0) {
         metrics.imageQuality.details.avgResolution = {
@@ -954,13 +952,13 @@ export class DatasetManagementService {
           height: Math.round(totalHeight / totalAnalyzedImages)
         };
       }
-      
+
       // Calculate image quality score (0-100)
       const lowResPercent = metrics.imageQuality.details.lowResolutionImages / (totalAnalyzedImages || 1);
       const blurryPercent = metrics.imageQuality.details.blurryImages / (totalAnalyzedImages || 1);
-      const lightingIssuesPercent = (metrics.imageQuality.details.poorLightingImages + 
+      const lightingIssuesPercent = (metrics.imageQuality.details.poorLightingImages +
         metrics.imageQuality.details.overexposedImages) / (totalAnalyzedImages || 1);
-      
+
       metrics.imageQuality.score = Math.round(100 * (1 - (lowResPercent * 0.4 + blurryPercent * 0.4 + lightingIssuesPercent * 0.2)));
 
       // Calculate overall quality score as weighted average of component scores
@@ -973,15 +971,15 @@ export class DatasetManagementService {
       if (metrics.classBalance.details.maxToMinRatio > 3) {
         metrics.recommendations.push('Balance classes by augmenting underrepresented classes or collecting more samples.');
       }
-      
+
       if (metrics.imageQuality.details.lowResolutionImages > 0) {
         metrics.recommendations.push(`Improve ${metrics.imageQuality.details.lowResolutionImages} low-resolution images with upscaling or replacement.`);
       }
-      
+
       if (metrics.imageQuality.details.blurryImages > 0) {
         metrics.recommendations.push(`Remove or enhance ${metrics.imageQuality.details.blurryImages} blurry images.`);
       }
-      
+
       if ((metrics.imageQuality.details.poorLightingImages + metrics.imageQuality.details.overexposedImages) > 0) {
         metrics.recommendations.push('Apply lighting normalization to improve consistency across the dataset.');
       }
@@ -1023,7 +1021,7 @@ export class DatasetManagementService {
 
       // Get classes for the dataset
       const classes = await supabaseDatasetService.getDatasetClasses(datasetId);
-      
+
       // Find the target class
       const targetClass = classes.find(c => c.name === options.targetClass);
       if (!targetClass) {
@@ -1034,7 +1032,7 @@ export class DatasetManagementService {
 
       // Determine how many samples to generate
       const samplesToGenerate = options.targetCount - targetClass.imageCount;
-      
+
       if (samplesToGenerate <= 0) {
         result.success = true;
         result.newCount = result.originalCount;
@@ -1043,10 +1041,10 @@ export class DatasetManagementService {
 
       // Get images for the target class
       const images = await supabaseDatasetService.getDatasetClassImages(targetClass.id, 1000, 0);
-      
+
       // Generate synthetic samples based on the selected method
       let generatedImages: any[] = [];
-      
+
       switch (options.generationMethod) {
         case 'mixup':
           generatedImages = await this.generateMixupSamples(images, samplesToGenerate);
@@ -1062,12 +1060,12 @@ export class DatasetManagementService {
           // For now, default to random augmentation as a placeholder
           generatedImages = await this.generateRandomSamples(images, samplesToGenerate);
       }
-      
+
       // Save generated images to the dataset
       for (const genImg of generatedImages) {
         const filename = `synthetic_${uuidv4()}.jpg`;
         const storagePath = `${datasetId}/${targetClass.id}/${filename}`;
-        
+
         // Upload to storage
         const { error } = await supabaseClient
           .getClient()
@@ -1076,12 +1074,12 @@ export class DatasetManagementService {
           .upload(storagePath, genImg.data, {
             contentType: 'image/jpeg'
           });
-        
+
         if (error) {
           logger.warn(`Failed to upload synthetic image: ${error}`);
           continue;
         }
-        
+
         // Create image record
         await supabaseDatasetService.createDatasetImage({
           datasetId,
@@ -1094,10 +1092,10 @@ export class DatasetManagementService {
             generationParams: options.generationParams
           }
         });
-        
+
         result.generatedCount++;
       }
-      
+
       result.newCount = result.originalCount + result.generatedCount;
       result.success = true;
     } catch (err) {
@@ -1136,7 +1134,7 @@ export class DatasetManagementService {
       // Get classes for the base dataset
       const baseClasses = await supabaseDatasetService.getDatasetClasses(options.baseDatasetId);
       result.originalClasses = baseClasses.map(c => c.name);
-      
+
       // Create a new dataset for incremental learning
       const newDataset = await supabaseDatasetService.createDataset({
         name: `${baseDataset.name} (Incremental)`,
@@ -1149,7 +1147,7 @@ export class DatasetManagementService {
           newClasses: options.newClasses
         }
       });
-      
+
       result.newDatasetId = newDataset.id;
 
       // Copy classes from base dataset if preserving old classes
@@ -1162,14 +1160,14 @@ export class DatasetManagementService {
             description: cls.description,
             metadata: cls.metadata
           });
-          
+
           // Copy images if needed - for larger datasets, you might want to use a more efficient approach
           const images = await supabaseDatasetService.getDatasetClassImages(cls.id, 1000, 0);
-          
+
           for (const img of images) {
             await this.copyImageToNewDataset(img, newDataset.id, newClass.id);
           }
-          
+
           result.totalImages += images.length;
         }
       }
@@ -1185,7 +1183,7 @@ export class DatasetManagementService {
             isNewClass: true
           }
         });
-        
+
         // We'd need some mechanism here to add initial images for these classes
         // This could be through user upload, API, or other means
         // For now, we just create empty classes
@@ -1194,12 +1192,12 @@ export class DatasetManagementService {
       // Update counts
       result.newClasses = options.newClasses;
       result.totalClasses = (options.preserveOldClasses ? baseClasses.length : 0) + options.newClasses.length;
-      
+
       // Update dataset status
       await supabaseDatasetService.updateDataset(newDataset.id, {
         status: 'ready'
       });
-      
+
       result.success = true;
     } catch (err) {
       logger.error(`Error setting up incremental learning dataset: ${err}`);
@@ -1245,8 +1243,8 @@ export class DatasetManagementService {
    * @returns The new image
    */
   private async copyImageToNewDataset(
-    sourceImage: DatasetImage, 
-    targetDatasetId: string, 
+    sourceImage: DatasetImage,
+    targetDatasetId: string,
     targetClassId: string
   ): Promise<DatasetImage | null> {
     try {
@@ -1256,7 +1254,7 @@ export class DatasetManagementService {
         .storage
         .from('datasets')
         .download(sourceImage.storagePath);
-      
+
       if (error || !data) {
         logger.warn(`Failed to download image ${sourceImage.id}: ${error}`);
         return null;
@@ -1264,13 +1262,13 @@ export class DatasetManagementService {
 
       // Upload to new location
       const newStoragePath = `${targetDatasetId}/${targetClassId}/${sourceImage.filename}`;
-      
+
       const { error: uploadError } = await supabaseClient
         .getClient()
         .storage
         .from('datasets')
         .upload(newStoragePath, data);
-      
+
       if (uploadError) {
         logger.warn(`Failed to upload image to ${newStoragePath}: ${uploadError}`);
         return null;
@@ -1303,13 +1301,13 @@ export class DatasetManagementService {
   private calculateGiniCoefficient(values: number[]): number {
     if (values.length === 0) return 0;
     if (values.length === 1) return 0;
-    
+
     // Sort values in ascending order
     const sortedValues = [...values].sort((a, b) => a - b);
-    
+
     let sumNumerator = 0;
     let sumDenominator = 0;
-    
+
       for (let i = 0; i < sortedValues.length; i++) {
         const value = sortedValues[i];
         if (typeof value === 'number') {
@@ -1317,7 +1315,7 @@ export class DatasetManagementService {
           sumDenominator += value;
         }
       }
-    
+
     return sumNumerator / (sortedValues.length * sumDenominator);
   }
 
@@ -1366,8 +1364,8 @@ export class DatasetManagementService {
     minWidth: number,
     minHeight: number
   ): Promise<DatasetImage[]> {
-    return images.filter(img => 
-      (img.width !== undefined && img.width < minWidth) || 
+    return images.filter(img =>
+      (img.width !== undefined && img.width < minWidth) ||
       (img.height !== undefined && img.height < minHeight)
     );
   }
@@ -1406,15 +1404,15 @@ export class DatasetManagementService {
     // For a real implementation, this would use image processing libraries
     // For now, this is a placeholder that pretends to generate augmentations
     let generatedCount = 0;
-    
+
     // Simple round-robin through source images and apply transformations
     for (let i = 0; i < count && sourceImages.length > 0; i++) {
       const sourceImage = sourceImages[i % sourceImages.length];
       if (!sourceImage) continue;
-      
+
       const baseName = path.basename(sourceImage.filename, path.extname(sourceImage.filename));
       const newFilename = `${baseName}_aug_${i}${path.extname(sourceImage.filename)}`;
-      
+
       try {
         // Download source image
         const { data, error } = await supabaseClient
@@ -1422,7 +1420,7 @@ export class DatasetManagementService {
           .storage
           .from('datasets')
           .download(sourceImage.storagePath);
-        
+
         if (error || !data) {
           logger.warn(`Failed to download image for augmentation: ${error}`);
           continue;
@@ -1430,16 +1428,16 @@ export class DatasetManagementService {
 
         // In a real implementation, we would transform the image here
         // For now, we'll just copy it as is
-        
+
         // Upload the "augmented" image
         const newStoragePath = `${targetDatasetId}/${targetClassId}/${newFilename}`;
-        
+
         const { error: uploadError } = await supabaseClient
           .getClient()
           .storage
           .from('datasets')
           .upload(newStoragePath, data);
-        
+
         if (uploadError) {
           logger.warn(`Failed to upload augmented image: ${uploadError}`);
           continue;
@@ -1468,7 +1466,7 @@ export class DatasetManagementService {
         logger.error(`Error generating augmentation: ${err}`);
       }
     }
-    
+
     return generatedCount;
   }
 
@@ -1481,13 +1479,13 @@ export class DatasetManagementService {
     transformations: DataAugmentationOptions['transformations']
   ): Record<string, any> {
     const applied: Record<string, any> = {};
-    
+
     // Select some random transformations from the enabled ones
     if (transformations.rotation?.enabled) {
       const degrees = Math.floor(Math.random() * (transformations.rotation.maxDegrees || 30));
       applied.rotation = degrees;
     }
-    
+
     if (transformations.flip?.enabled) {
       if (transformations.flip.horizontal && Math.random() > 0.5) {
         applied.flipHorizontal = true;
@@ -1496,14 +1494,14 @@ export class DatasetManagementService {
         applied.flipVertical = true;
       }
     }
-    
+
     if (transformations.brightness?.enabled) {
       const range = transformations.brightness.range || [-0.2, 0.2];
       applied.brightness = range[0] + Math.random() * (range[1] - range[0]);
     }
-    
+
     // Add more transformations as needed
-    
+
     return applied;
   }
 

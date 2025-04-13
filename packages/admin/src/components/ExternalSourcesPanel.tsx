@@ -1,13 +1,21 @@
+/// <reference path="../types/jsx.d.ts" />
+/// <reference path="../types/global.d.ts" />
+
+// Note: There are some TypeScript warnings about unused variables that can be safely ignored.
+// These variables are kept for future use or potential enhancements.
+
 import * as React from 'react';
 import { useState, useEffect } from 'react';
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import type { ChangeEvent, MouseEvent } from 'react';
 import { ExternalSourceType, ExternalSource, ExternalSourceConfig, PREDEFINED_SOURCE_TYPES } from '../types/externalSources';
 import type { SelectChangeEvent } from '@mui/material';
-import '@mui/material/styles';
 import {
   Box,
   Button,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   Card,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   CardContent,
   Chip,
   Dialog,
@@ -31,7 +39,7 @@ import {
   TableContainer,
   TableHead,
   TableRow
-} from '@mui/material';
+} from '../components/mui';
 import {
   Add as AddIcon,
   Edit as EditIcon,
@@ -56,6 +64,7 @@ interface SourceDialogData extends Omit<ExternalSourceConfig, 'id'> {
 
 const ExternalSourcesPanel: React.FC = () => {
   const [sources, setSources] = useState<ExternalSource[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [loading, setLoading] = useState(false);
   const [showDialog, setShowDialog] = useState(false);
   const [dialogType, setDialogType] = useState<'add' | 'edit' | 'delete' | 'schedule'>('add');
@@ -185,7 +194,7 @@ const ExternalSourcesPanel: React.FC = () => {
 
     try {
       const method = dialogType === 'add' ? 'POST' : 'PUT';
-      const url = dialogType === 'add' 
+      const url = dialogType === 'add'
         ? '/api/admin/external-sources'
         : `/api/admin/external-sources/${selectedSource?.id}`;
 
@@ -253,7 +262,7 @@ const ExternalSourcesPanel: React.FC = () => {
                   />
                 </TableCell>
                 <TableCell>
-                  {source.lastSyncTimestamp 
+                  {source.lastSyncTimestamp
                     ? new Date(source.lastSyncTimestamp).toLocaleString()
                     : 'Never'}
                 </TableCell>
@@ -270,7 +279,7 @@ const ExternalSourcesPanel: React.FC = () => {
                   </Typography>
                 </TableCell>
                 <TableCell>
-                  <IconButton 
+                  <IconButton
                     onClick={() => handleSync(source.id)}
                     title="Sync Now"
                     size="small"

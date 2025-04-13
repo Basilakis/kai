@@ -1,6 +1,6 @@
 /**
  * Enhanced Vector Admin Routes
- * 
+ *
  * Routes for administrative control of enhanced vector operations.
  * Includes endpoints for access control, monitoring, and configuration.
  */
@@ -11,6 +11,7 @@ import { authMiddleware, authorizeRoles } from '../../middleware/auth.middleware
 import { enhancedVectorService } from '../../services/supabase/enhanced-vector-service';
 import { ApiError } from '../../middleware/error.middleware';
 import { analyticsMiddleware } from '../../middleware/analytics.middleware';
+import { logger } from '../../utils/logger';
 
 // TypeScript has an issue with express.Router in this project's config
 // @ts-ignore: Suppress TypeScript error while maintaining the project's pattern
@@ -25,12 +26,15 @@ router.use(analyticsMiddleware());
  * @desc    Get enhanced vector search statistics
  * @access  Private (Admin)
  */
-router.get('/stats', analyticsMiddleware('admin.vector.stats'), asyncHandler(async (_req: Request, res: Response) => {
+router.get('/stats', analyticsMiddleware(), asyncHandler(async (_req: Request, res: Response) => {
   try {
-    const stats = await enhancedVectorService.getPerformanceStats();
+    // Get actual stats from the service
+    // Using type assertion to fix TypeScript error
+    const stats = await (enhancedVectorService as any).getPerformanceStats();
+
     // Log successful stats retrieval for monitoring
     logger.info('Enhanced vector statistics retrieved successfully');
-  
+
     res.status(200).json({
       success: true,
       data: stats
@@ -46,11 +50,14 @@ router.get('/stats', analyticsMiddleware('admin.vector.stats'), asyncHandler(asy
  * @desc    Get all vector search configurations
  * @access  Private (Admin)
  */
-router.get('/configs', analyticsMiddleware('admin.vector.configs.list'), asyncHandler(async (_req: Request, res: Response) => {
+router.get('/configs', analyticsMiddleware(), asyncHandler(async (_req: Request, res: Response) => {
   try {
-    const configs = await enhancedVectorService.getSearchConfigs();
+    // Get actual configurations from the service
+    // Using type assertion to fix TypeScript error
+    const configs = await (enhancedVectorService as any).getSearchConfigs();
+
     logger.info(`Retrieved ${configs.length} vector search configurations`);
-  
+
     res.status(200).json({
       success: true,
       data: configs
@@ -66,22 +73,24 @@ router.get('/configs', analyticsMiddleware('admin.vector.configs.list'), asyncHa
  * @desc    Update vector search configuration
  * @access  Private (Admin)
  */
-router.put('/configs/:name', analyticsMiddleware('admin.vector.configs.update'), asyncHandler(async (req: Request, res: Response) => {
+router.put('/configs/:name', analyticsMiddleware(), asyncHandler(async (req: Request, res: Response) => {
   const { name } = req.params;
   const configData = req.body;
-  
+
   if (!name) {
     throw new ApiError(400, 'Configuration name is required');
   }
-  
+
   try {
-    const config = await enhancedVectorService.updateSearchConfig({
-      ...configData,
-      name
+    // Update the configuration using the service
+    // Using type assertion to fix TypeScript error
+    const config = await (enhancedVectorService as any).updateSearchConfig({
+      name,
+      ...configData
     });
-    
+
     logger.info(`Updated vector search configuration: ${name}`);
-  
+
     res.status(200).json({
       success: true,
       data: config
@@ -97,22 +106,28 @@ router.put('/configs/:name', analyticsMiddleware('admin.vector.configs.update'),
  * @desc    Delete vector search configuration
  * @access  Private (Admin)
  */
-router.delete('/configs/:name', analyticsMiddleware('admin.vector.configs.delete'), asyncHandler(async (req: Request, res: Response) => {
+router.delete('/configs/:name', analyticsMiddleware(), asyncHandler(async (req: Request, res: Response) => {
   const { name } = req.params;
-  
+
   if (!name) {
     throw new ApiError(400, 'Configuration name is required');
   }
-  
+
   try {
-    const success = await enhancedVectorService.deleteSearchConfig(name);
-    
-    logger.info(`Deleted vector search configuration: ${name}`);
-    
-    res.status(200).json({
-      success: true,
-      message: `Vector search configuration "${name}" deleted successfully`
-    });
+    // Delete the configuration using the service
+    // Using type assertion to fix TypeScript error
+    const deleted = await (enhancedVectorService as any).deleteSearchConfig(name);
+
+    if (deleted) {
+      logger.info(`Deleted vector search configuration: ${name}`);
+
+      res.status(200).json({
+        success: true,
+        message: `Vector search configuration "${name}" deleted successfully`
+      });
+    } else {
+      throw new ApiError(500, `Failed to delete configuration "${name}"`);
+    }
   } catch (error) {
     logger.error(`Error deleting vector config ${name}: ${error}`);
     throw error;
@@ -124,16 +139,23 @@ router.delete('/configs/:name', analyticsMiddleware('admin.vector.configs.delete
  * @desc    Refresh vector materialized views
  * @access  Private (Admin)
  */
-router.post('/refresh-views', analyticsMiddleware('admin.vector.refresh'), asyncHandler(async (_req: Request, res: Response) => {
-  const success = await enhancedVectorService.refreshVectorViews();
-  
-  if (success) {
-    res.status(200).json({
-      success: true,
-      message: 'Vector materialized views refreshed successfully'
-    });
-  } else {
-    throw new ApiError(500, 'Failed to refresh vector materialized views');
+router.post('/refresh-views', analyticsMiddleware(), asyncHandler(async (_req: Request, res: Response) => {
+  try {
+    // Refresh views using the service
+    // Using type assertion to fix TypeScript error
+    const success = await (enhancedVectorService as any).refreshVectorViews();
+
+    if (success) {
+      res.status(200).json({
+        success: true,
+        message: 'Vector materialized views refreshed successfully'
+      });
+    } else {
+      throw new ApiError(500, 'Failed to refresh vector materialized views');
+    }
+  } catch (error) {
+    logger.error(`Error refreshing vector views: ${error}`);
+    throw error;
   }
 }));
 
@@ -142,39 +164,58 @@ router.post('/refresh-views', analyticsMiddleware('admin.vector.refresh'), async
  * @desc    Get access permissions for enhanced vector features
  * @access  Private (Admin)
  */
-router.get('/access', analyticsMiddleware('admin.vector.access.get'), asyncHandler(async (_req: Request, res: Response) => {
-  // This would connect to a permission service in a real implementation
-  const accessPermissions = {
-    enhanced_vector_search: {
-      public: true,
-      restricted_to_tiers: ['basic', 'premium', 'enterprise'],
-      rate_limits: {
-        basic: 100,
-        premium: 500,
-        enterprise: 2000
-      }
-    },
-    knowledge_base_integration: {
-      public: false,
-      restricted_to_tiers: ['premium', 'enterprise'],
-      rate_limits: {
-        premium: 200,
-        enterprise: 1000
-      }
-    },
-    semantic_organization: {
-      public: false,
-      restricted_to_tiers: ['enterprise'],
-      rate_limits: {
-        enterprise: 500
-      }
+router.get('/access', analyticsMiddleware(), asyncHandler(async (_req: Request, res: Response) => {
+  try {
+    // Import subscription tier model functions
+    const subscriptionTierModel = await import('../../models/subscriptionTier.model');
+    const { supabaseClient } = await import('../../services/supabase/supabaseClient');
+
+    // Get all subscription tiers including non-public ones
+    const tiers = await subscriptionTierModel.getAllSubscriptionTiers(true);
+
+    // Get access permissions from database
+    const query = supabaseClient.getClient()
+      .from('network_access_control')
+      .select('*')
+      .eq('category', 'enhanced_vector');
+
+    const { data: features, error } = await query;
+
+    if (error) {
+      throw error;
     }
-  };
-  
-  res.status(200).json({
-    success: true,
-    data: accessPermissions
-  });
+
+    // Format permissions based on features and tiers
+    const accessPermissions: Record<string, any> = {};
+
+    if (features && features.length > 0) {
+      for (const feature of features) {
+        accessPermissions[feature.feature_key] = {
+          public: feature.is_public,
+          restricted_to_tiers: feature.allowed_tiers || [],
+          rate_limits: feature.rate_limits || {}
+        };
+      }
+    } else {
+      // If no features found, provide defaults for backward compatibility
+      accessPermissions['enhanced_vector_search'] = {
+        public: true,
+        restricted_to_tiers: tiers.map(tier => tier.name),
+        rate_limits: tiers.reduce((acc: Record<string, number>, tier) => {
+          acc[tier.name] = tier.name === 'enterprise' ? 2000 : (tier.name === 'premium' ? 500 : 100);
+          return acc;
+        }, {})
+      };
+    }
+
+    res.status(200).json({
+      success: true,
+      data: accessPermissions
+    });
+  } catch (error) {
+    logger.error(`Error retrieving access permissions: ${error}`);
+    throw error;
+  }
 }));
 
 /**
@@ -182,26 +223,94 @@ router.get('/access', analyticsMiddleware('admin.vector.access.get'), asyncHandl
  * @desc    Update access permissions for enhanced vector features
  * @access  Private (Admin)
  */
-router.put('/access', analyticsMiddleware('admin.vector.access.update'), asyncHandler(async (req: Request, res: Response) => {
+router.put('/access', analyticsMiddleware(), asyncHandler(async (req: Request, res: Response) => {
   const { feature, public: isPublic, tiers, rateLimits } = req.body;
-  
+
   if (!feature) {
     throw new ApiError(400, 'Feature name is required');
   }
-  
-  // This would connect to a permission service in a real implementation
-  // For now, just return success
-  
-  res.status(200).json({
-    success: true,
-    message: `Access permissions updated for ${feature}`,
-    data: {
-      feature,
-      public: isPublic,
-      restricted_to_tiers: tiers,
-      rate_limits: rateLimits
+
+  try {
+    // Import required dependencies
+    const { supabaseClient } = await import('../../services/supabase/supabaseClient');
+
+    // Check if feature exists
+    const query = supabaseClient.getClient()
+      .from('network_access_control')
+      .select('*')
+      .eq('feature_key', feature)
+      .eq('category', 'enhanced_vector')
+      .maybeSingle();
+
+    const { data: existingFeature, error: checkError } = await query;
+
+    if (checkError) {
+      throw checkError;
     }
-  });
+
+    let result;
+    if (existingFeature) {
+      // Update existing feature
+      const updateQuery = supabaseClient.getClient()
+        .from('network_access_control')
+        .update({
+          is_public: isPublic,
+          allowed_tiers: tiers,
+          rate_limits: rateLimits,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', existingFeature.id)
+        .select()
+        .single();
+
+      const { data, error } = await updateQuery;
+
+      if (error) {
+        throw error;
+      }
+
+      result = data;
+    } else {
+      // Create new feature
+      const insertQuery = supabaseClient.getClient()
+        .from('network_access_control')
+        .insert({
+          feature_key: feature,
+          category: 'enhanced_vector',
+          is_public: isPublic,
+          allowed_tiers: tiers,
+          rate_limits: rateLimits,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+      const { data, error } = await insertQuery;
+
+      if (error) {
+        throw error;
+      }
+
+      result = data;
+    }
+
+    logger.info(`Updated access permissions for ${feature}`);
+
+    res.status(200).json({
+      success: true,
+      message: `Access permissions updated for ${feature}`,
+      data: {
+        feature: result.feature_key,
+        public: result.is_public,
+        restricted_to_tiers: result.allowed_tiers,
+        rate_limits: result.rate_limits
+      }
+    });
+  } catch (error) {
+    logger.error(`Error updating access permissions for ${feature}: ${error}`);
+    throw error;
+  }
 }));
 
 /**
@@ -209,59 +318,145 @@ router.put('/access', analyticsMiddleware('admin.vector.access.update'), asyncHa
  * @desc    Get usage metrics for enhanced vector endpoints
  * @access  Private (Admin)
  */
-router.get('/usage', analyticsMiddleware('admin.vector.usage'), asyncHandler(async (req: Request, res: Response) => {
-  const { startDate, endDate, feature } = req.query;
-  
-  // This would connect to the analytics system in a real implementation
-  // For now, just return dummy data
-  const usageMetrics = {
-    period: {
-      start: startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-      end: endDate || new Date().toISOString()
-    },
-    endpoints: {
-      '/api/vector/enhanced/search': {
-        total_calls: 12500,
-        average_response_time: 120, // ms
-        error_rate: 0.02
-      },
-      '/api/vector/enhanced/knowledge/search': {
-        total_calls: 8700,
-        average_response_time: 180, // ms
-        error_rate: 0.03
-      },
-      '/api/vector/enhanced/knowledge/route': {
-        total_calls: 3200,
-        average_response_time: 150, // ms
-        error_rate: 0.01
+router.get('/usage', analyticsMiddleware(), asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const { startDate, endDate, feature } = req.query;
+
+    // Prepare date parameters
+    let startDateObj: Date = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000); // Default to 30 days ago
+    let endDateObj: Date = new Date(); // Default to now
+
+    if (startDate && typeof startDate === 'string') {
+      startDateObj = new Date(startDate);
+    }
+
+    if (endDate && typeof endDate === 'string') {
+      endDateObj = new Date(endDate);
+    }
+
+    // Import required dependencies
+    const { supabaseClient } = await import('../../services/supabase/supabaseClient');
+
+    // Get API usage metrics from the analytics table
+    const pathPattern = feature ?
+      `/api/vector/enhanced/${feature}%` :
+      '/api/vector/enhanced%';
+
+    // Build query
+    const analyticsQuery = supabaseClient.getClient()
+      .from('api_analytics')
+      .select('path, response_time, status_code, user_id, created_at')
+      .gte('created_at', startDateObj.toISOString())
+      .lte('created_at', endDateObj.toISOString())
+      .ilike('path', pathPattern);
+
+    const { data: apiCalls, error } = await analyticsQuery;
+
+    if (error) {
+      throw error;
+    }
+
+    // Process the raw data into a structured format
+    const endpoints: Record<string, { total_calls: number, average_response_time: number, error_rate: number }> = {};
+    const userCounts: Record<string, number> = {};
+    const tierCounts: Record<string, number> = { basic: 0, premium: 0, enterprise: 0 };
+
+    // Process each API call
+    for (const call of apiCalls || []) {
+      // Track endpoint metrics
+      if (!endpoints[call.path]) {
+        endpoints[call.path] = {
+          total_calls: 0,
+          average_response_time: 0,
+          error_rate: 0
+        };
       }
-    },
-    users: {
-      total_active: 320,
-      by_tier: {
-        basic: 250,
-        premium: 50,
-        enterprise: 20
+
+      if (call.path && endpoints[call.path]) {
+        const endpoint = endpoints[call.path];
+        if (endpoint) {
+          endpoint.total_calls++;
+
+          // Sum response times (we'll calculate average later)
+          endpoint.average_response_time += call.response_time || 0;
+
+          // Count errors (status >= 400)
+          if (call.status_code >= 400) {
+            endpoint.error_rate++;
+          }
+        }
+      }
+
+      // Track unique users
+      if (call.user_id) {
+        userCounts[call.user_id] = (userCounts[call.user_id] || 0) + 1;
       }
     }
-  };
-  
-  // Filter by feature if provided
-  if (feature) {
-    // Use Record type to fix the TypeScript error
-    const filteredEndpoints: Record<string, any> = {};
-    Object.keys(usageMetrics.endpoints).forEach(endpoint => {
-      if (endpoint.includes(feature as string)) {
-        filteredEndpoints[endpoint] = usageMetrics.endpoints[endpoint];
+
+    // Calculate averages and convert error counts to rates
+    Object.keys(endpoints).forEach((path: string) => {
+      const endpoint = endpoints[path];
+
+      // Calculate average response time
+      if (endpoint && endpoint.total_calls > 0) {
+        endpoint.average_response_time = Math.round(endpoint.average_response_time / endpoint.total_calls);
+        endpoint.error_rate = Number((endpoint.error_rate / endpoint.total_calls).toFixed(4));
       }
     });
-    usageMetrics.endpoints = filteredEndpoints;
+
+    // Get user subscription data to fill in tier counts
+    if (Object.keys(userCounts).length > 0) {
+      const userIds = Object.keys(userCounts);
+
+      const subscriptionsQuery = supabaseClient.getClient()
+        .from('user_subscriptions')
+        .select('user_id, tier_id')
+        .in('user_id', userIds);
+
+      const { data: subscriptions } = await subscriptionsQuery;
+
+      if (subscriptions) {
+        // Get tier names
+        const { data: tiers } = await supabaseClient.getClient()
+          .from('subscription_tiers')
+          .select('id, name');
+
+        const tierMap: Record<string, string> = {};
+        if (tiers) {
+          tiers.forEach((tier: { id: string, name: string }) => {
+            tierMap[tier.id] = tier.name;
+          });
+        }
+
+        // Count users by tier
+        subscriptions.forEach((sub: { user_id: string, tier_id: string }) => {
+          const tierName = tierMap[sub.tier_id] || 'basic';
+          tierCounts[tierName] = (tierCounts[tierName] || 0) + 1;
+        });
+      }
+    }
+
+    // Create final result structure
+    const usageMetrics = {
+      period: {
+        start: startDateObj.toISOString(),
+        end: endDateObj.toISOString()
+      },
+      endpoints,
+      users: {
+        total_active: Object.keys(userCounts).length,
+        by_tier: tierCounts
+      }
+    };
+
+    res.status(200).json({
+      success: true,
+      data: usageMetrics
+    });
+  } catch (error) {
+    logger.error(`Error retrieving usage metrics: ${error}`);
+    throw error;
   }
-  
-  res.status(200).json({
-    success: true,
-    data: usageMetrics
-  });
 }));
 
 /**
@@ -269,40 +464,149 @@ router.get('/usage', analyticsMiddleware('admin.vector.usage'), asyncHandler(asy
  * @desc    Get health status of enhanced vector system
  * @access  Private (Admin)
  */
-router.get('/health', analyticsMiddleware('admin.vector.health'), asyncHandler(async (_req: Request, res: Response) => {
-  // This would connect to health monitoring systems in a real implementation
-  const healthStatus = {
-    status: 'healthy',
-    last_checked: new Date().toISOString(),
-    components: {
-      vector_database: {
-        status: 'healthy',
-        response_time: 15, // ms
-        indexes: {
-          materials: 'optimal',
-          knowledge_entries: 'optimal'
-        }
-      },
-      python_services: {
-        status: 'healthy',
-        hybrid_retriever: {
-          status: 'active',
-          memory_usage: '250MB',
-          response_time: 85 // ms
-        },
-        context_assembler: {
-          status: 'active',
-          memory_usage: '180MB',
-          response_time: 65 // ms
+router.get('/health', analyticsMiddleware(), asyncHandler(async (_req: Request, res: Response) => {
+  try {
+    // Import required modules
+    const os = require('os');
+    const { supabaseClient } = await import('../../services/supabase/supabaseClient');
+
+    // Get memory utilization to help determine status
+    const memoryUsagePercent = (os.totalmem() - os.freemem()) / os.totalmem() * 100;
+    let systemStatus = 'healthy';
+
+    if (memoryUsagePercent > 90) {
+      systemStatus = 'unhealthy';
+    } else if (memoryUsagePercent > 75) {
+      systemStatus = 'degraded';
+    }
+
+    // Check vector database health by measuring response time
+    let vectorDbStatus = 'healthy';
+    let vectorDbResponseTime = 0;
+
+    const dbCheckStart = Date.now();
+    try {
+      // Get vector index health from a simple check
+      const queryResponse = await supabaseClient.getClient()
+        .from('vector_search_config')
+        .select('id, index_type, name');
+
+      const { data, error } = queryResponse;
+
+      if (!data || data.length === 0 || error) {
+        throw new Error(error?.message || 'No vector configurations found');
+      }
+
+      vectorDbResponseTime = Date.now() - dbCheckStart;
+
+      if (error) {
+        vectorDbStatus = 'unhealthy';
+      } else if (vectorDbResponseTime > 1000) {
+        vectorDbStatus = 'degraded';
+      }
+    } catch (dbError) {
+      vectorDbStatus = 'unhealthy';
+      logger.error(`Database health check failed: ${dbError}`);
+    }
+
+    // Check Python services by attempting to ping the hybrid_retriever module
+    let pythonServicesStatus = 'unknown';
+    const pythonServicesDetails: Record<string, any> = {};
+
+    try {
+      // Attempt to invoke the Python module in a controlled way
+      const hybridRetrieverResult = await (enhancedVectorService as any).invokePythonModule(
+        'hybrid_retriever.py',
+        'health_check',
+        {}
+      );
+
+      if (hybridRetrieverResult) {
+        pythonServicesStatus = hybridRetrieverResult.status || 'healthy';
+
+        // Add each service status
+        if (hybridRetrieverResult.services) {
+          Object.keys(hybridRetrieverResult.services).forEach(service => {
+            pythonServicesDetails[service] = hybridRetrieverResult.services[service];
+          });
         }
       }
+    } catch (pythonError) {
+      pythonServicesStatus = 'degraded';
+      logger.error(`Python services health check failed: ${pythonError}`);
+
+      // Provide default details on services even if health check fails
+      pythonServicesDetails.hybrid_retriever = {
+        status: 'unknown',
+        last_checked: new Date().toISOString()
+      };
+
+      pythonServicesDetails.context_assembler = {
+        status: 'unknown',
+        last_checked: new Date().toISOString()
+      };
     }
-  };
-  
-  res.status(200).json({
-    success: true,
-    data: healthStatus
-  });
+
+    // Get index statistics
+    const indexStats = await (async () => {
+      try {
+        // Get index stats using a direct query
+        const { data } = await supabaseClient.getClient()
+          .from('vector_index_stats')
+          .select('*');
+
+        // Format into a map by index name
+        const stats: Record<string, any> = {};
+        if (data && data.length > 0) {
+          data.forEach((indexStat: { index_name: string, status: string, vector_count: number, last_optimized: string }) => {
+            stats[indexStat.index_name] = {
+              status: indexStat.status,
+              vector_count: indexStat.vector_count,
+              last_optimized: indexStat.last_optimized
+            };
+          });
+          return stats;
+        }
+
+        // Return default stats if no data
+        return {
+          materials: { status: 'unknown' },
+          knowledge_entries: { status: 'unknown' }
+        };
+      } catch (err) {
+        logger.error(`Failed to get index stats: ${err}`);
+        return {
+          materials: { status: 'unknown' },
+          knowledge_entries: { status: 'unknown' }
+        };
+      }
+    })();
+
+    // Create health status object
+    const healthStatus = {
+      status: systemStatus,
+      last_checked: new Date().toISOString(),
+      components: {
+        vector_database: {
+          status: vectorDbStatus,
+          response_time: vectorDbResponseTime,
+          indexes: indexStats
+        },
+        python_services: {
+          status: pythonServicesStatus,
+          ...pythonServicesDetails
+        }
+      }
+    };
+
+    res.status(200).json({
+      success: true,
+      data: healthStatus
+    });
+  } catch (error) {
+    logger.error(`Error checking health status: ${error}`);
+    throw error;
+  }
 }));
 
 export default router;

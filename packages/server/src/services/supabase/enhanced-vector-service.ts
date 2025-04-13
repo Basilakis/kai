@@ -1,13 +1,13 @@
 /**
  * Enhanced Vector Service
- * 
+ *
  * This service provides advanced vector search capabilities for the RAG system,
  * supporting both dense and sparse embeddings, HNSW indexing, and specialized
  * indexes for different material categories.
- * 
+ *
  * It integrates with the enhanced_text_embeddings.py Python module for
  * generating embeddings and uses the updated Supabase schema for storage.
- * 
+ *
  * Now enhanced with knowledge base integration, bidirectional linking, and
  * semantic indexing capabilities.
  */
@@ -18,7 +18,8 @@ const childProcess = require('child_process');
 import path from 'path';
 import fs from 'fs';
 import { logger } from '../../utils/logger';
-import { supabaseClient } from './supabaseClient';
+import { supabase } from './supabaseClient';
+import { handleSupabaseError } from '../../../shared/src/utils/supabaseErrorHandler';
 import { KnowledgeBaseService } from '../knowledgeBase/knowledgeBaseService';
 interface KnowledgeEntry {
   id: string;
@@ -136,15 +137,15 @@ export class EnhancedVectorService {
     this.pythonPath = process.env.PYTHON_PATH || 'python';
     // Use relative path from project root instead of __dirname
     this.scriptPath = path.resolve(process.cwd(), 'packages/ml/python/enhanced_text_embeddings.py');
-    
+
     // Validate that the script exists
     if (!fs.existsSync(this.scriptPath)) {
       logger.warn(`Enhanced text embeddings script not found at ${this.scriptPath}`);
     }
-    
+
     // Initialize config cache
     this.loadConfigsFromDatabase();
-    
+
     // Set knowledge base service if provided
     this.knowledgeBaseService = knowledgeBaseService;
   }
@@ -166,46 +167,46 @@ export class EnhancedVectorService {
     return new Promise((resolve, reject) => {
       // Prepare command
       const scriptPath = path.resolve(process.cwd(), `packages/ml/python/${moduleName}`);
-      
+
       // Check if script exists
       if (!fs.existsSync(scriptPath)) {
         return reject(new Error(`Python module not found at ${scriptPath}`));
       }
-      
+
       // Prepare arguments
       const pythonArgs = [
         scriptPath,
         '--method', method,
         '--args', JSON.stringify(args)
       ];
-      
+
       // Spawn Python process
       const pythonProcess = childProcess.spawn(this.pythonPath, pythonArgs);
-      
+
       let outputData = '';
       let errorData = '';
-      
+
       // Handle stdout data
       if (pythonProcess.stdout) {
         pythonProcess.stdout.on('data', (data: Buffer) => {
           outputData += data.toString();
         });
       }
-      
+
       // Handle stderr data
       if (pythonProcess.stderr) {
         pythonProcess.stderr.on('data', (data: Buffer) => {
           errorData += data.toString();
         });
       }
-      
+
       // Handle process completion
       pythonProcess.on('close', (code: number) => {
         if (code !== 0) {
           logger.error(`Failed to execute Python module: ${errorData}`);
           return reject(new Error(`Failed to execute Python module: ${errorData}`));
         }
-        
+
         try {
           const result = JSON.parse(outputData);
           resolve(result);
@@ -225,7 +226,7 @@ export class EnhancedVectorService {
       const result = await supabaseClient.getClient()
         .from('vector_search_config')
         .select('*');
-      
+
       const { data, error } = result;
   /**
    * Search for materials with enhanced knowledge base integration
@@ -273,10 +274,10 @@ export class EnhancedVectorService {
       };
     } catch (error) {
       logger.error(`Failed to search materials with knowledge: ${error}`);
-      
+
       // Fall back to standard search and add empty knowledge
       const materials = await this.searchMaterials(query, materialType, filters, limit);
-      
+
       return {
         materials,
         knowledgeEntries: [],
@@ -288,7 +289,7 @@ export class EnhancedVectorService {
       if (error) {
         throw error;
       }
-      
+
       // Cache the configurations
       if (data) {
         for (const config of data) {
@@ -303,7 +304,7 @@ export class EnhancedVectorService {
             modelPath: config.model_path
           });
         }
-        
+
         logger.info(`Loaded ${data.length} vector search configurations from database`);
       }
     } catch (error) {
@@ -359,10 +360,10 @@ export class EnhancedVectorService {
       };
     } catch (error) {
       logger.error(`Failed to find similar materials with knowledge: ${error}`);
-      
+
       // Fall back to standard search
       const materials = await this.findSimilarMaterials(materialId, materialType, limit);
-      
+
       return {
         materials,
         knowledgeEntries: [],
@@ -380,7 +381,7 @@ export class EnhancedVectorService {
   public async routeQuery(options: QueryRoutingOptions): Promise<SearchWithKnowledgeResult> {
     try {
       const { query, materialType, filters, strategy = 'hybrid' } = options;
-      
+
       // Call the context assembler for intelligent query routing
       const result = await this.invokePythonModule('context_assembler.py', 'route_query', {
         query,
@@ -404,7 +405,7 @@ export class EnhancedVectorService {
 
       // Fall back to standard search if Python module fails
       const materials = await this.searchMaterials(query, materialType, filters);
-      
+
       return {
         materials,
         knowledgeEntries: [],
@@ -417,10 +418,10 @@ export class EnhancedVectorService {
       };
     } catch (error) {
       logger.error(`Error routing query: ${error}`);
-      
+
       // Fall back to standard search in case of errors
       const materials = await this.searchMaterials(options.query, options.materialType, options.filters);
-      
+
       return {
         materials,
         knowledgeEntries: [],
@@ -451,7 +452,7 @@ export class EnhancedVectorService {
       if (!this.knowledgeBaseService) {
         throw new Error('Knowledge base service not available');
       }
-      
+
       // Call the context assembler to get related knowledge
       const result = await this.invokePythonModule('context_assembler.py', 'get_related_knowledge', {
         material_id: materialId,
@@ -467,16 +468,16 @@ export class EnhancedVectorService {
       };
     } catch (error) {
       logger.error(`Error getting material knowledge: ${error}`);
-      
+
       // Try to fall back to knowledge base service directly
       if (this.knowledgeBaseService) {
         try {
           const entries = await this.knowledgeBaseService.getEntriesForMaterial(materialId, limit);
-          
+
           return {
             entries,
             relationships: [],
-            metadata: { 
+            metadata: {
               material_id: materialId,
               fallback: true,
               error: `${error}`
@@ -486,11 +487,11 @@ export class EnhancedVectorService {
           logger.error(`Error in fallback knowledge retrieval: ${kbError}`);
         }
       }
-      
+
       return {
         entries: [],
         relationships: [],
-        metadata: { 
+        metadata: {
           material_id: materialId,
           error: `${error}`
         }
@@ -518,14 +519,14 @@ export class EnhancedVectorService {
         user_context: userContext || {}
       });
 
-      return result || { 
+      return result || {
         error: 'Failed to assemble context',
         query,
         materials_count: materials.length
       };
     } catch (error) {
       logger.error(`Error assembling context: ${error}`);
-      
+
       // Return a minimal context in case of error
       return {
         query,
@@ -566,7 +567,7 @@ export class EnhancedVectorService {
       return this.createDefaultSemanticOrganization(knowledgeEntries, query);
     } catch (error) {
       logger.error(`Error creating semantic organization: ${error}`);
-      
+
       // Create a basic organization as fallback
       return this.createDefaultSemanticOrganization(knowledgeEntries, query);
     }
@@ -581,14 +582,14 @@ export class EnhancedVectorService {
   ): SemanticKnowledgeOrganization {
     // Group entries by material ID
     const entriesByMaterial: Record<string, string[]> = {};
-    
+
     for (const entry of knowledgeEntries) {
       if (!entriesByMaterial[entry.materialId]) {
         entriesByMaterial[entry.materialId] = [];
       }
       entriesByMaterial[entry.materialId].push(entry.id);
     }
-    
+
     return {
       queryTheme: 'general_information',
       primaryCategories: ['by_material'],
@@ -615,17 +616,17 @@ export class EnhancedVectorService {
         }
       }
     }
-    
+
     // Try to get the specified config
     if (this.configCache.has(configName)) {
       return this.configCache.get(configName)!;
     }
-    
+
     // Fall back to default config
     if (this.configCache.has('default')) {
       return this.configCache.get('default')!;
     }
-    
+
     // Create and return a default config if nothing else is available
     return {
       id: 'default',
@@ -658,12 +659,12 @@ export class EnhancedVectorService {
       const sparseMethod = options.sparseMethod || 'tfidf';
       const sparseFeatures = options.sparseFeatures || 10000;
       const materialCategory = options.materialCategory;
-      
+
       // Validate that the script exists
       if (!fs.existsSync(this.scriptPath)) {
         return reject(new Error(`Enhanced text embeddings script not found at ${this.scriptPath}`));
       }
-      
+
       // Prepare command
       const args = [
         this.scriptPath,
@@ -675,38 +676,38 @@ export class EnhancedVectorService {
         '--sparse-features', sparseFeatures.toString(),
         '--pgvector-format'
       ];
-      
+
       if (materialCategory) {
         args.push('--material-category', materialCategory);
       }
-      
+
       // Spawn Python process (using require-style import)
       const pythonProcess = childProcess.spawn(this.pythonPath, args);
-      
+
       let outputData = '';
       let errorData = '';
-      
+
       // Handle stdout data with explicit type
       if (pythonProcess.stdout) {
         pythonProcess.stdout.on('data', (data: Buffer) => {
           outputData += data.toString();
         });
       }
-      
+
       // Handle stderr data with explicit type
       if (pythonProcess.stderr) {
         pythonProcess.stderr.on('data', (data: Buffer) => {
           errorData += data.toString();
         });
       }
-      
+
       // Handle process completion with explicit type
       pythonProcess.on('close', (code: number) => {
         if (code !== 0) {
           logger.error(`Failed to generate embedding: ${errorData}`);
           return reject(new Error(`Failed to generate embedding: ${errorData}`));
         }
-        
+
         try {
           const result = JSON.parse(outputData);
           resolve(result);
@@ -729,7 +730,7 @@ export class EnhancedVectorService {
     try {
       // Extract embeddings from result
       const { dense_vector, sparse_indices, sparse_values, dense_dimensions, sparse_dimensions, material_category, processing_time } = embeddingResult;
-      
+
       // Prepare sparse embedding JSON if available
       let sparseEmbedding = null;
       if (sparse_indices && sparse_values) {
@@ -739,7 +740,7 @@ export class EnhancedVectorService {
           dimensions: sparse_dimensions
         };
       }
-      
+
       // Prepare metadata
       const metadata = {
         text_length: text.length,
@@ -748,7 +749,7 @@ export class EnhancedVectorService {
         processing_time,
         timestamp: Date.now()
       };
-      
+
       // Using ts-ignore to bypass TypeScript warning about chained methods
       const updateQuery = supabaseClient.getClient()
         .from('materials')
@@ -759,24 +760,24 @@ export class EnhancedVectorService {
           embedding_method: metadata.method,
           embedding_quality: 1.0 // Default quality, can be updated later
         });
-      
+
       // @ts-ignore - Ignoring TypeScript error for method chain
       const { error } = await updateQuery.eq('id', materialId);
-      
+
       if (error) {
         throw error;
       }
-      
+
       // Log metrics
       await this.logEmbeddingMetrics(materialId, embeddingResult, text);
-      
+
       return true;
     } catch (error) {
       logger.error(`Failed to store embedding: ${error}`);
       return false;
     }
   }
-  
+
   /**
    * Log embedding metrics to the database
    */
@@ -787,13 +788,13 @@ export class EnhancedVectorService {
   ): Promise<void> {
     try {
       const { dense_vector, sparse_indices, dense_dimensions, processing_time, material_category } = embeddingResult;
-      
+
       // Determine embedding type
       const embeddingType = sparse_indices && dense_vector ? 'hybrid' : (dense_vector ? 'dense' : 'sparse');
-      
+
       // Calculate quality score (placeholder for now)
       const qualityScore = 1.0;
-      
+
       // Insert metrics record
       const { error } = await supabaseClient.getClient()
         .from('embedding_metrics')
@@ -810,7 +811,7 @@ export class EnhancedVectorService {
             timestamp: Date.now()
           }
         });
-      
+
       if (error) {
         throw error;
       }
@@ -833,16 +834,16 @@ export class EnhancedVectorService {
         denseWeight = 0.7,
         useSpecializedIndex = true
       } = options;
-      
+
       // Get the appropriate config
       const configName = materialType ? materialType : 'default';
       const config = this.getConfig(configName, materialType);
-      
+
       // Measure query time for metrics
       const startTime = Date.now();
-      
+
       let results: SearchResult[] = [];
-      
+
       // Determine if we should use specialized index or direct query
       if (useSpecializedIndex && materialType) {
         // Call the material_hybrid_search function
@@ -853,11 +854,11 @@ export class EnhancedVectorService {
             max_results: limit,
             config_name: config.name
           });
-        
+
         if (error) {
           throw error;
         }
-        
+
         // Transform results to standard format
         if (data) {
           results = data.map((item: any) => ({
@@ -874,11 +875,11 @@ export class EnhancedVectorService {
           method: 'hybrid',
           materialCategory: materialType
         });
-        
+
         if (!embeddingResult.dense_vector) {
           throw new Error('Failed to generate embedding for query');
         }
-        
+
         // Prepare sparse embedding
         let sparseEmbedding = null;
         if (embeddingResult.sparse_indices && embeddingResult.sparse_values) {
@@ -888,7 +889,7 @@ export class EnhancedVectorService {
             dimensions: embeddingResult.sparse_dimensions
           };
         }
-        
+
         // Call the find_similar_materials_hybrid function
         const { data, error } = await supabaseClient.getClient()
           .rpc('find_similar_materials_hybrid', {
@@ -899,11 +900,11 @@ export class EnhancedVectorService {
             material_type_filter: materialType,
             dense_weight: config.denseWeight
           });
-        
+
         if (error) {
           throw error;
         }
-        
+
         // Transform results to standard format
         if (data) {
           results = data.map((item: any) => ({
@@ -915,10 +916,10 @@ export class EnhancedVectorService {
           }));
         }
       }
-      
+
       // Update metrics
       await this.updateSearchMetrics(config.id, Date.now() - startTime);
-      
+
       return results;
     } catch (error) {
       logger.error(`Failed to search materials: ${error}`);
@@ -935,23 +936,23 @@ export class EnhancedVectorService {
       const query = supabaseClient.getClient()
         .from('vector_search_config')
         .select('queries_count, average_query_time_ms');
-      
+
       // @ts-ignore - Ignoring TypeScript error for method chain
       const { data, error } = await query.eq('id', configId).single();
-      
+
       if (error) {
         throw error;
       }
-      
+
       // Calculate new average
       const prevCount = data?.queries_count || 0;
       const prevAverage = data?.average_query_time_ms || 0;
-      
+
       let newAverage = queryTimeMs;
       if (prevCount > 0) {
         newAverage = ((prevAverage * prevCount) + queryTimeMs) / (prevCount + 1);
       }
-      
+
       // Update metrics
       const updateQuery = supabaseClient.getClient()
         .from('vector_search_config')
@@ -960,10 +961,10 @@ export class EnhancedVectorService {
           average_query_time_ms: newAverage,
           last_updated_at: new Date().toISOString()
         });
-      
+
       // @ts-ignore - Ignoring TypeScript error for method chain
       const { error: updateError } = await updateQuery.eq('id', configId);
-      
+
       if (updateError) {
         throw updateError;
       }
@@ -992,30 +993,30 @@ export class EnhancedVectorService {
         sameMaterialType = false,
         denseWeight
       } = options;
-      
+
       // Get the material's embeddings
       const query = supabaseClient.getClient()
         .from('materials')
         .select('id, name, material_type, dense_embedding, sparse_embedding');
-      
+
       // @ts-ignore - Ignoring TypeScript error for method chain
       const { data: material, error: materialError } = await query.eq('id', materialId).single();
-      
+
       if (materialError) {
         throw materialError;
       }
-      
+
       if (!material || !material.dense_embedding) {
         throw new Error('Material does not have embeddings');
       }
-      
+
       // Get the appropriate config
       const config = this.getConfig('default', material.material_type);
       const effectiveDenseWeight = denseWeight !== undefined ? denseWeight : config.denseWeight;
-      
+
       // Measure query time for metrics
       const startTime = Date.now();
-      
+
       // Call the find_similar_materials_hybrid function
       const { data, error } = await supabaseClient.getClient()
         .rpc('find_similar_materials_hybrid', {
@@ -1026,11 +1027,11 @@ export class EnhancedVectorService {
           material_type_filter: sameMaterialType ? material.material_type : null,
           dense_weight: effectiveDenseWeight
         });
-      
+
       if (error) {
         throw error;
       }
-      
+
       // Filter out the source material and transform results
       const results = data
         ? data
@@ -1044,10 +1045,10 @@ export class EnhancedVectorService {
               matchedBy: 'hybrid' as 'hybrid'
             }))
         : [];
-      
+
       // Update metrics
       await this.updateSearchMetrics(config.id, Date.now() - startTime);
-      
+
       return results;
     } catch (error) {
       logger.error(`Failed to find similar materials: ${error}`);
@@ -1060,13 +1061,13 @@ export class EnhancedVectorService {
    */
   public async refreshVectorViews(): Promise<boolean> {
     try {
-      const { error } = await supabaseClient.getClient()
+      const { error } = await supabase.getClient()
         .rpc('refresh_vector_materialized_views');
-      
+
       if (error) {
         throw error;
       }
-      
+
       logger.info('Successfully refreshed vector materialized views');
       return true;
     } catch (error) {
@@ -1080,18 +1081,17 @@ export class EnhancedVectorService {
    */
   public async getPerformanceStats(): Promise<any> {
     try {
-      const { data, error } = await supabaseClient.getClient()
+      const { data, error } = await supabase.getClient()
         .from('vector_search_performance')
         .select('*');
-      
+
       if (error) {
-        throw error;
+        throw handleSupabaseError(error, 'getPerformanceStats');
       }
-      
+
       return data;
     } catch (error) {
-      logger.error(`Failed to get vector search performance stats: ${error}`);
-      throw error;
+      throw handleSupabaseError(error, 'getPerformanceStats');
     }
   }
 
@@ -1110,51 +1110,51 @@ export class EnhancedVectorService {
         material_type: config.materialType,
         model_path: config.modelPath
       };
-      
+
       // Check if config exists
-      const checkQuery = supabaseClient.getClient()
+      const checkQuery = supabase.getClient()
         .from('vector_search_config')
         .select('id');
-      
+
       // @ts-ignore - Ignoring TypeScript error for method chain
       const { data: existingConfig, error: checkError } = await checkQuery.eq('name', config.name).maybeSingle();
-      
+
       if (checkError) {
         throw checkError;
       }
-      
+
       let result;
-      
+
       if (existingConfig) {
         // Update existing config
-        const updateQuery = supabaseClient.getClient()
+        const updateQuery = supabase.getClient()
           .from('vector_search_config')
           .update(dbConfig);
-        
+
         // @ts-ignore - Ignoring TypeScript error for method chain
         const { data, error } = await updateQuery.eq('id', existingConfig.id).select().single();
-        
+
         if (error) {
           throw error;
         }
-        
+
         result = data;
       } else {
         // Create new config
-        const insertQuery = supabaseClient.getClient()
+        const insertQuery = supabase.getClient()
           .from('vector_search_config')
           .insert(dbConfig);
-        
+
         // @ts-ignore - Ignoring TypeScript error for method chain
         const { data, error } = await insertQuery.select().single();
-        
+
         if (error) {
           throw error;
         }
-        
+
         result = data;
       }
-      
+
       // Update cache
       if (result) {
         this.configCache.set(result.name, {
@@ -1167,7 +1167,7 @@ export class EnhancedVectorService {
           materialType: result.material_type,
           modelPath: result.model_path
         });
-      
+
         return this.configCache.get(result.name)!;
       } else {
         throw new Error('Failed to get result from database operation');
@@ -1187,22 +1187,22 @@ export class EnhancedVectorService {
       if (configName === 'default') {
         throw new Error('Cannot delete the default configuration');
       }
-      
+
       // Delete the configuration
-      const deleteQuery = supabaseClient.getClient()
+      const deleteQuery = supabase.getClient()
         .from('vector_search_config')
         .delete();
-      
+
       // @ts-ignore - Ignoring TypeScript error for method chain
       const { error } = await deleteQuery.eq('name', configName);
-      
+
       if (error) {
         throw error;
       }
-      
+
       // Remove from cache
       this.configCache.delete(configName);
-      
+
       return true;
     } catch (error) {
       logger.error(`Failed to delete search config: ${error}`);
@@ -1215,14 +1215,14 @@ export class EnhancedVectorService {
    */
   public async getSearchConfigs(): Promise<VectorSearchConfig[]> {
     try {
-      const { data, error } = await supabaseClient.getClient()
+      const { data, error } = await supabase.getClient()
         .from('vector_search_config')
         .select('*');
-      
+
       if (error) {
         throw error;
       }
-      
+
       // Transform to our format
       if (data) {
         return data.map((config: any) => ({
@@ -1236,7 +1236,7 @@ export class EnhancedVectorService {
           modelPath: config.model_path
         }));
       }
-      
+
       return [];
     } catch (error) {
       logger.error(`Failed to get search configs: ${error}`);
@@ -1254,16 +1254,16 @@ export class EnhancedVectorService {
         this.generateEmbedding(text1),
         this.generateEmbedding(text2)
       ]);
-      
+
       // Check that embeddings were generated successfully
       if (!embedding1.dense_vector || !embedding2.dense_vector) {
         throw new Error('Failed to generate embeddings');
       }
-      
+
       // Make absolutely sure both dense vectors exist and are arrays
       const denseVector1 = embedding1.dense_vector;
       const denseVector2 = embedding2.dense_vector;
-      
+
       // Compute cosine similarity between dense vectors
       const dotProduct = denseVector1.reduce((sum, val, i) => {
         // Explicitly check index bounds
@@ -1273,14 +1273,14 @@ export class EnhancedVectorService {
         }
         return sum;
       }, 0);
-      
+
       const norm1 = Math.sqrt(denseVector1.reduce((sum, val) => sum + val * val, 0));
       const norm2 = Math.sqrt(denseVector2.reduce((sum, val) => sum + val * val, 0));
-      
+
       if (norm1 === 0 || norm2 === 0) {
         return 0;
       }
-      
+
       // Return cosine similarity
       return dotProduct / (norm1 * norm2);
     } catch (error) {

@@ -10,7 +10,7 @@ import { Redis } from 'redis';
 import { Tool } from 'crewai';
 
 import { createLogger, logAgentActivity } from '../utils/logger';
-import { env, configureLoggingFromEnvironment } from '../utils/environment';
+import { env, configureLoggingFromEnvironment } from '../../../shared/src/utils/environment';
 import { AgentConfig, AgentType, AgentCreationResult } from './types';
 import { authService } from '../services/authService';
 import { 

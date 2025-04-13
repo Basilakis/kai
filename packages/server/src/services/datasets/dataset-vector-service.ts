@@ -1,6 +1,6 @@
 /**
  * Dataset Vector Service
- * 
+ *
  * Extends dataset management capabilities with vector embedding features,
  * enabling similarity-based operations on dataset images and entries.
  * Integrates with Supabase Vector for efficient embedding storage and retrieval.
@@ -9,7 +9,8 @@
 import { logger } from '../../utils/logger';
 import { vectorSearch } from '../supabase/vector-search';
 import { supabaseDatasetService, DatasetImage } from './index';
-import { supabaseClient } from '../supabase/supabaseClient';
+import { supabase } from '../supabase/supabaseClient';
+import { handleSupabaseError } from '../../../shared/src/utils/supabaseErrorHandler';
 import { SupabaseClient } from '@supabase/supabase-js';
 
 // Define interfaces for vector operations
@@ -71,7 +72,7 @@ export class DatasetVectorService {
 
   private constructor() {
     logger.info('Dataset Vector Service initialized');
-    
+
     // Ensure vector index exists
     this.ensureVectorIndex().catch(error => {
       logger.error(`Failed to ensure vector index: ${error}`);
@@ -94,22 +95,24 @@ export class DatasetVectorService {
   private async ensureVectorIndex(): Promise<void> {
     try {
       // Check if the embeddings table exists
-      const client = supabaseClient.getClient();
-      
+      const client = supabase.getClient();
+
       // Cast client to any to allow chained methods
       const { data, error } = await (client as any)
         .from('information_schema.tables')
         .select('*')
         .eq('table_name', this.embeddingTableName);
-      
+
       if (error) {
-        throw error;
+        throw handleSupabaseError(error, 'ensureVectorIndex', {
+          table: this.embeddingTableName
+        });
       }
-      
+
       // If table doesn't exist, create it
       if (!data || data.length === 0) {
         logger.info(`Creating ${this.embeddingTableName} table`);
-        
+
         // PostgreSQL table creation
         await client.rpc('execute_sql', {
           sql: `
@@ -122,16 +125,16 @@ export class DatasetVectorService {
               metadata JSONB,
               created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
             );
-            
-            CREATE INDEX IF NOT EXISTS idx_${this.embeddingTableName}_dataset_id 
+
+            CREATE INDEX IF NOT EXISTS idx_${this.embeddingTableName}_dataset_id
               ON ${this.embeddingTableName}(dataset_id);
-            
-            CREATE INDEX IF NOT EXISTS idx_${this.embeddingTableName}_image_id 
+
+            CREATE INDEX IF NOT EXISTS idx_${this.embeddingTableName}_image_id
               ON ${this.embeddingTableName}(image_id);
           `
         });
       }
-      
+
       // Create vector index if it doesn't exist
       await vectorSearch.createIndex(
         this.embeddingTableName,
@@ -139,7 +142,7 @@ export class DatasetVectorService {
         'hnsw',
         384 // Using standard embedding dimension
       );
-      
+
       logger.info('Vector index for dataset embeddings is ready');
     } catch (error) {
       logger.error(`Failed to create vector index: ${error}`);
@@ -149,7 +152,7 @@ export class DatasetVectorService {
 
   /**
    * Store embedding for a dataset image
-   * 
+   *
    * @param datasetId Dataset ID
    * @param imageId Image ID
    * @param className Class name
@@ -166,12 +169,12 @@ export class DatasetVectorService {
   ): Promise<string> {
     try {
       logger.info(`Storing embedding for image ${imageId} in dataset ${datasetId}`);
-      
+
       // Check embedding dimension
       if (embedding.length !== 384) {
         logger.warn(`Embedding dimension (${embedding.length}) is not the expected size (384)`);
       }
-      
+
       // Store embedding using vector search service
       const id = await vectorSearch.storeEmbedding(
         embedding,
@@ -184,7 +187,7 @@ export class DatasetVectorService {
         this.embeddingTableName,
         this.vectorColumnName
       );
-      
+
       logger.debug(`Stored embedding with ID: ${id}`);
       return id;
     } catch (error) {
@@ -195,7 +198,7 @@ export class DatasetVectorService {
 
   /**
    * Find similar images within a dataset
-   * 
+   *
    * @param datasetId Dataset ID
    * @param embedding Query embedding
    * @param options Search options
@@ -208,7 +211,7 @@ export class DatasetVectorService {
   ): Promise<VectorSimilarityResult[]> {
     try {
       logger.info(`Finding similar images in dataset ${datasetId}`);
-      
+
       // Setup search configuration
       const searchConfig: {
         limit: number;
@@ -223,12 +226,12 @@ export class DatasetVectorService {
           dataset_id: datasetId
         }
       };
-      
+
       // Add class filter if specified
       if (options.className) {
         searchConfig.filters.class_name = options.className;
       }
-      
+
       // Perform vector search
       const results = await vectorSearch.findSimilar(
         embedding,
@@ -236,7 +239,7 @@ export class DatasetVectorService {
         this.vectorColumnName,
         searchConfig
       );
-      
+
       // Format results
       const formattedResults: VectorSimilarityResult[] = results.map((result: EmbeddingResult) => ({
         imageId: result.image_id,
@@ -244,7 +247,7 @@ export class DatasetVectorService {
         similarity: result.similarity || 0,
         metadata: options.includeMetadata ? result.metadata : undefined
       }));
-      
+
       logger.debug(`Found ${formattedResults.length} similar images`);
       return formattedResults;
     } catch (error) {
@@ -255,15 +258,15 @@ export class DatasetVectorService {
 
   /**
    * Detect duplicates in a dataset
-   * 
+   *
    * @param datasetId Dataset ID
    * @param options Duplicate detection options
    * @returns Map of images to their duplicates
    */
   public async detectDuplicates(
     datasetId: string,
-    options: DuplicateDetectionOptions = { 
-      threshold: 0.95, 
+    options: DuplicateDetectionOptions = {
+      threshold: 0.95,
       checkAcrossClasses: false,
       checkAcrossDatasets: false,
       limit: 1000
@@ -271,54 +274,54 @@ export class DatasetVectorService {
   ): Promise<Map<string, VectorSimilarityResult[]>> {
     try {
       logger.info(`Detecting duplicates in dataset ${datasetId}`);
-      
+
       // Get all embeddings for the dataset
-      const client = supabaseClient.getClient();
-      
+      const client = supabase.getClient();
+
       // Cast client to any to allow chained methods
       const { data: embeddings, error } = await (client as any)
         .from(this.embeddingTableName)
         .select('id, image_id, class_name, embedding')
         .eq('dataset_id', datasetId)
         .limit(options.limit || 1000);
-      
+
       if (error) {
         throw error;
       }
-      
+
       if (!embeddings || embeddings.length === 0) {
         logger.info(`No embeddings found for dataset ${datasetId}`);
         return new Map();
       }
-      
+
       logger.debug(`Processing ${embeddings.length} embeddings for duplicate detection`);
-      
+
       // Map to store results
       const duplicatesMap = new Map<string, VectorSimilarityResult[]>();
-      
+
       // Process each embedding to find duplicates
       for (const embedding of embeddings) {
         // Skip if already processed as a duplicate
         if (duplicatesMap.has(embedding.image_id)) {
           continue;
         }
-        
+
         // Setup search filters
         const filters: VectorSearchFilters = {
           // Exclude the same image
           image_id: { $ne: embedding.image_id }
         };
-        
+
         // Filter by dataset if not checking across datasets
         if (!options.checkAcrossDatasets) {
           filters.dataset_id = datasetId;
         }
-        
+
         // Filter by class if not checking across classes
         if (!options.checkAcrossClasses && embedding.class_name) {
           filters.class_name = embedding.class_name;
         }
-        
+
         // Find similar images
         const similarResults = await vectorSearch.findSimilar(
           embedding.embedding,
@@ -330,7 +333,7 @@ export class DatasetVectorService {
             filters
           }
         );
-        
+
         // If duplicates found, add to map
         if (similarResults.length > 0) {
           duplicatesMap.set(
@@ -343,7 +346,7 @@ export class DatasetVectorService {
           );
         }
       }
-      
+
       logger.info(`Found duplicates for ${duplicatesMap.size} images`);
       return duplicatesMap;
     } catch (error) {
@@ -354,7 +357,7 @@ export class DatasetVectorService {
 
   /**
    * Organize dataset by similarity clusters
-   * 
+   *
    * @param datasetId Dataset ID
    * @param numberOfClusters Number of clusters to create
    * @returns Map of cluster IDs to image IDs
@@ -365,46 +368,46 @@ export class DatasetVectorService {
   ): Promise<Map<number, string[]>> {
     try {
       logger.info(`Clustering images in dataset ${datasetId} into ${numberOfClusters} clusters`);
-      
+
       // Get all embeddings for the dataset
       const client = supabaseClient.getClient();
-      
+
       // Cast client to any to allow chained methods
       const { data: embeddings, error } = await (client as any)
         .from(this.embeddingTableName)
         .select('image_id, embedding')
         .eq('dataset_id', datasetId);
-      
+
       if (error) {
         throw error;
       }
-      
+
       if (!embeddings || embeddings.length === 0) {
         logger.info(`No embeddings found for dataset ${datasetId}`);
         return new Map();
       }
-      
+
       // For a real implementation, we would use a clustering algorithm here
       // This is a simplified version that simulates clustering
-      
+
       // Create clusters (in a real implementation, this would use k-means or similar)
       const clusterMap = new Map<number, string[]>();
-      
+
       // Assign each image to a random cluster (just for demonstration)
       // In a real implementation, this would use actual vector clustering
       embeddings.forEach((embedding: { image_id: string; embedding: number[] }) => {
         const clusterId = Math.floor(Math.random() * numberOfClusters);
-        
+
         if (!clusterMap.has(clusterId)) {
           clusterMap.set(clusterId, []);
         }
-        
+
         const cluster = clusterMap.get(clusterId);
         if (cluster) {
           cluster.push(embedding.image_id);
         }
       });
-      
+
       logger.info(`Created ${clusterMap.size} clusters for dataset ${datasetId}`);
       return clusterMap;
     } catch (error) {
@@ -415,7 +418,7 @@ export class DatasetVectorService {
 
   /**
    * Find outlier images in a dataset class
-   * 
+   *
    * @param datasetId Dataset ID
    * @param className Class name
    * @param threshold Similarity threshold
@@ -428,32 +431,36 @@ export class DatasetVectorService {
   ): Promise<string[]> {
     try {
       logger.info(`Finding outliers in dataset ${datasetId}, class ${className}`);
-      
+
       // Get all embeddings for the class
-      const client = supabaseClient.getClient();
-      
+      const client = supabase.getClient();
+
       // Cast client to any to allow chained methods
       const { data: embeddings, error } = await (client as any)
         .from(this.embeddingTableName)
         .select('id, image_id, embedding')
         .eq('dataset_id', datasetId)
         .eq('class_name', className);
-      
+
       if (error) {
-        throw error;
+        throw handleSupabaseError(error, 'findOutlierImages', {
+          datasetId,
+          className,
+          table: this.embeddingTableName
+        });
       }
-      
+
       if (!embeddings || embeddings.length === 0) {
         logger.info(`No embeddings found for dataset ${datasetId}, class ${className}`);
         return [];
       }
-      
+
       logger.debug(`Analyzing ${embeddings.length} images for outliers`);
-      
+
       // Find average embedding (centroid) for the class
       const dimensions = embeddings[0].embedding.length;
       const centroid = new Array(dimensions).fill(0);
-      
+
       // Sum all embeddings
       embeddings.forEach((item: { embedding: number[] }) => {
         if (item.embedding && Array.isArray(item.embedding)) {
@@ -462,26 +469,26 @@ export class DatasetVectorService {
           }
         }
       });
-      
+
       // Divide by count to get average
       for (let i = 0; i < dimensions; i++) {
         centroid[i] /= embeddings.length;
       }
-      
+
       // Find outliers (images far from centroid)
       const outliers: string[] = [];
-      
+
       // Calculate similarity to centroid for each image
       for (const embedding of embeddings) {
         // Calculate cosine similarity
         const similarity = this.calculateCosineSimilarity(centroid, embedding.embedding);
-        
+
         // If below threshold, consider an outlier
         if (similarity < threshold) {
           outliers.push(embedding.image_id);
         }
       }
-      
+
       logger.info(`Found ${outliers.length} outliers in class ${className}`);
       return outliers;
     } catch (error) {
@@ -492,7 +499,7 @@ export class DatasetVectorService {
 
   /**
    * Calculate cosine similarity between two vectors
-   * 
+   *
    * @param vec1 First vector
    * @param vec2 Second vector
    * @returns Cosine similarity (0-1)
@@ -501,35 +508,35 @@ export class DatasetVectorService {
     if (!vec1 || !vec2 || !Array.isArray(vec1) || !Array.isArray(vec2)) {
       return 0;
     }
-    
+
     const length = Math.min(vec1.length, vec2.length);
-    
+
     let dotProduct = 0;
     let mag1 = 0;
     let mag2 = 0;
-    
+
     for (let i = 0; i < length; i++) {
       const v1 = vec1[i] || 0;
       const v2 = vec2[i] || 0;
-      
+
       dotProduct += v1 * v2;
       mag1 += v1 * v1;
       mag2 += v2 * v2;
     }
-    
+
     mag1 = Math.sqrt(mag1);
     mag2 = Math.sqrt(mag2);
-    
+
     if (mag1 === 0 || mag2 === 0) {
       return 0;
     }
-    
+
     return dotProduct / (mag1 * mag2);
   }
 
   /**
    * Generate embeddings for a dataset
-   * 
+   *
    * @param datasetId Dataset ID
    * @param options Generation options
    * @returns Count of generated embeddings
@@ -543,53 +550,53 @@ export class DatasetVectorService {
   ): Promise<number> {
     try {
       logger.info(`Generating embeddings for dataset ${datasetId}`);
-      
+
       // Get dataset to confirm it exists
       const dataset = await supabaseDatasetService.getDatasetById(datasetId);
       if (!dataset) {
         throw new Error(`Dataset not found: ${datasetId}`);
       }
-      
+
       // Get dataset classes
       const classes = await supabaseDatasetService.getDatasetClasses(datasetId);
-      
+
       if (!classes || classes.length === 0) {
         logger.warn(`No classes found for dataset ${datasetId}`);
         return 0;
       }
-      
+
       let totalEmbeddings = 0;
-      
+
       // Process each class
       for (const datasetClass of classes) {
         logger.debug(`Processing class: ${datasetClass.name}`);
-        
+
         // Get images for class
         const images = await supabaseDatasetService.getClassImages(
-          datasetId, 
+          datasetId,
           datasetClass.id
         );
-        
+
         if (!images || images.length === 0) {
           logger.debug(`No images found for class ${datasetClass.name}`);
           continue;
         }
-        
+
         logger.debug(`Found ${images.length} images for class ${datasetClass.name}`);
-        
+
         // Process images in batches
         const batchSize = options.batchSize || 50;
-        
+
         for (let i = 0; i < images.length; i += batchSize) {
           const batch = images.slice(i, i + batchSize);
-          
+
           // Process batch
           await Promise.all(batch.map(async (image: DatasetImage) => {
             try {
               // Check if embedding already exists
               if (!options.force) {
-                const client = supabaseClient.getClient();
-                
+                const client = supabase.getClient();
+
                 // Cast client to any to allow chained methods
                 const { data, error } = await (client as any)
                   .from(this.embeddingTableName)
@@ -598,22 +605,27 @@ export class DatasetVectorService {
                   .eq('image_id', image.id)
                   .eq('class_name', datasetClass.name)
                   .maybeSingle();
-                
+
                 if (error) {
-                  throw error;
+                  throw handleSupabaseError(error, 'generateEmbeddings', {
+                    datasetId,
+                    imageId: image.id,
+                    className: datasetClass.name,
+                    table: this.embeddingTableName
+                  });
                 }
-                
+
                 if (data) {
                   // Embedding already exists
                   return;
                 }
               }
-              
+
               // Generate embedding
               // In a real implementation, this would call a ML service
               // Here we simulate with random values
               const embedding = this.generateMockEmbedding(384);
-              
+
               // Store embedding
               await this.storeImageEmbedding(
                 datasetId,
@@ -627,17 +639,17 @@ export class DatasetVectorService {
                   size: image.size
                 }
               );
-              
+
               totalEmbeddings++;
             } catch (error) {
               logger.error(`Failed to process image ${image.id}: ${error}`);
             }
           }));
-          
+
           logger.debug(`Processed batch ${i/batchSize + 1}/${Math.ceil(images.length/batchSize)}`);
         }
       }
-      
+
       logger.info(`Generated ${totalEmbeddings} embeddings for dataset ${datasetId}`);
       return totalEmbeddings;
     } catch (error) {
@@ -648,27 +660,27 @@ export class DatasetVectorService {
 
   /**
    * Generate a mock embedding for testing
-   * 
+   *
    * @param dimensions Number of dimensions
    * @returns Random embedding vector
    */
   private generateMockEmbedding(dimensions: number): number[] {
     const embedding = new Array(dimensions);
-    
+
     // Generate random values
     for (let i = 0; i < dimensions; i++) {
       embedding[i] = (Math.random() * 2) - 1; // Values between -1 and 1
     }
-    
+
     // Normalize
     const magnitude = Math.sqrt(
       embedding.reduce((sum, val) => sum + val * val, 0)
     );
-    
+
     for (let i = 0; i < dimensions; i++) {
       embedding[i] = embedding[i] / magnitude;
     }
-    
+
     return embedding;
   }
 }

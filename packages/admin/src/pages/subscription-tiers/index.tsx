@@ -24,22 +24,19 @@ import {
   Typography,
   Box,
   Tooltip,
-  Grid
-} from '@mui/material';
+  Grid,
+  Checkbox,
+  Divider,
+  InputAdornment,
+  Container
+} from '../../components/mui';
 import { 
   Add as AddIcon, 
   Edit as EditIcon, 
-  Delete as DeleteIcon
+  Delete as DeleteIcon,
+  CheckCircle as CheckCircleIcon,
+  Cancel as CancelIcon
 } from '@mui/icons-material';
-
-// Import missing MUI components
-// Note: In a real implementation these would need to be installed
-// npm install @mui/material @mui/icons-material @emotion/react @emotion/styled
-const Checkbox = (props: any) => <input type="checkbox" {...props} />;
-const Divider = () => <hr className="my-2 border-t border-gray-200" />;
-const InputAdornment = (props: any) => <span className="mx-1">{props.children}</span>;
-const CheckCircleIcon = () => <span className="text-green-500">✓</span>;
-const CancelIcon = () => <span className="text-red-500">✗</span>;
 
 // TypeScript interfaces for our data structures
 interface ModuleAccess {

@@ -23,7 +23,7 @@ import {
   TableHead,
   TableRow,
   TablePagination
-} from '@mui/material';
+} from '../../components/mui';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';

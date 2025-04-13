@@ -1,6 +1,6 @@
 /**
  * Supabase Helper Utility
- * 
+ *
  * Provides type-safe wrappers around Supabase database operations to avoid TypeScript errors
  * with method chaining. This utility serves as a bridge between our application and the
  * Supabase client, handling the proper typing and query construction.
@@ -8,7 +8,8 @@
 
 import { SupabaseClient } from '@supabase/supabase-js';
 import { logger, LogMetadata } from '../../utils/logger';
-import { supabaseClient } from './supabaseClient';
+import { supabase } from './supabaseClient';
+import { handleSupabaseError } from '../../../shared/src/utils/supabaseErrorHandler';
 
 /**
  * Query filter operator type
@@ -87,14 +88,14 @@ export class SupabaseHelper {
   private client: SupabaseClient;
 
   constructor() {
-    this.client = supabaseClient.getClient();
+    this.client = supabase.getClient();
   }
 
   /**
    * Get a fresh client instance
    */
   public refreshClient(): void {
-    this.client = supabaseClient.getClient();
+    this.client = supabase.getClient();
   }
 
   /**
@@ -108,15 +109,14 @@ export class SupabaseHelper {
         .select('status') as unknown as SupabaseFilterBuilder<{ status: string }>)
         .limit(1)
         .maybeSingle();
-      
+
       return { connected: !result.error, error: result.error as SupabaseError };
     } catch (err) {
-      const error = err as Error;
-      logger.error(`Error checking connection: ${error.message}`, {
+      const error = handleSupabaseError(err, 'checkConnection', {
         service: 'SupabaseHelper',
-        method: 'checkConnection',
         table: 'message_broker_status'
-      } as LogMetadata);
+      });
+
       return { connected: false, error: error as SupabaseError };
     }
   }
@@ -136,19 +136,18 @@ export class SupabaseHelper {
         .select(columns) as unknown as SupabaseFilterBuilder<T>)
         .eq('id', id)
         .maybeSingle();
-      
-      return { 
-        data: result.data, 
-        error: result.error as SupabaseError 
+
+      return {
+        data: result.data,
+        error: result.error as SupabaseError
       };
     } catch (err) {
-      const error = err as Error;
-      logger.error(`Error getting record by ID: ${error.message}`, {
+      const error = handleSupabaseError(err, 'getById', {
         service: 'SupabaseHelper',
-        method: 'getById',
         table,
         id
-      } as LogMetadata);
+      });
+
       return { data: null, error: error as SupabaseError };
     }
   }
@@ -166,24 +165,23 @@ export class SupabaseHelper {
         .from(table)
         .insert(data) as unknown as SupabaseFilterBuilder<R>)
         .select();
-      
+
       // TypeScript-safe access to first array element that avoids undefined type
       let firstItem: R | null = null;
       if (Array.isArray(result.data) && result.data.length > 0) {
         firstItem = result.data[0] as R;
       }
-      
-      return { 
-        data: firstItem, 
-        error: result.error as SupabaseError 
+
+      return {
+        data: firstItem,
+        error: result.error as SupabaseError
       };
     } catch (err) {
-      const error = err as Error;
-      logger.error(`Error inserting record: ${error.message}`, {
+      const error = handleSupabaseError(err, 'insert', {
         service: 'SupabaseHelper',
-        method: 'insert',
         table
-      } as LogMetadata);
+      });
+
       return { data: null, error: error as SupabaseError };
     }
   }
@@ -202,16 +200,15 @@ export class SupabaseHelper {
         .from(table)
         .update(data) as unknown as SupabaseFilterBuilder<T>)
         .eq('id', id);
-      
+
       return { success: !result.error, error: result.error as SupabaseError };
     } catch (err) {
-      const error = err as Error;
-      logger.error(`Error updating record: ${error.message}`, {
+      const error = handleSupabaseError(err, 'updateById', {
         service: 'SupabaseHelper',
-        method: 'updateById',
         table,
         id
-      } as LogMetadata);
+      });
+
       return { success: false, error: error as SupabaseError };
     }
   }
@@ -229,16 +226,15 @@ export class SupabaseHelper {
         .from(table)
         .delete() as unknown as SupabaseFilterBuilder<unknown>)
         .eq('id', id);
-      
+
       return { success: !result.error, error: result.error as SupabaseError };
     } catch (err) {
-      const error = err as Error;
-      logger.error(`Error deleting record: ${error.message}`, {
+      const error = handleSupabaseError(err, 'deleteById', {
         service: 'SupabaseHelper',
-        method: 'deleteById',
         table,
         id
-      } as LogMetadata);
+      });
+
       return { success: false, error: error as SupabaseError };
     }
   }
@@ -255,7 +251,7 @@ export class SupabaseHelper {
     try {
       // Use type-safe method chaining
       let query = this.client.from(table).delete() as unknown as SupabaseFilterBuilder<unknown>;
-      
+
       // Apply the filter based on the operator
       switch (operator) {
         case 'eq':
@@ -280,30 +276,29 @@ export class SupabaseHelper {
           if (Array.isArray(value)) {
             query = query.in(field, value);
           } else {
-            return { 
-              success: false, 
+            return {
+              success: false,
               error: new Error(`Value must be an array for 'in' operator`) as SupabaseError
             };
           }
           break;
         default:
-          return { 
-            success: false, 
+          return {
+            success: false,
             error: new Error(`Unsupported operator: ${operator}`) as SupabaseError
           };
       }
-      
+
       const result = await query;
       return { success: !result.error, error: result.error as SupabaseError };
     } catch (err) {
-      const error = err as Error;
-      logger.error(`Error deleting records: ${error.message}`, {
+      const error = handleSupabaseError(err, 'deleteWhere', {
         service: 'SupabaseHelper',
-        method: 'deleteWhere',
         table,
         field,
         operator
-      } as LogMetadata);
+      });
+
       return { success: false, error: error as SupabaseError };
     }
   }
@@ -319,7 +314,7 @@ export class SupabaseHelper {
     try {
       // Use type-safe method chaining
       let query = this.client.from(table).select(columns) as unknown as SupabaseFilterBuilder<T>;
-      
+
       // Apply each filter
       for (const filter of filters) {
         switch (filter.operator) {
@@ -352,17 +347,16 @@ export class SupabaseHelper {
             logger.warn(`Unsupported operator: ${filter.operator}`);
         }
       }
-      
+
       const result = await query;
       return { data: result.data as T[], error: result.error as SupabaseError };
     } catch (err) {
-      const error = err as Error;
-      logger.error(`Error getting records: ${error.message}`, {
+      const error = handleSupabaseError(err, 'getWhere', {
         service: 'SupabaseHelper',
-        method: 'getWhere',
         table,
         filterCount: filters.length
-      } as LogMetadata);
+      });
+
       return { data: null, error: error as SupabaseError };
     }
   }
@@ -378,15 +372,14 @@ export class SupabaseHelper {
       const result = await this.client
         .from(table)
         .select(columns);
-      
+
       return { data: result.data as T[], error: result.error as SupabaseError };
     } catch (err) {
-      const error = err as Error;
-      logger.error(`Error getting all records: ${error.message}`, {
+      const error = handleSupabaseError(err, 'getAll', {
         service: 'SupabaseHelper',
-        method: 'getAll',
         table
-      } as LogMetadata);
+      });
+
       return { data: null, error: error as SupabaseError };
     }
   }
@@ -402,7 +395,7 @@ export class SupabaseHelper {
     try {
       // Use type-safe method chaining
       let query = this.client.from(table).update(data) as unknown as SupabaseFilterBuilder<T>;
-      
+
       // Apply each filter
       for (const filter of filters) {
         switch (filter.operator) {
@@ -435,17 +428,16 @@ export class SupabaseHelper {
             logger.warn(`Unsupported operator: ${filter.operator}`);
         }
       }
-      
+
       const result = await query;
       return { success: !result.error, error: result.error as SupabaseError };
     } catch (err) {
-      const error = err as Error;
-      logger.error(`Error updating records: ${error.message}`, {
+      const error = handleSupabaseError(err, 'updateWhere', {
         service: 'SupabaseHelper',
-        method: 'updateWhere',
         table,
         filterCount: filters.length
-      } as LogMetadata);
+      });
+
       return { success: false, error: error as SupabaseError };
     }
   }
@@ -461,24 +453,23 @@ export class SupabaseHelper {
       if (records.length === 0) {
         return { success: true, count: 0, error: null };
       }
-      
+
       const result = await this.client
         .from(table)
         .insert(records);
-      
-      return { 
-        success: !result.error, 
+
+      return {
+        success: !result.error,
         count: records.length,
-        error: result.error as SupabaseError 
+        error: result.error as SupabaseError
       };
     } catch (err) {
-      const error = err as Error;
-      logger.error(`Error inserting batch: ${error.message}`, {
+      const error = handleSupabaseError(err, 'insertBatch', {
         service: 'SupabaseHelper',
-        method: 'insertBatch',
         table,
         recordCount: records.length
-      } as LogMetadata);
+      });
+
       return { success: false, count: 0, error: error as SupabaseError };
     }
   }

@@ -6,14 +6,24 @@
  * agent system.
  */
 
-import Router from 'express';
-import type Request from 'express';
-import type Response from 'express';
+import express, { Request, Response } from 'express';
 import multer from 'multer';
 import * as agentController from '../controllers/agents.controller';
-import { authMiddleware } from '../middleware/auth.middleware';
+import { authMiddleware, validateSessionOwnership } from '../middleware/auth.middleware';
 
-const router = Router();
+// Extend Express Request interface to add user property
+declare global {
+  namespace Express {
+    interface Request {
+      user?: {
+        id: string;
+        role: string;
+      };
+    }
+  }
+}
+
+const router = express.Router();
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -42,37 +52,48 @@ const upload = multer({
 });
 
 // Initialize routes
-// Some routes are protected by auth middleware, others are public
-// In a production environment, all routes should be protected
+// All routes are now protected by auth middleware and session ownership validation
 
 /**
  * @route   POST /api/agents/session
  * @desc    Create a new agent session
- * @access  Public (should be restricted in production)
+ * @access  Private - Authenticated users only
  */
-router.post('/session', agentController.createSession);
+router.post('/session', authMiddleware, agentController.createSession);
 
 /**
  * @route   POST /api/agents/session/:sessionId/message
  * @desc    Send a message to an agent
- * @access  Public (should be restricted in production)
+ * @access  Private - Session owner only
  */
-router.post('/session/:sessionId/message', agentController.sendMessage);
+router.post(
+  '/session/:sessionId/message', 
+  authMiddleware,
+  validateSessionOwnership(), // Ensure user owns the session
+  agentController.sendMessage
+);
 
 /**
  * @route   GET /api/agents/session/:sessionId/messages
  * @desc    Get messages for a session
- * @access  Public (should be restricted in production)
+ * @access  Private - Session owner only
  */
-router.get('/session/:sessionId/messages', agentController.getMessages);
+router.get(
+  '/session/:sessionId/messages', 
+  authMiddleware,
+  validateSessionOwnership(), // Ensure user owns the session
+  agentController.getMessages
+);
 
 /**
  * @route   POST /api/agents/session/:sessionId/image
  * @desc    Upload image for recognition agent
- * @access  Public (should be restricted in production)
+ * @access  Private - Session owner only
  */
 router.post(
   '/session/:sessionId/image',
+  authMiddleware,
+  validateSessionOwnership(), // Ensure user owns the session
   upload.single('image'),
   agentController.uploadImage
 );
@@ -80,20 +101,33 @@ router.post(
 /**
  * @route   DELETE /api/agents/session/:sessionId
  * @desc    Close a session
- * @access  Public (should be restricted in production)
+ * @access  Private - Session owner only
  */
-router.delete('/session/:sessionId', agentController.closeSession);
+router.delete(
+  '/session/:sessionId', 
+  authMiddleware,
+  validateSessionOwnership(), // Ensure user owns the session
+  agentController.closeSession
+);
 
 // Admin routes (protected)
 /**
  * @route   GET /api/agents/admin/status
  * @desc    Get agent system status
- * @access  Admin
+ * @access  Admin only
  */
 router.get(
   '/admin/status',
   authMiddleware,
   (req: Request, res: Response) => {
+    // Verify user is an admin
+    if (req.user?.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied: Admin role required'
+      });
+    }
+    
     // This would call a method to get system status
     // For now, just return a placeholder response
     res.status(200).json({
@@ -107,6 +141,24 @@ router.get(
         errorRate: '0.5%'
       },
       lastUpdated: new Date()
+    });
+  }
+);
+
+/**
+ * @route   GET /api/agents/user/sessions
+ * @desc    Get all agent sessions for the current user
+ * @access  Private - Authenticated users only
+ */
+router.get(
+  '/user/sessions',
+  authMiddleware,
+  (req: Request, res: Response) => {
+    // This will be implemented in the controller
+    // For now, provide a simple implementation here
+    res.status(200).json({
+      success: true,
+      sessions: []
     });
   }
 );

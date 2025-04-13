@@ -284,6 +284,12 @@ This bidirectional integration creates a continuously improving system where ML 
 
 All mock implementations previously used during development have been replaced with fully functional real API calls to the backend services. The training API now uses actual server endpoints for all operations, including distributed training, parameter optimization, and progress tracking.
 
+## Related Documentation
+
+For information on the admin interface for training monitoring and checkpoint management, please refer to:
+
+- [Training Monitoring System](./training-monitoring-system.md) - Documentation on the admin panel components for training visualization, checkpoint management, and parameter tuning
+
 ## Performance Considerations
 
 - **Memory Usage**: The unified API automatically adapts to available memory

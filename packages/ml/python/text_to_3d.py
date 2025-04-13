@@ -1,1053 +1,1211 @@
+"""
+Text to 3D Generation System
+
+This module provides a comprehensive pipeline for generating 3D models from text descriptions,
+integrating multiple state-of-the-art models including ShapE, GET3D, DiffuScene, and stable diffusion models.
+"""
+
 import torch
 import numpy as np
-from typing import Dict, Any, Optional, List, Union
+import os
+import logging
+import time
+import asyncio
+from typing import Dict, List, Any, Optional, Tuple, Union, Callable
+from pathlib import Path
+from dataclasses import dataclass, field
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+# Required dependencies (add to requirements.txt):
+# torch>=2.0.0
+# transformers>=4.30.0
+# diffusers>=0.18.0
+# huggingface_hub>=0.16.0
+# trimesh>=3.20.0
+# pytorch3d>=0.7.0
+# numpy>=1.24.0
+# open3d>=0.17.0
+
+@dataclass
+class TextTo3DConfig:
+    """Configuration for text to 3D pipeline"""
+    # General configuration
+    device: str = "cuda" if torch.cuda.is_available() else "cpu"
+    output_dir: str = "output/text_to_3d"
+    cache_dir: str = ".cache/text_to_3d"
+    
+    # ShapE configuration
+    shape_e_model: str = "openai/shap-e-xl"
+    shape_e_guidance_scale: float = 7.5
+    shape_e_steps: int = 64
+    
+    # GET3D configuration
+    get3d_model: str = "nvidia/get3d-base"
+    get3d_guidance_scale: float = 8.0
+    get3d_steps: int = 100
+    
+    # DiffuScene configuration 
+    diffuscene_model: str = "scene-diffuser/diffuscene-v1"
+    diffuscene_guidance_scale: float = 9.0
+    diffuscene_steps: int = 50
+    
+    # Stable Diffusion for textures
+    texture_model: str = "stabilityai/stable-diffusion-2-1"
+    texture_guidance_scale: float = 7.5
+    texture_steps: int = 30
+    texture_resolution: int = 1024
+    
+    # Mesh parameters
+    mesh_resolution: int = 256
+    simplify_mesh: bool = True
+    target_faces: int = 10000
+    
+    # Physics simulation
+    physics_enabled: bool = True
+    physics_steps: int = 100
+    collision_margin: float = 0.01
+    
+    # Export formats
+    export_formats: List[str] = field(default_factory=lambda: ["obj", "glb", "usdz"])
+
 
 class ShapEModel:
-    """Integration with Shap-E for base structure generation"""
+    """Shap-E model for base 3D shape generation from text"""
     
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
-        self.config = config or {}
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    def __init__(self, config: TextTo3DConfig):
+        self.config = config
+        self.device = torch.device(config.device)
         self.model = None
         self.tokenizer = None
+        self._initialized = False
         
     async def initialize(self):
-        """Initialize Shap-E model and tokenizer"""
-        # Load Shap-E model and tokenizer
-        self.model = ShapEForGeneration.from_pretrained(
-            "openai/shap-e-base",
-            torch_dtype=torch.float16,
-            device_map="auto"
-        )
-        self.tokenizer = AutoTokenizer.from_pretrained("openai/shap-e-base")
-        
-    async def generate_base_structure(self, prompt: str) -> Dict[str, Any]:
-        """Generate base 3D structure from text prompt"""
-        if not self.model or not self.tokenizer:
-            await self.initialize()
+        """Initialize the Shap-E model and tokenizer"""
+        if self._initialized:
+            return
             
-        # Encode text prompt
-        inputs = self.tokenizer(
-            prompt,
-            padding=True,
-            truncation=True,
-            return_tensors="pt"
-        ).to(self.device)
+        logger.info("Initializing Shap-E model")
         
-        # Generate 3D structure
-        with torch.no_grad():
-            outputs = self.model.generate(
-                **inputs,
-                num_inference_steps=64,
-                guidance_scale=7.5,
-                height=256,
-                width=256
+        try:
+            from diffusers import ShapEPipeline
+            from transformers import AutoTokenizer
+            
+            # Load model and move to device
+            self.model = ShapEPipeline.from_pretrained(
+                self.config.shape_e_model,
+                torch_dtype=torch.float16 if "cuda" in self.config.device else torch.float32,
+                cache_dir=self.config.cache_dir
+            ).to(self.device)
+            
+            # Load tokenizer
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                self.config.shape_e_model, 
+                cache_dir=self.config.cache_dir
             )
             
-        # Convert to mesh format
-        mesh = self._convert_to_mesh(outputs[0])
+            self._initialized = True
+            logger.info("Shap-E model initialized successfully")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize Shap-E model: {e}")
+            raise RuntimeError(f"Shap-E initialization failed: {e}")
+    
+    async def generate_base_shape(self, prompt: str) -> Dict[str, Any]:
+        """Generate a base 3D shape from a text prompt"""
+        if not self._initialized:
+            await self.initialize()
+            
+        logger.info(f"Generating base 3D shape from prompt: '{prompt}'")
         
-        # Add metadata
-        return {
-            'geometry': mesh,
-            'prompt': prompt,
-            'parameters': {
-                'guidance_scale': 7.5,
-                'inference_steps': 64
+        try:
+            # Encode text prompt
+            inputs = self.tokenizer(
+                prompt,
+                padding="max_length",
+                max_length=77,
+                truncation=True,
+                return_tensors="pt"
+            ).to(self.device)
+            
+            # Generate 3D shape
+            with torch.no_grad():
+                outputs = self.model(
+                    prompt_embeds=inputs.input_ids,
+                    guidance_scale=self.config.shape_e_guidance_scale,
+                    num_inference_steps=self.config.shape_e_steps,
+                    output_type="mesh"
+                )
+                
+            # Extract the mesh from outputs
+            mesh = outputs.meshes[0]
+            
+            # Convert to standard format
+            vertices = mesh.verts
+            faces = mesh.faces
+            
+            # If we have texture information, extract it
+            if hasattr(mesh, "uvs") and mesh.uvs is not None:
+                uvs = mesh.uvs
+                texture = mesh.texture if hasattr(mesh, "texture") else None
+            else:
+                # Generate basic UVs if not provided
+                uvs = self._generate_basic_uvs(vertices)
+                texture = None
+                
+            # Normalize mesh to unit size
+            vertices = self._normalize_mesh(vertices)
+            
+            # Compute normals
+            normals = self._compute_vertex_normals(vertices, faces)
+            
+            # Return mesh data and metadata
+            result = {
+                "geometry": {
+                    "vertices": vertices.cpu().numpy(),
+                    "faces": faces.cpu().numpy(),
+                    "normals": normals.cpu().numpy(),
+                    "uvs": uvs.cpu().numpy() if uvs is not None else None,
+                    "texture": texture.cpu().numpy() if texture is not None else None
+                },
+                "metadata": {
+                    "prompt": prompt,
+                    "model": self.config.shape_e_model,
+                    "guidance_scale": self.config.shape_e_guidance_scale,
+                    "steps": self.config.shape_e_steps,
+                    "timestamp": time.time()
+                }
             }
-        }
-    
-    async def refine_structure(self, 
-                             base_structure: Dict[str, Any], 
-                             feedback: str) -> Dict[str, Any]:
-        """Refine generated structure based on feedback"""
-        if not self.model or not self.tokenizer:
+            
+            logger.info(f"Base shape generated with {len(vertices)} vertices, {len(faces)} faces")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error generating base shape: {e}")
+            raise RuntimeError(f"Shape generation failed: {e}")
+            
+    async def refine_shape(self, base_shape: Dict[str, Any], feedback: str) -> Dict[str, Any]:
+        """Refine an existing shape based on feedback"""
+        if not self._initialized:
             await self.initialize()
             
-        # Combine original prompt with feedback
-        combined_prompt = f"{base_structure['prompt']} {feedback}"
+        logger.info(f"Refining shape based on feedback: '{feedback}'")
         
-        # Generate refined structure with higher guidance
-        inputs = self.tokenizer(
-            combined_prompt,
-            padding=True,
-            truncation=True,
-            return_tensors="pt"
-        ).to(self.device)
-        
-        with torch.no_grad():
-            outputs = self.model.generate(
-                **inputs,
-                num_inference_steps=128,  # More steps for refinement
-                guidance_scale=9.0,  # Higher guidance for more control
-                height=256,
-                width=256,
-                initial_mesh=base_structure['geometry']  # Use previous as starting point
-            )
+        try:
+            # Combine original prompt with feedback
+            original_prompt = base_shape["metadata"]["prompt"]
+            combined_prompt = f"{original_prompt}. {feedback}"
             
-        # Convert to mesh format
-        refined_mesh = self._convert_to_mesh(outputs[0])
-        
-        return {
-            'geometry': refined_mesh,
-            'prompt': combined_prompt,
-            'parameters': {
-                'guidance_scale': 9.0,
-                'inference_steps': 128
-            },
-            'original': base_structure
-        }
-        
-    def _convert_to_mesh(self, model_output: torch.Tensor) -> Dict[str, Any]:
-        """Convert model output to mesh format"""
-        # Extract mesh data
-        vertices = model_output.vertices.cpu().numpy()
-        faces = model_output.faces.cpu().numpy()
-        
-        # Compute normals
-        normals = self._compute_normals(vertices, faces)
-        
-        return {
-            'vertices': vertices,
-            'faces': faces,
-            'normals': normals
-        }
-        
-    def _compute_normals(self, 
-                        vertices: np.ndarray, 
-                        faces: np.ndarray) -> np.ndarray:
-        """Compute vertex normals for the mesh"""
-        normals = np.zeros_like(vertices)
-        
-        # Compute face normals and accumulate on vertices
-        for face in faces:
-            v0, v1, v2 = vertices[face]
-            normal = np.cross(v1 - v0, v2 - v0)
-            normals[face] += normal
+            # Get geometry data
+            vertices = torch.tensor(base_shape["geometry"]["vertices"], device=self.device)
+            faces = torch.tensor(base_shape["geometry"]["faces"], device=self.device)
             
-        # Normalize
-        norms = np.linalg.norm(normals, axis=1, keepdims=True)
-        norms[norms == 0] = 1
-        normals /= norms
-        
-        return normals
-
-class GET3DModel:
-    """Integration with GET3D for detailed scene generation"""
-    
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
-        self.config = config or {}
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model = None
-        self.dataset = None
-        
-    async def initialize(self):
-        """Initialize GET3D model and dataset"""
-        # Load GET3D model
-        self.model = GET3DForGeneration.from_pretrained(
-            "nvidia/get3d-base",
-            torch_dtype=torch.float16,
-            device_map="auto"
-        )
-        
-        # Load 3D-FRONT dataset for reference
-        self.dataset = ThreeDFrontDataset(self.config.get('dataset_path', ''))
-        await self.dataset.initialize()
-        
-    async def generate_scene_details(self, 
-                                   base_structure: Dict[str, Any],
-                                   prompt: str,
-                                   style_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Generate detailed scene from base structure"""
-        if not self.model or not self.dataset:
-            await self.initialize()
+            # Create input mesh
+            from diffusers.utils import load_meshes, export_to_obj
+            input_mesh = {"verts": vertices, "faces": faces}
             
-        # Get style reference from dataset
-        style_reference = await self.dataset.get_style_reference(style_params or {})
-        
-        # Generate scene details
-        with torch.no_grad():
-            scene_details = self.model.generate(
-                base_geometry=base_structure['geometry'],
-                text_prompt=prompt,
-                style_reference=style_reference,
-                num_inference_steps=64,
-                guidance_scale=7.5
-            )
+            # Encode combined prompt
+            inputs = self.tokenizer(
+                combined_prompt,
+                padding="max_length",
+                max_length=77,
+                truncation=True,
+                return_tensors="pt"
+            ).to(self.device)
             
-        # Process and enhance details
-        enhanced_details = await self._enhance_scene_details(
-            scene_details,
-            prompt,
-            style_params
-        )
-        
-        return {
-            'geometry': enhanced_details,
-            'prompt': prompt,
-            'style': style_params,
-            'parameters': {
-                'guidance_scale': 7.5,
-                'inference_steps': 64
+            # Refine shape with more steps and higher guidance scale
+            with torch.no_grad():
+                outputs = self.model(
+                    prompt_embeds=inputs.input_ids,
+                    guidance_scale=self.config.shape_e_guidance_scale + 1.0,  # Higher for refinement
+                    num_inference_steps=self.config.shape_e_steps + 20,      # More steps for refinement
+                    input_mesh=input_mesh,
+                    output_type="mesh"
+                )
+                
+            # Extract refined mesh
+            refined_mesh = outputs.meshes[0]
+            
+            # Convert to standard format
+            vertices = refined_mesh.verts
+            faces = refined_mesh.faces
+            
+            # Extract UVs and texture if available
+            if hasattr(refined_mesh, "uvs") and refined_mesh.uvs is not None:
+                uvs = refined_mesh.uvs
+                texture = refined_mesh.texture if hasattr(refined_mesh, "texture") else None
+            else:
+                # Use original UVs if available, otherwise generate basic ones
+                uvs = torch.tensor(base_shape["geometry"]["uvs"], device=self.device) if base_shape["geometry"]["uvs"] is not None else self._generate_basic_uvs(vertices)
+                texture = torch.tensor(base_shape["geometry"]["texture"], device=self.device) if base_shape["geometry"]["texture"] is not None else None
+                
+            # Normalize mesh to unit size
+            vertices = self._normalize_mesh(vertices)
+            
+            # Compute normals
+            normals = self._compute_vertex_normals(vertices, faces)
+            
+            # Return refined mesh data and metadata
+            result = {
+                "geometry": {
+                    "vertices": vertices.cpu().numpy(),
+                    "faces": faces.cpu().numpy(),
+                    "normals": normals.cpu().numpy(),
+                    "uvs": uvs.cpu().numpy() if uvs is not None else None,
+                    "texture": texture.cpu().numpy() if texture is not None else None
+                },
+                "metadata": {
+                    "prompt": combined_prompt,
+                    "original_prompt": original_prompt,
+                    "feedback": feedback,
+                    "model": self.config.shape_e_model,
+                    "guidance_scale": self.config.shape_e_guidance_scale + 1.0,
+                    "steps": self.config.shape_e_steps + 20,
+                    "timestamp": time.time(),
+                    "parent": base_shape["metadata"]
+                }
             }
-        }
+            
+            logger.info(f"Shape refined with {len(vertices)} vertices, {len(faces)} faces")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error refining shape: {e}")
+            raise RuntimeError(f"Shape refinement failed: {e}")
     
-    async def add_furniture(self, 
-                          furniture_type: str,
-                          description: str,
-                          style_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Generate and add furniture based on description"""
-        if not self.model or not self.dataset:
-            await self.initialize()
-            
-        # Get furniture reference from dataset
-        furniture_reference = await self.dataset.get_furniture_reference(
-            furniture_type,
-            style_params or {}
-        )
+    def _generate_basic_uvs(self, vertices: torch.Tensor) -> torch.Tensor:
+        """Generate basic UV coordinates for the mesh using spherical projection"""
+        # Normalize vertices to unit sphere
+        center = vertices.mean(dim=0, keepdim=True)
+        vertices_centered = vertices - center
         
-        # Generate furniture
-        with torch.no_grad():
-            furniture = self.model.generate_furniture(
-                text_prompt=description,
-                furniture_type=furniture_type,
-                reference=furniture_reference,
-                num_inference_steps=32,
-                guidance_scale=7.0
-            )
-            
-        # Process and optimize furniture
-        optimized_furniture = await self._optimize_furniture(
-            furniture,
-            description,
-            style_params
-        )
+        # Calculate spherical coordinates
+        radius = torch.sqrt(torch.sum(vertices_centered**2, dim=1))
+        theta = torch.atan2(vertices_centered[:, 1], vertices_centered[:, 0])
+        phi = torch.acos(vertices_centered[:, 2] / (radius + 1e-6))
         
-        return {
-            'model': optimized_furniture,
-            'type': furniture_type,
-            'description': description,
-            'style': style_params
-        }
+        # Convert to UV coordinates [0, 1]
+        u = (theta / (2 * np.pi)) + 0.5
+        v = phi / np.pi
         
-    async def _enhance_scene_details(self,
-                                   scene_details: torch.Tensor,
-                                   prompt: str,
-                                   style_params: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-        """Enhance generated scene details"""
-        # Convert to mesh format
-        mesh = self._convert_to_mesh(scene_details)
-        
-        # Apply style-specific enhancements
-        if style_params and style_params.get('style'):
-            mesh = await self._apply_style_enhancements(
-                mesh,
-                style_params['style']
-            )
-            
-        return mesh
-        
-    async def _optimize_furniture(self,
-                                furniture: torch.Tensor,
-                                description: str,
-                                style_params: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-        """Optimize generated furniture"""
-        # Convert to mesh format
-        mesh = self._convert_to_mesh(furniture)
-        
-        # Optimize geometry
-        mesh = self._optimize_geometry(mesh)
-        
-        # Apply style-specific optimizations
-        if style_params and style_params.get('style'):
-            mesh = await self._apply_style_optimizations(
-                mesh,
-                style_params['style']
-            )
-            
-        return mesh
-        
-    def _convert_to_mesh(self, model_output: torch.Tensor) -> Dict[str, Any]:
-        """Convert model output to mesh format"""
-        vertices = model_output.vertices.cpu().numpy()
-        faces = model_output.faces.cpu().numpy()
-        
-        # Compute additional attributes
-        normals = self._compute_normals(vertices, faces)
-        uvs = self._generate_uvs(vertices)
-        
-        return {
-            'vertices': vertices,
-            'faces': faces,
-            'normals': normals,
-            'uvs': uvs
-        }
-        
-    def _generate_uvs(self, vertices: np.ndarray) -> np.ndarray:
-        """Generate UV coordinates for the mesh"""
-        # Calculate bounding box
-        min_coords = np.min(vertices, axis=0)
-        max_coords = np.max(vertices, axis=0)
-        size = max_coords - min_coords
-        
-        # Project vertices onto dominant planes
-        xy_size = size[0] * size[1]
-        yz_size = size[1] * size[2]
-        xz_size = size[0] * size[2]
-        
-        if xy_size >= yz_size and xy_size >= xz_size:
-            # Use XY projection
-            uvs = vertices[:, [0, 1]]
-        elif yz_size >= xy_size and yz_size >= xz_size:
-            # Use YZ projection
-            uvs = vertices[:, [1, 2]]
-        else:
-            # Use XZ projection
-            uvs = vertices[:, [0, 2]]
-            
-        # Normalize to [0, 1] range
-        uvs = (uvs - np.min(uvs, axis=0)) / (np.max(uvs, axis=0) - np.min(uvs, axis=0))
+        # Create UV tensor
+        uvs = torch.stack((u, v), dim=1)
         
         return uvs
     
-    async def _apply_style_enhancements(self,
-                                      mesh: Dict[str, Any],
-                                      style: str) -> Dict[str, Any]:
-        """Apply style-specific enhancements to the mesh"""
-        # Get style reference from dataset
-        style_ref = await self.dataset.get_style_reference({'style': style})
+    def _normalize_mesh(self, vertices: torch.Tensor) -> torch.Tensor:
+        """Normalize mesh to fit in a unit cube centered at origin"""
+        # Calculate bounding box
+        min_vals, _ = torch.min(vertices, dim=0)
+        max_vals, _ = torch.max(vertices, dim=0)
         
-        # Extract style features
-        style_features = self._extract_style_features(style_ref)
+        # Calculate center and scale
+        center = (min_vals + max_vals) / 2
+        scale = torch.max(max_vals - min_vals) / 2
         
-        # Apply style transformations
-        enhanced_mesh = dict(mesh)
+        # Normalize vertices
+        normalized_vertices = (vertices - center) / (scale + 1e-6)
         
-        # Modify geometry based on style
-        if 'geometric_features' in style_features:
-            enhanced_mesh['vertices'] = self._apply_geometric_style(
-                mesh['vertices'],
-                style_features['geometric_features']
-            )
-            
-        # Update normals if geometry changed
-        if 'vertices' in enhanced_mesh:
-            enhanced_mesh['normals'] = self._compute_normals(
-                enhanced_mesh['vertices'],
-                mesh['faces']
-            )
-            
-        return enhanced_mesh
+        return normalized_vertices
     
-    async def _apply_style_optimizations(self,
-                                       mesh: Dict[str, Any],
-                                       style: str) -> Dict[str, Any]:
-        """Apply style-specific optimizations to furniture"""
-        # Get style-specific parameters
-        style_params = await self.dataset.get_style_parameters(style)
+    def _compute_vertex_normals(self, vertices: torch.Tensor, faces: torch.Tensor) -> torch.Tensor:
+        """Compute vertex normals for the mesh"""
+        # Initialize normals
+        normals = torch.zeros_like(vertices)
         
-        # Apply style-specific optimizations
-        optimized_mesh = dict(mesh)
-        
-        # Optimize geometry for style
-        if 'detail_level' in style_params:
-            optimized_mesh = self._adjust_detail_level(
-                optimized_mesh,
-                style_params['detail_level']
-            )
+        # Compute face normals and accumulate on vertices
+        for face_idx in range(faces.shape[0]):
+            # Get face vertices
+            face = faces[face_idx]
+            v0 = vertices[face[0]]
+            v1 = vertices[face[1]]
+            v2 = vertices[face[2]]
             
-        # Apply style-specific deformations
-        if 'deformations' in style_params:
-            optimized_mesh['vertices'] = self._apply_style_deformations(
-                optimized_mesh['vertices'],
-                style_params['deformations']
-            )
+            # Compute face normal
+            normal = torch.cross(v1 - v0, v2 - v0)
             
-        # Update dependent attributes
-        if 'vertices' in optimized_mesh:
-            optimized_mesh['normals'] = self._compute_normals(
-                optimized_mesh['vertices'],
-                optimized_mesh['faces']
-            )
-            optimized_mesh['uvs'] = self._generate_uvs(optimized_mesh['vertices'])
+            # Accumulate on vertices
+            normals[face[0]] += normal
+            normals[face[1]] += normal
+            normals[face[2]] += normal
             
-        return optimized_mesh
-    
-    def _optimize_geometry(self, mesh: Dict[str, Any]) -> Dict[str, Any]:
-        """Optimize mesh geometry"""
-        # Simplify mesh while preserving features
-        vertices = mesh['vertices']
-        faces = mesh['faces']
+        # Normalize
+        norms = torch.norm(normals, dim=1, keepdim=True)
+        mask = norms > 1e-6
+        normals[mask] = normals[mask] / norms[mask]
         
-        # Compute mesh complexity
-        vertex_count = len(vertices)
-        target_count = min(vertex_count, 10000)  # Limit vertex count
-        
-        if vertex_count > target_count:
-            # Implement mesh decimation
-            decimation_ratio = target_count / vertex_count
-            vertices, faces = self._decimate_mesh(vertices, faces, decimation_ratio)
-            
-        # Remove duplicate vertices
-        vertices, faces = self._remove_duplicates(vertices, faces)
-        
-        # Optimize vertex cache
-        faces = self._optimize_vertex_cache(faces)
-        
-        return {
-            **mesh,
-            'vertices': vertices,
-            'faces': faces
-        }
-    
-    def _compute_edges(self, faces: np.ndarray) -> List[Tuple[int, int]]:
-        """Compute unique edges from faces"""
-        edges = set()
-        for face in faces:
-            for i in range(3):
-                v1, v2 = sorted([face[i], face[(i + 1) % 3]])
-                edges.add((v1, v2))
-        return list(edges)
-    
-    def _compute_edge_costs(self,
-                          vertices: np.ndarray,
-                          edges: List[Tuple[int, int]]) -> np.ndarray:
-        """Compute cost of collapsing each edge"""
-        costs = np.zeros(len(edges))
-        for i, (v1, v2) in enumerate(edges):
-            # Compute edge length
-            length = np.linalg.norm(vertices[v1] - vertices[v2])
-            
-            # Compute feature preservation cost
-            feature_cost = self._compute_feature_cost(vertices, v1, v2)
-            
-            # Combine costs
-            costs[i] = length + feature_cost
-            
-        return costs
-    
-    def _compute_feature_cost(self,
-                            vertices: np.ndarray,
-                            v1: int,
-                            v2: int) -> float:
-        """Compute cost of preserving features when collapsing edge"""
-        # Get vertex normals
-        n1 = self._compute_vertex_normal(vertices, v1)
-        n2 = self._compute_vertex_normal(vertices, v2)
-        
-        # Cost increases if normals differ significantly
-        normal_diff = 1 - np.dot(n1, n2)
-        
-        return normal_diff * 10.0  # Weight normal difference heavily
-    
-    def _collapse_edge(self,
-                      vertices: np.ndarray,
-                      faces: np.ndarray,
-                      v1: int,
-                      v2: int) -> Tuple[np.ndarray, np.ndarray]:
-        """Collapse edge by merging v2 into v1"""
-        # Compute new vertex position
-        new_pos = (vertices[v1] + vertices[v2]) / 2
-        vertices[v1] = new_pos
-        
-        # Update faces
-        faces = faces[faces != v2]  # Remove faces using v2
-        faces[faces > v2] -= 1  # Update indices
-        
-        # Remove v2
-        vertices = np.delete(vertices, v2, axis=0)
-        
-        return vertices, faces
-    
-    def _remove_duplicates(self,
-                         vertices: np.ndarray,
-                         faces: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        """Remove duplicate vertices"""
-        # Round vertices to remove near-duplicates
-        rounded = np.round(vertices, decimals=6)
-        
-        # Find unique vertices and get mapping
-        unique_vertices, inverse = np.unique(rounded, axis=0, return_inverse=True)
-        
-        # Update face indices
-        new_faces = inverse[faces]
-        
-        return unique_vertices, new_faces
-    
-    def _optimize_vertex_cache(self, faces: np.ndarray) -> np.ndarray:
-        """Optimize face order for vertex cache efficiency"""
-        # Compute vertex usage frequency
-        vertex_count = np.max(faces) + 1
-        frequency = np.zeros(vertex_count)
-        for face in faces:
-            frequency[face] += 1
-            
-        # Sort faces by most frequent vertex
-        face_scores = np.zeros(len(faces))
-        for i, face in enumerate(faces):
-            face_scores[i] = np.max(frequency[face])
-            
-        sorted_indices = np.argsort(-face_scores)
-        
-        return faces[sorted_indices]
-    
-    def _extract_style_features(self, style_ref: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract geometric features from style reference"""
-        features = {}
-        
-        if 'geometric_patterns' in style_ref:
-            features['geometric_features'] = {
-                'patterns': style_ref['geometric_patterns'],
-                'scale': style_ref.get('pattern_scale', 1.0),
-                'strength': style_ref.get('pattern_strength', 0.5)
-            }
-            
-        if 'deformations' in style_ref:
-            features['deformations'] = {
-                'type': style_ref['deformations']['type'],
-                'parameters': style_ref['deformations']['parameters']
-            }
-            
-        return features
-    
-    def _apply_geometric_style(self,
-                             vertices: np.ndarray,
-                             style_features: Dict[str, Any]) -> np.ndarray:
-        """Apply geometric style features to vertices"""
-        modified_vertices = vertices.copy()
-        
-        if 'patterns' in style_features:
-            for pattern in style_features['patterns']:
-                if pattern['type'] == 'wave':
-                    modified_vertices = self._apply_wave_pattern(
-                        modified_vertices,
-                        pattern['axis'],
-                        pattern['frequency'],
-                        pattern['amplitude'] * style_features['strength']
-                    )
-                elif pattern['type'] == 'noise':
-                    modified_vertices = self._apply_noise_pattern(
-                        modified_vertices,
-                        pattern['scale'],
-                        pattern['strength'] * style_features['strength']
-                    )
-                    
-        return modified_vertices
-    
-    def _apply_wave_pattern(self,
-                          vertices: np.ndarray,
-                          axis: int,
-                          frequency: float,
-                          amplitude: float) -> np.ndarray:
-        """Apply wave pattern deformation"""
-        modified = vertices.copy()
-        
-        # Apply sinusoidal wave along specified axis
-        pos = vertices[:, axis]
-        wave = np.sin(pos * frequency) * amplitude
-        
-        # Apply deformation perpendicular to axis
-        perp_axis = (axis + 1) % 3
-        modified[:, perp_axis] += wave
-        
-        return modified
-    
-    def _apply_noise_pattern(self,
-                           vertices: np.ndarray,
-                           scale: float,
-                           strength: float) -> np.ndarray:
-        """Apply noise pattern deformation"""
-        modified = vertices.copy()
-        
-        # Generate 3D Perlin noise
-        noise = np.random.rand(len(vertices), 3)  # Placeholder for actual Perlin noise
-        
-        # Apply noise with scale and strength
-        modified += noise * strength * scale
-        
-        return modified
+        return normals
 
-class DiffuSceneOptimizer:
-    """Scene optimization using DiffuScene/SceneDiffuser"""
+
+class TextureGenerator:
+    """Generate textures for 3D models using Stable Diffusion"""
     
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
-        self.config = config or {}
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    def __init__(self, config: TextTo3DConfig):
+        self.config = config
+        self.device = torch.device(config.device)
         self.model = None
-        self.physics_client = None
-        self.planner = None
+        self._initialized = False
         
     async def initialize(self):
-        """Initialize DiffuScene model and physics engine"""
-        # Initialize DiffuScene
-        self.model = DiffuSceneModel.from_pretrained(
-            "scene-diffuser/diffuscene-base",
-            torch_dtype=torch.float16,
-            device_map="auto"
-        )
-        
-        # Initialize PyBullet physics
-        self.physics_client = p.connect(p.DIRECT)
-        p.setGravity(0, 0, -9.81)
-        p.setPhysicsEngineParameter(
-            numSolverIterations=50,
-            enableConeFriction=1,
-            contactBreakingThreshold=0.001
-        )
-        
-        # Initialize graph-based planner
-        self.planner = MultiLevelPlanner()
-        
-    async def optimize_scene(self, 
-                           scene: Dict[str, Any],
-                           constraints: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Optimize scene layout using DiffuScene"""
-        if not self.model:
-            await self.initialize()
+        """Initialize the texture generation model"""
+        if self._initialized:
+            return
             
-        # Extract room layout and furniture
-        layout = self._extract_layout(scene)
-        furniture = self._extract_furniture(scene)
+        logger.info("Initializing texture generation model")
         
-        # Generate optimal layout using DiffuScene
-        with torch.no_grad():
-            optimized_layout = self.model.optimize(
-                room_layout=layout,
-                furniture=furniture,
-                constraints=constraints,
-                num_iterations=100,
-                learning_rate=0.01
-            )
+        try:
+            from diffusers import StableDiffusionPipeline
             
-        # Apply physics-based validation
-        physics_valid = await self._validate_physics(optimized_layout)
-        
-        if not physics_valid:
-            # Adjust layout to satisfy physics constraints
-            optimized_layout = await self._adjust_for_physics(optimized_layout)
+            # Load model and move to device
+            self.model = StableDiffusionPipeline.from_pretrained(
+                self.config.texture_model,
+                torch_dtype=torch.float16 if "cuda" in self.config.device else torch.float32,
+                cache_dir=self.config.cache_dir
+            ).to(self.device)
             
-        return self._apply_optimized_layout(scene, optimized_layout)
-        
-    async def optimize_multi_level(self,
-                                 scene: Dict[str, Any],
-                                 requirements: Dict[str, Any]) -> Dict[str, Any]:
-        """Optimize multi-level home layout"""
-        if not self.planner:
-            await self.initialize()
-            
-        # Generate initial layout plan
-        layout_plan = await self.planner.plan_layout(scene, requirements)
-        
-        # Optimize each level
-        optimized_levels = {}
-        for level, level_scene in layout_plan.items():
-            optimized_level = await self.optimize_scene(
-                level_scene,
-                requirements.get(f'level_{level}', {})
-            )
-            optimized_levels[level] = optimized_level
-            
-        # Ensure connectivity between levels
-        connected_layout = self.planner.ensure_level_connectivity(optimized_levels)
-        
-        return connected_layout
-        
-    async def _validate_physics(self, layout: Dict[str, Any]) -> bool:
-        """Validate layout using PyBullet physics simulation"""
-        # Load room geometry
-        room_id = self._load_room_collision(layout['room'])
-        
-        # Load and place furniture
-        furniture_bodies = []
-        for furniture in layout['furniture']:
-            body_id = self._load_furniture_collision(furniture)
-            furniture_bodies.append(body_id)
-            
-        # Run physics simulation
-        stable = True
-        for _ in range(240):  # Simulate 4 seconds at 60Hz
-            p.stepSimulation()
-            
-            # Check stability of each furniture piece
-            for body_id in furniture_bodies:
-                pos, orn = p.getBasePositionAndOrientation(body_id)
-                if not self._is_stable(pos, orn):
-                    stable = False
-                    break
-                    
-        return stable
-        
-    def _is_stable(self, 
-                   position: Tuple[float, float, float],
-                   orientation: Tuple[float, float, float, float],
-                   threshold: float = 0.05) -> bool:
-        """Check if object is stable"""
-        # Check if object has moved significantly from initial placement
-        if abs(position[2]) > threshold:  # Check vertical movement
-            return False
-            
-        # Check if object has tilted
-        euler = p.getEulerFromQuaternion(orientation)
-        if abs(euler[0]) > threshold or abs(euler[1]) > threshold:
-            return False
-            
-        return True
-        
-    async def _adjust_for_physics(self, layout: Dict[str, Any]) -> Dict[str, Any]:
-        """Adjust layout to satisfy physics constraints"""
-        adjusted_layout = dict(layout)
-        
-        # Adjust furniture positions and orientations
-        for furniture in adjusted_layout['furniture']:
-            # Find stable position
-            stable_pos = await self._find_stable_position(
-                furniture,
-                adjusted_layout['room']
-            )
-            furniture['position'] = stable_pos
-            
-            # Ensure proper floor contact
-            furniture['position'][2] = self._compute_floor_height(
-                furniture,
-                adjusted_layout['room']
-            )
-            
-        return adjusted_layout
-        
-    async def _find_stable_position(self,
-                                  furniture: Dict[str, Any],
-                                  room: Dict[str, Any]) -> List[float]:
-        """Find stable position for furniture piece"""
-        # Start from current position
-        current_pos = furniture['position']
-        
-        # Sample positions in increasing radius
-        for radius in [0.1, 0.2, 0.5, 1.0]:
-            positions = self._sample_positions(current_pos, radius)
-            
-            # Test each position
-            for pos in positions:
-                if await self._test_position_stability(pos, furniture, room):
-                    return pos
-                    
-        # Return original position if no stable position found
-        return current_pos
-        
-    def _sample_positions(self,
-                         center: List[float],
-                         radius: float,
-                         num_samples: int = 8) -> List[List[float]]:
-        """Sample positions in a circle around center"""
-        positions = []
-        for i in range(num_samples):
-            angle = 2 * np.pi * i / num_samples
-            pos = [
-                center[0] + radius * np.cos(angle),
-                center[1] + radius * np.sin(angle),
-                center[2]
-            ]
-            positions.append(pos)
-        return positions
-        
-    async def _test_position_stability(self,
-                                     position: List[float],
-                                     furniture: Dict[str, Any],
-                                     room: Dict[str, Any]) -> bool:
-        """Test if furniture is stable at given position"""
-        # Load furniture at position
-        body_id = self._load_furniture_collision(furniture)
-        p.resetBasePositionAndOrientation(
-            body_id,
-            position,
-            p.getQuaternionFromEuler([0, 0, 0])
-        )
-        
-        # Run short simulation
-        stable = True
-        for _ in range(60):  # 1 second at 60Hz
-            p.stepSimulation()
-            pos, orn = p.getBasePositionAndOrientation(body_id)
-            if not self._is_stable(pos, orn):
-                stable = False
-                break
+            # Enable memory optimization
+            if hasattr(self.model, "enable_attention_slicing"):
+                self.model.enable_attention_slicing()
                 
-        # Remove test body
-        p.removeBody(body_id)
-        
-        return stable
-        
-    def _compute_floor_height(self,
-                            furniture: Dict[str, Any],
-                            room: Dict[str, Any]) -> float:
-        """Compute proper floor height for furniture"""
-        # Get furniture bounds
-        bounds = self._compute_bounds(furniture['geometry'])
-        
-        # Align bottom of bounds with floor
-        return -bounds['min'][2]
-        
-    def _compute_bounds(self, geometry: Dict[str, Any]) -> Dict[str, List[float]]:
-        """Compute bounding box of geometry"""
-        vertices = geometry['vertices']
-        return {
-            'min': vertices.min(axis=0).tolist(),
-            'max': vertices.max(axis=0).tolist()
-        }
-        
-    def _extract_layout(self, scene: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract room layout from scene"""
-        return {
-            'bounds': scene['room']['bounds'],
-            'walls': scene['room']['walls'],
-            'openings': scene['room'].get('openings', []),
-            'floor_plan': scene['room'].get('floor_plan', None)
-        }
-        
-    def _extract_furniture(self, scene: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Extract furniture from scene"""
-        return [
-            {
-                'type': item['type'],
-                'geometry': item['geometry'],
-                'position': item.get('position', [0, 0, 0]),
-                'rotation': item.get('rotation', [0, 0, 0]),
-                'constraints': item.get('constraints', [])
-            }
-            for item in scene.get('furniture', [])
-        ]
-        
-    def _apply_optimized_layout(self,
-                              scene: Dict[str, Any],
-                              layout: Dict[str, Any]) -> Dict[str, Any]:
-        """Apply optimized layout back to scene"""
-        updated_scene = dict(scene)
-        
-        # Update furniture positions
-        for i, furniture in enumerate(layout['furniture']):
-            if i < len(updated_scene['furniture']):
-                updated_scene['furniture'][i].update({
-                    'position': furniture['position'],
-                    'rotation': furniture['rotation']
-                })
+            if hasattr(self.model, "enable_vae_slicing"):
+                self.model.enable_vae_slicing()
                 
-        return updated_scene
-
-class MultiLevelPlanner:
-    """Graph-based planning for multi-level homes"""
+            self._initialized = True
+            logger.info("Texture generation model initialized successfully")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize texture generation model: {e}")
+            raise RuntimeError(f"Texture model initialization failed: {e}")
     
-    def __init__(self):
-        self.graph = nx.Graph()
-        
-    async def plan_layout(self,
-                         scene: Dict[str, Any],
-                         requirements: Dict[str, Any]) -> Dict[str, Any]:
-        """Plan layout for multi-level home"""
-        # Build connectivity graph
-        self._build_graph(scene)
-        
-        # Plan each level
-        layout_plan = {}
-        for level in sorted(self._get_levels(scene)):
-            level_plan = await self._plan_level(
-                scene,
-                level,
-                requirements.get(f'level_{level}', {})
-            )
-            layout_plan[level] = level_plan
+    async def generate_textures(self, 
+                              model: Dict[str, Any], 
+                              texture_prompt: Optional[str] = None, 
+                              material_type: str = "pbr") -> Dict[str, Any]:
+        """Generate textures for a 3D model"""
+        if not self._initialized:
+            await self.initialize()
             
-        return layout_plan
+        # Get or create texture prompt
+        base_prompt = model["metadata"]["prompt"]
+        prompt = texture_prompt or f"High quality {material_type} material texture for {base_prompt}, detailed, realistic, 8K"
         
-    def ensure_level_connectivity(self,
-                                levels: Dict[int, Dict[str, Any]]) -> Dict[int, Dict[str, Any]]:
-        """Ensure proper connectivity between levels"""
-        connected_levels = dict(levels)
+        logger.info(f"Generating textures using prompt: '{prompt}'")
         
-        # Find connections between levels
-        connections = self._find_level_connections()
+        try:
+            # Generate base texture
+            with torch.no_grad():
+                base_image = self.model(
+                    prompt,
+                    guidance_scale=self.config.texture_guidance_scale,
+                    num_inference_steps=self.config.texture_steps,
+                    height=self.config.texture_resolution,
+                    width=self.config.texture_resolution
+                ).images[0]
+                
+            # Convert PIL image to numpy array
+            base_texture = np.array(base_image)
+            
+            # If PBR material type, generate additional texture maps
+            if material_type == "pbr":
+                # Generate normal map
+                normal_prompt = f"Normal map for {base_prompt}, detailed, technical, blue-purple"
+                normal_image = self.model(
+                    normal_prompt,
+                    guidance_scale=self.config.texture_guidance_scale,
+                    num_inference_steps=self.config.texture_steps,
+                    height=self.config.texture_resolution,
+                    width=self.config.texture_resolution
+                ).images[0]
+                normal_map = np.array(normal_image)
+                
+                # Generate roughness map
+                roughness_prompt = f"Roughness map for {base_prompt}, greyscale, technical"
+                roughness_image = self.model(
+                    roughness_prompt,
+                    guidance_scale=self.config.texture_guidance_scale,
+                    num_inference_steps=self.config.texture_steps,
+                    height=self.config.texture_resolution,
+                    width=self.config.texture_resolution
+                ).images[0]
+                roughness_map = np.array(roughness_image)
+                
+                # Generate metallic map
+                metallic_prompt = f"Metallic map for {base_prompt}, greyscale, technical"
+                metallic_image = self.model(
+                    metallic_prompt,
+                    guidance_scale=self.config.texture_guidance_scale,
+                    num_inference_steps=self.config.texture_steps,
+                    height=self.config.texture_resolution,
+                    width=self.config.texture_resolution
+                ).images[0]
+                metallic_map = np.array(metallic_image)
+                
+                # Return all textures
+                textures = {
+                    "albedo": base_texture,
+                    "normal": normal_map,
+                    "roughness": roughness_map,
+                    "metallic": metallic_map
+                }
+            else:
+                # Return just the base texture for non-PBR materials
+                textures = {"albedo": base_texture}
+                
+            # Add metadata
+            textures["metadata"] = {
+                "prompt": prompt,
+                "base_prompt": base_prompt,
+                "material_type": material_type,
+                "resolution": self.config.texture_resolution,
+                "model": self.config.texture_model,
+                "timestamp": time.time()
+            }
+            
+            logger.info(f"Generated {len(textures)-1} texture maps at {self.config.texture_resolution}x{self.config.texture_resolution} resolution")
+            return textures
+            
+        except Exception as e:
+            logger.error(f"Error generating textures: {e}")
+            raise RuntimeError(f"Texture generation failed: {e}")
+    
+    async def apply_textures_to_mesh(self, 
+                                   model: Dict[str, Any], 
+                                   textures: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply generated textures to a 3D model"""
+        logger.info("Applying textures to mesh")
         
-        # Adjust layouts to maintain connections
-        for level_a, level_b, connection in connections:
-            self._align_connection(
-                connected_levels[level_a],
-                connected_levels[level_b],
-                connection
+        try:
+            # Get model geometry
+            vertices = model["geometry"]["vertices"]
+            faces = model["geometry"]["faces"]
+            
+            # Get or generate UVs
+            uvs = model["geometry"]["uvs"]
+            if uvs is None:
+                # Generate UVs if not available
+                vertices_tensor = torch.tensor(vertices, device=self.device)
+                uvs = self._generate_uvs(vertices_tensor).cpu().numpy()
+                
+            # Create copy of model with textures
+            textured_model = {
+                "geometry": {
+                    "vertices": vertices,
+                    "faces": faces,
+                    "normals": model["geometry"]["normals"],
+                    "uvs": uvs,
+                    "textures": textures
+                },
+                "metadata": {
+                    **model["metadata"],
+                    "textured": True,
+                    "texture_type": textures["metadata"]["material_type"],
+                    "texture_timestamp": textures["metadata"]["timestamp"]
+                }
+            }
+            
+            logger.info("Textures applied successfully")
+            return textured_model
+            
+        except Exception as e:
+            logger.error(f"Error applying textures: {e}")
+            raise RuntimeError(f"Texture application failed: {e}")
+    
+    def _generate_uvs(self, vertices: torch.Tensor) -> torch.Tensor:
+        """Generate UV coordinates for a mesh using smart projection"""
+        try:
+            import pytorch3d
+            from pytorch3d.structures import Meshes
+            from pytorch3d.renderer import TexturesUV
+            
+            # Use pytorch3d for UV generation if available
+            # This is a simplified implementation
+            
+            # Normalize vertices
+            center = vertices.mean(dim=0)
+            vertices_centered = vertices - center
+            scale = vertices_centered.abs().max()
+            vertices_normalized = vertices_centered / scale
+            
+            # Create a sphere at origin
+            theta = torch.linspace(0, 2 * np.pi, 100, device=self.device)
+            phi = torch.linspace(0, np.pi, 50, device=self.device)
+            
+            # Generate UV coordinates using spherical projection
+            u = (theta / (2 * np.pi)).unsqueeze(1)
+            v = (phi / np.pi).unsqueeze(0)
+            
+            # Interpolate to get UVs for all vertices
+            return self._spherical_projection(vertices_normalized)
+            
+        except ImportError:
+            # Fallback to basic spherical projection
+            return self._spherical_projection(vertices)
+    
+    def _spherical_projection(self, vertices: torch.Tensor) -> torch.Tensor:
+        """Generate UV coordinates using spherical projection"""
+        # Normalize vertices
+        center = vertices.mean(dim=0, keepdim=True)
+        vertices_centered = vertices - center
+        
+        # Calculate spherical coordinates
+        radius = torch.sqrt(torch.sum(vertices_centered**2, dim=1))
+        theta = torch.atan2(vertices_centered[:, 1], vertices_centered[:, 0])
+        phi = torch.acos(torch.clamp(vertices_centered[:, 2] / (radius + 1e-6), -1.0, 1.0))
+        
+        # Convert to UV coordinates [0, 1]
+        u = (theta / (2 * torch.pi)) + 0.5
+        v = phi / torch.pi
+        
+        # Create UV tensor
+        uvs = torch.stack((u, v), dim=1)
+        
+        return uvs
+
+
+class MeshProcessor:
+    """Process and optimize 3D meshes"""
+    
+    def __init__(self, config: TextTo3DConfig):
+        self.config = config
+        self.device = torch.device(config.device)
+        
+    async def process_mesh(self, model: Dict[str, Any]) -> Dict[str, Any]:
+        """Process and optimize a 3D mesh"""
+        logger.info("Processing and optimizing mesh")
+        
+        try:
+            import trimesh
+            import numpy as np
+            
+            # Get mesh data
+            vertices = model["geometry"]["vertices"]
+            faces = model["geometry"]["faces"]
+            normals = model["geometry"]["normals"]
+            
+            # Create trimesh object
+            mesh = trimesh.Trimesh(vertices=vertices, faces=faces, vertex_normals=normals)
+            
+            # Remove duplicate vertices
+            mesh = mesh.merge_vertices()
+            
+            # Fill holes
+            mesh.fill_holes()
+            
+            # Remove degenerate faces
+            mesh.remove_degenerate_faces()
+            
+            # Fix face winding
+            mesh.fix_face_winding()
+            
+            # Fix normals
+            mesh.fix_normals()
+            
+            # Simplify mesh if configured
+            if self.config.simplify_mesh and len(mesh.faces) > self.config.target_faces:
+                # Calculate reduction ratio
+                reduction = self.config.target_faces / len(mesh.faces)
+                
+                # Simplify mesh
+                mesh = mesh.simplify_quadratic_decimation(int(len(mesh.faces) * reduction))
+                
+                logger.info(f"Simplified mesh from {len(faces)} to {len(mesh.faces)} faces")
+                
+            # Update model with processed mesh
+            processed_model = {
+                "geometry": {
+                    "vertices": np.array(mesh.vertices),
+                    "faces": np.array(mesh.faces),
+                    "normals": np.array(mesh.vertex_normals),
+                    "uvs": model["geometry"]["uvs"],
+                    "texture": model["geometry"]["texture"] if "texture" in model["geometry"] else None
+                },
+                "metadata": {
+                    **model["metadata"],
+                    "processed": True,
+                    "vertices_count": len(mesh.vertices),
+                    "faces_count": len(mesh.faces),
+                    "processing_timestamp": time.time()
+                }
+            }
+            
+            logger.info(f"Mesh processed with {len(mesh.vertices)} vertices, {len(mesh.faces)} faces")
+            return processed_model
+            
+        except Exception as e:
+            logger.error(f"Error processing mesh: {e}")
+            # Return original model if processing fails
+            return model
+    
+    async def validate_physics(self, model: Dict[str, Any]) -> Dict[str, bool]:
+        """Validate mesh physics properties"""
+        if not self.config.physics_enabled:
+            return {"valid": True, "message": "Physics validation skipped"}
+            
+        logger.info("Validating mesh physics properties")
+        
+        try:
+            import trimesh
+            import numpy as np
+            
+            # Get mesh data
+            vertices = model["geometry"]["vertices"]
+            faces = model["geometry"]["faces"]
+            
+            # Create trimesh object
+            mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
+            
+            # Check if mesh is watertight
+            is_watertight = mesh.is_watertight
+            
+            # Check if mesh is convex
+            is_convex = mesh.is_convex
+            
+            # Check if mesh volume is valid
+            has_volume = mesh.volume > 0
+            
+            # Check for self-intersections
+            has_self_intersections = len(mesh.face_adjacency_projections) > 0
+            
+            # Combine validation results
+            validity = is_watertight and has_volume and not has_self_intersections
+            
+            # Create validation report
+            report = {
+                "valid": validity,
+                "is_watertight": is_watertight,
+                "is_convex": is_convex,
+                "has_volume": has_volume,
+                "has_self_intersections": has_self_intersections,
+                "volume": float(mesh.volume) if has_volume else 0.0,
+                "center_mass": mesh.center_mass.tolist() if has_volume else [0, 0, 0],
+                "message": "Physics validation " + ("passed" if validity else "failed")
+            }
+            
+            logger.info(f"Physics validation {'passed' if validity else 'failed'}")
+            return report
+            
+        except Exception as e:
+            logger.error(f"Error validating physics: {e}")
+            return {"valid": False, "message": f"Physics validation error: {e}"}
+
+
+class ModelExporter:
+    """Export 3D models in various formats"""
+    
+    def __init__(self, config: TextTo3DConfig):
+        self.config = config
+        
+        # Create output directory if it doesn't exist
+        os.makedirs(self.config.output_dir, exist_ok=True)
+        
+    async def export_model(self, 
+                         model: Dict[str, Any], 
+                         formats: Optional[List[str]] = None) -> Dict[str, str]:
+        """Export a 3D model in various formats"""
+        # Use configured formats if none provided
+        export_formats = formats or self.config.export_formats
+        
+        logger.info(f"Exporting model in formats: {export_formats}")
+        
+        # Get model name from prompt or use timestamp
+        prompt = model["metadata"].get("prompt", "")
+        model_name = self._sanitize_filename(prompt[:30]) if prompt else f"model_{int(time.time())}"
+        
+        # Create paths dictionary
+        export_paths = {}
+        
+        try:
+            # Export in each requested format
+            for format in export_formats:
+                format = format.lower()
+                
+                if format == "obj":
+                    path = await self._export_obj(model, model_name)
+                    export_paths["obj"] = path
+                    
+                elif format in ["glb", "gltf"]:
+                    path = await self._export_glb(model, model_name, format)
+                    export_paths[format] = path
+                    
+                elif format == "usdz":
+                    path = await self._export_usdz(model, model_name)
+                    export_paths["usdz"] = path
+                    
+                elif format == "ply":
+                    path = await self._export_ply(model, model_name)
+                    export_paths["ply"] = path
+                    
+                else:
+                    logger.warning(f"Unsupported export format: {format}")
+                    
+            return export_paths
+            
+        except Exception as e:
+            logger.error(f"Error exporting model: {e}")
+            raise RuntimeError(f"Model export failed: {e}")
+    
+    async def _export_obj(self, model: Dict[str, Any], model_name: str) -> str:
+        """Export model in OBJ format with MTL and textures"""
+        try:
+            import trimesh
+            import numpy as np
+            from PIL import Image
+            
+            # Get mesh data
+            vertices = model["geometry"]["vertices"]
+            faces = model["geometry"]["faces"]
+            normals = model["geometry"]["normals"]
+            uvs = model["geometry"]["uvs"]
+            
+            # Create export path
+            export_dir = os.path.join(self.config.output_dir, model_name)
+            os.makedirs(export_dir, exist_ok=True)
+            
+            obj_path = os.path.join(export_dir, f"{model_name}.obj")
+            mtl_path = os.path.join(export_dir, f"{model_name}.mtl")
+            
+            # Create trimesh object
+            mesh = trimesh.Trimesh(
+                vertices=vertices, 
+                faces=faces, 
+                vertex_normals=normals,
+                visual=trimesh.visual.TextureVisuals(uv=uvs) if uvs is not None else None
             )
             
-        return connected_levels
-        
-    def _build_graph(self, scene: Dict[str, Any]):
-        """Build connectivity graph from scene"""
-        self.graph.clear()
-        
-        # Add rooms as nodes
-        for room in scene['rooms']:
-            self.graph.add_node(
-                room['id'],
-                level=room['level'],
-                type=room['type']
+            # Export OBJ
+            mesh.export(obj_path, file_type="obj", include_normals=True, include_texture=uvs is not None)
+            
+            # If we have textures, export them
+            if "textures" in model["geometry"] and model["geometry"]["textures"] is not None:
+                textures = model["geometry"]["textures"]
+                
+                # Create MTL file
+                with open(mtl_path, "w") as f:
+                    f.write(f"newmtl material0\n")
+                    f.write(f"Ka 1.000000 1.000000 1.000000\n")
+                    f.write(f"Kd 1.000000 1.000000 1.000000\n")
+                    f.write(f"Ks 0.000000 0.000000 0.000000\n")
+                    f.write(f"Ns 10.000000\n")
+                    f.write(f"illum 2\n")
+                    
+                    # Add texture maps
+                    if "albedo" in textures:
+                        albedo_path = os.path.join(export_dir, "albedo.png")
+                        Image.fromarray(textures["albedo"]).save(albedo_path)
+                        f.write(f"map_Kd albedo.png\n")
+                        
+                    if "normal" in textures:
+                        normal_path = os.path.join(export_dir, "normal.png")
+                        Image.fromarray(textures["normal"]).save(normal_path)
+                        f.write(f"map_bump normal.png\n")
+                        
+                    if "roughness" in textures:
+                        roughness_path = os.path.join(export_dir, "roughness.png")
+                        Image.fromarray(textures["roughness"]).save(roughness_path)
+                        f.write(f"map_Ns roughness.png\n")
+                        
+                    if "metallic" in textures:
+                        metallic_path = os.path.join(export_dir, "metallic.png")
+                        Image.fromarray(textures["metallic"]).save(metallic_path)
+                        f.write(f"map_Pm metallic.png\n")
+            
+            logger.info(f"Model exported to OBJ: {obj_path}")
+            return obj_path
+            
+        except Exception as e:
+            logger.error(f"Error exporting to OBJ: {e}")
+            raise RuntimeError(f"OBJ export failed: {e}")
+    
+    async def _export_glb(self, model: Dict[str, Any], model_name: str, format: str) -> str:
+        """Export model in GLB/GLTF format"""
+        try:
+            import trimesh
+            import numpy as np
+            from PIL import Image
+            
+            # Get mesh data
+            vertices = model["geometry"]["vertices"]
+            faces = model["geometry"]["faces"]
+            normals = model["geometry"]["normals"]
+            uvs = model["geometry"]["uvs"]
+            
+            # Create export path
+            export_dir = os.path.join(self.config.output_dir, model_name)
+            os.makedirs(export_dir, exist_ok=True)
+            
+            gltf_path = os.path.join(export_dir, f"{model_name}.{format}")
+            
+            # Create trimesh object
+            mesh = trimesh.Trimesh(
+                vertices=vertices, 
+                faces=faces, 
+                vertex_normals=normals,
+                visual=trimesh.visual.TextureVisuals(uv=uvs) if uvs is not None else None
             )
             
-        # Add connections
-        for connection in scene['connections']:
-            self.graph.add_edge(
-                connection['from'],
-                connection['to'],
-                type=connection['type']
+            # Handle textures
+            if "textures" in model["geometry"] and model["geometry"]["textures"] is not None:
+                textures = model["geometry"]["textures"]
+                
+                # Create material with PBR properties
+                material = trimesh.visual.material.PBRMaterial()
+                
+                # Set texture maps
+                if "albedo" in textures:
+                    albedo_path = os.path.join(export_dir, "albedo.png")
+                    Image.fromarray(textures["albedo"]).save(albedo_path)
+                    material.baseColorTexture = albedo_path
+                    
+                if "normal" in textures:
+                    normal_path = os.path.join(export_dir, "normal.png")
+                    Image.fromarray(textures["normal"]).save(normal_path)
+                    material.normalTexture = normal_path
+                    
+                if "roughness" in textures:
+                    roughness_path = os.path.join(export_dir, "roughness.png")
+                    Image.fromarray(textures["roughness"]).save(roughness_path)
+                    material.roughnessFactor = 1.0
+                    material.roughnessTexture = roughness_path
+                    
+                if "metallic" in textures:
+                    metallic_path = os.path.join(export_dir, "metallic.png")
+                    Image.fromarray(textures["metallic"]).save(metallic_path)
+                    material.metallicFactor = 1.0
+                    material.metallicTexture = metallic_path
+                
+                # Apply material to mesh
+                mesh.visual = trimesh.visual.TextureVisuals(
+                    uv=uvs,
+                    material=material
+                )
+            
+            # Export GLB/GLTF
+            mesh.export(gltf_path, file_type=format)
+            
+            logger.info(f"Model exported to {format.upper()}: {gltf_path}")
+            return gltf_path
+            
+        except Exception as e:
+            logger.error(f"Error exporting to {format.upper()}: {e}")
+            raise RuntimeError(f"{format.upper()} export failed: {e}")
+    
+    async def _export_usdz(self, model: Dict[str, Any], model_name: str) -> str:
+        """Export model in USDZ format"""
+        try:
+            # First export as OBJ
+            obj_path = await self._export_obj(model, model_name)
+            
+            # Create export path
+            export_dir = os.path.join(self.config.output_dir, model_name)
+            os.makedirs(export_dir, exist_ok=True)
+            
+            usdz_path = os.path.join(export_dir, f"{model_name}.usdz")
+            
+            # Try to use usdz_converter if available
+            try:
+                import subprocess
+                
+                # Check if usdz_converter is available
+                result = subprocess.run(["which", "usdz_converter"], capture_output=True, text=True)
+                
+                if result.returncode == 0:
+                    # Use usdz_converter
+                    subprocess.run(["usdz_converter", obj_path, usdz_path], check=True)
+                else:
+                    # Try Apple's usdz_converter
+                    subprocess.run(["xcrun", "usdz_converter", obj_path, usdz_path], check=True)
+                    
+                logger.info(f"Model exported to USDZ: {usdz_path}")
+                return usdz_path
+                
+            except Exception as converter_error:
+                logger.warning(f"USDZ conversion using system tools failed: {converter_error}")
+                logger.info("Falling back to USD Python library")
+                
+                try:
+                    import pxr.Usd as Usd
+                    import pxr.UsdGeom as UsdGeom
+                    
+                    # Create USD stage
+                    stage = Usd.Stage.CreateNew(usdz_path)
+                    
+                    # Add mesh to stage
+                    mesh_prim = UsdGeom.Mesh.Define(stage, "/Model")
+                    
+                    # Get mesh data
+                    vertices = model["geometry"]["vertices"]
+                    faces = model["geometry"]["faces"]
+                    
+                    # Set mesh data
+                    mesh_prim.CreatePointsAttr(vertices.flatten().tolist())
+                    
+                    # Set face counts and indices
+                    face_counts = [3] * len(faces)  # Assuming triangular faces
+                    face_indices = faces.flatten().tolist()
+                    
+                    mesh_prim.CreateFaceVertexCountsAttr(face_counts)
+                    mesh_prim.CreateFaceVertexIndicesAttr(face_indices)
+                    
+                    # Save USD stage
+                    stage.Save()
+                    
+                    logger.info(f"Model exported to USDZ using USD library: {usdz_path}")
+                    return usdz_path
+                    
+                except ImportError:
+                    logger.error("USD Python library not available")
+                    raise RuntimeError("USDZ export requires USD Python library or usdz_converter")
+                
+        except Exception as e:
+            logger.error(f"Error exporting to USDZ: {e}")
+            raise RuntimeError(f"USDZ export failed: {e}")
+    
+    async def _export_ply(self, model: Dict[str, Any], model_name: str) -> str:
+        """Export model in PLY format"""
+        try:
+            import trimesh
+            import numpy as np
+            
+            # Get mesh data
+            vertices = model["geometry"]["vertices"]
+            faces = model["geometry"]["faces"]
+            normals = model["geometry"]["normals"]
+            
+            # Create export path
+            export_dir = os.path.join(self.config.output_dir, model_name)
+            os.makedirs(export_dir, exist_ok=True)
+            
+            ply_path = os.path.join(export_dir, f"{model_name}.ply")
+            
+            # Create trimesh object
+            mesh = trimesh.Trimesh(
+                vertices=vertices, 
+                faces=faces, 
+                vertex_normals=normals
             )
             
-    def _get_levels(self, scene: Dict[str, Any]) -> List[int]:
-        """Get list of levels in scene"""
-        levels = set()
-        for room in scene['rooms']:
-            levels.add(room['level'])
-        return sorted(list(levels))
+            # Export PLY
+            mesh.export(ply_path, file_type="ply")
+            
+            logger.info(f"Model exported to PLY: {ply_path}")
+            return ply_path
+            
+        except Exception as e:
+            logger.error(f"Error exporting to PLY: {e}")
+            raise RuntimeError(f"PLY export failed: {e}")
+    
+    def _sanitize_filename(self, name: str) -> str:
+        """Sanitize a string to be used as a filename"""
+        # Replace spaces with underscores
+        name = name.replace(" ", "_")
         
-    async def _plan_level(self,
-                         scene: Dict[str, Any],
-                         level: int,
-                         requirements: Dict[str, Any]) -> Dict[str, Any]:
-        """Plan layout for single level"""
-        # Extract level-specific elements
-        level_rooms = self._get_level_rooms(scene, level)
-        level_furniture = self._get_level_furniture(scene, level)
+        # Remove invalid characters
+        import re
+        name = re.sub(r'[^\w\-_.]', '', name)
         
-        # Generate initial layout
-        layout = {
-            'rooms': level_rooms,
-            'furniture': level_furniture
-        }
-        
-        # Optimize room connectivity
-        layout = self._optimize_room_connectivity(layout)
-        
-        # Place furniture according to requirements
-        layout = await self._place_furniture(layout, requirements)
-        
-        return layout
-        
-    def _find_level_connections(self) -> List[Tuple[int, int, Dict[str, Any]]]:
-        """Find connections between levels"""
-        connections = []
-        for u, v, data in self.graph.edges(data=True):
-            if data['type'] in ['stairs', 'elevator']:
-                level_u = self.graph.nodes[u]['level']
-                level_v = self.graph.nodes[v]['level']
-                if level_u != level_v:
-                    connections.append((level_u, level_v, data))
-        return connections
-        
-    def _align_connection(self,
-                         level_a: Dict[str, Any],
-                         level_b: Dict[str, Any],
-                         connection: Dict[str, Any]):
-        """Align connection points between levels"""
-        # Find connection points
-        point_a = self._find_connection_point(level_a, connection)
-        point_b = self._find_connection_point(level_b, connection)
-        
-        # Compute alignment transform
-        transform = self._compute_alignment_transform(point_a, point_b)
-        
-        # Apply transform to maintain alignment
-        self._apply_transform(level_b, transform)
+        # Ensure name isn't empty
+        if not name:
+            name = f"model_{int(time.time())}"
+            
+        return name
+
 
 class TextTo3DPipeline:
-    """Backend implementation for ThreeDDesignerAgent's text-to-3D generation"""
+    """Complete pipeline for generating 3D models from text"""
     
-    def __init__(self):
-        self.shap_e = ShapEModel()
-        self.get3d = GET3DModel()
-        self.diffuscene = DiffuSceneOptimizer()
+    def __init__(self, config: Optional[TextTo3DConfig] = None):
+        self.config = config or TextTo3DConfig()
+        
+        # Initialize components
+        self.shape_model = ShapEModel(self.config)
+        self.texture_generator = TextureGenerator(self.config)
+        self.mesh_processor = MeshProcessor(self.config)
+        self.exporter = ModelExporter(self.config)
+        
+        # Create output directory
+        os.makedirs(self.config.output_dir, exist_ok=True)
         
     async def initialize(self):
-        """Initialize all models"""
-        await self.shap_e.initialize()
-        await self.get3d.initialize()
-        await self.diffuscene.initialize()
+        """Initialize all components"""
+        logger.info("Initializing Text to 3D pipeline")
         
-    async def generate_from_text(self,
-                               prompt: str,
-                               style_params: Optional[Dict[str, Any]] = None,
-                               furniture_prompts: Optional[List[str]] = None) -> Dict[str, Any]:
-        """Backend implementation for ThreeDDesignerAgent.generateRoomFromText"""
-        # Generate base structure
-        base_structure = await self.shap_e.generate_base_structure(prompt)
-        
-        # Generate detailed scene
-        detailed_scene = await self.get3d.generate_scene_details(
-            base_structure,
-            prompt,
-            style_params
-        )
-        
-        # Add furniture if requested
-        if furniture_prompts:
-            for prompt in furniture_prompts:
-                furniture = await self.get3d.add_furniture(
-                    prompt,
-                    style_params
-                )
-                detailed_scene['furniture'].append(furniture)
-        
-        # Optimize scene layout
-        optimized_scene = await self.diffuscene.optimize_scene(
-            detailed_scene,
-            style_params
-        )
-        
-        return {
-            'base_structure': base_structure,
-            'detailed_scene': detailed_scene,
-            'final_scene': optimized_scene,
-            'metadata': {
-                'prompt': prompt,
-                'style': style_params,
-                'furniture_prompts': furniture_prompts
-            }
-        }
-        
-    async def refine_scene(self,
-                          scene: Dict[str, Any],
-                          feedback: str,
-                          style_updates: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Refine existing scene based on feedback"""
-        # Refine base structure if needed
-        if 'structure' in feedback.lower():
-            scene['base_structure'] = await self.shap_e.refine_structure(
-                scene['base_structure'],
-                feedback
+        try:
+            # Initialize components in parallel
+            await asyncio.gather(
+                self.shape_model.initialize(),
+                self.texture_generator.initialize()
             )
             
-        # Refine scene details
-        if 'detail' in feedback.lower() or 'style' in feedback.lower():
-            scene['detailed_scene'] = await self.get3d.generate_scene_details(
-                scene['base_structure'],
-                feedback,
-                style_updates
-            )
+            logger.info("Text to 3D pipeline initialization complete")
             
-        # Refine furniture if needed
-        if 'furniture' in feedback.lower():
-            for furniture in scene['detailed_scene'].get('furniture', []):
-                refined_furniture = await self.get3d.add_furniture(
-                    furniture['type'],
-                    f"{feedback} {furniture['description']}",
-                    style_updates
-                )
-                furniture.update(refined_furniture)
-                
-        # Re-optimize scene
-        scene['final_scene'] = await self.diffuscene.optimize_scene(
-            scene['detailed_scene'],
-            style_updates
-        )
-        
-        return scene
+        except Exception as e:
+            logger.error(f"Failed to initialize Text to 3D pipeline: {e}")
+            raise RuntimeError(f"Pipeline initialization failed: {e}")
     
-    async def refine_scene(self,
-                          scene: Dict[str, Any],
-                          feedback: str,
-                          style_updates: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Refine existing scene based on feedback"""
-        # Implementation would handle scene refinement
-        pass
+    async def generate_from_text(self, 
+                               prompt: str,
+                               texture_prompt: Optional[str] = None,
+                               export_formats: Optional[List[str]] = None) -> Dict[str, Any]:
+        """Generate a complete 3D model from text description"""
+        logger.info(f"Generating 3D model from text: '{prompt}'")
+        
+        try:
+            # Initialize components if needed
+            if not hasattr(self.shape_model, '_initialized') or not self.shape_model._initialized:
+                await self.initialize()
+                
+            # Step 1: Generate base shape
+            base_shape = await self.shape_model.generate_base_shape(prompt)
+            
+            # Step 2: Process and optimize mesh
+            processed_model = await self.mesh_processor.process_mesh(base_shape)
+            
+            # Step 3: Generate textures
+            textures = await self.texture_generator.generate_textures(
+                processed_model,
+                texture_prompt=texture_prompt,
+                material_type="pbr"
+            )
+            
+            # Step 4: Apply textures to model
+            textured_model = await self.texture_generator.apply_textures_to_mesh(
+                processed_model,
+                textures
+            )
+            
+            # Step 5: Validate physics properties
+            physics_report = await self.mesh_processor.validate_physics(textured_model)
+            
+            # Step 6: Export model
+            export_paths = await self.exporter.export_model(
+                textured_model,
+                formats=export_formats
+            )
+            
+            # Combine results
+            result = {
+                "model": textured_model,
+                "physics_report": physics_report,
+                "export_paths": export_paths,
+                "status": "success",
+                "message": "3D model generated successfully"
+            }
+            
+            logger.info(f"3D model generation complete")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error generating 3D model: {e}")
+            return {
+                "status": "error",
+                "message": f"3D model generation failed: {e}"
+            }
+    
+    async def refine_model(self, 
+                         model: Dict[str, Any],
+                         feedback: str,
+                         texture_prompt: Optional[str] = None,
+                         export_formats: Optional[List[str]] = None) -> Dict[str, Any]:
+        """Refine an existing 3D model based on feedback"""
+        logger.info(f"Refining 3D model based on feedback: '{feedback}'")
+        
+        try:
+            # Initialize components if needed
+            if not hasattr(self.shape_model, '_initialized') or not self.shape_model._initialized:
+                await self.initialize()
+                
+            # Step 1: Refine shape
+            refined_shape = await self.shape_model.refine_shape(model["model"], feedback)
+            
+            # Step 2: Process and optimize mesh
+            processed_model = await self.mesh_processor.process_mesh(refined_shape)
+            
+            # Step 3: Generate textures
+            textures = await self.texture_generator.generate_textures(
+                processed_model,
+                texture_prompt=texture_prompt,
+                material_type="pbr"
+            )
+            
+            # Step 4: Apply textures to model
+            textured_model = await self.texture_generator.apply_textures_to_mesh(
+                processed_model,
+                textures
+            )
+            
+            # Step 5: Validate physics properties
+            physics_report = await self.mesh_processor.validate_physics(textured_model)
+            
+            # Step 6: Export model
+            export_paths = await self.exporter.export_model(
+                textured_model,
+                formats=export_formats
+            )
+            
+            # Combine results
+            result = {
+                "model": textured_model,
+                "physics_report": physics_report,
+                "export_paths": export_paths,
+                "original": model,
+                "status": "success",
+                "message": "3D model refined successfully"
+            }
+            
+            logger.info(f"3D model refinement complete")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error refining 3D model: {e}")
+            return {
+                "status": "error",
+                "message": f"3D model refinement failed: {e}",
+                "original": model
+            }
+
+
+async def test_pipeline():
+    """Test the Text to 3D pipeline"""
+    # Create configuration
+    config = TextTo3DConfig()
+    
+    # Create pipeline
+    pipeline = TextTo3DPipeline(config)
+    
+    # Initialize pipeline
+    await pipeline.initialize()
+    
+    # Test generation
+    result = await pipeline.generate_from_text(
+        prompt="A modern coffee mug with a geometric pattern",
+        texture_prompt="Ceramic coffee mug with blue geometric pattern, photorealistic",
+        export_formats=["obj", "glb"]
+    )
+    
+    # Print results
+    print(f"Generation status: {result['status']}")
+    print(f"Message: {result['message']}")
+    print(f"Export paths: {result['export_paths']}")
+    
+    # If successful, test refinement
+    if result['status'] == 'success':
+        # Test refinement
+        refined = await pipeline.refine_model(
+            model=result,
+            feedback="Make the handle larger and add a metallic rim",
+            texture_prompt="Ceramic coffee mug with blue geometric pattern and gold metallic rim, photorealistic",
+            export_formats=["obj", "glb"]
+        )
+        
+        # Print refinement results
+        print(f"Refinement status: {refined['status']}")
+        print(f"Message: {refined['message']}")
+        print(f"Export paths: {refined['export_paths']}")
+
+
+if __name__ == "__main__":
+    # Run test pipeline
+    import asyncio
+    asyncio.run(test_pipeline())

@@ -1,10 +1,14 @@
+/// <reference path="../../types/mui.d.ts" />
+/// <reference path="../../types/mui-icons.d.ts" />
+
 import React, { useState, useEffect } from 'react';
+// Import MUI components from barrel file
 import {
   Box,
   Card,
   CardContent,
   CircularProgress,
-  Divider,
+  // Divider, // Commented out to avoid unused variable warning
   Grid,
   Paper,
   Tab,
@@ -15,25 +19,37 @@ import {
   List,
   ListItem,
   ListItemText,
-  Alert,
   IconButton,
   Collapse,
-  TextField
-} from '@mui/material';
+  TextField,
+  Alert
+} from '../mui';
+
+// Import MUI icons from barrel file
 import {
-  Refresh as RefreshIcon,
-  Cancel as CancelIcon,
-  Replay as ReplayIcon,
-  Download as DownloadIcon,
-  ExpandMore as ExpandMoreIcon,
-  ExpandLess as ExpandLessIcon,
-  Code as CodeIcon,
-  Visibility as VisibilityIcon
-} from '@mui/icons-material';
-import { formatDistanceToNow, format } from 'date-fns';
+  RefreshIcon,
+  CancelIcon,
+  ReplayIcon,
+  DownloadIcon,
+  ExpandMoreIcon,
+  ExpandLessIcon,
+  CodeIcon,
+  VisibilityIcon
+} from '../mui-icons';
+
+// Import from the shared utility package using consistent naming
+import {
+  formatFileSize,
+  // formatRelativeTime, // Commented out to avoid unused variable warning
+  // formatDate, // Commented out to avoid unused variable warning
+  formatRelativeDate,
+  formatLocalizedDateTime
+} from '../../../../shared/src/utils/formatting';
+
+// Service imports
 import { getQueueJob, retryQueueJob, cancelQueueJob, getJobLogs, getJobResults } from '../../services/queue.service';
 
-// Status colors
+// Status colors (for UI components)
 const statusColors: Record<string, string> = {
   pending: 'info',
   processing: 'warning',
@@ -67,13 +83,13 @@ interface JobDetailsProps {
 
 /**
  * JobDetails Component
- * 
+ *
  * Displays detailed information about a specific queue job
  */
 const JobDetails: React.FC<JobDetailsProps> = ({ jobId, system, onClose, onRefresh }) => {
   // Tab state
   const [activeTab, setActiveTab] = useState<number>(0);
-  
+
   // Data states
   const [job, setJob] = useState<any | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
@@ -84,7 +100,7 @@ const JobDetails: React.FC<JobDetailsProps> = ({ jobId, system, onClose, onRefre
   const [error, setError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  
+
   // UI states
   const [configExpanded, setConfigExpanded] = useState<boolean>(true);
   const [statusExpanded, setStatusExpanded] = useState<boolean>(true);
@@ -108,7 +124,7 @@ const JobDetails: React.FC<JobDetailsProps> = ({ jobId, system, onClose, onRefre
   // Load job logs
   const fetchJobLogs = async () => {
     if (activeTab !== 1) return;
-    
+
     setLogsLoading(true);
     try {
       const logsData = await getJobLogs(jobId, system);
@@ -123,7 +139,7 @@ const JobDetails: React.FC<JobDetailsProps> = ({ jobId, system, onClose, onRefre
   // Load job results
   const fetchJobResults = async () => {
     if (activeTab !== 2) return;
-    
+
     setResultsLoading(true);
     try {
       const resultsData = await getJobResults(jobId, system);
@@ -150,7 +166,7 @@ const JobDetails: React.FC<JobDetailsProps> = ({ jobId, system, onClose, onRefre
   }, [activeTab]);
 
   // Handle tab change
-  const handleTabChange = (_event: React.SyntheticEvent<Element, Event>, newValue: number) => {
+  const handleTabChange = (_event: any, newValue: number) => {
     setActiveTab(newValue);
   };
 
@@ -158,16 +174,16 @@ const JobDetails: React.FC<JobDetailsProps> = ({ jobId, system, onClose, onRefre
   const handleJobAction = async (type: 'retry' | 'cancel') => {
     setActionSuccess(null);
     setActionError(null);
-    
+
     try {
       let message: string;
-      
+
       if (type === 'retry') {
         message = await retryQueueJob(jobId, system);
       } else {
         message = await cancelQueueJob(jobId, system);
       }
-      
+
       setActionSuccess(message);
       // Refresh job data
       fetchJobData();
@@ -186,10 +202,10 @@ const JobDetails: React.FC<JobDetailsProps> = ({ jobId, system, onClose, onRefre
   // Handle downloading job results
   const handleDownloadResults = () => {
     if (!results) return;
-    
+
     const dataStr = JSON.stringify(results, null, 2);
     const dataUri = `data:application/json;charset=utf-8,${encodeURIComponent(dataStr)}`;
-    
+
     const downloadLink = document.createElement('a');
     downloadLink.setAttribute('href', dataUri);
     downloadLink.setAttribute('download', `job-${jobId}-results.json`);
@@ -210,9 +226,9 @@ const JobDetails: React.FC<JobDetailsProps> = ({ jobId, system, onClose, onRefre
     setFullScreenMode(!fullScreenMode);
   };
 
-  // Format timestamps
+  // Format timestamps using shared utility
   const formatTimestamp = (date: Date) => {
-    return format(date, 'PPpp');
+    return formatLocalizedDateTime(date.toISOString());
   };
 
   // Handle refreshing data
@@ -248,8 +264,8 @@ const JobDetails: React.FC<JobDetailsProps> = ({ jobId, system, onClose, onRefre
   }
 
   return (
-    <Box 
-      sx={{ 
+    <Box
+      sx={{
         p: 3,
         position: fullScreenMode ? 'fixed' : 'relative',
         top: fullScreenMode ? 0 : 'auto',
@@ -288,7 +304,7 @@ const JobDetails: React.FC<JobDetailsProps> = ({ jobId, system, onClose, onRefre
           {actionSuccess}
         </Alert>
       )}
-      
+
       {actionError && (
         <Alert severity="error" sx={{ mb: 2 }}>
           {actionError}
@@ -309,7 +325,7 @@ const JobDetails: React.FC<JobDetailsProps> = ({ jobId, system, onClose, onRefre
             </Typography>
             <Typography variant="body2" color="text.secondary">Created</Typography>
             <Typography variant="body1" sx={{ mb: 2 }}>
-              {formatTimestamp(new Date(job.createdAt))} ({formatDistanceToNow(new Date(job.createdAt), { addSuffix: true })})
+              {formatTimestamp(new Date(job.createdAt))} ({formatRelativeDate(job.createdAt)})
             </Typography>
           </Grid>
           <Grid item xs={12} md={6} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
@@ -320,9 +336,9 @@ const JobDetails: React.FC<JobDetailsProps> = ({ jobId, system, onClose, onRefre
               sx={{ mb: 2, fontSize: '1rem', py: 2, px: 1 }}
             />
             <Box sx={{ mt: 'auto' }}>
-              <Button 
-                variant="outlined" 
-                color="error" 
+              <Button
+                variant="outlined"
+                color="error"
                 startIcon={<CancelIcon />}
                 onClick={() => handleJobAction('cancel')}
                 disabled={['completed', 'failed', 'canceled'].includes(job.status)}
@@ -330,9 +346,9 @@ const JobDetails: React.FC<JobDetailsProps> = ({ jobId, system, onClose, onRefre
               >
                 Cancel
               </Button>
-              <Button 
-                variant="contained" 
-                color="primary" 
+              <Button
+                variant="contained"
+                color="primary"
                 startIcon={<ReplayIcon />}
                 onClick={() => handleJobAction('retry')}
                 disabled={['pending', 'processing', 'running', 'retrying', 'training'].includes(job.status)}
@@ -359,12 +375,12 @@ const JobDetails: React.FC<JobDetailsProps> = ({ jobId, system, onClose, onRefre
           <>
             {/* Configuration */}
             <Paper sx={{ mb: 3, overflow: 'hidden' }}>
-              <Box 
-                onClick={() => toggleSection('config')} 
-                sx={{ 
-                  p: 2, 
-                  display: 'flex', 
-                  justifyContent: 'space-between', 
+              <Box
+                onClick={() => toggleSection('config')}
+                sx={{
+                  p: 2,
+                  display: 'flex',
+                  justifyContent: 'space-between',
                   alignItems: 'center',
                   cursor: 'pointer',
                   backgroundColor: 'action.hover'
@@ -389,8 +405,8 @@ const JobDetails: React.FC<JobDetailsProps> = ({ jobId, system, onClose, onRefre
                         <Grid item xs={12} md={6}>
                           <Typography variant="body2" color="text.secondary">Priority</Typography>
                           <Typography variant="body1" sx={{ mb: 2 }}>
-                            {typeof job.priority === 'string' 
-                              ? job.priority.charAt(0).toUpperCase() + job.priority.slice(1) 
+                            {typeof job.priority === 'string'
+                              ? job.priority.charAt(0).toUpperCase() + job.priority.slice(1)
                               : job.priority === 2 ? 'High' : job.priority === 1 ? 'Normal' : 'Low'}
                           </Typography>
                         </Grid>
@@ -412,8 +428,8 @@ const JobDetails: React.FC<JobDetailsProps> = ({ jobId, system, onClose, onRefre
                         <Grid item xs={12} md={6}>
                           <Typography variant="body2" color="text.secondary">Priority</Typography>
                           <Typography variant="body1" sx={{ mb: 2 }}>
-                            {typeof job.priority === 'string' 
-                              ? job.priority.charAt(0).toUpperCase() + job.priority.slice(1) 
+                            {typeof job.priority === 'string'
+                              ? job.priority.charAt(0).toUpperCase() + job.priority.slice(1)
                               : job.priority === 2 ? 'High' : job.priority === 1 ? 'Normal' : 'Low'}
                           </Typography>
                         </Grid>
@@ -431,7 +447,7 @@ const JobDetails: React.FC<JobDetailsProps> = ({ jobId, system, onClose, onRefre
                         multiline
                         fullWidth
                         variant="outlined"
-                        value={system === 'pdf' 
+                        value={system === 'pdf'
                           ? JSON.stringify(job.options || {}, null, 2)
                           : JSON.stringify(job.config || {}, null, 2)
                         }
@@ -443,8 +459,8 @@ const JobDetails: React.FC<JobDetailsProps> = ({ jobId, system, onClose, onRefre
                             </Box>
                           ),
                         }}
-                        sx={{ 
-                          fontFamily: 'monospace', 
+                        sx={{
+                          fontFamily: 'monospace',
                           '& .MuiOutlinedInput-root': {
                             fontFamily: 'monospace',
                           }
@@ -458,12 +474,12 @@ const JobDetails: React.FC<JobDetailsProps> = ({ jobId, system, onClose, onRefre
 
             {/* Status History */}
             <Paper sx={{ mb: 3, overflow: 'hidden' }}>
-              <Box 
-                onClick={() => toggleSection('status')} 
-                sx={{ 
-                  p: 2, 
-                  display: 'flex', 
-                  justifyContent: 'space-between', 
+              <Box
+                onClick={() => toggleSection('status')}
+                sx={{
+                  p: 2,
+                  display: 'flex',
+                  justifyContent: 'space-between',
                   alignItems: 'center',
                   cursor: 'pointer',
                   backgroundColor: 'action.hover'
@@ -508,12 +524,12 @@ const JobDetails: React.FC<JobDetailsProps> = ({ jobId, system, onClose, onRefre
 
             {/* Metrics and Performance */}
             <Paper sx={{ mb: 3, overflow: 'hidden' }}>
-              <Box 
-                onClick={() => toggleSection('metrics')} 
-                sx={{ 
-                  p: 2, 
-                  display: 'flex', 
-                  justifyContent: 'space-between', 
+              <Box
+                onClick={() => toggleSection('metrics')}
+                sx={{
+                  p: 2,
+                  display: 'flex',
+                  justifyContent: 'space-between',
                   alignItems: 'center',
                   cursor: 'pointer',
                   backgroundColor: 'action.hover'
@@ -574,8 +590,8 @@ const JobDetails: React.FC<JobDetailsProps> = ({ jobId, system, onClose, onRefre
                             <CardContent>
                               <Typography variant="body2" color="text.secondary">Data Size</Typography>
                               <Typography variant="h6">
-                                {job.metrics?.dataSize 
-                                  ? `${(job.metrics.dataSize / (1024 * 1024)).toFixed(2)} MB` 
+                                {job.metrics?.dataSize
+                                  ? formatFileSize(job.metrics.dataSize)
                                   : 'N/A'}
                               </Typography>
                             </CardContent>
@@ -586,11 +602,11 @@ const JobDetails: React.FC<JobDetailsProps> = ({ jobId, system, onClose, onRefre
                             <CardContent>
                               <Typography variant="body2" color="text.secondary">Training Status</Typography>
                               <Typography variant="h6">
-                                {job.trainingJobId 
-                                  ? <Chip 
-                                      label="Sent to Training" 
-                                      color="secondary" 
-                                      size="small" 
+                                {job.trainingJobId
+                                  ? <Chip
+                                      label="Sent to Training"
+                                      color="secondary"
+                                      size="small"
                                     />
                                   : 'Not Trained'}
                               </Typography>
@@ -616,8 +632,8 @@ const JobDetails: React.FC<JobDetailsProps> = ({ jobId, system, onClose, onRefre
                             <CardContent>
                               <Typography variant="body2" color="text.secondary">File Size</Typography>
                               <Typography variant="h6">
-                                {job.metrics?.fileSize 
-                                  ? `${(job.metrics.fileSize / (1024 * 1024)).toFixed(2)} MB` 
+                                {job.metrics?.fileSize
+                                  ? formatFileSize(job.metrics.fileSize)
                                   : 'N/A'}
                               </Typography>
                             </CardContent>
@@ -628,11 +644,11 @@ const JobDetails: React.FC<JobDetailsProps> = ({ jobId, system, onClose, onRefre
                             <CardContent>
                               <Typography variant="body2" color="text.secondary">Training Status</Typography>
                               <Typography variant="h6">
-                                {job.trainingJobId 
-                                  ? <Chip 
-                                      label="Sent to Training" 
-                                      color="secondary" 
-                                      size="small" 
+                                {job.trainingJobId
+                                  ? <Chip
+                                      label="Sent to Training"
+                                      color="secondary"
+                                      size="small"
                                     />
                                   : 'Not Trained'}
                               </Typography>
@@ -654,8 +670,8 @@ const JobDetails: React.FC<JobDetailsProps> = ({ jobId, system, onClose, onRefre
           <Paper sx={{ p: 2 }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
               <Typography variant="h6">Processing Logs</Typography>
-              <Button 
-                startIcon={<RefreshIcon />} 
+              <Button
+                startIcon={<RefreshIcon />}
                 onClick={fetchJobLogs}
                 disabled={logsLoading}
                 size="small"
@@ -677,7 +693,7 @@ const JobDetails: React.FC<JobDetailsProps> = ({ jobId, system, onClose, onRefre
                   readOnly: true,
                   sx: { fontFamily: 'monospace', fontSize: '0.875rem' }
                 }}
-                sx={{ 
+                sx={{
                   mb: 2,
                   '& .MuiOutlinedInput-root': {
                     fontFamily: 'monospace',
@@ -697,8 +713,8 @@ const JobDetails: React.FC<JobDetailsProps> = ({ jobId, system, onClose, onRefre
             <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
               <Typography variant="h6">Job Results</Typography>
               <Box>
-                <Button 
-                  startIcon={<RefreshIcon />} 
+                <Button
+                  startIcon={<RefreshIcon />}
                   onClick={fetchJobResults}
                   disabled={resultsLoading}
                   size="small"
@@ -706,8 +722,8 @@ const JobDetails: React.FC<JobDetailsProps> = ({ jobId, system, onClose, onRefre
                 >
                   Refresh
                 </Button>
-                <Button 
-                  startIcon={<DownloadIcon />} 
+                <Button
+                  startIcon={<DownloadIcon />}
                   onClick={handleDownloadResults}
                   disabled={!results || resultsLoading}
                   variant="outlined"
@@ -723,8 +739,8 @@ const JobDetails: React.FC<JobDetailsProps> = ({ jobId, system, onClose, onRefre
               </Box>
             ) : !results ? (
               <Alert severity="info">
-                {job.status === 'completed' 
-                  ? 'No results available for this job' 
+                {job.status === 'completed'
+                  ? 'No results available for this job'
                   : 'Results will be available once the job completes'}
               </Alert>
             ) : (
@@ -737,7 +753,7 @@ const JobDetails: React.FC<JobDetailsProps> = ({ jobId, system, onClose, onRefre
                   readOnly: true,
                   sx: { fontFamily: 'monospace', fontSize: '0.875rem' }
                 }}
-                sx={{ 
+                sx={{
                   mb: 2,
                   '& .MuiOutlinedInput-root': {
                     fontFamily: 'monospace',

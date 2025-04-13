@@ -1,12 +1,13 @@
 /**
  * Supabase Dataset Service
- * 
+ *
  * Provides methods for dataset management using Supabase as the backend.
  * Includes operations for datasets, classes, and images.
  */
 
 import { logger } from '../../utils/logger';
-import { supabaseClient } from '../supabase/supabaseClient';
+import { supabase } from '../supabase/supabaseClient';
+import { handleSupabaseError } from '../../../shared/src/utils/supabaseErrorHandler';
 
 /**
  * Dataset interface
@@ -73,23 +74,23 @@ export class SupabaseDatasetService {
 
   /**
    * Create a new dataset
-   * 
+   *
    * @param datasetData Dataset data
    * @returns Created dataset
    */
   public async createDataset(datasetData: Partial<Dataset>): Promise<Dataset> {
     try {
       logger.info(`Creating dataset: ${datasetData.name}`);
-      
-      const client = supabaseClient.getClient();
-      
+
+      const client = supabase.getClient();
+
       // Prepare data
       const data = {
         ...datasetData,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
-      
+
       // Insert into Supabase
       // Cast client to any to allow chained methods
       const { data: result, error } = await (client as any)
@@ -97,15 +98,18 @@ export class SupabaseDatasetService {
         .insert(data)
         .select('*')
         .single();
-      
+
       if (error) {
-        throw error;
+        throw handleSupabaseError(error, 'createDataset', {
+          datasetName: datasetData.name,
+          table: 'datasets'
+        });
       }
-      
+
       if (!result) {
         throw new Error('Failed to create dataset, no result returned');
       }
-      
+
       // Convert to camelCase for consistency
       return this.formatDataset(result);
     } catch (error) {
@@ -116,16 +120,16 @@ export class SupabaseDatasetService {
 
   /**
    * Get dataset by ID
-   * 
+   *
    * @param datasetId Dataset ID
    * @returns Dataset or null if not found
    */
   public async getDatasetById(datasetId: string): Promise<Dataset | null> {
     try {
       logger.info(`Getting dataset by ID: ${datasetId}`);
-      
-      const client = supabaseClient.getClient();
-      
+
+      const client = supabase.getClient();
+
       // Query Supabase
       // Cast client to any to allow chained methods
       const { data, error } = await (client as any)
@@ -133,27 +137,32 @@ export class SupabaseDatasetService {
         .select('*')
         .eq('id', datasetId)
         .maybeSingle();
-      
+
       if (error) {
-        throw error;
+        throw handleSupabaseError(error, 'getDatasetById', {
+          datasetId,
+          table: 'datasets'
+        });
       }
-      
+
       // Return null if not found
       if (!data) {
         return null;
       }
-      
+
       // Convert to camelCase for consistency
       return this.formatDataset(data);
     } catch (error) {
-      logger.error(`Failed to get dataset by ID: ${error}`);
-      throw new Error(`Failed to get dataset by ID: ${error instanceof Error ? error.message : String(error)}`);
+      throw handleSupabaseError(error, 'getDatasetById', {
+        datasetId,
+        table: 'datasets'
+      });
     }
   }
 
   /**
    * Update dataset
-   * 
+   *
    * @param datasetId Dataset ID
    * @param updateData Update data
    * @returns Updated dataset
@@ -161,15 +170,15 @@ export class SupabaseDatasetService {
   public async updateDataset(datasetId: string, updateData: Partial<Dataset>): Promise<Dataset> {
     try {
       logger.info(`Updating dataset ${datasetId}`);
-      
-      const client = supabaseClient.getClient();
-      
+
+      const client = supabase.getClient();
+
       // Prepare data
       const data = {
         ...updateData,
         updated_at: new Date().toISOString()
       };
-      
+
       // Update in Supabase
       // Cast client to any to allow chained methods
       const { data: result, error } = await (client as any)
@@ -178,70 +187,80 @@ export class SupabaseDatasetService {
         .eq('id', datasetId)
         .select('*')
         .single();
-      
+
       if (error) {
-        throw error;
+        throw handleSupabaseError(error, 'updateDataset', {
+          datasetId,
+          table: 'datasets'
+        });
       }
-      
+
       if (!result) {
         throw new Error(`Dataset not found: ${datasetId}`);
       }
-      
+
       // Convert to camelCase for consistency
       return this.formatDataset(result);
     } catch (error) {
-      logger.error(`Failed to update dataset: ${error}`);
-      throw new Error(`Failed to update dataset: ${error instanceof Error ? error.message : String(error)}`);
+      throw handleSupabaseError(error, 'updateDataset', {
+        datasetId,
+        table: 'datasets'
+      });
     }
   }
 
   /**
    * Get classes for a dataset
-   * 
+   *
    * @param datasetId Dataset ID
    * @returns Array of dataset classes
    */
   public async getDatasetClasses(datasetId: string): Promise<DatasetClass[]> {
     try {
       logger.info(`Getting classes for dataset ${datasetId}`);
-      
-      const client = supabaseClient.getClient();
-      
+
+      const client = supabase.getClient();
+
       // Query Supabase
       // Cast client to any to allow chained methods
       const { data, error } = await (client as any)
         .from('dataset_classes')
         .select('*, image_count:dataset_images(count)')
         .eq('dataset_id', datasetId);
-      
+
       if (error) {
-        throw error;
+        throw handleSupabaseError(error, 'getDatasetClasses', {
+          datasetId,
+          table: 'dataset_classes'
+        });
       }
-      
+
       if (!data) {
         return [];
       }
-      
+
       // Convert to camelCase for consistency
       return data.map(this.formatDatasetClass);
     } catch (error) {
-      logger.error(`Failed to get dataset classes: ${error}`);
-      throw new Error(`Failed to get dataset classes: ${error instanceof Error ? error.message : String(error)}`);
+      throw handleSupabaseError(error, 'getDatasetClasses', {
+        datasetId,
+        table: 'dataset_classes'
+      });
     }
   }
 
   /**
    * Create dataset class
-   * 
+   *
    * @param classData Class data
    * @returns Created dataset class
    */
   public async createDatasetClass(classData: Partial<DatasetClass>): Promise<DatasetClass> {
     try {
       logger.info(`Creating class for dataset ${classData.datasetId}: ${classData.name}`);
-      
-      const client = supabaseClient.getClient();
-      
+
+      const client = supabase.getClient();
+
       // Prepare data
       const data = {
         dataset_id: classData.datasetId,
@@ -249,7 +268,7 @@ export class SupabaseDatasetService {
         description: classData.description,
         metadata: classData.metadata
       };
-      
+
       // Insert into Supabase
       // Cast client to any to allow chained methods
       const { data: result, error } = await (client as any)
@@ -257,26 +276,33 @@ export class SupabaseDatasetService {
         .insert(data)
         .select('*')
         .single();
-      
+
       if (error) {
-        throw error;
+        throw handleSupabaseError(error, 'createDatasetClass', {
+          datasetId: classData.datasetId,
+          className: classData.name,
+          table: 'dataset_classes'
+        });
       }
-      
+
       if (!result) {
         throw new Error('Failed to create dataset class, no result returned');
       }
-      
+
       // Convert to camelCase for consistency
       return this.formatDatasetClass(result);
     } catch (error) {
-      logger.error(`Failed to create dataset class: ${error}`);
-      throw new Error(`Failed to create dataset class: ${error instanceof Error ? error.message : String(error)}`);
+      throw handleSupabaseError(error, 'createDatasetClass', {
+        datasetId: classData.datasetId,
+        className: classData.name,
+        table: 'dataset_classes'
+      });
     }
   }
 
   /**
    * Get images for a class
-   * 
+   *
    * @param datasetId Dataset ID
    * @param classId Class ID
    * @returns Array of dataset images
@@ -284,9 +310,9 @@ export class SupabaseDatasetService {
   public async getClassImages(datasetId: string, classId: string): Promise<DatasetImage[]> {
     try {
       logger.info(`Getting images for dataset ${datasetId}, class ${classId}`);
-      
-      const client = supabaseClient.getClient();
-      
+
+      const client = supabase.getClient();
+
       // Query Supabase
       // Cast client to any to allow chained methods
       const { data, error } = await (client as any)
@@ -294,15 +320,15 @@ export class SupabaseDatasetService {
         .select('*')
         .eq('dataset_id', datasetId)
         .eq('class_id', classId);
-      
+
       if (error) {
         throw error;
       }
-      
+
       if (!data) {
         return [];
       }
-      
+
       // Convert to camelCase for consistency
       return data.map(this.formatDatasetImage);
     } catch (error) {
@@ -313,7 +339,7 @@ export class SupabaseDatasetService {
 
   /**
    * Format dataset data to camelCase
-   * 
+   *
    * @param data Database dataset data
    * @returns Formatted dataset
    */
@@ -333,7 +359,7 @@ export class SupabaseDatasetService {
 
   /**
    * Format dataset class data to camelCase
-   * 
+   *
    * @param data Database dataset class data
    * @returns Formatted dataset class
    */
@@ -350,7 +376,7 @@ export class SupabaseDatasetService {
 
   /**
    * Format dataset image data to camelCase
-   * 
+   *
    * @param data Database dataset image data
    * @returns Formatted dataset image
    */

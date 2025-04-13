@@ -1,170 +1,155 @@
 # crewAI Integration Implementation Guide
 
-This document provides implementation details for integrating crewAI agents into the KAI platform, along with setup instructions and next steps.
+This document provides implementation details for integrating crewAI agents into the KAI platform, reflecting the current state including MCP integration.
 
 ## Implementation Status
 
-We have implemented a foundation for integrating crewAI agents into the KAI platform. The implementation includes:
+The integration of crewAI agents into the KAI platform includes:
 
-1. **Core Framework**
-   - Created an agents package with core types, interfaces, and configuration structures
-   - Implemented agent system management with configuration and state handling
-   - Integrated with Redis for agent memory persistence
+1.  **Core Framework:**
+    *   An `agents` package with core types, interfaces, and configuration (`agentSystem.ts`).
+    *   Agent system management using environment variables for configuration (API keys, service URLs).
+    *   Optional Redis integration for agent memory persistence.
+    *   Logging and error handling utilities.
 
-2. **Frontend Components**
-   - Developed UI components for agent interaction (AgentChat, panels for different agent types)
-   - Created agent-specific panels (RecognitionPanel, MaterialExpertPanel, ProjectAssistantPanel, ThreeDDesignerPanel)
-   - Implemented a unified dashboard to access all agent capabilities
-   - Added 3D visualization capabilities with model integrations
+2.  **MCP Integration (LLM):**
+    *   Implemented via adapters (`llmInferenceMcpAdapter.ts`) and helpers (`llmInferenceHelper.ts`).
+    *   Supports chat, completion, and embedding operations.
+    *   Automatically routes requests to the MCP server when enabled (`isMCPEnabledForComponent`).
+    *   Supports batching (`mcpBatchProcessor.ts`) and streaming (via WebSockets).
+    *   Includes fallback to a local `LLMService` implementation if MCP is disabled or fails.
+    *   Connects to real KAI backend services (configured via environment variables).
 
-3. **3D Designer Agent**
-   - Implemented ThreeDDesignerAgent for 3D visualization tasks
-   - Integrated multiple AI models:
-     * NeRF-based reconstruction (NerfStudio, Instant-NGP)
-     * Text-to-3D generation (Shap-E, GET3D, Hunyuan3D-2)
-     * Scene understanding (YOLO v8, MiDaS, SAM)
-   - Added material suggestion capabilities
-   - Integrated with existing knowledge base
+3.  **Agent Types & Factory:**
+    *   Defined frontend agents (`RecognitionAssistant`, `MaterialExpert`, `ProjectAssistant`) and backend agents (`KnowledgeBaseAgent`, `AnalyticsAgent`, `OperationsAgent`).
+    *   `mcpAgentFactory.ts` creates MCP-enabled frontend agents, leveraging the LLM adapter. Backend agent MCP usage needs further review.
+    *   `createEnhancedMaterialExpert` is used for `MaterialExpert`.
+    *   `createImageCapableMaterialExpert` adds image analysis via `imageAnalysisMcpAdapter`.
 
-3. **Backend Integration**
-   - Designed SystemAgent interface for backend agents (KnowledgeBaseAgent, AnalyticsAgent, OperationsAgent)
-   - Created initial implementations of agents for different system functions
-   - Added integration points with KAI's existing backend services
+4.  **Frontend Components:**
+    *   UI components for agent interaction exist (AgentChat, panels).
+    *   Further integration work (WebSockets, state persistence) may be needed.
 
-4. **Tools & Utilities**
-   - Implemented agent tools for material search, image analysis, and vector search
-   - Created a logging utility for agent operations
-   - Added service connectors to interact with existing KAI systems
+5.  **Tools & Adapters:**
+    *   Basic agent tools (`materialSearch`, `imageAnalysis`, `vectorSearch`) exist.
+    *   Adapters (`llmInferenceMcpAdapter`, `imageAnalysisMcpAdapter`, etc.) handle communication with MCP or local services.
+    *   Completeness and robustness of individual agent/tool implementations require ongoing review.
 
 ## Setup Instructions
 
-To set up the crewAI integration:
+To set up the `agents` package:
 
 1. Make the setup script executable:
    ```bash
-   chmod +x packages/agents/scripts/setup.sh
+   chmod +x packages/agents/setup.sh
    ```
+   *(Note: The script path might be `packages/agents/scripts/setup.sh` depending on its exact location)*
 
-2. Run the setup script:
-   ```bash
-   cd packages/agents
-   ./setup.sh
-   ```
+2.  Run the setup script from the `packages/agents` directory:
+    ```bash
+    ./setup.sh 
+    ```
+    *(Or `scripts/setup.sh`)*
 
-3. The setup script will:
-   - Create necessary directories
-   - Install required dependencies
-   - Create placeholder files for missing agent implementations
-   - Set up the logging system
+3.  The setup script primarily installs dependencies and may create placeholder files if any core agent/tool files are missing.
 
-4. After running the setup script, you can use the agent system in your development environment by importing the components from the agents package.
+4.  **Environment Variables:** Configure the necessary environment variables for the agent system to connect to services. Refer to `packages/agents/src/utils/environment.ts` and the main `readme/agents-crewai.md` for required variables, which typically include:
+    *   `OPENAI_API_KEY` (or other LLM provider key)
+    *   `REDIS_URL`, `REDIS_PASSWORD` (optional, for persistence)
+    *   `KAI_API_URL`, `VECTOR_DB_URL`, `ML_SERVICE_URL`, `KAI_API_KEY` (for KAI services)
+    *   `MCP_SERVER_URL`, `MCP_AUTH_TOKEN` (if using MCP)
+    *   Flags like `MCP_ENABLED_agentInference`, `MCP_BATCHING_ENABLED_agentInference`
 
 ## Usage Examples
 
-### Initializing the Agent System
+### Initializing the Agent System with Service Connections
 
 ```typescript
-import { initializeAgentSystem } from '@kai/agents';
+import { initializeAgentSystem, connectToServices } from '@kai/agents';
+import { env } from '@kai/agents/utils/environment'; // Assuming env is exported
 
-// Initialize the agent system
+// Initialize core system (uses env vars for keys, redis, etc.)
+await initializeAgentSystem(); 
+
+// Configure connections to KAI services (uses env vars by default)
+await connectToServices(); 
+
+// --- OR Initialize with explicit config ---
+/*
 await initializeAgentSystem({
   apiKey: process.env.OPENAI_API_KEY,
-  redis: {
-    host: 'localhost',
-    port: 6379
-  },
-  defaultModel: {
-    provider: 'openai',
-    name: 'gpt-4',
-    temperature: 0.7
-  },
-  logLevel: 'info'
+  redis: env.redis.url ? { host: new URL(env.redis.url).hostname, port: parseInt(new URL(env.redis.url).port || '6379'), password: env.redis.password } : undefined,
+  logLevel: 'debug'
 });
+
+await connectToServices({
+  apiUrl: env.services.kaiApiUrl,
+  vectorDbUrl: env.services.vectorDbUrl,
+  mlServiceUrl: env.services.mlServiceUrl,
+  apiKey: env.services.apiKey,
+  enableMockFallback: env.services.enableMockFallback
+});
+*/
 ```
 
-### Using the RecognitionAssistant
+### Creating an MCP-Enabled Agent
 
 ```typescript
-import { createRecognitionAssistant, AgentConfig } from '@kai/agents';
+import { createMCPEnabledAgent, AgentType } from '@kai/agents/core/mcpAgentFactory';
+import { AgentConfig } from '@kai/agents'; // Assuming AgentConfig is exported
 
-// Create a RecognitionAssistant agent
-const config: AgentConfig = {
-  verbose: true,
-  llm: {
-    provider: 'openai',
-    name: 'gpt-4',
-    temperature: 0.7
-  }
+// Configuration for the agent
+const agentConfig: AgentConfig = {
+  id: 'mcp-material-expert-1',
+  type: AgentType.MATERIAL_EXPERT,
+  name: 'MCP Material Expert',
+  description: 'Provides detailed material information using MCP',
+  // Agent-specific tools can be added here if needed
+  // tools: [customTool] 
 };
 
-const assistant = await createRecognitionAssistant(config);
+// Model settings, potentially overriding defaults
+const modelSettings = {
+  provider: 'openai',
+  name: 'gpt-4-turbo', // Use desired model
+  temperature: 0.5,
+  enableBatching: true, // Enable batching via MCP if desired
+  // maxTokens: 2048 
+};
 
-// Use the assistant to process user input
-const response = await assistant.processUserInput('Can you analyze this image of marble tiles?');
-console.log(response);
+// Create the agent
+const mcpAgent = await createMCPEnabledAgent(agentConfig, modelSettings);
+
+// Use the agent (it will use MCP for LLM ops if enabled)
+const materialDetails = await mcpAgent.processUserInput('Tell me about Carrara marble.');
+console.log(materialDetails);
+
+// Example using image analysis capability (if created via createImageCapableMaterialExpert)
+// const imageAnalysis = await mcpAgent.analyzeImage(imageBase64String);
+// console.log(imageAnalysis);
 ```
 
 ## Next Development Steps
 
-The foundation for crewAI integration has been established, but several steps remain to fully implement the system:
+While the core MCP integration for LLM is in place, further work includes:
 
-### 1. Complete Agent Implementations
-
-- Finish the implementation of agent classes that currently have placeholder functionality
-- Implement specialized behaviors for each agent type
-- Add robust error handling and recovery mechanisms
-
-### 2. Connect to External Services
-
-- Integrate with OpenAI's API for agent language capabilities
-- Connect to Redis for agent memory and state persistence
-- Implement proper authentication and authorization for agent actions
-
-### 3. Enhance Frontend Integration
-
-- Add proper WebSocket communication for real-time agent interactions
-- Implement agent state persistence across user sessions
-- Add visual feedback for agent processing and thinking
-- Improve error handling and recovery in the UI
-
-### 4. Backend Service Integration
-
-- Connect agents to KAI's existing services (material database, vector store, etc.)
-- Implement proper data access patterns and security controls
-- Optimize performance for agent operations
-
-### 5. Testing & Validation
-
-- Create unit tests for agent components
-- Implement integration tests for the entire agent system
-- Conduct user testing for agent interactions
-- Stress test the system with high volumes of requests
-
-### 6. Deployment & Scaling
-
-- Create deployment configurations for production
-- Implement auto-scaling for agent infrastructure
-- Add monitoring and alerting for agent operations
-- Develop a strategy for agent updates and versioning
+1.  **Complete Agent/Tool Logic:** Flesh out the specific implementations within agent classes and tools, replacing any remaining placeholders with robust logic and error handling.
+2.  **Streaming Fallback:** Implement streaming support in the local `LLMService` fallback path or clearly document the limitation.
+3.  **Backend Agent MCP Usage:** Review and potentially implement MCP integration for backend agents if required.
+4.  **Enhance Frontend Integration:** Improve real-time communication (WebSockets), state management, and UI feedback for agent interactions.
+5.  **Testing:** Develop comprehensive unit, integration, and potentially end-to-end tests for agents, tools, and MCP interactions.
+6.  **Configuration & Deployment:** Finalize environment variable documentation, create deployment configurations, implement monitoring, and plan for scaling.
 
 ## Known Issues
 
-Current known issues in the implementation:
-
-1. Missing dependencies causing TypeScript errors
-   - These will be resolved after running the setup script
-
-2. Placeholder implementations for many agent features
-   - These need to be replaced with actual implementations
-
-3. Frontend components have styling issues
-   - These are related to missing @emotion/styled dependency
-
-4. Agent tools need proper error handling
-   - Currently using basic try/catch blocks
+1.  **Local Streaming Fallback:** The local `LLMService` used when MCP is unavailable does not currently support streaming responses.
+2.  **Placeholder Implementations:** Some specific agent behaviors or tool functionalities might still be placeholders requiring full implementation.
+3.  **Error Handling Granularity:** Error handling in some tools or specific agent logic might need refinement beyond basic try/catch blocks.
 
 ## Resources
 
-- [crewAI Documentation](https://github.com/crewAI/crewAI)
+- [Main crewAI Integration README](./agents-crewai.md)
+- [MCP Integration Documentation](./../packages/agents/src/docs/mcp-integration.md)
+- [crewAI Documentation](https://docs.crewai.com/)
 - [Redis Documentation](https://redis.io/docs)
 - [OpenAI API Reference](https://platform.openai.com/docs/api-reference)

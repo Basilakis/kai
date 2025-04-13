@@ -16,9 +16,7 @@ import {
   callMCPEndpoint 
 } from '../../utils/mcpIntegration';
 import { addToBatch, isBatchingEnabled } from '../../utils/mcpBatchProcessor';
-
-// Local service for fallback (would be imported from the appropriate package)
-// import { ImageAnalysisService } from '../../services/imageAnalysisService';
+import { ServiceFactory } from '../serviceFactory';
 
 // Create a logger for the adapter
 const logger = createLogger('ImageAnalysisMCPAdapter');
@@ -89,6 +87,11 @@ async function analyzeImageWithMCP(
   }
 }
 
+// Get the ML service for local image analysis operations
+const getMLService = () => {
+  return ServiceFactory.getMLService();
+};
+
 /**
  * Analyze an image using the local implementation
  * 
@@ -103,28 +106,40 @@ async function analyzeImageLocally(
   try {
     logger.debug('Using local image analysis implementation');
     
-    // In a real implementation, this would use a local service
-    // const imageAnalysisService = new ImageAnalysisService();
-    // return await imageAnalysisService.analyzeImage(imageBase64, options);
+    // Get the ML service for image analysis
+    const mlService = getMLService();
     
-    // For now, return a mock implementation
+    // Call the appropriate analyzeImage method from MLService
+    const result = await mlService.analyzeImage({
+      imageUrl: imageBase64.startsWith('data:') ? imageBase64 : `data:image/jpeg;base64,${imageBase64}`,
+      detectMaterials: options.detectMaterials !== false,
+      assessQuality: options.assessQuality !== false,
+      extractColors: options.extractFeatures !== false,
+      extractPatterns: options.extractFeatures !== false
+    });
+    
+    // Convert from MLService format to adapter format
     return {
-      materials: [
-        { name: 'Local implementation - ceramic', confidence: 0.95 }
-      ],
+      materials: result.detectedMaterials?.map(m => ({
+        name: m.type,
+        confidence: m.confidence,
+        // Adapter expects boundingBox but service doesn't provide it
+        boundingBox: undefined
+      })) || [],
       quality: {
-        overall: 0.8,
-        lighting: 0.85,
-        sharpness: 0.75,
-        noise: 0.9
+        overall: result.quality?.score || 0,
+        lighting: result.quality?.issues.includes('lighting') ? 0.5 : 0.9,
+        sharpness: result.quality?.issues.includes('blurry') ? 0.5 : 0.9,
+        noise: result.quality?.issues.includes('noise') ? 0.5 : 0.9
       },
-      features: {
-        colorHistogram: [0.1, 0.2, 0.3, 0.2, 0.1]
-      },
+      features: result.colorAnalysis ? {
+        colorHistogram: result.colorAnalysis.palette.map(c => c.percentage / 100),
+        embedding: [] // Real implementation would have embedding data
+      } : {},
       metadata: {
-        processingTime: 200,
+        processingTime: Date.now(), // MLService doesn't provide this
         modelVersion: 'local-v1.0',
-        pixelCount: 1024 * 768
+        pixelCount: 0 // MLService doesn't provide this
       }
     };
   } catch (error) {

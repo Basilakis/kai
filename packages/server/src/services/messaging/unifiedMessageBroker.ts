@@ -1,6 +1,6 @@
 /**
  * Unified Message Broker
- * 
+ *
  * A consolidated implementation that combines the best features of both
  * the original MessageBroker and ScalableMessageBroker implementations,
  * while providing a consistent interface for all messaging needs.
@@ -9,7 +9,8 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../../utils/logger';
-import { supabaseClient } from '../supabase/supabaseClient';
+import { supabase } from '../supabase/supabaseClient';
+import { handleSupabaseError } from '../../../../shared/src/utils/supabaseErrorHandler';
 import {
   IEnhancedMessageBroker,
   MessageQueueType,
@@ -81,17 +82,17 @@ function createChannel(client: SupabaseClient, name: string): SupabaseChannel {
  */
 export class UnifiedMessageBroker implements IEnhancedMessageBroker {
   private supabase: SupabaseClient;
-  private subscriptions: Map<string, { 
-    handler: MessageHandler, 
+  private subscriptions: Map<string, {
+    handler: MessageHandler,
     options: SubscriptionOptions,
     channel?: SupabaseChannel
   }> = new Map();
-  
+
   private connected: boolean = false;
   private reconnecting: boolean = false;
   private processingMessages: Set<string> = new Set();
   private messageCache: Map<string, CacheEntry<MessagePayload>> = new Map();
-  
+
   private pendingPublishes: Array<{
     queue: MessageQueueType;
     type: string;
@@ -101,12 +102,12 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
     expiresAt?: number;
     resolve: (success: boolean) => void;
   }> = [];
-  
+
   private reconnectTimeout: NodeJS.Timeout | null = null;
   private messageCleanupInterval: NodeJS.Timeout | null = null;
   private cacheCleanupInterval: NodeJS.Timeout | null = null;
   private heartbeatInterval: NodeJS.Timeout | null = null;
-  
+
   private maxRetries: number = MAX_RETRY_COUNT;
   private retryAttempts: number = 0;
   private batchSize: number = MAX_BATCH_SIZE / 4; // Conservative default (25% of max)
@@ -119,25 +120,25 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
    */
   constructor(config?: Partial<MessageBrokerConfig>) {
     // Get a fresh Supabase client
-    this.supabase = supabaseClient.getClient();
-    
+    this.supabase = supabase.getClient();
+
     // Apply configuration if provided
     if (config) {
       this.configure(config);
     }
-    
+
     // Set up connection monitoring
     this.startHeartbeat();
-    
+
     // Set up message cleanup
     this.startMessageCleanup();
-    
+
     // Set up cache cleanup
     this.startCacheCleanup();
-    
+
     // Initialize the connection
     this.initializeConnection();
-    
+
     logger.info('Unified message broker initialized');
   }
 
@@ -148,10 +149,10 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
     try {
       // Check that required tables exist
       await this.ensureTablesExist();
-      
+
       // Mark as connected
       this.connected = true;
-      
+
     } catch (err) {
       logger.error(`Failed to initialize connection: ${err}`);
       this.connected = false;
@@ -169,7 +170,7 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
         .from('message_broker_messages') as any)
         .select('id')
         .limit(1);
-      
+
       if (error) {
         logger.warn(`Tables might not exist: ${error.message}`);
         // In a real implementation, we would create tables or notify admin
@@ -187,7 +188,7 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);
     }
-    
+
     this.heartbeatInterval = setInterval(async () => {
       try {
         // Try a simple query to check connection
@@ -196,7 +197,7 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
           .select('status')
           .limit(1)
           .single();
-        
+
         if (error) {
           logger.warn(`Supabase connection check failed: ${error.message}`);
           this.connected = false;
@@ -207,10 +208,10 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
             this.connected = true;
             this.reconnecting = false;
             this.retryAttempts = 0;
-            
+
             // Reestablish subscriptions
             await this.reestablishSubscriptions();
-            
+
             // Process any pending publishes
             await this.processPendingPublishes();
           }
@@ -230,20 +231,20 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
     if (this.messageCleanupInterval) {
       clearInterval(this.messageCleanupInterval);
     }
-    
+
     this.messageCleanupInterval = setInterval(async () => {
       try {
         if (!this.connected || !this.persistenceEnabled) return;
-        
+
         // Use a transaction for atomic cleanup operations
         const { error } = await this.supabase.rpc('cleanup_message_broker', {
           acknowledgment_cutoff_days: 1,
           expired_cutoff_timestamp: new Date().getTime()
         });
-        
+
         if (error) {
           logger.error(`Failed to clean up messages: ${error.message}`);
-          
+
           // Fallback to direct queries if RPC fails
           await this.fallbackMessageCleanup();
         }
@@ -252,7 +253,7 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
       }
     }, 3600000); // 1 hour
   }
-  
+
   /**
    * Fallback message cleanup when RPC fails
    */
@@ -261,32 +262,32 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
       // Clean up acknowledged messages older than 24 hours
       const oneDayAgo = new Date();
       oneDayAgo.setDate(oneDayAgo.getDate() - 1);
-      
+
       // Use pagination for large deletes
       let hasMore = true;
       let lastId: string | null = null;
-      
+
       while (hasMore) {
         let query = this.supabase
           .from('message_broker_messages')
           .delete() as any;
-        
+
         query = query
           .eq('status', MessageDeliveryStatus.ACKNOWLEDGED)
           .lt('timestamp', oneDayAgo.getTime())
           .limit(PAGE_SIZE);
-          
+
         if (lastId) {
           query = query.gt('id', lastId);
         }
-        
+
         const { data, error } = await query;
-        
+
         if (error) {
           logger.error(`Failed to clean up old messages: ${error.message}`);
           break;
         }
-        
+
         hasMore = data && data.length === PAGE_SIZE;
         if (hasMore && data && data.length > 0) {
           lastId = data[data.length - 1].id;
@@ -294,33 +295,33 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
           hasMore = false;
         }
       }
-      
+
       // Mark expired messages (using pagination)
       const now = new Date().getTime();
       hasMore = true;
       lastId = null;
-      
+
       while (hasMore) {
         let query = this.supabase
           .from('message_broker_messages')
           .update({ status: MessageDeliveryStatus.EXPIRED }) as any;
-        
+
         query = query
           .lt('expiresAt', now)
           .neq('status', MessageDeliveryStatus.ACKNOWLEDGED)
           .limit(PAGE_SIZE);
-          
+
         if (lastId) {
           query = query.gt('id', lastId);
         }
-        
+
         const { data, error } = await query;
-        
+
         if (error) {
           logger.error(`Failed to mark expired messages: ${error.message}`);
           break;
         }
-        
+
         hasMore = data && data.length === PAGE_SIZE;
         if (hasMore && data && data.length > 0) {
           lastId = data[data.length - 1].id;
@@ -340,12 +341,12 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
     if (this.cacheCleanupInterval) {
       clearInterval(this.cacheCleanupInterval);
     }
-    
+
     this.cacheCleanupInterval = setInterval(() => {
       try {
         const now = Date.now();
         let expiredCount = 0;
-        
+
         // Clean expired entries
         for (const [key, entry] of this.messageCache.entries()) {
           if (entry.expiresAt <= now) {
@@ -353,21 +354,21 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
             expiredCount++;
           }
         }
-        
+
         // If cache is too large, remove oldest entries
         if (this.messageCache.size > MAX_CACHE_SIZE) {
           const entriesToRemove = this.messageCache.size - MAX_CACHE_SIZE;
           const entries = Array.from(this.messageCache.entries())
             .sort((a, b) => a[1].timestamp - b[1].timestamp)
             .slice(0, entriesToRemove);
-            
+
           for (const [key] of entries) {
             this.messageCache.delete(key);
           }
-          
+
           logger.info(`Cache pruned: removed ${entriesToRemove} oldest entries`);
         }
-        
+
         if (expiredCount > 0) {
           logger.debug(`Cache cleanup: removed ${expiredCount} expired entries`);
         }
@@ -382,10 +383,10 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
    */
   private handleConnectionLoss(): void {
     if (this.reconnecting) return;
-    
+
     this.reconnecting = true;
     logger.warn('Supabase connection lost, preparing for reconnection');
-    
+
     // Close existing realtime channels
     for (const [key, subscription] of this.subscriptions.entries()) {
       if (subscription.channel) {
@@ -394,7 +395,7 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
         } catch (err) {
           logger.error(`Error unsubscribing from channel ${key}: ${err}`);
         }
-        
+
         // Mark as not having an active channel
         this.subscriptions.set(key, {
           ...subscription,
@@ -402,15 +403,15 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
         });
       }
     }
-    
+
     // Schedule reconnection attempt with exponential backoff
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
     }
-    
+
     const backoffTime = this.calculateBackoff();
     logger.info(`Scheduling reconnection in ${backoffTime}ms`);
-    
+
     this.reconnectTimeout = setTimeout(() => {
       this.attemptReconnection();
     }, backoffTime);
@@ -425,10 +426,10 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
       MAX_BACKOFF_MS,
       MIN_BACKOFF_MS * Math.pow(2, this.retryAttempts)
     );
-    
+
     // Add some randomness (jitter) to prevent thundering herd problem
     const jitter = Math.random() * 0.3 * exponentialPart;
-    
+
     this.retryAttempts++;
     return Math.floor(exponentialPart + jitter);
   }
@@ -438,30 +439,30 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
    */
   private async attemptReconnection(): Promise<void> {
     logger.info(`Attempting to reconnect to Supabase (attempt ${this.retryAttempts})`);
-    
+
     try {
       // Get a fresh client
-      this.supabase = supabaseClient.getClient();
-      
+      this.supabase = supabase.getClient();
+
       // Check connection with a simple query
       const { error } = await (this.supabase
         .from('message_broker_status') as any)
         .select('status')
         .limit(1)
         .single();
-      
+
       if (error) {
         logger.error(`Reconnection failed: ${error.message}`);
-        
+
         // Schedule another attempt with exponential backoff
         if (this.retryAttempts < this.maxRetries) {
           if (this.reconnectTimeout) {
             clearTimeout(this.reconnectTimeout);
           }
-          
+
           const backoffTime = this.calculateBackoff();
           logger.info(`Scheduling reconnection in ${backoffTime}ms`);
-          
+
           this.reconnectTimeout = setTimeout(() => {
             this.attemptReconnection();
           }, backoffTime);
@@ -474,24 +475,24 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
         this.connected = true;
         this.reconnecting = false;
         this.retryAttempts = 0;
-        
+
         // Reestablish subscriptions
         await this.reestablishSubscriptions();
-        
+
         // Process any pending publishes
         await this.processPendingPublishes();
       }
     } catch (err) {
       logger.error(`Reconnection attempt failed with exception: ${err}`);
-      
+
       // Schedule another attempt with exponential backoff
       if (this.retryAttempts < this.maxRetries) {
         if (this.reconnectTimeout) {
           clearTimeout(this.reconnectTimeout);
         }
-        
+
         const backoffTime = this.calculateBackoff();
-        
+
         this.reconnectTimeout = setTimeout(() => {
           this.attemptReconnection();
         }, backoffTime);
@@ -507,9 +508,9 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
    */
   private async reestablishSubscriptions(): Promise<void> {
     if (!this.realtimeEnabled) return;
-    
+
     logger.info('Reestablishing subscriptions after reconnection');
-    
+
     // Reestablish each subscription
     for (const [key, { handler, options }] of this.subscriptions.entries()) {
       const [queue, type] = key.split(':');
@@ -520,13 +521,13 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
           type === '*' ? undefined : type,
           options
         );
-        
+
         logger.info(`Reestablished subscription to ${queue}:${type}`);
       } catch (err) {
         logger.error(`Failed to reestablish subscription to ${queue}:${type}: ${err}`);
       }
     }
-    
+
     // Check for any messages that were sent while disconnected
     await this.replayMissedMessages();
   }
@@ -536,19 +537,19 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
    */
   private async processPendingPublishes(): Promise<void> {
     if (this.pendingPublishes.length === 0) return;
-    
+
     logger.info(`Processing ${this.pendingPublishes.length} pending publish operations`);
-    
+
     // Process in batches for efficiency
     const pendingBatches: Array<typeof this.pendingPublishes> = [];
     const pending = [...this.pendingPublishes];
     this.pendingPublishes = [];
-    
+
     // Group into batches
     for (let i = 0; i < pending.length; i += this.batchSize) {
       pendingBatches.push(pending.slice(i, i + this.batchSize));
     }
-    
+
     // Process each batch
     for (const batch of pendingBatches) {
       try {
@@ -565,15 +566,15 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
           status: MessageDeliveryStatus.PENDING,
           attempts: 0
         }));
-        
+
         // Insert batch
         const { error } = await this.supabase
           .from('message_broker_messages')
           .insert(messages);
-        
+
         if (error) {
           logger.error(`Failed to process pending publish batch: ${error.message}`);
-          
+
           // Resolve all with failure
           for (const pub of batch) {
             pub.resolve(false);
@@ -586,7 +587,7 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
         }
       } catch (err) {
         logger.error(`Error processing pending publish batch: ${err}`);
-        
+
         // Resolve all with failure
         for (const pub of batch) {
           pub.resolve(false);
@@ -606,29 +607,29 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
   ): Promise<() => Promise<void>> {
     if (!this.realtimeEnabled) {
       logger.warn('Realtime is disabled, subscription will not receive real-time updates');
-      
+
       // Return dummy unsubscribe function
       return async () => {
         logger.debug(`Dummy unsubscribe for ${queue}:${type || '*'} (realtime disabled)`);
       };
     }
-    
+
     // Create a unique key for this subscription
     const key = `${queue}:${type || '*'}`;
-    
+
     // Create a channel for this subscription using our type-safe helper function
     const channel = createChannel(this.supabase, `message-broker-${key}`);
-    
+
     // Define filter for Postgres changes
     const baseFilter = options.useFilters
-      ? { queue: { eq: queue } } 
+      ? { queue: { eq: queue } }
       : undefined;
-    
+
     // Add type filter if specified
     const filter = type && options.useFilters
       ? { ...baseFilter, type: { eq: type } }
       : baseFilter;
-    
+
     // Build channel with Postgres changes
     channel
       .on(
@@ -641,27 +642,27 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
         },
         async (payload: { new: any }) => {
           const message = payload.new as MessagePayload;
-          
+
           // Skip if already processing
           if (this.processingMessages.has(message.id!)) {
             return;
           }
-          
+
           // Apply client-side filter if not using database filters
           if (!options.useFilters && type && message.type !== type) {
             return;
           }
-          
+
           // Check cache if enabled
           if (options.enableCache) {
             const cacheKey = `msg:${message.id}`;
             const cachedMessage = this.messageCache.get(cacheKey);
-            
+
             if (cachedMessage) {
               // Skip if we've already processed this message
               return;
             }
-            
+
             // Add to cache to prevent duplicate processing
             this.messageCache.set(cacheKey, {
               value: message,
@@ -669,22 +670,22 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
               expiresAt: Date.now() + 3600000 // 1 hour
             });
           }
-          
+
           // Mark as processing to prevent duplicates
           this.processingMessages.add(message.id!);
-          
+
           // Update status to processing if using acknowledgments
           if (options.useAcknowledgment) {
             await this.updateMessageStatus(message.id!, MessageDeliveryStatus.PROCESSING);
           }
-          
+
           try {
             if (options.useAcknowledgment) {
               // With acknowledgment
               await handler(message, async () => {
                 await this.acknowledgeMessage(message.id!);
               });
-              
+
               // Auto-acknowledge if enabled
               if (options.autoAcknowledge) {
                 await this.acknowledgeMessage(message.id!);
@@ -692,27 +693,27 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
             } else {
               // Without acknowledgment
               await handler(message);
-              
+
               // Mark as delivered if persistence is enabled
               if (this.persistenceEnabled) {
                 await this.updateMessageStatus(message.id!, MessageDeliveryStatus.DELIVERED);
               }
-              
+
               // Remove from processing set
               this.processingMessages.delete(message.id!);
             }
           } catch (err) {
             logger.error(`Error handling message ${message.id}: ${err}`);
-            
+
             if (this.persistenceEnabled) {
               // Increment attempts and maybe retry
               const attempts = (message.attempts || 0) + 1;
               const maxRetries = options.maxRetries || DEFAULT_SUBSCRIPTION_OPTIONS.maxRetries || 3;
-              
+
               if (attempts <= maxRetries) {
                 // Mark for retry
                 await this.updateMessageForRetry(message.id!, attempts);
-                
+
                 // Schedule retry after delay
                 setTimeout(() => {
                   this.processingMessages.delete(message.id!);
@@ -729,19 +730,19 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
         }
       )
       .subscribe();
-    
+
     // Store subscription info
     const unsubscribe = async () => {
       channel.unsubscribe();
       this.subscriptions.delete(key);
     };
-    
-    this.subscriptions.set(key, { 
-      handler, 
+
+    this.subscriptions.set(key, {
+      handler,
       options,
       channel
     });
-    
+
     return unsubscribe;
   }
 
@@ -749,17 +750,17 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
    * Update the status of a message
    */
   private async updateMessageStatus(
-    messageId: string, 
+    messageId: string,
     status: MessageDeliveryStatus
   ): Promise<void> {
     if (!this.persistenceEnabled) return;
-    
+
     try {
       const { error } = await (this.supabase
         .from('message_broker_messages') as any)
         .update({ status })
         .eq('id', messageId);
-      
+
       if (error) {
         logger.error(`Failed to update message status: ${error.message}`);
       }
@@ -772,20 +773,20 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
    * Update a message for retry
    */
   private async updateMessageForRetry(
-    messageId: string, 
+    messageId: string,
     attempts: number
   ): Promise<void> {
     if (!this.persistenceEnabled) return;
-    
+
     try {
       const { error } = await (this.supabase
         .from('message_broker_messages') as any)
-        .update({ 
+        .update({
           status: MessageDeliveryStatus.PENDING,
           attempts
         })
         .eq('id', messageId);
-      
+
       if (error) {
         logger.error(`Failed to update message for retry: ${error.message}`);
       }
@@ -800,15 +801,15 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
   private async acknowledgeMessage(messageId: string): Promise<void> {
     // Remove from processing set
     this.processingMessages.delete(messageId);
-    
+
     if (!this.persistenceEnabled) return;
-    
+
     try {
       const { error } = await (this.supabase
         .from('message_broker_messages') as any)
         .update({ status: MessageDeliveryStatus.ACKNOWLEDGED })
         .eq('id', messageId);
-      
+
       if (error) {
         logger.error(`Failed to acknowledge message: ${error.message}`);
       }
@@ -832,7 +833,7 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
       logger.warn(`Cannot publish message, not connected to Supabase`);
       return false;
     }
-    
+
     try {
       // Calculate expiry if not provided
       if (!expiresAt) {
@@ -840,7 +841,7 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
         expiryDate.setDate(expiryDate.getDate() + DEFAULT_EXPIRY_DAYS);
         expiresAt = expiryDate.getTime();
       }
-      
+
       const message: MessagePayload = {
         id: uuidv4(),
         queue,
@@ -853,22 +854,29 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
         status: MessageDeliveryStatus.PENDING,
         attempts: 0
       };
-      
+
       if (this.persistenceEnabled) {
         // Store in Supabase for persistence
-        const { error } = await this.supabase
-          .from('message_broker_messages')
-          .insert(message);
-        
-        if (error) {
-          logger.error(`Failed to persist message: ${error.message}`);
+        try {
+          const { error } = await this.supabase
+            .from('message_broker_messages')
+            .insert(message);
+
+          if (error) {
+            throw handleSupabaseError(error, 'persistMessage', {
+              queue: message.queue,
+              type: message.type
+            });
+          }
+        } catch (err) {
+          logger.error(`Failed to persist message: ${err}`);
           return false;
         }
       } else {
         // Direct broadcast if not using persistence
         await this.broadcastMessage(message);
       }
-      
+
       return true;
     } catch (err) {
       logger.error(`Error publishing message: ${err}`);
@@ -889,9 +897,12 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
           payload: message,
           timestamp: Date.now()
         });
-      
+
       if (error) {
-        logger.error(`Failed to broadcast message: ${error.message}`);
+        throw handleSupabaseError(error, 'broadcastMessage', {
+          queue: message.queue,
+          type: message.type
+        });
       }
     } catch (err) {
       logger.error(`Failed to broadcast message: ${err}`);
@@ -907,11 +918,11 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
     type?: MessageType | string
   ): Promise<() => Promise<void>> {
     logger.info(`Subscribing to ${queue}:${type || '*'}`);
-    
+
     const options: SubscriptionOptions = {
       ...DEFAULT_SUBSCRIPTION_OPTIONS
     };
-    
+
     return this.subscribeInternal(queue, handler as MessageHandler, type, options);
   }
 
@@ -925,7 +936,7 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
     type?: MessageType | string
   ): Promise<() => Promise<void>> {
     logger.info(`Subscribing to ${queue}:${type || '*'} with custom options`);
-    
+
     return this.subscribeInternal(
       queue,
       handler as MessageHandler,
@@ -950,18 +961,18 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
     if (dataSize > 100000) { // 100KB
       logger.warn(`Publishing large payload (${dataSize} bytes) - consider using storage for large data`);
     }
-    
+
     // If not connected, queue the publish for later
     if (!this.connected) {
       return new Promise((resolve) => {
         this.pendingPublishes.push({
           queue, type, data, source, priority, expiresAt, resolve
         });
-        
+
         logger.info(`Queued publish to ${queue}:${type} for later (not connected)`);
       });
     }
-    
+
     return this.publishInternal(queue, type, data, source, priority, expiresAt);
   }
 
@@ -979,31 +990,31 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
     }>
   ): Promise<number> {
     if (messages.length === 0) return 0;
-    
+
     logger.info(`Publishing batch of ${messages.length} messages`);
-    
+
     // Check if we're exceeded recommended batch size
     if (messages.length > this.batchSize) {
       logger.warn(`Batch size ${messages.length} exceeds recommended size ${this.batchSize}`);
-      
+
       // Split into smaller batches to avoid Supabase limits
       let successCount = 0;
-      
+
       for (let i = 0; i < messages.length; i += this.batchSize) {
         const batchSlice = messages.slice(i, i + this.batchSize);
         const batchCount = await this.publishBatch(batchSlice);
         successCount += batchCount;
       }
-      
+
       return successCount;
     }
-    
+
     if (!this.connected && !this.persistenceEnabled) {
       // Queue the publishes for later
       return new Promise((resolve) => {
         let successCount = 0;
         const resolvers: (() => void)[] = [];
-        
+
         for (const msg of messages) {
           this.pendingPublishes.push({
             ...msg,
@@ -1013,12 +1024,12 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
             }
           });
         }
-        
+
         // When all are resolved, return success count
         Promise.all(resolvers.map(r => r())).then(() => resolve(successCount));
       });
     }
-    
+
     if (this.persistenceEnabled) {
       // Use batch insert with proper error handling
       try {
@@ -1027,7 +1038,7 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
         const defaultExpiryDate = new Date();
         defaultExpiryDate.setDate(defaultExpiryDate.getDate() + DEFAULT_EXPIRY_DAYS);
         const defaultExpiresAt = defaultExpiryDate.getTime();
-        
+
         // Create batch with proper defaults
         const batch = messages.map(msg => ({
           id: uuidv4(),
@@ -1041,17 +1052,17 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
           status: MessageDeliveryStatus.PENDING,
           attempts: 0
         }));
-        
+
         // Insert the batch
         const { error } = await this.supabase
           .from('message_broker_messages')
           .insert(batch);
-        
+
         if (error) {
           logger.error(`Failed to publish batch: ${error.message}`);
           return 0;
         }
-        
+
         return batch.length;
       } catch (err) {
         logger.error(`Error publishing batch: ${err}`);
@@ -1060,16 +1071,16 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
     } else {
       // Broadcast individually if not using persistence
       let successCount = 0;
-      
+
       // Process in small chunks to avoid overwhelming the system
       const chunkSize = 10;
-      
+
       for (let i = 0; i < messages.length; i += chunkSize) {
         const chunk = messages.slice(i, i + chunkSize);
-        
+
         // Process chunk
         const results = await Promise.all(
-          chunk.map(msg => 
+          chunk.map(msg =>
             this.publishInternal(
               msg.queue,
               msg.type,
@@ -1080,11 +1091,11 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
             )
           )
         );
-        
+
         // Count successes
         successCount += results.filter(result => result).length;
       }
-      
+
       return successCount;
     }
   }
@@ -1104,18 +1115,18 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
         expired: 0
       };
     }
-    
+
     try {
       // Use RPC for efficient stats calculation
       const { data, error } = await this.supabase.rpc('get_message_broker_stats');
-      
+
       if (error) {
         logger.error(`Failed to get message stats from RPC: ${error.message}`);
-        
+
         // Fall back to direct query
         return this.getMessageStatsFallback();
       }
-      
+
       if (!data) {
         return {
           total: 0,
@@ -1127,7 +1138,7 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
           expired: 0
         };
       }
-      
+
       // Convert the stats
       return {
         total: data.total || 0,
@@ -1143,7 +1154,7 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
       };
     } catch (err) {
       logger.error(`Failed to get message stats: ${err}`);
-      
+
       // Fall back to direct query
       return this.getMessageStatsFallback();
     }
@@ -1158,12 +1169,12 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
       const { data, error } = await this.supabase
         .from('message_broker_messages')
         .select('status, timestamp');
-      
+
       if (error) {
         logger.error(`Failed to get message stats: ${error.message}`);
         throw error;
       }
-      
+
       // Calculate statistics from data
       const stats = {
         total: data?.length || 0,
@@ -1174,11 +1185,11 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
         acknowledged: 0,
         expired: 0
       };
-      
+
       // Calculate timestamps for oldest and newest pending
       let oldestPending: number | undefined;
       let newestPending: number | undefined;
-      
+
       if (data) {
         for (const msg of data) {
           // Count by status
@@ -1212,7 +1223,7 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
           }
         }
       }
-      
+
       return {
         ...stats,
         oldestPending: oldestPending ? new Date(oldestPending) : undefined,
@@ -1220,7 +1231,7 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
       };
     } catch (err) {
       logger.error(`Failed to get message stats fallback: ${err}`);
-      
+
       // Return empty stats
       return {
         total: 0,
@@ -1245,75 +1256,75 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
     if (!this.persistenceEnabled) {
       return 0;
     }
-    
+
     try {
       logger.info(`Checking for missed messages ${queue ? `in queue ${queue}` : ''} ${type ? `of type ${type}` : ''}`);
-      
+
       // Build efficient query with filters directly in the database
       let query = this.supabase
         .from('message_broker_messages')
         .select('*') as any;
-      
+
       query = query.in('status', [MessageDeliveryStatus.PENDING, MessageDeliveryStatus.PROCESSING]);
-      
+
       // Apply queue filter if provided
       if (queue) {
         query = query.eq('queue', queue);
       }
-      
+
       // Apply type filter if provided
       if (type) {
         query = query.eq('type', type);
       }
-      
+
       // Get messages with pagination for large results
       let allMessages: MessagePayload[] = [];
       let page = 0;
       let hasMore = true;
-      
+
       while (hasMore) {
         // Get a page of results
         const { data, error } = await query
           .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
-        
+
         if (error) {
           logger.error(`Failed to get missed messages: ${error.message}`);
           break;
         }
-        
+
         if (!data || data.length === 0) {
           break;
         }
-        
+
         // Add to our collection
         allMessages = allMessages.concat(data as MessagePayload[]);
-        
+
         // Check if there might be more
         hasMore = data.length === PAGE_SIZE;
         page++;
-        
+
         // Safety limit to avoid infinite loops
         if (page > 100) {
           logger.warn('Reached maximum pagination limit for missed messages');
           break;
         }
       }
-      
+
       // Apply custom filter if provided
-      const messagesToReplay = filterFn 
-        ? allMessages.filter(filterFn) 
+      const messagesToReplay = filterFn
+        ? allMessages.filter(filterFn)
         : allMessages;
-      
+
       logger.info(`Found ${messagesToReplay.length} missed messages to replay`);
-      
+
       // Replay messages in batches for efficiency
       let replayCount = 0;
-      
+
       // Process in small batches
       const batchSize = 20;
       for (let i = 0; i < messagesToReplay.length; i += batchSize) {
         const batch = messagesToReplay.slice(i, i + batchSize);
-        
+
         // Process batch with concurrency limit
         const results = await Promise.all(
           batch.map(async (message) => {
@@ -1321,7 +1332,7 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
             if (this.processingMessages.has(message.id!)) {
               return false;
             }
-            
+
             try {
               // Broadcast the message
               await this.broadcastMessage(message);
@@ -1332,11 +1343,11 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
             }
           })
         );
-        
+
         // Count successes
         replayCount += results.filter(result => result).length;
       }
-      
+
       logger.info(`Replayed ${replayCount} missed messages`);
       return replayCount;
     } catch (err) {
@@ -1353,18 +1364,18 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
       this.persistenceEnabled = options.persistenceEnabled;
       logger.info(`Message persistence ${this.persistenceEnabled ? 'enabled' : 'disabled'}`);
     }
-    
+
     if (options.realtimeEnabled !== undefined) {
       this.realtimeEnabled = options.realtimeEnabled;
       logger.info(`Realtime updates ${this.realtimeEnabled ? 'enabled' : 'disabled'}`);
     }
-    
+
     if (options.batchSize !== undefined) {
       // Ensure batch size is within limits
       this.batchSize = Math.min(options.batchSize, MAX_BATCH_SIZE);
       logger.info(`Batch size set to ${this.batchSize}`);
     }
-    
+
     if (options.maxRetries !== undefined) {
       this.maxRetries = options.maxRetries;
       logger.info(`Maximum retries set to ${this.maxRetries}`);
@@ -1376,28 +1387,28 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
    */
   public async shutdown(): Promise<void> {
     logger.info('Closing unified message broker connections and cleaning up resources');
-    
+
     // Clear intervals
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);
       this.heartbeatInterval = null;
     }
-    
+
     if (this.messageCleanupInterval) {
       clearInterval(this.messageCleanupInterval);
       this.messageCleanupInterval = null;
     }
-    
+
     if (this.cacheCleanupInterval) {
       clearInterval(this.cacheCleanupInterval);
       this.cacheCleanupInterval = null;
     }
-    
+
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
     }
-    
+
     // Unsubscribe from all channels
     for (const [key, subscription] of this.subscriptions.entries()) {
       if (subscription.channel) {
@@ -1409,13 +1420,13 @@ export class UnifiedMessageBroker implements IEnhancedMessageBroker {
         }
       }
     }
-    
+
     // Clear collections
     this.subscriptions.clear();
     this.processingMessages.clear();
     this.messageCache.clear();
     this.pendingPublishes = [];
-    
+
     logger.info('Unified message broker resources cleaned up');
   }
 }

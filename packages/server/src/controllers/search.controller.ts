@@ -32,6 +32,14 @@ export const unifiedSearch = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
+    // Extract user information for permission filtering
+    const userId = req.user?.id;
+    const userRole = req.user?.role || 'user';
+    const isAdmin = userRole === 'admin';
+    
+    // Log search request with user context for audit trail
+    logger.info(`Search request for ${type} by user ${userId || 'anonymous'} with role ${userRole}`);
+
     let results;
     const resourceType = type as string;
 
@@ -46,7 +54,13 @@ export const unifiedSearch = async (req: Request, res: Response): Promise<void> 
             // Use only supported options
             domainContext: 'material'
           },
-          { userId: req.user?.id }
+          { 
+            userId: userId,
+            // Include user context for more personalized results
+            userPreferences: typeof req.query.userPreferences === 'string' 
+              ? req.query.userPreferences.split(',') 
+              : undefined
+          }
         );
         
         // Update the query with the enhanced version
@@ -65,7 +79,7 @@ export const unifiedSearch = async (req: Request, res: Response): Promise<void> 
       case 'material':
       case 'materials':
         // Convert query parameters to options expected by knowledgeBaseService
-        const materialOptions = convertQueryToMaterialOptions(req.query);
+        const materialOptions = convertQueryToMaterialOptions(req.query, userId, isAdmin);
         materialOptions.query = enhancedQuery; // Use enhanced query if available
         results = await knowledgeBaseService.searchMaterials(materialOptions);
         break;
@@ -73,14 +87,14 @@ export const unifiedSearch = async (req: Request, res: Response): Promise<void> 
       case 'collection':
       case 'collections':
         // Convert query parameters to options expected by knowledgeBaseService
-        const collectionOptions = convertQueryToCollectionOptions(req.query);
+        const collectionOptions = convertQueryToCollectionOptions(req.query, userId, isAdmin);
         results = await knowledgeBaseService.getCollections(collectionOptions);
         break;
 
       case 'model':
       case 'models':
         // This would call the models service in a real implementation
-        // results = await modelsService.searchModels(convertQueryToModelOptions(req.query));
+        // results = await modelsService.searchModels(convertQueryToModelOptions(req.query, userId, isAdmin));
         results = {
           data: [],
           message: 'Model search not implemented yet'
@@ -88,24 +102,48 @@ export const unifiedSearch = async (req: Request, res: Response): Promise<void> 
         break;
 
       case 'history':
-        // This would call the history service in a real implementation
-        // results = await historyService.searchHistory(convertQueryToHistoryOptions(req.query));
-        results = {
-          data: [],
-          message: 'History search not implemented yet'
-        };
+        // For history, ensure strict user filtering to only show user's own history
+        if (!userId) {
+          results = {
+            data: [],
+            message: 'Authentication required to access history'
+          };
+        } else {
+          // This would call the history service in a real implementation
+          // results = await historyService.searchHistory(convertQueryToHistoryOptions(req.query, userId, isAdmin));
+          results = {
+            data: [],
+            message: 'History search not implemented yet'
+          };
+        }
         break;
 
       case 'index':
       case 'indexes':
       case 'search-index':
       case 'search-indexes':
+        // Search indexes are admin-only resources
+        if (!isAdmin) {
+          res.status(403).json({
+            error: 'Access Denied',
+            message: 'You do not have permission to access search indexes'
+          });
+          return;
+        }
         const indexOptions = convertQueryToIndexOptions(req.query);
         results = await knowledgeBaseService.getSearchIndexes(indexOptions);
         break;
 
       case 'queue':
       case 'jobs':
+        // Queue management is admin/manager only
+        if (!isAdmin && userRole !== 'manager') {
+          res.status(403).json({
+            error: 'Access Denied',
+            message: 'You do not have permission to access queue information'
+          });
+          return;
+        }
         // Get queue jobs with filtering
         results = {
           data: await searchIndexQueue.getAll(),
@@ -145,8 +183,9 @@ export const unifiedSearch = async (req: Request, res: Response): Promise<void> 
 
 /**
  * Convert generic query parameters to material search options
+ * Adds user-specific filtering for proper data isolation
  */
-function convertQueryToMaterialOptions(queryParams: any): any {
+function convertQueryToMaterialOptions(queryParams: any, userId?: string, isAdmin = false): any {
   const {
     query,
     materialType,
@@ -194,6 +233,23 @@ function convertQueryToMaterialOptions(queryParams: any): any {
   const parsedFilter = filter ? JSON.parse(filter as string) : undefined;
   const parsedFields = fields ? JSON.parse(fields as string) : undefined;
   
+  // Build user-specific filter to enforce data isolation
+  let userFilter = {};
+  if (!isAdmin && userId) {
+    // If not admin, only show materials created by this user or marked as public
+    userFilter = {
+      $or: [
+        { createdBy: userId },
+        { isPublic: true }
+      ]
+    };
+  }
+  
+  // Merge user filter with any existing filters
+  const combinedFilter = parsedFilter 
+    ? { $and: [userFilter, parsedFilter] }
+    : userFilter;
+  
   return {
     query: query as string,
     materialType: parsedMaterialType as string | string[],
@@ -201,20 +257,22 @@ function convertQueryToMaterialOptions(queryParams: any): any {
     seriesId: seriesId as string,
     tags: parsedTags,
     fields: parsedFields,
-    filter: parsedFilter,
+    filter: Object.keys(userFilter).length > 0 ? combinedFilter : parsedFilter,
     sort: parsedSort,
     limit: parsedLimit,
     skip: parsedSkip,
     includeVersions: parsedIncludeVersions,
     useVectorSearch: parsedUseVectorSearch,
-    searchStrategy: searchStrategy as string
+    searchStrategy: searchStrategy as string,
+    userId: userId // Pass userId for access control in the service
   };
 }
 
 /**
  * Convert generic query parameters to collection options
+ * Adds user-specific filtering for proper data isolation
  */
-function convertQueryToCollectionOptions(queryParams: any): any {
+function convertQueryToCollectionOptions(queryParams: any, userId?: string, isAdmin = false): any {
   const {
     parentId,
     includeEmpty,
@@ -248,7 +306,16 @@ function convertQueryToCollectionOptions(queryParams: any): any {
     includeEmpty: parsedIncludeEmpty,
     limit: parsedLimit,
     skip: parsedSkip,
-    sort: parsedSort
+    sort: parsedSort,
+    userId: userId, // Pass userId for access control
+    // If not admin, add access control filter to only return collections
+    // the user has access to (either created by them or shared with them)
+    accessFilter: !isAdmin && userId ? {
+      $or: [
+        { createdBy: userId },
+        { 'collaborators.userId': userId }
+      ]
+    } : undefined
   };
 }
 

@@ -1,6 +1,6 @@
 /**
  * Subscription Tier Model
- * 
+ *
  * This model defines the different subscription tiers available in the system,
  * including their access permissions to different modules and API rate limits.
  */
@@ -34,6 +34,24 @@ export interface ApiLimits {
 }
 
 /**
+ * Represents storage limits for a subscription tier
+ */
+export interface StorageLimits {
+  maxStorageGB: number;        // Maximum storage in GB
+  maxFileSize: number;         // Maximum file size in MB
+  maxFilesPerProject: number;  // Maximum files per project
+}
+
+/**
+ * Represents credit limits for a subscription tier
+ */
+export interface CreditLimits {
+  includedCredits: number;     // Credits included with subscription
+  maxPurchasableCredits: number; // Maximum credits that can be purchased
+  creditPriceMultiplier: number; // Price multiplier for credits (e.g., 0.8 for 20% discount)
+}
+
+/**
  * Represents a subscription tier
  */
 export interface SubscriptionTier {
@@ -42,14 +60,19 @@ export interface SubscriptionTier {
   description: string;         // Description of the tier
   price: number;               // Monthly price (0 for free)
   currency: string;            // Currency code (e.g., 'USD')
-  stripePriceId?: string;      // ID for Stripe integration (future use)
+  stripePriceId?: string;      // ID for Stripe integration
+  stripeProductId?: string;    // Stripe product ID
+  billingInterval: 'monthly' | 'yearly' | 'one-time'; // Billing interval
   moduleAccess: ModuleAccess[]; // List of modules and their access permissions
   apiLimits: ApiLimits;        // API usage limits
+  storageLimits: StorageLimits; // Storage limits
+  creditLimits: CreditLimits;  // Credit limits
   maxProjects?: number;        // Maximum number of projects
   maxTeamMembers?: number;     // Maximum number of team members
+  maxMoodboards?: number;      // Maximum number of moodboards
   supportLevel: 'basic' | 'priority' | 'dedicated'; // Support level
+  isPublic: boolean;           // Whether the tier is publicly visible
   customFeatures?: string[];   // Additional custom features
-  isPublic: boolean;           // Whether tier is publicly available
   createdAt: Date;             // Creation date
   updatedAt: Date;             // Last update date
 }
@@ -64,23 +87,23 @@ export async function getAllSubscriptionTiers(includeNonPublic = false): Promise
     // Construct query with type assertion applied at the start
     const query = supabaseClient.getClient()
       .from('subscription_tiers') as any;
-    
+
     // Build query
     const queryBuilder = query.select('*');
-    
+
     // Filter out non-public tiers if required
     if (!includeNonPublic) {
       queryBuilder.eq('isPublic', true);
     }
-    
+
     // Execute query
     const { data, error } = await queryBuilder.order('price', { ascending: true });
-    
+
     if (error) {
       logger.error(`Error fetching subscription tiers: ${error.message}`);
       throw error;
     }
-    
+
     return data || [];
   } catch (error) {
     logger.error(`Failed to get subscription tiers: ${error}`);
@@ -101,7 +124,7 @@ export async function getSubscriptionTierById(id: string): Promise<SubscriptionT
       .select('*')
       .eq('id', id)
       .single();
-    
+
     if (error) {
       if (error.code === 'PGRST116') {
         // Record not found
@@ -110,7 +133,7 @@ export async function getSubscriptionTierById(id: string): Promise<SubscriptionT
       logger.error(`Error fetching subscription tier: ${error.message}`);
       throw error;
     }
-    
+
     return data;
   } catch (error) {
     logger.error(`Failed to get subscription tier: ${error}`);
@@ -130,18 +153,18 @@ export async function createSubscriptionTier(tierData: Omit<SubscriptionTier, 'i
       createdAt: new Date(),
       updatedAt: new Date()
     };
-    
+
     // Type assertion applied earlier in the chain
     const { data, error } = await (supabaseClient.getClient()
       .from('subscription_tiers') as any)
       .insert([newTier])
       .select();
-    
+
     if (error) {
       logger.error(`Error creating subscription tier: ${error.message}`);
       throw error;
     }
-    
+
     return data[0];
   } catch (error) {
     logger.error(`Failed to create subscription tier: ${error}`);
@@ -161,19 +184,19 @@ export async function updateSubscriptionTier(id: string, tierData: Partial<Omit<
       ...tierData,
       updatedAt: new Date()
     };
-    
+
     // Type assertion applied earlier in the chain
     const { data, error } = await (supabaseClient.getClient()
       .from('subscription_tiers') as any)
       .update(updates)
       .eq('id', id)
       .select();
-    
+
     if (error) {
       logger.error(`Error updating subscription tier: ${error.message}`);
       throw error;
     }
-    
+
     return data[0];
   } catch (error) {
     logger.error(`Failed to update subscription tier: ${error}`);
@@ -193,12 +216,12 @@ export async function deleteSubscriptionTier(id: string): Promise<boolean> {
       .from('subscription_tiers') as any)
       .delete()
       .eq('id', id);
-    
+
     if (error) {
       logger.error(`Error deleting subscription tier: ${error.message}`);
       throw error;
     }
-    
+
     return true;
   } catch (error) {
     logger.error(`Failed to delete subscription tier: ${error}`);

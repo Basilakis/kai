@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, navigate } from 'gatsby';
 import Layout from '../components/Layout';
 import SEO from '../components/SEO';
-import { signIn, signInWithSocialProvider, AuthError } from '../services/supabaseAuth.service';
+import { signIn, signInWithSocialProvider, AuthError, getCurrentUser } from '../services/supabaseAuth.service';
+import { showSuccessToast, showErrorToast } from '../providers/ToastProvider';
 
 /**
  * Login page with email/password and social login options
@@ -11,11 +12,37 @@ const LoginPage: React.FC = () => {
   // Form state
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<AuthError | null>(null);
+  
+  // Check for existing user session on mount
+  useEffect(() => {
+    const checkExistingSession = async () => {
+      try {
+        const user = await getCurrentUser();
+        
+        if (user) {
+          // User is already logged in
+          const redirectPath = sessionStorage.getItem('redirectAfterLogin');
+          
+          if (redirectPath) {
+            sessionStorage.removeItem('redirectAfterLogin');
+            navigate(redirectPath);
+          } else {
+            navigate('/');
+          }
+        }
+      } catch (err) {
+        console.error('Error checking session:', err);
+      }
+    };
+    
+    checkExistingSession();
+  }, []);
 
   // Handle email/password login
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleLogin = async (e: any) => {
     e.preventDefault();
     
     if (!email || !password) {
@@ -27,21 +54,48 @@ const LoginPage: React.FC = () => {
       setLoading(true);
       setError(null);
       
+      // Pass the rememberMe option to the signIn function
       const { user, error } = await signIn(email, password);
       
+      // Store rememberMe preference if enabled
+      if (user && rememberMe) {
+        localStorage.setItem('auth_remember_me', 'true');
+      }
+      
       if (error) {
+        // Show specific error messages for common issues
+        if (error.message.includes('Invalid login')) {
+          showErrorToast('Invalid email or password. Please try again.');
+        } else if (error.message.includes('Email not confirmed')) {
+          showErrorToast('Please verify your email address before logging in.');
+        } else {
+          showErrorToast(error.message);
+        }
         setError(error);
         return;
       }
       
       if (user) {
-        // Navigate to home page after successful login
-        navigate('/');
+        // Show success toast
+        showSuccessToast(`Welcome back, ${user.email?.split('@')[0] || 'User'}!`);
+        
+        // Check if there's a saved redirect path
+        const redirectPath = sessionStorage.getItem('redirectAfterLogin');
+        
+        if (redirectPath) {
+          // Clear the stored path
+          sessionStorage.removeItem('redirectAfterLogin');
+          // Navigate to the originally requested page
+          navigate(redirectPath);
+        } else {
+          // Navigate to home page if no redirect path exists
+          navigate('/');
+        }
       }
     } catch (err) {
-      setError({ 
-        message: err instanceof Error ? err.message : 'An unexpected error occurred' 
-      });
+      const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
+      showErrorToast(errorMessage);
+      setError({ message: errorMessage });
     } finally {
       setLoading(false);
     }
@@ -53,14 +107,22 @@ const LoginPage: React.FC = () => {
       setLoading(true);
       setError(null);
       
+      // Store rememberMe preference before redirect
+      if (rememberMe) {
+        localStorage.setItem('auth_remember_me', 'true');
+      }
+      
       await signInWithSocialProvider(provider);
       
       // The page will redirect to the OAuth provider
       // and then back to the callback URL
     } catch (err) {
-      setError({ 
-        message: err instanceof Error ? err.message : `An error occurred with ${provider} login` 
-      });
+      const errorMessage = err instanceof Error 
+        ? err.message 
+        : `An error occurred with ${provider} login`;
+      
+      showErrorToast(errorMessage);
+      setError({ message: errorMessage });
       setLoading(false);
     }
   };
@@ -72,7 +134,7 @@ const LoginPage: React.FC = () => {
       <div className="max-w-md mx-auto my-10 px-4">
         <h1 className="text-3xl font-bold text-center mb-6">Login to Your Account</h1>
         
-        {/* Show error if any */}
+        {/* Error display - This will be shown in addition to toast */}
         {error && (
           <div className="bg-red-50 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
             <p>{error.message}</p>
@@ -89,7 +151,7 @@ const LoginPage: React.FC = () => {
               id="email"
               type="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
               required
             />
@@ -103,16 +165,31 @@ const LoginPage: React.FC = () => {
               id="password"
               type="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
               required
             />
           </div>
           
-          <div className="text-right">
-            <Link to="/forgot-password" className="text-sm text-blue-600 hover:text-blue-800">
-              Forgot password?
-            </Link>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center">
+              <input
+                id="remember-me"
+                name="remember-me"
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRememberMe(e.target.checked)}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              />
+              <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-900">
+                Remember me
+              </label>
+            </div>
+            <div>
+              <Link to="/forgot-password" className="text-sm text-blue-600 hover:text-blue-800">
+                Forgot password?
+              </Link>
+            </div>
           </div>
           
           <button

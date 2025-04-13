@@ -169,12 +169,111 @@ CREATE POLICY "Materials are insertable by authenticated users"
 CREATE POLICY "Materials are updatable by creators or admins"
   ON public.materials_metadata FOR UPDATE
   USING (
-    created_by = auth.uid() OR 
+    created_by = auth.uid() OR
     EXISTS (
       SELECT 1 FROM public.profiles
       WHERE id = auth.uid() AND role = 'admin'
     )
   );
+```
+
+### Setting Up MoodBoard Tables
+
+Create tables for the MoodBoard feature:
+
+```sql
+-- MoodBoards table
+CREATE TABLE public.moodboards (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT NOT NULL,
+  description TEXT,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  is_public BOOLEAN NOT NULL DEFAULT false,
+  view_preference TEXT NOT NULL DEFAULT 'grid',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+-- MoodBoardItems table
+CREATE TABLE public.moodboard_items (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  board_id UUID NOT NULL REFERENCES public.moodboards(id) ON DELETE CASCADE,
+  material_id TEXT NOT NULL,
+  notes TEXT,
+  position INTEGER DEFAULT 0,
+  added_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+-- Create indexes
+CREATE INDEX idx_moodboards_user_id ON public.moodboards(user_id);
+CREATE INDEX idx_moodboard_items_board_id ON public.moodboard_items(board_id);
+CREATE INDEX idx_moodboard_items_material_id ON public.moodboard_items(material_id);
+
+-- Enable Row Level Security
+ALTER TABLE public.moodboards ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.moodboard_items ENABLE ROW LEVEL SECURITY;
+
+-- Policies for MoodBoards
+-- Users can view their own boards
+CREATE POLICY "Users can view their own boards"
+  ON public.moodboards
+  FOR SELECT
+  USING (user_id = auth.uid());
+
+-- Users can view public boards
+CREATE POLICY "Users can view public boards"
+  ON public.moodboards
+  FOR SELECT
+  USING (is_public = true);
+
+-- Users can create their own boards
+CREATE POLICY "Users can create their own boards"
+  ON public.moodboards
+  FOR INSERT
+  WITH CHECK (user_id = auth.uid());
+
+-- Users can update their own boards
+CREATE POLICY "Users can update their own boards"
+  ON public.moodboards
+  FOR UPDATE
+  USING (user_id = auth.uid());
+
+-- Users can delete their own boards
+CREATE POLICY "Users can delete their own boards"
+  ON public.moodboards
+  FOR DELETE
+  USING (user_id = auth.uid());
+
+-- Policies for MoodBoardItems
+-- Users can view items in their own boards
+CREATE POLICY "Users can view items in their own boards"
+  ON public.moodboard_items
+  FOR SELECT
+  USING (board_id IN (SELECT id FROM public.moodboards WHERE user_id = auth.uid()));
+
+-- Users can view items in public boards
+CREATE POLICY "Users can view items in public boards"
+  ON public.moodboard_items
+  FOR SELECT
+  USING (board_id IN (SELECT id FROM public.moodboards WHERE is_public = true));
+
+-- Users can add items to their own boards
+CREATE POLICY "Users can add items to their own boards"
+  ON public.moodboard_items
+  FOR INSERT
+  WITH CHECK (board_id IN (SELECT id FROM public.moodboards WHERE user_id = auth.uid()));
+
+-- Users can update items in their own boards
+CREATE POLICY "Users can update items in their own boards"
+  ON public.moodboard_items
+  FOR UPDATE
+  USING (board_id IN (SELECT id FROM public.moodboards WHERE user_id = auth.uid()));
+
+-- Users can delete items from their own boards
+CREATE POLICY "Users can delete items from their own boards"
+  ON public.moodboard_items
+  FOR DELETE
+  USING (board_id IN (SELECT id FROM public.moodboards WHERE user_id = auth.uid()));
 ```
 
 ## Authentication Configuration
@@ -337,10 +436,10 @@ Kai uses Supabase Realtime for the queue system and real-time updates.
 BEGIN;
   -- Drop existing publication if it exists
   DROP PUBLICATION IF EXISTS supabase_realtime;
-  
+
   -- Create publication for realtime tables
-  CREATE PUBLICATION supabase_realtime FOR TABLE 
-    public.queue_jobs, 
+  CREATE PUBLICATION supabase_realtime FOR TABLE
+    public.queue_jobs,
     public.job_dependencies,
     public.materials_metadata;
 COMMIT;
@@ -379,7 +478,7 @@ export const subscribeToQueue = (callback: (payload: any) => void) => {
       callback
     )
     .subscribe()
-  
+
   return subscription
 }
 ```
@@ -407,7 +506,7 @@ Add these keys to:
    - For Admin Panel (Next.js):
      - `NEXT_PUBLIC_SUPABASE_URL`
      - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   
+
    - For Client App (Gatsby):
      - `GATSBY_SUPABASE_URL`
      - `GATSBY_SUPABASE_ANON_KEY`

@@ -1,14 +1,18 @@
 /**
  * Dataset Management Page
- * 
+ *
  * Admin interface for uploading, viewing, and managing datasets
  */
+
+/// <reference path="../../types/mui-icon-modules.d.ts" />
 
 import React, { useState, useEffect } from 'react';
 import {
   Box,
   Button,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   Card,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   CardContent,
   CircularProgress,
   Container,
@@ -19,21 +23,29 @@ import {
   DialogTitle,
   Divider,
   Grid,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   IconButton,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   MenuItem,
   Paper,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   Select,
   Tab,
   Tabs,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   TextField,
   Typography,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   useTheme
-} from '@mui/material';
+} from '../../components/mui';
 import {
   Add as AddIcon,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   CloudUpload as CloudUploadIcon,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   Delete as DeleteIcon,
   Download as DownloadIcon,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   Edit as EditIcon,
   Folder as FolderIcon,
   Info as InfoIcon,
@@ -48,34 +60,57 @@ import DatasetUploader from '../../components/datasets/DatasetUploader';
 import DatasetList from '../../components/datasets/DatasetList';
 import DatasetDetails from '../../components/datasets/DatasetDetails';
 
-// API service would be implemented to communicate with the backend
-const fetchDatasets = async () => {
-  // This would be replaced with actual API call
-  return {
-    datasets: [
-      {
-        id: 'dataset-1',
-        name: 'Marble Samples',
-        description: 'Collection of marble material samples',
-        status: 'ready',
-        classCount: 3,
-        imageCount: 127,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      },
-      {
-        id: 'dataset-2',
-        name: 'Tile Collection',
-        description: 'Various ceramic and porcelain tiles',
-        status: 'ready',
-        classCount: 5,
-        imageCount: 210,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+// API URL base
+const API_BASE_URL = '/api/admin/datasets';
+
+// API service for dataset operations
+const datasetApi = {
+  // Fetch all datasets
+  fetchDatasets: async (filter?: string): Promise<{ datasets: any[], total: number }> => {
+    try {
+      const url = filter 
+        ? `${API_BASE_URL}?status=${filter}` 
+        : API_BASE_URL;
+        
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch datasets: ${response.statusText}`);
       }
-    ],
-    total: 2
-  };
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching datasets:', error);
+      throw error;
+    }
+  },
+  
+  // Delete a dataset
+  deleteDataset: async (datasetId: string): Promise<void> => {
+    const response = await fetch(`${API_BASE_URL}/${datasetId}`, {
+      method: 'DELETE',
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to delete dataset: ${response.statusText}`);
+    }
+  },
+  
+  // Download CSV template
+  getTemplateUrl: (): string => {
+    return `${API_BASE_URL}/templates/csv`;
+  },
+  
+  // Get dataset details
+  getDatasetDetails: async (datasetId: string): Promise<any> => {
+    const response = await fetch(`${API_BASE_URL}/${datasetId}`);
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch dataset details: ${response.statusText}`);
+    }
+    
+    return await response.json();
+  }
 };
 
 // Interface for dataset data
@@ -86,12 +121,14 @@ interface Dataset {
   status: 'processing' | 'ready' | 'error';
   classCount: number;
   imageCount: number;
+  source?: string;
   createdAt: string;
   updatedAt: string;
 }
 
 // Main component
 const DatasetsPage: React.FC = () => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const theme = useTheme();
   const [activeTab, setActiveTab] = useState(0);
   const [datasets, setDatasets] = useState<Dataset[]>([]);
@@ -102,13 +139,29 @@ const DatasetsPage: React.FC = () => {
   const [openDetail, setOpenDetail] = useState(false);
   const [openDelete, setOpenDelete] = useState(false);
 
-  // Load datasets on component mount
+  // Load datasets on component mount or tab change
   useEffect(() => {
     const loadDatasets = async () => {
       try {
         setLoading(true);
-        const result = await fetchDatasets();
-        setDatasets(result.datasets);
+        
+        // Get filter based on active tab
+        const filter = activeTab === 0 ? undefined :
+                      activeTab === 1 ? 'ready' :
+                      activeTab === 2 ? 'processing' : 
+                      'error';
+                      
+        const result = await datasetApi.fetchDatasets(filter);
+        
+        // Cast the datasets to match our interface
+        setDatasets(result.datasets.map(dataset => ({
+          ...dataset,
+          // Ensure status is one of the expected values
+          status: ['processing', 'ready', 'error'].includes(dataset.status)
+            ? dataset.status as 'processing' | 'ready' | 'error'
+            : 'processing' // Default to processing if unknown status
+        })) as Dataset[]);
+        
         setError(null);
       } catch (err) {
         setError('Failed to load datasets. Please try again.');
@@ -119,10 +172,10 @@ const DatasetsPage: React.FC = () => {
     };
 
     loadDatasets();
-  }, []);
+  }, [activeTab]); // Reload when tab changes
 
   // Handle tab change
-  const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
+  const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
     setActiveTab(newValue);
   };
 
@@ -169,21 +222,26 @@ const DatasetsPage: React.FC = () => {
     if (!selectedDataset) return;
 
     try {
-      // This would be replaced with actual API call
-      // await api.deleteDataset(selectedDataset.id);
+      setLoading(true);
+      // Call API to delete dataset
+      await datasetApi.deleteDataset(selectedDataset.id);
+      
+      // Update local state
       setDatasets(datasets.filter(d => d.id !== selectedDataset.id));
       setOpenDelete(false);
+      setLoading(false);
     } catch (err) {
       setError('Failed to delete dataset. Please try again.');
       console.error('Error deleting dataset:', err);
+      setLoading(false);
     }
   };
 
   // Download CSV template
-  const handleDownloadTemplate = async () => {
+  const handleDownloadTemplate = () => {
     try {
-      // This would be replaced with actual API call
-      window.open('/api/admin/datasets/templates/csv', '_blank');
+      const templateUrl = datasetApi.getTemplateUrl();
+      window.open(templateUrl, '_blank');
     } catch (err) {
       setError('Failed to download CSV template. Please try again.');
       console.error('Error downloading template:', err);

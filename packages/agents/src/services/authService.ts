@@ -7,7 +7,7 @@
  */
 
 import { BaseService, ServiceConfig, ApiError } from './baseService';
-import { env } from '../utils/environment';
+import { env } from '../../../shared/src/utils/environment';
 import { createLogger } from '../utils/logger';
 
 const logger = createLogger('AuthService');

@@ -15,7 +15,10 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "resolveJsonModule": true,
-    "isolatedModules": true
+    "isolatedModules": true,
+    // "types": ["react", "react-dom", "@types/node"], // Removed explicit types array
+    "typeRoots": ["./node_modules/@types", "./types"]
+    // Removed problematic paths for MUI dependencies
   },
   "exclude": ["**/node_modules", "**/dist", "**/.next"]
 }

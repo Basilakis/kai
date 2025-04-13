@@ -7,11 +7,10 @@
  * Now leverages the unified search API for advanced search operations
  * while maintaining backward compatibility with existing code.
  */
-import axios from 'axios';
+import apiClient from './apiClient'; // Use the configured Axios instance
 import unifiedSearchService from './unifiedSearchService';
 
-// Base API URL from environment
-const API_URL = process.env.REACT_APP_API_URL || '/api';
+// Base API URL is now handled by apiClient
 
 // Material types
 export interface MaterialProperty {
@@ -63,7 +62,8 @@ export const getMaterials = async (
   limit: number = 10
 ): Promise<MaterialsResponse> => {
   try {
-    const response = await axios.get(`${API_URL}/materials`, {
+    // Use apiClient and relative path
+    const response = await apiClient.get(`/materials`, {
       params: { page, limit }
     });
     return response.data;
@@ -78,7 +78,8 @@ export const getMaterials = async (
  */
 export const getMaterialById = async (id: string): Promise<Material> => {
   try {
-    const response = await axios.get(`${API_URL}/materials/${id}`);
+    // Use apiClient and relative path
+    const response = await apiClient.get(`/materials/${id}`);
     return response.data.data;
   } catch (error) {
     console.error(`Error fetching material ${id}:`, error);
@@ -129,6 +130,7 @@ export const searchMaterials = async (
     }
 
     // Use the unified search API instead of the specific materials endpoint
+    // This part remains unchanged as it already uses a different service
     return await unifiedSearchService.search(searchParams);
   } catch (error) {
     console.error('Error searching materials:', error);
@@ -146,7 +148,8 @@ export const getSimilarMaterials = async (
   materialType?: string
 ): Promise<SimilarMaterialsResponse> => {
   try {
-    const response = await axios.post(`${API_URL}/materials/similar/${materialId}`, {
+    // Use apiClient and relative path
+    const response = await apiClient.post(`/materials/similar/${materialId}`, {
       limit,
       threshold,
       materialType

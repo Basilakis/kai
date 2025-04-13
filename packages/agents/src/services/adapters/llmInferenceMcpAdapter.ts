@@ -1,26 +1,27 @@
 /**
  * LLM Inference MCP Adapter
- * 
+ *
  * This adapter provides integration between agent components and the MCP server
  * for large language model inference operations. It handles various types of
  * LLM operations including completion, chat, and embedding generation.
- * 
+ *
  * When MCP is enabled, it proxies operations to the MCP server.
- * When MCP is disabled, it falls back to the local implementation.
+ * When MCP is disabled, it falls back to the local implementation using LLMService.
  */
 
 import { createLogger } from '../../utils/logger';
-import { 
-  isMCPEnabledForComponent, 
-  withMCPFallback, 
-  callMCPEndpoint 
+import {
+  isMCPEnabledForComponent,
+  withMCPFallback,
+  callMCPEndpoint
 } from '../../utils/mcpIntegration';
 import { addToBatch, isBatchingEnabled } from '../../utils/mcpBatchProcessor';
+import { getLLMService } from '../serviceFactory'; // Import the factory function
 
 // Create a logger for the adapter
 const logger = createLogger('LLMInferenceMCPAdapter');
 
-// Type definitions
+// Type definitions (Copied from original, ensure they match llmService.ts)
 export interface LLMCompletionOptions {
   model: string;
   temperature?: number;
@@ -87,7 +88,7 @@ export type LLMStreamingCallback = (chunk: string, done: boolean) => void;
 
 /**
  * Generate a completion using the MCP server
- * 
+ *
  * @param prompt The prompt for the completion
  * @param options Completion options
  * @param streamingCallback Optional callback for streaming responses
@@ -102,9 +103,8 @@ async function generateCompletionWithMCP(
     // If streaming is requested, we can't use batching
     if (options.streaming && streamingCallback) {
       logger.debug('Streaming completion requested, using direct MCP call');
-      
-      // For streaming, we'd need a more complex implementation that uses
-      // WebSockets or another streaming protocol. This is a placeholder.
+
+      // Call the streaming endpoint
       const result = await callMCPEndpoint<{
         streamingUrl: string;
         requestId: string;
@@ -113,41 +113,28 @@ async function generateCompletionWithMCP(
         'llm/completion/stream',
         { prompt, options }
       );
-      
-      // In a real implementation, we'd connect to the streaming URL and
-      // forward chunks to the callback. For now, we'll simulate it.
-      const simulatedResult: LLMCompletionResult = {
-        text: 'This is a simulated streaming response.',
+
+      // Connect to the streaming websocket
+      const wsEndpoint = result.streamingUrl;
+      const requestId = result.requestId;
+
+      // Call the MCP streaming service, which will invoke the callback as chunks arrive
+      await connectToMCPStream(wsEndpoint, requestId, streamingCallback);
+
+      // Return a placeholder result - the real content is delivered via streaming
+      const placeholderResult: LLMCompletionResult = {
+        text: "[Content delivered via streaming]",
         usage: {
-          promptTokens: prompt.length / 4,
-          completionTokens: 10,
-          totalTokens: prompt.length / 4 + 10
+          promptTokens: 0,
+          completionTokens: 0,
+          totalTokens: 0
         },
-        finishReason: 'stop'
+        finishReason: null
       };
-      
-      // Simulate streaming with a non-blocking approach
-      const chunks = ['This is a ', 'simulated ', 'streaming ', 'response.'];
-      let currentIndex = 0;
-      
-      const streamNextChunk = () => {
-        if (currentIndex >= chunks.length) return;
-        
-        const isLast = currentIndex === chunks.length - 1;
-        streamingCallback(chunks[currentIndex], isLast);
-        currentIndex++;
-        
-        if (!isLast) {
-          setTimeout(streamNextChunk, 100);
-        }
-      };
-      
-      // Start streaming
-      streamNextChunk();
-      
-      return simulatedResult;
+
+      return placeholderResult;
     }
-    
+
     // Check if batching is enabled and use it if possible
     if (isBatchingEnabled('agentInference')) {
       logger.debug('Using batched LLM completion via MCP');
@@ -156,7 +143,7 @@ async function generateCompletionWithMCP(
         { prompt, options }
       );
     }
-    
+
     // Otherwise use direct MCP call
     logger.debug('Using direct LLM completion via MCP');
     const result = await callMCPEndpoint<LLMCompletionResult>(
@@ -164,7 +151,7 @@ async function generateCompletionWithMCP(
       'llm/completion',
       { prompt, options }
     );
-    
+
     logger.debug(`Generated completion with MCP, ${result.usage.totalTokens} tokens used`);
     return result;
   } catch (error) {
@@ -175,8 +162,8 @@ async function generateCompletionWithMCP(
 }
 
 /**
- * Generate a completion using the local implementation
- * 
+ * Generate a completion using the local implementation (via LLMService)
+ *
  * @param prompt The prompt for the completion
  * @param options Completion options
  * @param streamingCallback Optional callback for streaming responses
@@ -186,56 +173,161 @@ async function generateCompletionLocally(
   prompt: string,
   options: LLMCompletionOptions,
   streamingCallback?: LLMStreamingCallback
-): Promise<LLMCompletionResult> {
-  try {
-    logger.debug('Using local LLM completion implementation');
-    
-    // In a real implementation, this would use a local service
-    // For example: return localLLMService.generateCompletion(prompt, options);
-    
-    // For now, return a mock implementation
-    const mockResult: LLMCompletionResult = {
-      text: `This is a mock response to: "${prompt.substring(0, 30)}..."`,
-      usage: {
-        promptTokens: Math.ceil(prompt.length / 4),
-        completionTokens: 15,
-        totalTokens: Math.ceil(prompt.length / 4) + 15
-      },
-      finishReason: 'stop'
-    };
-    
-    // Simulate streaming if requested - using non-blocking approach
-    if (options.streaming && streamingCallback) {
-      const chunks = mockResult.text.split(' ');
-      let currentIndex = 0;
-      
-      const streamNextChunk = () => {
-        if (currentIndex >= chunks.length) return;
-        
-        const isLast = currentIndex === chunks.length - 1;
-        streamingCallback(chunks[currentIndex] + (isLast ? '' : ' '), isLast);
-        currentIndex++;
-        
-        if (!isLast) {
-          setTimeout(streamNextChunk, 100);
-        }
-      };
-      
-      // Start streaming
-      streamNextChunk();
-    }
-    
-    return mockResult;
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    logger.error(`Local LLM completion failed: ${errorMessage}`);
-    throw error;
+ ): Promise<LLMCompletionResult> {
+   try {
+     logger.debug('Using local LLM completion implementation via LLMService');
+     const llmService = getLLMService();
+
+     // If streaming is requested, handle it here
+     if (options.streaming && streamingCallback) {
+       // Local fallback via LLMService does not support streaming currently
+       logger.warn('Streaming requested for local LLM completion, but it is not supported. Returning non-streamed result.');
+       // Proceed with non-streaming call
+     }
+     // Ensure streaming option is false if not supported or warned
+     const nonStreamingOptions = { ...options, streaming: false };
+
+     // Call the LLMService method
+     return await llmService.generateCompletion(prompt, nonStreamingOptions);
+   } catch (error) {
+     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+     logger.error(`Local LLM completion failed: ${errorMessage}`);
+     throw error;
+   }
+ }
+
+// --- WebSocket Handling (Copied from original, ensure dependencies are met) ---
+// WebSocket type definitions that work with both Node.js and browser environments
+type WebSocketData = string | Buffer | ArrayBuffer | Buffer[] | Blob;
+
+// Type guard to check if we're in a browser environment
+const isBrowser = typeof window !== 'undefined' && typeof window.WebSocket !== 'undefined';
+
+// Define common interface that works for both browser and Node.js WebSockets
+interface GenericWebSocket {
+  onopen: null | ((this: any) => void);
+  onmessage: null | ((this: any, event: any) => void);
+  onerror: null | ((this: any, event: any) => void);
+  onclose: null | ((this: any) => void);
+  send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void;
+  close(): void;
+}
+
+// Helper function to parse WebSocket message data to string
+function parseMessageData(data: any): string {
+  if (typeof data === 'string') {
+    return data;
+  } else if (typeof Buffer !== 'undefined' && data instanceof Buffer) { // Check if Buffer exists (Node.js)
+    return new TextDecoder().decode(data);
+  } else if (typeof ArrayBuffer !== 'undefined' && data instanceof ArrayBuffer) {
+     return new TextDecoder().decode(data);
+  } else if (typeof Blob !== 'undefined' && data instanceof Blob) { // Check if Blob exists (Browser)
+    // For browser Blob objects - requires async handling which complicates this sync function
+    logger.warn('Parsing Blob data in WebSocket message is not fully supported synchronously.');
+    return '[Blob data]';
+  } else {
+    return String(data);
   }
 }
 
 /**
+ * Connect to MCP streaming endpoint
+ *
+ * Helper function to establish a WebSocket connection to the MCP streaming service
+ *
+ * @param endpoint WebSocket endpoint
+ * @param requestId Request identifier
+ * @param callback Streaming callback function
+ */
+async function connectToMCPStream(
+  endpoint: string,
+  requestId: string,
+  callback: LLMStreamingCallback
+): Promise<void> {
+  try {
+    // Get appropriate WebSocket implementation
+    let WebSocketImpl: any;
+
+    if (isBrowser) {
+      // Use browser's WebSocket
+      WebSocketImpl = window.WebSocket;
+      logger.debug('Using browser WebSocket API');
+    } else {
+      try {
+        // In Node.js, dynamically import ws
+        // Use Function constructor to avoid TypeScript "require" errors
+        const importModule = new Function('moduleName', 'return import(moduleName)');
+        const wsModule = await importModule('ws');
+        WebSocketImpl = wsModule.default || wsModule;
+        logger.debug('Using ws package for WebSocket connection');
+      } catch (error) {
+        throw new Error('WebSocket implementation not available. Please install the "ws" package: npm install ws');
+      }
+    }
+
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocketImpl(endpoint) as GenericWebSocket;
+
+      ws.onopen = function() {
+        logger.debug(`Connected to MCP streaming endpoint for request ${requestId}`);
+        // Send initial message with request ID
+        ws.send(JSON.stringify({ requestId }));
+      };
+
+      ws.onmessage = function(event: any) {
+        try {
+          // Parse the data safely
+          const dataString = parseMessageData(event.data);
+          const data = JSON.parse(dataString);
+
+          if (data.error) {
+            logger.error(`Streaming error: ${data.error}`);
+            callback(`Error: ${data.error}`, true);
+            ws.close();
+            reject(new Error(data.error));
+            return;
+          }
+
+          // Forward chunk to callback
+          callback(data.chunk || '', data.done || false);
+
+          // If stream is complete, close the connection
+          if (data.done) {
+            ws.close();
+            resolve();
+          }
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+          logger.error(`Error parsing streaming data: ${errorMessage}`);
+          callback(`Error: Invalid streaming data`, true);
+          ws.close();
+          reject(err);
+        }
+      };
+
+      ws.onerror = function(event: any) {
+        // Handle error events from both browser and Node.js WebSockets
+        const errorMessage = event.message || 'Unknown WebSocket error';
+        logger.error(`WebSocket error: ${errorMessage}`);
+        callback(`Error: WebSocket connection failed`, true);
+        reject(new Error(errorMessage));
+      };
+
+      ws.onclose = function() {
+        logger.debug(`WebSocket connection closed for request ${requestId}`);
+      };
+    });
+  } catch (error) {
+     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    logger.error(`Failed to connect to MCP streaming service: ${errorMessage}`);
+    throw error;
+  }
+}
+// --- End WebSocket Handling ---
+
+/**
  * Generate a chat completion using the MCP server
- * 
+ *
  * @param messages The chat messages
  * @param options Chat options
  * @param streamingCallback Optional callback for streaming responses
@@ -250,8 +342,8 @@ async function generateChatCompletionWithMCP(
     // If streaming is requested, we can't use batching
     if (options.streaming && streamingCallback) {
       logger.debug('Streaming chat completion requested, using direct MCP call');
-      
-      // Simplified for now - similar to the completion streaming scenario
+
+      // Call the streaming endpoint
       const result = await callMCPEndpoint<{
         streamingUrl: string;
         requestId: string;
@@ -260,41 +352,31 @@ async function generateChatCompletionWithMCP(
         'llm/chat/stream',
         { messages, options }
       );
-      
-      // Simulate streaming with a non-blocking approach
-      const simulatedResponse = 'This is a simulated streaming chat response.';
-      const words = simulatedResponse.split(' ');
-      let currentIndex = 0;
-      
-      const streamNextWord = () => {
-        if (currentIndex >= words.length) return;
-        
-        const isLast = currentIndex === words.length - 1;
-        streamingCallback(words[currentIndex] + (isLast ? '' : ' '), isLast);
-        currentIndex++;
-        
-        if (!isLast) {
-          setTimeout(streamNextWord, 100);
-        }
-      };
-      
-      // Start streaming
-      streamNextWord();
-      
-      return {
+
+      // Connect to the streaming websocket
+      const wsEndpoint = result.streamingUrl;
+      const requestId = result.requestId;
+
+      // Call the MCP streaming service, which will invoke the callback as chunks arrive
+      await connectToMCPStream(wsEndpoint, requestId, streamingCallback);
+
+      // Return a placeholder result - the real content is delivered via streaming
+      const placeholderResult: LLMChatResult = {
         message: {
           role: 'assistant',
-          content: simulatedResponse
+          content: "[Content delivered via streaming]"
         },
         usage: {
-          promptTokens: JSON.stringify(messages).length / 4,
-          completionTokens: simulatedResponse.length / 4,
-          totalTokens: JSON.stringify(messages).length / 4 + simulatedResponse.length / 4
+          promptTokens: 0,
+          completionTokens: 0,
+          totalTokens: 0
         },
-        finishReason: 'stop'
+        finishReason: null
       };
+
+      return placeholderResult;
     }
-    
+
     // Check if batching is enabled and use it if possible
     if (isBatchingEnabled('agentInference')) {
       logger.debug('Using batched LLM chat completion via MCP');
@@ -303,7 +385,7 @@ async function generateChatCompletionWithMCP(
         { messages, options }
       );
     }
-    
+
     // Otherwise use direct MCP call
     logger.debug('Using direct LLM chat completion via MCP');
     const result = await callMCPEndpoint<LLMChatResult>(
@@ -311,7 +393,7 @@ async function generateChatCompletionWithMCP(
       'llm/chat',
       { messages, options }
     );
-    
+
     logger.debug(`Generated chat completion with MCP, ${result.usage.totalTokens} tokens used`);
     return result;
   } catch (error) {
@@ -322,8 +404,8 @@ async function generateChatCompletionWithMCP(
 }
 
 /**
- * Generate a chat completion using the local implementation
- * 
+ * Generate a chat completion using the local implementation (via LLMService)
+ *
  * @param messages The chat messages
  * @param options Chat options
  * @param streamingCallback Optional callback for streaming responses
@@ -335,52 +417,20 @@ async function generateChatCompletionLocally(
   streamingCallback?: LLMStreamingCallback
 ): Promise<LLMChatResult> {
   try {
-    logger.debug('Using local LLM chat completion implementation');
-    
-    // In a real implementation, this would use a local service
-    // For example: return localLLMService.generateChatCompletion(messages, options);
-    
-    // Get the last user message for our mock
-    const lastUserMessage = messages
-      .filter(msg => msg.role === 'user')
-      .pop()?.content || 'No user message found';
-    
-    // For now, return a mock implementation
-    const mockResponse = `This is a mock chat response to: "${lastUserMessage.substring(0, 30)}..."`;
-    
-    // Simulate streaming if requested - using non-blocking approach
+    logger.debug('Using local LLM chat completion implementation via LLMService');
+    const llmService = getLLMService();
+
+    // If streaming is requested, handle it here
     if (options.streaming && streamingCallback) {
-      const chunks = mockResponse.split(' ');
-      let currentIndex = 0;
-      
-      const streamNextChunk = () => {
-        if (currentIndex >= chunks.length) return;
-        
-        const isLast = currentIndex === chunks.length - 1;
-        streamingCallback(chunks[currentIndex] + (isLast ? '' : ' '), isLast);
-        currentIndex++;
-        
-        if (!isLast) {
-          setTimeout(streamNextChunk, 100);
-        }
-      };
-      
-      // Start streaming
-      streamNextChunk();
+      // Local fallback via LLMService does not support streaming currently
+      logger.warn('Streaming requested for local LLM chat completion, but it is not supported. Returning non-streamed result.');
+      // Proceed with non-streaming call
     }
-    
-    return {
-      message: {
-        role: 'assistant',
-        content: mockResponse
-      },
-      usage: {
-        promptTokens: JSON.stringify(messages).length / 4,
-        completionTokens: mockResponse.length / 4,
-        totalTokens: JSON.stringify(messages).length / 4 + mockResponse.length / 4
-      },
-      finishReason: 'stop'
-    };
+    // Ensure streaming option is false if not supported or warned
+    const nonStreamingOptions = { ...options, streaming: false };
+
+    // Call the LLMService method
+    return await llmService.generateChatCompletion(messages, nonStreamingOptions);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     logger.error(`Local LLM chat completion failed: ${errorMessage}`);
@@ -390,7 +440,7 @@ async function generateChatCompletionLocally(
 
 /**
  * Generate embeddings using the MCP server
- * 
+ *
  * @param texts Array of texts to embed
  * @param options Embedding options
  * @returns Embedding results
@@ -408,7 +458,7 @@ async function generateEmbeddingsWithMCP(
         { texts, options }
       );
     }
-    
+
     // Otherwise use direct MCP call
     logger.debug('Using direct LLM embeddings via MCP');
     const results = await callMCPEndpoint<LLMEmbeddingResult[]>(
@@ -416,7 +466,7 @@ async function generateEmbeddingsWithMCP(
       'llm/embeddings',
       { texts, options }
     );
-    
+
     logger.debug(`Generated embeddings with MCP for ${texts.length} texts`);
     return results;
   } catch (error) {
@@ -427,8 +477,8 @@ async function generateEmbeddingsWithMCP(
 }
 
 /**
- * Generate embeddings using the local implementation
- * 
+ * Generate embeddings using the local implementation (via LLMService)
+ *
  * @param texts Array of texts to embed
  * @param options Embedding options
  * @returns Embedding results
@@ -438,21 +488,11 @@ async function generateEmbeddingsLocally(
   options: LLMEmbeddingOptions
 ): Promise<LLMEmbeddingResult[]> {
   try {
-    logger.debug('Using local LLM embeddings implementation');
-    
-    // In a real implementation, this would use a local service
-    // For example: return localLLMService.generateEmbeddings(texts, options);
-    
-    // For now, return a mock implementation
-    const dimensions = options.dimensions || 1536; // Default for many embedding models
-    
-    return texts.map(text => ({
-      embedding: Array(dimensions).fill(0).map(() => Math.random() * 2 - 1), // Random unit vector
-      usage: {
-        promptTokens: Math.ceil(text.length / 4),
-        totalTokens: Math.ceil(text.length / 4)
-      }
-    }));
+    logger.debug('Using local LLM embeddings implementation via LLMService');
+    const llmService = getLLMService();
+
+    // Call the LLMService method
+    return await llmService.generateEmbeddings(texts, options);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     logger.error(`Local LLM embeddings failed: ${errorMessage}`);
@@ -462,7 +502,7 @@ async function generateEmbeddingsLocally(
 
 /**
  * Generate a completion with the specified model
- * 
+ *
  * @param prompt The prompt for the completion
  * @param options Completion options
  * @param streamingCallback Optional callback for streaming responses
@@ -476,7 +516,7 @@ export async function generateCompletion(
   if (!options.model) {
     throw new Error('Model must be specified for LLM completion');
   }
-  
+
   return withMCPFallback<LLMCompletionResult, [string, LLMCompletionOptions, LLMStreamingCallback | undefined]>(
     'agentInference',
     generateCompletionWithMCP,
@@ -489,7 +529,7 @@ export async function generateCompletion(
 
 /**
  * Generate a chat completion with the specified model
- * 
+ *
  * @param messages The chat messages
  * @param options Chat options
  * @param streamingCallback Optional callback for streaming responses
@@ -503,11 +543,11 @@ export async function generateChatCompletion(
   if (!options.model) {
     throw new Error('Model must be specified for LLM chat completion');
   }
-  
+
   if (!messages || messages.length === 0) {
     throw new Error('At least one message must be provided for chat completion');
   }
-  
+
   return withMCPFallback<LLMChatResult, [LLMChatMessage[], LLMChatOptions, LLMStreamingCallback | undefined]>(
     'agentInference',
     generateChatCompletionWithMCP,
@@ -520,7 +560,7 @@ export async function generateChatCompletion(
 
 /**
  * Generate embeddings for the provided texts
- * 
+ *
  * @param texts Array of texts to embed
  * @param options Embedding options
  * @returns Embedding results
@@ -532,11 +572,11 @@ export async function generateEmbeddings(
   if (!options.model) {
     throw new Error('Model must be specified for LLM embeddings');
   }
-  
+
   if (!texts || texts.length === 0) {
     throw new Error('At least one text must be provided for embeddings');
   }
-  
+
   return withMCPFallback<LLMEmbeddingResult[], [string[], LLMEmbeddingOptions]>(
     'agentInference',
     generateEmbeddingsWithMCP,

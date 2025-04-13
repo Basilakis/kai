@@ -1,16 +1,17 @@
 /**
  * Supabase Utility Service
- * 
+ *
  * Provides general utilities for working with Supabase data.
  */
 
-import { supabaseClient } from './supabaseClient';
+import { supabase } from './supabaseClient';
+import { handleSupabaseError } from '../../../shared/src/utils/supabaseErrorHandler';
 import { logger } from '../../utils/logger';
 import { v4 as uuidv4 } from 'uuid';
 
 /**
  * Supabase Utility Service
- * 
+ *
  * Provides helper methods for working with Supabase
  */
 export class SupabaseUtilityService {
@@ -37,32 +38,32 @@ export class SupabaseUtilityService {
    */
   public async checkConnection(): Promise<{ success: boolean; tables: string[]; message: string }> {
     try {
-      const client = supabaseClient.getClient();
-      
+      const client = supabase.getClient();
+
       // Try to access some tables to verify connection and permissions
       const { data: tablesData, error: tablesError } = await client
         .from('information_schema.tables')
         .select('table_name')
         .eq('table_schema', 'public')
         .limit(20);
-      
+
       if (tablesError) {
         throw tablesError;
       }
-      
+
       const tables = tablesData.map((row: any) => row.table_name);
-      
+
       return {
         success: true,
         tables,
         message: 'Successfully connected to Supabase'
       };
     } catch (error) {
-      logger.error(`Failed to check Supabase connection: ${error}`);
+      const supabaseError = handleSupabaseError(error, 'checkConnection');
       return {
         success: false,
         tables: [],
-        message: `Connection error: ${error instanceof Error ? error.message : String(error)}`
+        message: `Connection error: ${supabaseError.message}`
       };
     }
   }
@@ -76,17 +77,17 @@ export class SupabaseUtilityService {
     details: Record<string, any>;
   }> {
     try {
-      const client = supabaseClient.getClient();
+      const client = supabase.getClient();
       const startTime = Date.now();
-      
+
       // Check database connection
       const { data, error } = await client
         .from('materials')
         .select('id')
         .limit(1);
-      
+
       const latency = Date.now() - startTime;
-      
+
       if (error) {
         return {
           status: 'unhealthy',
@@ -97,7 +98,7 @@ export class SupabaseUtilityService {
           }
         };
       }
-      
+
       // Check pgvector extension
       const { data: pgvectorData, error: pgvectorError } = await client
         .from('pg_extension')
@@ -105,7 +106,7 @@ export class SupabaseUtilityService {
         .eq('extname', 'vector')
         .limit(1)
         .single();
-      
+
       return {
         status: 'healthy',
         details: {
@@ -115,11 +116,11 @@ export class SupabaseUtilityService {
         }
       };
     } catch (error) {
-      logger.error(`Health check failed: ${error}`);
+      const supabaseError = handleSupabaseError(error, 'healthCheck');
       return {
         status: 'unhealthy',
         details: {
-          error: error instanceof Error ? error.message : String(error)
+          error: supabaseError.message
         }
       };
     }

@@ -1,21 +1,21 @@
 /**
  * Model Context Protocol (MCP) Client SDK
- * 
+ *
  * This SDK provides a TypeScript client for communicating with the Model Context Protocol server.
  * It includes methods for model management, material recognition, and agent communication.
- * 
+ *
  * Features:
  * - Model listing and info retrieval
  * - Material recognition through image uploads
  * - Context management
  * - Agent-friendly communication methods
- * 
+ *
  * Usage example:
  * ```typescript
  * import { MCPClient } from '@kai/mcp-client';
- * 
+ *
  * const client = new MCPClient('http://localhost:8000');
- * 
+ *
  * // Recognize a material in an image
  * const result = await client.recognizeMaterial('/path/to/image.jpg', {
  *   modelType: 'hybrid',
@@ -27,7 +27,6 @@
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
 import FormData from 'form-data';
 import * as fs from 'fs';
-import * as path from 'path';
 
 /**
  * Supported model types for material recognition
@@ -46,17 +45,17 @@ export interface RecognitionOptions {
    * Type of model to use for recognition
    */
   modelType?: ModelType;
-  
+
   /**
    * Minimum confidence threshold for matches (0-1)
    */
   confidenceThreshold?: number;
-  
+
   /**
    * Maximum number of results to return
    */
   maxResults?: number;
-  
+
   /**
    * Whether to include detailed feature information in the response
    */
@@ -71,12 +70,12 @@ export interface ModelMatch {
    * ID of the matched material
    */
   materialId: string;
-  
+
   /**
    * Confidence score (0-1)
    */
   confidence: number;
-  
+
   /**
    * Detailed feature information (if requested)
    */
@@ -91,22 +90,22 @@ export interface RecognitionResult {
    * List of matched materials
    */
   matches: ModelMatch[];
-  
+
   /**
    * Extracted features from the image
    */
   extractedFeatures?: Record<string, any>;
-  
+
   /**
    * Processing time in seconds
    */
   processingTime: number;
-  
+
   /**
    * ID of the model used for recognition
    */
   modelId: string;
-  
+
   /**
    * Unique ID for this recognition request
    */
@@ -121,42 +120,42 @@ export interface ModelInfo {
    * Unique ID of the model
    */
   id: string;
-  
+
   /**
    * Display name of the model
    */
   name: string;
-  
+
   /**
    * Type of the model
    */
   type: string;
-  
+
   /**
    * Version of the model
    */
   version: string;
-  
+
   /**
    * Description of the model
    */
   description: string;
-  
+
   /**
    * When the model was created
    */
   created_at: string;
-  
+
   /**
    * When the model was last updated
    */
   updated_at: string;
-  
+
   /**
    * Current status of the model
    */
   status: string;
-  
+
   /**
    * List of model capabilities
    */
@@ -171,17 +170,17 @@ export interface ModelContext {
    * ID of the model
    */
   model_id: string;
-  
+
   /**
    * Version of the model
    */
   version: string;
-  
+
   /**
    * Runtime parameters for the model
    */
   parameters?: Record<string, any>;
-  
+
   /**
    * Additional metadata for the model
    */
@@ -196,12 +195,12 @@ export interface AgentMessage {
    * Type of message
    */
   message_type: string;
-  
+
   /**
    * Message content
    */
   content: Record<string, any>;
-  
+
   /**
    * Timestamp of the message
    */
@@ -213,11 +212,12 @@ export interface AgentMessage {
  */
 export class MCPClient {
   private client: AxiosInstance;
+  // Store the base URL for potential future use and debugging
   private baseUrl: string;
-  
+
   /**
    * Create a new MCP client
-   * 
+   *
    * @param baseUrl - Base URL of the MCP server
    */
   constructor(baseUrl: string) {
@@ -230,40 +230,40 @@ export class MCPClient {
       },
     });
   }
-  
+
   /**
    * Get server information
-   * 
+   *
    * @returns Server information
    */
   async getServerInfo(): Promise<Record<string, any>> {
     const response = await this.client.get('/');
     return response.data;
   }
-  
+
   /**
    * Check server health
-   * 
+   *
    * @returns Health check result
    */
   async checkHealth(): Promise<{ status: string; timestamp: number }> {
     const response = await this.client.get('/health');
     return response.data;
   }
-  
+
   /**
    * List all available models
-   * 
+   *
    * @returns List of model information
    */
   async listModels(): Promise<ModelInfo[]> {
     const response = await this.client.get('/api/v1/models');
     return response.data;
   }
-  
+
   /**
    * Get information about a specific model
-   * 
+   *
    * @param modelId - ID of the model
    * @returns Model information
    */
@@ -271,10 +271,10 @@ export class MCPClient {
     const response = await this.client.get(`/api/v1/models/${modelId}`);
     return response.data;
   }
-  
+
   /**
    * Get the context for a specific model
-   * 
+   *
    * @param modelId - ID of the model
    * @returns Model context
    */
@@ -282,10 +282,10 @@ export class MCPClient {
     const response = await this.client.get(`/api/v1/models/${modelId}/context`);
     return response.data;
   }
-  
+
   /**
    * Update the context for a specific model
-   * 
+   *
    * @param modelId - ID of the model
    * @param context - New model context
    * @returns Success response
@@ -294,10 +294,10 @@ export class MCPClient {
     const response = await this.client.put(`/api/v1/models/${modelId}/context`, context);
     return response.data;
   }
-  
+
   /**
    * Recognize materials in an image
-   * 
+   *
    * @param imagePath - Path to the image file
    * @param options - Recognition options
    * @returns Recognition result
@@ -310,11 +310,11 @@ export class MCPClient {
     if (!fs.existsSync(imagePath)) {
       throw new Error(`Image file not found: ${imagePath}`);
     }
-    
+
     // Create form data with image
     const formData = new FormData();
     formData.append('image', fs.createReadStream(imagePath));
-    
+
     // Convert options to server format
     if (options) {
       const serverOptions = {
@@ -325,27 +325,27 @@ export class MCPClient {
       };
       formData.append('options', JSON.stringify(serverOptions));
     }
-    
+
     // Send request to server
     const response = await this.client.post('/api/v1/recognize', formData, {
       headers: {
         ...formData.getHeaders(),
       },
     });
-    
+
     return response.data;
   }
-  
+
   /**
    * Recognize materials in an image buffer
-   * 
+   *
    * @param imageBuffer - Image buffer
    * @param imageType - MIME type of the image
    * @param options - Recognition options
    * @returns Recognition result
    */
   async recognizeMaterialFromBuffer(
-    imageBuffer: Buffer,
+    imageBuffer: Uint8Array | ArrayBuffer | Buffer,
     imageType: string = 'image/jpeg',
     options?: RecognitionOptions
   ): Promise<RecognitionResult> {
@@ -355,7 +355,7 @@ export class MCPClient {
       filename: `image.${imageType.split('/')[1] || 'jpg'}`,
       contentType: imageType,
     });
-    
+
     // Convert options to server format
     if (options) {
       const serverOptions = {
@@ -366,20 +366,20 @@ export class MCPClient {
       };
       formData.append('options', JSON.stringify(serverOptions));
     }
-    
+
     // Send request to server
     const response = await this.client.post('/api/v1/recognize', formData, {
       headers: {
         ...formData.getHeaders(),
       },
     });
-    
+
     return response.data;
   }
-  
+
   /**
    * Send a message to the agent
-   * 
+   *
    * @param message - Agent message
    * @returns Success response
    */
@@ -391,10 +391,10 @@ export class MCPClient {
     });
     return response.data;
   }
-  
+
   /**
    * Get messages from the agent queue
-   * 
+   *
    * @param maxWait - Maximum time to wait for messages (seconds)
    * @returns Agent messages
    */
@@ -403,6 +403,28 @@ export class MCPClient {
       params: { max_wait: maxWait },
     });
     return response.data;
+  }
+
+  /**
+   * Call a generic MCP endpoint.
+   * Assumes endpoint is relative to /api/v1/ and uses POST method.
+   *
+   * @param endpoint The specific endpoint path (e.g., 'llm/completion')
+   * @param data The data payload for the request
+   * @returns The response data from the endpoint
+   */
+  async callEndpoint<T>(endpoint: string, data: any): Promise<T> {
+    // Construct the full URL path
+    const urlPath = `/api/v1/${endpoint}`;
+    try {
+      const response: AxiosResponse<T> = await this.client.post(urlPath, data);
+      return response.data;
+    } catch (error) {
+      // Improve error handling slightly by logging and re-throwing
+      console.error(`Error calling MCP endpoint ${urlPath}:`, error);
+      // Consider wrapping the error or extracting more details from axios error
+      throw error;
+    }
   }
 }
 

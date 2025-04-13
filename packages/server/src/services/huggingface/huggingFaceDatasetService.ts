@@ -89,6 +89,22 @@ interface HFDatasetMetadata {
   }>;
 }
 
+// Dataset class structure used during import
+export interface HFDatasetClass {
+  name: string;
+  description?: string;
+  sourceClass: string; // Original identifier in Hugging Face
+}
+
+// Image metadata used during import
+export interface HFDatasetImage {
+  path: string;
+  size?: number;
+  width?: number;
+  height?: number;
+  format?: string;
+}
+
 /**
  * Hugging Face Dataset Service
  * Provides dataset management functionality using Hugging Face
@@ -98,6 +114,8 @@ export class HuggingFaceDatasetService {
   private metadataFileName = 'dataset_metadata.json';
   private datasetCache: Map<string, Dataset> = new Map();
   private classCache: Map<string, Map<string, DatasetClass>> = new Map();
+  // Use the unified huggingFaceClient
+  private client = huggingFaceClient as any;
 
   private constructor() {
     logger.info('Hugging Face Dataset Service initialized');
@@ -141,7 +159,7 @@ export class HuggingFaceDatasetService {
 
       // Create repository on Hugging Face
       const repoName = `dataset-${id.substring(0, 8)}`;
-      const hfRepoId = await huggingFaceClient.createDatasetRepository({
+      const hfRepoId = await this.client.createDatasetRepository({
         name: repoName,
         description: dataset.description || `Dataset: ${dataset.name}`,
         visibility: 'private'
@@ -172,7 +190,7 @@ export class HuggingFaceDatasetService {
       };
 
       // Upload metadata to repository
-      const success = await huggingFaceClient.uploadFile(
+      const success = await this.client.uploadFile(
         hfRepoId,
         this.metadataFileName,
         metadata,
@@ -230,7 +248,7 @@ export class HuggingFaceDatasetService {
    */
   private async getDatasetMetadata(hfRepoId: string): Promise<HFDatasetMetadata | null> {
     try {
-      const metadataBuffer = await huggingFaceClient.downloadFile(
+      const metadataBuffer = await this.client.downloadFile(
         hfRepoId,
         this.metadataFileName
       );
@@ -256,7 +274,7 @@ export class HuggingFaceDatasetService {
    */
   private async updateDatasetMetadata(hfRepoId: string, metadata: HFDatasetMetadata): Promise<boolean> {
     try {
-      const success = await huggingFaceClient.uploadFile(
+      const success = await this.client.uploadFile(
         hfRepoId,
         this.metadataFileName,
         metadata,
@@ -409,10 +427,10 @@ export class HuggingFaceDatasetService {
       } = options;
 
       // Get user to find their datasets
-      const user = await huggingFaceClient.getCurrentUser();
+      const user = await this.client.getCurrentUser();
       
       // Get datasets from Hugging Face
-      const hfResults = await huggingFaceClient.searchDatasets({
+      const hfResults = await this.client.searchDatasets({
         query: query || '',
         author: user?.id,
         limit: 100, // Get more to allow for filtering
@@ -566,7 +584,7 @@ export class HuggingFaceDatasetService {
       }
 
       // Create directory for this class
-      await huggingFaceClient.uploadFile(
+      await this.client.uploadFile(
         dataset.hfRepositoryId,
         `${id}/.gitkeep`,
         '',
@@ -841,11 +859,11 @@ export class HuggingFaceDatasetService {
       };
 
       // We would upload the image file here in a real implementation
-      // await huggingFaceClient.uploadFile(dataset.hfRepositoryId, hfImagePath, imageFileData);
+      // await this.client.uploadFile(dataset.hfRepositoryId, hfImagePath, imageFileData);
 
       // Upload image metadata JSON
       const imageJsonPath = `${imageData.classId}/${id}.json`;
-      await huggingFaceClient.uploadFile(
+      await this.client.uploadFile(
         dataset.hfRepositoryId,
         imageJsonPath,
         imageMetadata,
@@ -946,7 +964,7 @@ export class HuggingFaceDatasetService {
       }
 
       // List files in class directory
-      const files = await huggingFaceClient.listFiles(
+      const files = await this.client.listFiles(
         dataset.hfRepositoryId,
         classId
       );
@@ -956,7 +974,7 @@ export class HuggingFaceDatasetService {
       }
 
       // Filter to only JSON metadata files
-      const jsonFiles = files.filter(file => 
+      const jsonFiles = files.filter((file: { path?: string; size?: number }) => 
         typeof file.path === 'string' && 
         file.path.endsWith('.json') && 
         !file.path.endsWith(this.metadataFileName)
@@ -967,7 +985,7 @@ export class HuggingFaceDatasetService {
       
       for (const file of jsonFiles.slice(offset, offset + limit)) {
         try {
-          const metadataBuffer = await huggingFaceClient.downloadFile(
+          const metadataBuffer = await this.client.downloadFile(
             dataset.hfRepositoryId,
             file.path
           );
@@ -1039,7 +1057,7 @@ export class HuggingFaceDatasetService {
             const jsonPath = `${cls.id}/${imageId}.json`;
             
             // Here we could use a "dummy" file to mark it as deleted
-            await huggingFaceClient.uploadFile(
+            await this.client.uploadFile(
               dataset.hfRepositoryId,
               jsonPath,
               { deleted: true, deletedAt: new Date().toISOString() },
@@ -1115,7 +1133,7 @@ export class HuggingFaceDatasetService {
       for (const dataset of datasets.datasets) {
         if (dataset.hfRepositoryId) {
           // Check if file exists in this repository
-          const fileExists = await huggingFaceClient.listFiles(
+          const fileExists = await this.client.listFiles(
             dataset.hfRepositoryId,
             storagePath
           );
@@ -1152,7 +1170,7 @@ export class HuggingFaceDatasetService {
   ): Promise<Dataset> {
     try {
       // Get dataset info from Hugging Face
-      const datasetInfo = await huggingFaceClient.getDatasetInfo(hfDatasetId);
+      const datasetInfo = await this.client.getDatasetInfo(hfDatasetId);
       if (!datasetInfo) {
         throw new Error(`Dataset ${hfDatasetId} not found on Hugging Face`);
       }
@@ -1170,21 +1188,369 @@ export class HuggingFaceDatasetService {
         }
       });
 
-      // TODO: Implement logic to fetch and process the dataset content
-      // This would involve:
-      // 1. Retrieving structure of the dataset
-      // 2. Creating classes based on the structure
-      // 3. Importing images/files into our format
-      
-      // For now, we'll just mark it as ready
-      await this.updateDataset(dataset.id, {
-        status: 'ready'
-      });
+      try {
+        // Update status to processing
+        await this.updateDataset(dataset.id, {
+          status: 'processing'
+        });
+        
+        // Retrieve dataset structure
+        logger.info(`Retrieving structure of dataset ${hfDatasetId}`);
+        const structure = await this.client.getDatasetStructure(hfDatasetId);
+        
+        if (!structure) {
+          throw new Error(`Failed to retrieve structure for dataset ${hfDatasetId}`);
+        }
+        
+        // Process the dataset structure to identify classes
+        // Class structure could be based on directories, metadata, or dataset splits
+        const classes = await this.extractClassesFromStructure(structure, hfDatasetId);
+        
+        // Create classes in our dataset
+        const createdClasses = new Map<string, DatasetClass>();
+        let importedImageCount = 0;
+        
+        for (const cls of classes) {
+          logger.info(`Creating class ${cls.name} in dataset ${dataset.id}`);
+          const createdClass = await this.createDatasetClass({
+            datasetId: dataset.id,
+            name: cls.name,
+            description: cls.description,
+            metadata: {
+              sourceClass: cls.sourceClass,
+              importedFrom: 'huggingface'
+            }
+          });
+          
+          createdClasses.set(cls.sourceClass, createdClass);
+        }
+        
+        // Import images for each class
+        for (const [sourceClass, createdClass] of createdClasses.entries()) {
+          // Get images for this class from Hugging Face
+          logger.info(`Importing images for class ${createdClass.name} from ${sourceClass}`);
+          
+          const classImages = await this.getImagesForClass(hfDatasetId, sourceClass);
+          logger.info(`Found ${classImages.length} images for class ${createdClass.name}`);
+          
+          // Process each image
+          for (const img of classImages) {
+            try {
+              // Download image from Hugging Face
+              const imageBuffer = await this.client.downloadFile(
+                hfDatasetId,
+                img.path
+              );
+              
+              if (!imageBuffer) {
+                logger.warn(`Failed to download image: ${img.path}`);
+                continue;
+              }
+              
+              // Upload image to our dataset
+              await this.createDatasetImage({
+                datasetId: dataset.id,
+                classId: createdClass.id,
+                storagePath: img.path,
+                filename: path.basename(img.path),
+                fileSize: img.size,
+                format: this.getImageFormat(img.path),
+                metadata: {
+                  sourcePath: img.path,
+                  importedFrom: 'huggingface'
+                }
+              });
+              
+              importedImageCount++;
+              
+              // Update progress periodically
+              if (importedImageCount % 10 === 0) {
+                await this.updateDataset(dataset.id, {
+                  metadata: {
+                    ...dataset.metadata,
+                    importProgress: {
+                      classesProcessed: createdClasses.size,
+                      totalClasses: classes.length,
+                      imagesImported: importedImageCount
+                    }
+                  }
+                });
+              }
+            } catch (imgErr) {
+              logger.error(`Error importing image ${img.path}: ${imgErr}`);
+              // Continue with other images
+            }
+          }
+        }
+        
+        // Update dataset with final stats
+        logger.info(`Import completed with ${createdClasses.size} classes and ${importedImageCount} images`);
+        await this.updateDataset(dataset.id, {
+          status: 'ready',
+          metadata: {
+            ...dataset.metadata,
+            importDetails: {
+              completedAt: new Date().toISOString(),
+              classCount: createdClasses.size,
+              imageCount: importedImageCount
+            }
+          }
+        });
+      } catch (importErr) {
+        logger.error(`Error during import process: ${importErr}`);
+        
+        // Mark dataset as error state
+        await this.updateDataset(dataset.id, {
+          status: 'error',
+          metadata: {
+            ...dataset.metadata,
+            importError: importErr instanceof Error ? importErr.message : String(importErr)
+          }
+        });
+        
+        throw importErr;
+      }
 
       return dataset;
     } catch (err) {
       logger.error(`Failed to import dataset from Hugging Face: ${err}`);
       throw new Error(`Failed to import dataset from Hugging Face: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /**
+   * Extract class information from dataset structure
+   * @param structure Dataset structure from Hugging Face
+   * @param hfDatasetId Hugging Face dataset ID
+   * @returns Array of dataset classes
+   */
+  private async extractClassesFromStructure(
+    structure: any,
+    hfDatasetId: string
+  ): Promise<HFDatasetClass[]> {
+    try {
+      logger.info(`Extracting classes from dataset structure for ${hfDatasetId}`);
+      
+      const classes: HFDatasetClass[] = [];
+      
+      // Check if structure has splits (common in HF datasets)
+      if (structure.splits && Object.keys(structure.splits).length > 0) {
+        // Use splits as classes (e.g., train, test, validation)
+        for (const splitName of Object.keys(structure.splits)) {
+          classes.push({
+            name: splitName,
+            description: `Split "${splitName}" from Hugging Face dataset`,
+            sourceClass: splitName
+          });
+        }
+        
+        logger.info(`Found ${classes.length} classes based on splits`);
+        return classes;
+      }
+      
+      // Check if structure has a directory-based organization
+      if (structure.files && Array.isArray(structure.files)) {
+        // Look for directories that might represent classes
+        const directories = structure.files
+          .filter((file: any) => file.type === 'directory')
+          .map((dir: any) => dir.path)
+          .filter((path: string) => !path.startsWith('.') && path !== '__pycache__');
+        
+        if (directories.length > 0) {
+          // Use directories as classes
+          for (const dirPath of directories) {
+            const dirName = dirPath.split('/').pop() || dirPath;
+            classes.push({
+              name: dirName,
+              description: `Class "${dirName}" from Hugging Face dataset directory structure`,
+              sourceClass: dirPath
+            });
+          }
+          
+          logger.info(`Found ${classes.length} classes based on directory structure`);
+          return classes;
+        }
+      }
+      
+      // Check if structure has metadata with labels
+      if (structure.metadata && structure.metadata.labels) {
+        // Use labels as classes
+        const labels = Array.isArray(structure.metadata.labels) 
+          ? structure.metadata.labels 
+          : Object.keys(structure.metadata.labels);
+        
+        for (const label of labels) {
+          classes.push({
+            name: label,
+            description: `Class "${label}" from Hugging Face dataset metadata`,
+            sourceClass: label
+          });
+        }
+        
+        logger.info(`Found ${classes.length} classes based on metadata labels`);
+        return classes;
+      }
+      
+      // Fallback: If no class structure is detected, create a single default class
+      if (classes.length === 0) {
+        classes.push({
+          name: 'default',
+          description: 'Default class for imported Hugging Face dataset',
+          sourceClass: 'default'
+        });
+        
+        logger.info('No class structure detected, using default class');
+      }
+      
+      return classes;
+    } catch (err) {
+      logger.error(`Error extracting classes from structure: ${err}`);
+      // Return a single default class as fallback
+      return [{
+        name: 'default',
+        description: 'Default class for imported Hugging Face dataset',
+        sourceClass: 'default'
+      }];
+    }
+  }
+
+  /**
+   * Get images for a specific class in a Hugging Face dataset
+   * @param hfDatasetId Hugging Face dataset ID
+   * @param sourceClass Source class identifier
+   * @returns Array of image metadata
+   */
+  private async getImagesForClass(
+    hfDatasetId: string,
+    sourceClass: string
+  ): Promise<HFDatasetImage[]> {
+    try {
+      logger.info(`Getting images for class ${sourceClass} in dataset ${hfDatasetId}`);
+      
+      const images: HFDatasetImage[] = [];
+      
+      // Different strategies based on sourceClass format
+      if (sourceClass === 'default') {
+        // For default class, get all images in the dataset
+        const files = await this.client.listFiles(hfDatasetId, '');
+        
+        if (files && Array.isArray(files)) {
+          // Filter for image files
+          const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff'];
+          const imageFiles = files.filter((file: any) => {
+            if (typeof file.path !== 'string') return false;
+            const extension = file.path.toLowerCase().substring(file.path.lastIndexOf('.'));
+            return imageExtensions.includes(extension);
+          });
+          
+          for (const file of imageFiles) {
+            images.push({
+              path: file.path,
+              size: file.size
+            });
+          }
+        }
+      } else if (sourceClass.includes('/')) {
+        // If sourceClass is a directory path
+        const files = await this.client.listFiles(hfDatasetId, sourceClass);
+        
+        if (files && Array.isArray(files)) {
+          // Filter for image files
+          const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff'];
+          const imageFiles = files.filter((file: any) => {
+            if (typeof file.path !== 'string') return false;
+            const extension = file.path.toLowerCase().substring(file.path.lastIndexOf('.'));
+            return imageExtensions.includes(extension);
+          });
+          
+          for (const file of imageFiles) {
+            images.push({
+              path: file.path,
+              size: file.size
+            });
+          }
+        }
+      } else {
+        // If sourceClass is a label or split name
+        try {
+          // For datasets with splits structure
+          const splitData = await this.client.getDatasetSplit(hfDatasetId, sourceClass);
+          
+          if (splitData && splitData.features && splitData.features.image) {
+            // Dataset has image column in its features
+            const sampleCount = Math.min(splitData.num_rows || 0, 100); // Limit to 100 samples
+            
+            for (let i = 0; i < sampleCount; i++) {
+              try {
+                const sample = await this.client.getDatasetRow(hfDatasetId, sourceClass, i);
+                
+                if (sample && sample.image) {
+                  // Create a virtual path for this image
+                  const path = `${sourceClass}/image_${i}.jpg`;
+                  
+                  // Download the image to get its size
+                  const imageBuffer = await this.client.downloadRow(
+                    hfDatasetId, 
+                    sourceClass, 
+                    i, 
+                    'image'
+                  );
+                  
+                  images.push({
+                    path,
+                    size: imageBuffer ? imageBuffer.length : undefined
+                  });
+                }
+              } catch (sampleErr) {
+                logger.warn(`Error getting sample ${i} from split ${sourceClass}: ${sampleErr}`);
+                continue;
+              }
+            }
+          }
+        } catch (splitErr) {
+          logger.warn(`Error getting split data for ${sourceClass}: ${splitErr}`);
+          // Try alternative approach for label-based datasets
+        }
+      }
+      
+      logger.info(`Found ${images.length} images for class ${sourceClass}`);
+      return images;
+    } catch (err) {
+      logger.error(`Error getting images for class ${sourceClass}: ${err}`);
+      return [];
+    }
+  }
+
+  /**
+   * Determine image format from file path
+   * @param filePath File path
+   * @returns Image format string
+   */
+  private getImageFormat(filePath: string): string {
+    try {
+      const extension = filePath.toLowerCase().substring(filePath.lastIndexOf('.') + 1);
+      
+      switch (extension) {
+        case 'jpg':
+        case 'jpeg':
+          return 'jpeg';
+        case 'png':
+          return 'png';
+        case 'gif':
+          return 'gif';
+        case 'webp':
+          return 'webp';
+        case 'bmp':
+          return 'bmp';
+        case 'tiff':
+        case 'tif':
+          return 'tiff';
+        default:
+          return extension || 'unknown';
+      }
+    } catch (err) {
+      logger.warn(`Could not determine image format for ${filePath}: ${err}`);
+      return 'unknown';
     }
   }
 }

@@ -7,8 +7,6 @@
     "paths": {
       "@/*": ["src/*"],
       "@kai/shared/*": ["../shared/src/*"],
-      "three": ["../../node_modules/@types/three"],
-      "three/*": ["../../node_modules/@types/three/*"],
       "react": ["../../node_modules/@types/react"],
       "react/*": ["../../node_modules/@types/react/*"]
     },

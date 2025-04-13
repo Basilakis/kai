@@ -63,6 +63,7 @@ Welcome to the Kai documentation. This index provides links to all documentation
 
 - [Admin Panel](./admin-panel.md) - Administration interface
 - [HeroUI Integration](./client-heroui-integration.md) - UI component system implementation
+- [MoodBoard Feature](./moodboard-feature.md) - Material collection and organization feature
 
 ## API & Integration
 

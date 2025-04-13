@@ -1,6 +1,6 @@
 /**
  * Type Declarations for Supabase and Node.js Modules
- * 
+ *
  * This file provides TypeScript declarations for modules used in the server-side code.
  */
 
@@ -32,7 +32,7 @@ declare module '@supabase/supabase-js' {
     status: number;
     statusText: string;
   }
-  
+
   export interface PostgrestFilterBuilder<T> {
     eq: (column: string, value: any) => PostgrestFilterBuilder<T>;
     neq: (column: string, value: any) => PostgrestFilterBuilder<T>;
@@ -54,11 +54,10 @@ declare module '@supabase/supabase-js' {
     order: (column: string, options?: any) => PostgrestFilterBuilder<T>;
     limit: (count: number) => PostgrestFilterBuilder<T>;
     offset: (count: number) => PostgrestFilterBuilder<T>;
-    select: (columns?: string) => Promise<PostgrestResponse<T>>;
-    insert: (values: any, options?: any) => Promise<PostgrestResponse<T>>;
-    upsert: (values: any, options?: any) => Promise<PostgrestResponse<T>>;
-    update: (values: any, options?: any) => Promise<PostgrestResponse<T>>;
-    delete: (options?: any) => Promise<PostgrestResponse<T>>;
+    select: (columns?: string) => PostgrestFilterBuilder<T>;
+    single: () => PostgrestFilterBuilder<T>;
+    maybeSingle: () => PostgrestFilterBuilder<T>;
+    then: <R>(onfulfilled?: (value: PostgrestResponse<T>) => R | PromiseLike<R>) => Promise<R>;
   }
 
   export interface PostgrestError {
@@ -75,6 +74,7 @@ declare module '@supabase/supabase-js' {
       update(values: any, options?: { returning?: string }): PostgrestFilterBuilder<T>;
       delete(options?: { returning?: string }): PostgrestFilterBuilder<T>;
       upsert(values: any, options?: { returning?: string; onConflict?: string }): PostgrestFilterBuilder<T>;
+      then: <R>(onfulfilled?: (value: PostgrestResponse<T>) => R | PromiseLike<R>) => Promise<R>;
     };
     storage: {
       from(bucket: string): {
@@ -101,7 +101,7 @@ declare module 'mongoose' {
   export interface Connection {
     readyState: number;
   }
-  
+
   export interface Model<T> {
     find(conditions?: any): Query<T[], T>;
     findOne(conditions?: any): Query<T | null, T>;
@@ -111,7 +111,7 @@ declare module 'mongoose' {
     updateOne(conditions: any, doc: any): Promise<any>;
     deleteOne(conditions: any): Promise<any>;
   }
-  
+
   export interface Query<ResultType, DocType> {
     where(path: string): any;
     gt(val: any): this;
@@ -120,7 +120,7 @@ declare module 'mongoose' {
     lean(): this;
     exec(): Promise<ResultType>;
   }
-  
+
   export function connect(uri: string, options?: any): Promise<any>;
   export function model<T>(name: string, schema: any): Model<T>;
   export default mongoose;

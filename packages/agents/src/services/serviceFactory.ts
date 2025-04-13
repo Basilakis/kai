@@ -5,12 +5,13 @@
  * Ensures services are properly initialized based on the environment configuration.
  */
 
-import { env } from '../utils/environment';
+import { env } from '../../../shared/src/utils/environment';
 import { ServiceConfig } from './baseService';
 import { MaterialService } from './materialService';
-import { MLService } from './mlService';
+import { MLService } from './mlService'; // Image analysis etc.
+import { LLMService } from './llmService'; // LLM specific tasks
 import { VectorService } from './vectorService';
-import { AnalyticsService } from './analyticsService';
+import { analyticsService } from './analyticsService';
 
 // Default service configurations
 const defaultServiceConfigs = {
@@ -23,8 +24,12 @@ const defaultServiceConfigs = {
     timeout: 45000,
   },
   ml: {
-    baseURL: env.services.mlServiceUrl,
+    baseURL: env.services.mlServiceUrl, // URL for image analysis etc.
     timeout: 60000,
+  },
+  llm: {
+    baseURL: env.services.mlApiUrl, // URL for LLM fallback API
+    timeout: 60000, // Match original adapter fallback timeout
   },
   analytics: {
     baseURL: env.services.kaiApiUrl,
@@ -38,9 +43,10 @@ const defaultServiceConfigs = {
 export class ServiceFactory {
   // Singleton instances
   private static materialService: MaterialService | null = null;
-  private static mlService: MLService | null = null;
+  private static mlService: MLService | null = null; // Image analysis etc.
+  private static llmService: LLMService | null = null; // LLM specific tasks
   private static vectorService: VectorService | null = null;
-  private static analyticsService: AnalyticsService | null = null;
+  private static analyticsService: typeof analyticsService = analyticsService;
 
   /**
    * Get or create a MaterialService instance
@@ -69,6 +75,19 @@ export class ServiceFactory {
   }
 
   /**
+   * Get or create an LLMService instance
+   */
+  static getLLMService(config?: Partial<ServiceConfig>): LLMService {
+    if (!this.llmService) {
+      this.llmService = new LLMService({
+        ...defaultServiceConfigs.llm,
+        ...(config || {}),
+      });
+    }
+    return this.llmService;
+  }
+
+  /**
    * Get or create a VectorService instance
    */
   static getVectorService(config?: Partial<ServiceConfig>): VectorService {
@@ -84,13 +103,7 @@ export class ServiceFactory {
   /**
    * Get or create an AnalyticsService instance
    */
-  static getAnalyticsService(config?: Partial<ServiceConfig>): AnalyticsService {
-    if (!this.analyticsService) {
-      this.analyticsService = new AnalyticsService({
-        ...defaultServiceConfigs.analytics,
-        ...(config || {}),
-      });
-    }
+  static getAnalyticsService(_config?: Partial<ServiceConfig>): typeof analyticsService {
     return this.analyticsService;
   }
 
@@ -101,8 +114,8 @@ export class ServiceFactory {
   static resetServices(): void {
     this.materialService = null;
     this.mlService = null;
+    this.llmService = null; // Reset LLMService too
     this.vectorService = null;
-    this.analyticsService = null;
   }
 }
 
@@ -121,6 +134,13 @@ export function getMLService(config?: Partial<ServiceConfig>): MLService {
 }
 
 /**
+ * Get a configured LLMService instance
+ */
+export function getLLMService(config?: Partial<ServiceConfig>): LLMService {
+  return ServiceFactory.getLLMService(config);
+}
+
+/**
  * Get a configured VectorService instance
  */
 export function getVectorService(config?: Partial<ServiceConfig>): VectorService {
@@ -130,7 +150,7 @@ export function getVectorService(config?: Partial<ServiceConfig>): VectorService
 /**
  * Get a configured AnalyticsService instance
  */
-export function getAnalyticsService(config?: Partial<ServiceConfig>): AnalyticsService {
+export function getAnalyticsService(config?: Partial<ServiceConfig>): typeof analyticsService {
   return ServiceFactory.getAnalyticsService(config);
 }
 

@@ -83,16 +83,24 @@ export const signUp = async (
  * Login with email/password
  * @param email User's email
  * @param password User's password
+ * @param rememberMe Whether to persist session across browser restarts
  * @returns The user or null if error
  */
 export const signIn = async (
   email: string,
-  password: string
+  password: string,
+  rememberMe: boolean = false
 ): Promise<{ user: SupabaseUser | null; error: AuthError | null }> => {
   try {
+    // Set the session persistence based on remember me option
+    const persistenceSettings: { persistSession: boolean } = {
+      persistSession: rememberMe
+    };
+
     const { data, error } = await supabaseClient.getClient().auth.signInWithPassword({
       email,
-      password
+      password,
+      options: persistenceSettings
     });
 
     if (error) {
@@ -132,15 +140,26 @@ export const signIn = async (
 /**
  * Sign in with a social provider
  * @param provider The provider to use ('google', 'facebook', or 'twitter')
+ * @param rememberMe Whether to persist session across browser restarts
  * @returns Void - redirects to provider auth page
  */
 export const signInWithSocialProvider = async (
-  provider: 'google' | 'facebook' | 'twitter'
+  provider: 'google' | 'facebook' | 'twitter',
+  rememberMe: boolean = false
 ): Promise<void> => {
+  // Check if rememberMe was stored in localStorage before redirect
+  const storedRememberMe = localStorage.getItem('auth_remember_me');
+  if (storedRememberMe) {
+    rememberMe = storedRememberMe === 'true';
+    // Clear the stored preference
+    localStorage.removeItem('auth_remember_me');
+  }
+
   const { error } = await supabaseClient.getClient().auth.signInWithOAuth({
     provider,
     options: {
-      redirectTo: `${window.location.origin}/auth/callback`
+      redirectTo: `${window.location.origin}/auth/callback`,
+      persistSession: rememberMe
     }
   });
 
@@ -274,6 +293,51 @@ const handleSession = (session: Session, user: SupabaseUser) => {
     email: user.email,
     role: user.role || 'user'
   });
+};
+
+/**
+ * Set up automatic token refresh
+ * This will attempt to refresh the token before it expires
+ * @returns Cleanup function to remove event listeners
+ */
+export const setupTokenRefresh = (): (() => void) => {
+  // Check token validity every 5 minutes
+  const REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutes in milliseconds
+  
+  const refreshToken = async () => {
+    try {
+      const session = await getCurrentSession();
+      
+      if (session) {
+        // Calculate time until token expires (in seconds)
+        const expiresIn = session.expires_at ? 
+          session.expires_at - Math.floor(Date.now() / 1000) : 
+          0;
+        
+        // If token expires in less than 10 minutes, refresh it
+        if (expiresIn < 600) {
+          const { error } = await supabaseClient.getClient().auth.refreshSession();
+          if (error) {
+            console.error('Error refreshing token:', error);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Token refresh error:', err);
+    }
+  };
+  
+  // Set up interval to check and refresh token
+  const intervalId = setInterval(refreshToken, REFRESH_INTERVAL);
+  
+  // Also refresh on page focus
+  window.addEventListener('focus', refreshToken);
+  
+  // Provide cleanup function if needed
+  return () => {
+    clearInterval(intervalId);
+    window.removeEventListener('focus', refreshToken);
+  };
 };
 
 /**

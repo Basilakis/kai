@@ -1,38 +1,55 @@
 /**
  * Main server entry point
- * 
+ *
  * Sets up Express server, middleware, routes, and initializes services.
  * Handles application startup and shutdown.
+ * Uses a dependency injection container for service management.
  */
 
 import express, { Request, Response } from 'express';
+import container from './container';
+import { getDatabaseService } from './services/database/databaseService';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
 import http from 'http';
+import swaggerUi from 'swagger-ui-express';
+import swaggerSpec from './config/swagger';
 import { queueEventsServer } from './services/websocket/queue-events';
 import { trainingProgressServer } from './services/websocket/training-progress';
 import { knowledgeBaseEventsServer } from './services/websocket/knowledge-base-events';
 import { KnowledgeBaseService } from './services/knowledgeBase/knowledgeBaseService';
-import { supabaseClient } from './services/supabase/supabaseClient';
+import supabaseClient from './services/supabase/supabaseClient';
 import { initializeStorage } from './services/storage/storageInitializer';
 import { logger } from './utils/logger';
+import healthCheckService from './services/monitoring/healthCheck.service';
 
 // Type declarations moved to types/global.d.ts
-  
+
 // Load environment variables
 dotenv.config();
 
 // Import and validate environment variables
 import { validateEnvironment, getEnvironmentHealth } from './utils/environment.validator';
+// Create a local validator for Supabase configuration
+function validateSupabaseConfig() {
+  const hasUrl = !!process.env.SUPABASE_URL;
+  const hasKey = !!process.env.SUPABASE_KEY;
+  const isValid = hasUrl && hasKey;
+
+  return {
+    isValid,
+    message: isValid ? 'Supabase configuration is valid' : 'Missing Supabase URL or key'
+  };
+}
 
 // Import middleware before routes for clarity
 import { errorHandler, notFound } from './middleware/error.middleware';
 import { authMiddleware } from './middleware/auth.middleware';
 import { analyticsMiddleware } from './middleware/analytics.middleware';
-import { 
+import {
   defaultLimiter,
   authLimiter,
   mlProcessingLimiter,
@@ -43,19 +60,23 @@ import {
 // Validate environment variables
 try {
   validateEnvironment();
+
+  // Validate Supabase configuration
+  const supabaseValidation = validateSupabaseConfig();
+
+  // Only initialize Supabase if configuration is valid
+  if (supabaseValidation.isValid) {
+    logger.info('Supabase configuration is valid, initializing client');
+    supabaseClient.init({
+      url: process.env.SUPABASE_URL!,
+      key: process.env.SUPABASE_KEY!
+    });
+  } else {
+    logger.warn('Supabase configuration validation failed, some features may not work properly');
+  }
 } catch (error) {
   logger.error('Server startup failed due to environment configuration issues:', error);
   process.exit(1);
-}
-
-// Initialize Supabase
-if (process.env.SUPABASE_URL && process.env.SUPABASE_KEY) {
-  supabaseClient.init({
-    url: process.env.SUPABASE_URL,
-    key: process.env.SUPABASE_KEY
-  });
-} else {
-  logger.warn('Supabase URL or key not found in environment variables');
 }
 
 // Import routes after middleware imports
@@ -74,6 +95,8 @@ import searchRoutes from './routes/search.routes';
 import analyticsRoutes from './routes/analytics.routes';
 import subscriptionRoutes from './routes/subscription.routes';
 import enhancedVectorRoutes from './routes/enhancedVector.routes';
+import webhookRoutes from './routes/webhook.routes';
+import { scheduleSessionCleanup } from './controllers/agents.controller';
 
 // Create Express app
 const app = express();
@@ -104,6 +127,15 @@ app.use('/api', defaultLimiter); // Default limit for all other API routes
 // Add analytics middleware to track all API requests
 app.use(analyticsMiddleware());
 
+// Serve Swagger documentation
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+  explorer: true,
+  customCss: '.swagger-ui .topbar { display: none }',
+  swaggerOptions: {
+    persistAuthorization: true,
+  }
+}));
+
 
 // Set up routes after all prerequisites
 app.use('/api/auth', authRoutes);
@@ -121,71 +153,154 @@ app.use('/api/search', searchRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/vector/enhanced', enhancedVectorRoutes);
+app.use('/api/webhooks', webhookRoutes);
 
 /**
- * Enhanced health check endpoint - public access
- * Provides basic system health information
+ * @openapi
+ * /health:
+ *   get:
+ *     tags:
+ *       - System
+ *     summary: Basic health check endpoint
+ *     description: Returns basic system health information
+ *     responses:
+ *       200:
+ *         description: System is healthy
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: healthy
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                 uptime:
+ *                   type: object
+ *                   properties:
+ *                     seconds:
+ *                       type: integer
+ *                     formatted:
+ *                       type: string
+ *                 memory:
+ *                   type: object
+ *                 cpu:
+ *                   type: object
+ *                 services:
+ *                   type: object
  */
-app.get('/health', (_req: Request, res: Response) => {
-  // Gather system information
-  const uptime = process.uptime();
-  const memoryUsage = process.memoryUsage();
-  const nodeVersion = process.version;
-  
-  const healthInfo = {
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    uptime: {
-      seconds: Math.floor(uptime),
-      formatted: `${Math.floor(uptime / 3600)}h ${Math.floor((uptime % 3600) / 60)}m ${Math.floor(uptime % 60)}s`
-    },
-    system: {
-      nodeVersion,
-      memory: {
-        rss: `${Math.round(memoryUsage.rss / 1024 / 1024)} MB`,
-        heapTotal: `${Math.round(memoryUsage.heapTotal / 1024 / 1024)} MB`,
-        heapUsed: `${Math.round(memoryUsage.heapUsed / 1024 / 1024)} MB`,
-        external: `${Math.round(memoryUsage.external / 1024 / 1024)} MB`
+app.get('/health', async (_req: Request, res: Response) => {
+  try {
+    // Use the health check service to get comprehensive health information
+    const healthInfo = await healthCheckService.getHealth();
+    
+    // Get database health status
+    let dbHealth = { status: 'not_configured' };
+    try {
+      // Get database service from container and check health if available
+      const dbService = getDatabaseService();
+      dbHealth = await dbService.healthCheck();
+    } catch (dbError) {
+      logger.warn('Database health check failed or service not initialized', { error: dbError });
+    }
+    
+    // Merge health information
+    const mergedHealthInfo = {
+      ...healthInfo,
+      services: {
+        ...healthInfo.services,
+        database: dbHealth
       }
-    },
-    environment: getEnvironmentHealth()
-  };
-  
-  res.status(200).json(healthInfo);
+    };
+    
+    res.status(200).json(mergedHealthInfo);
+  } catch (error) {
+    logger.error('Error retrieving health information:', error);
+    res.status(500).json({
+      status: 'unhealthy',
+      timestamp: new Date().toISOString(),
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
 });
 
 /**
- * Advanced health check endpoint - protected by auth
- * Provides detailed system and component status information
+ * @openapi
+ * /health/detailed:
+ *   get:
+ *     tags:
+ *       - System
+ *     summary: Detailed health check endpoint
+ *     description: Returns comprehensive system health metrics with detailed component status
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Detailed health information
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   enum: [healthy, degraded, unhealthy]
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                 uptime:
+ *                   type: object
+ *                 memory:
+ *                   type: object
+ *                 cpu:
+ *                   type: object
+ *                 services:
+ *                   type: object
+ *                 trends:
+ *                   type: object
+ *                 systemDetails:
+ *                   type: object
+ *       401:
+ *         description: Unauthorized - authentication required
+ *       500:
+ *         description: Server error
  */
-app.get('/health/detailed', authMiddleware, (_req: Request, res: Response) => {
-  // Gather detailed system and component status
-  const healthInfo = {
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    system: {
-      nodeVersion: process.version,
-      memory: process.memoryUsage(),
-      cpu: process.cpuUsage()
-    },
-    environment: getEnvironmentHealth(),
-    components: {
-      database: { status: 'ok' }, // Could be expanded with actual DB health check
-      storage: { status: 'ok' },  // Could be expanded with S3 connection status
-      websockets: {
-        status: 'ok',
-        servers: [
-          { name: 'queue-events', status: 'active' },
-          { name: 'training-progress', status: 'active' },
-          { name: 'knowledge-base-events', status: 'active' },
-          { name: 'agent-websocket', status: 'active' }
-        ]
-      }
+app.get('/health/detailed', authMiddleware, async (_req: Request, res: Response) => {
+  try {
+    // Get detailed health metrics including trends and system details
+    const detailedHealth = await healthCheckService.getDetailedHealth();
+    
+    // Get detailed database metrics if available
+    let dbMetrics = { status: 'not_configured', metrics: {} };
+    try {
+      const dbService = getDatabaseService();
+      dbMetrics = await dbService.getDetailedMetrics();
+    } catch (dbError) {
+      logger.warn('Database detailed metrics check failed', { error: dbError });
     }
-  };
-  
-  res.status(200).json(healthInfo);
+    
+    // Merge health information with database metrics
+    const enhancedHealth = {
+      ...detailedHealth,
+      services: {
+        ...detailedHealth.services,
+        database: {
+          ...dbMetrics
+        }
+      }
+    };
+    
+    res.status(200).json(enhancedHealth);
+  } catch (error) {
+    logger.error('Error retrieving detailed health information:', error);
+    res.status(500).json({
+      status: 'unhealthy',
+      timestamp: new Date().toISOString(),
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
 });
 
 // Add 404 handler for undefined routes
@@ -199,11 +314,25 @@ app.use(errorHandler);
  */
 const PORT = process.env.PORT || 3000;
 const startServer = async (): Promise<void> => {
+  // Start health monitoring service with 2-minute interval
+  healthCheckService.startMonitoring(120000);
+  logger.info('Health monitoring service started');
+  
+  // Initialize database service from container
+  try {
+    const dbService = getDatabaseService();
+    await dbService.initialize();
+    logger.info('Database service initialized successfully');
+  } catch (error) {
+    logger.error('Failed to initialize database service:', error);
+    // Don't throw here - we can still start the server without DB
+    // Some features may be degraded but system can still function
+  }
   // Initialize Services
   // Initialize KnowledgeBaseService (singleton pattern, initialization has side effects)
   KnowledgeBaseService.getInstance();
   console.log('Knowledge Base Service initialized');
-  
+
   // Initialize S3 Storage
   try {
     initializeStorage();
@@ -212,15 +341,19 @@ const startServer = async (): Promise<void> => {
     console.error('Failed to initialize S3 Storage:', error);
     throw error; // Rethrow to prevent server startup if storage init fails
   }
-  
+
   // Initialize WebSocket servers
   queueEventsServer.initialize(httpServer);
   trainingProgressServer.initialize(httpServer);
   knowledgeBaseEventsServer.initialize(httpServer);
   agentWebSocketService.initialize(httpServer);
-  
+
   console.log('WebSocket servers initialized');
-  
+
+  // Initialize agent session cleanup job
+  scheduleSessionCleanup();
+  logger.info('Agent session cleanup job scheduled');
+
   return new Promise<void>((resolve) => {
     httpServer.listen(PORT, () => {
       logger.info(`Server running on port ${PORT}`);
@@ -234,32 +367,44 @@ const startServer = async (): Promise<void> => {
  * Closes all server connections and exits the process
  */
 const shutdownGracefully = async (err?: Error): Promise<void> => {
+  // Stop health monitoring
+  healthCheckService.stopMonitoring();
+  logger.info('Health monitoring service stopped');
+  
+  // Close database connections
+  try {
+    const dbService = getDatabaseService();
+    await dbService.close();
+    logger.info('Database connections closed successfully');
+  } catch (dbError) {
+    logger.error('Error closing database connections:', dbError);
+  }
   if (err) {
-    logger.error(`Server shutting down due to error: ${err.message}`, { 
-      stack: err.stack 
+    logger.error(`Server shutting down due to error: ${err.message}`, {
+      stack: err.stack
     });
   } else {
     logger.info('Server shutting down gracefully');
   }
-  
+
   // Close WebSocket servers
   const closePromises = [
     queueEventsServer.close(),
     trainingProgressServer.close(),
     knowledgeBaseEventsServer.close()
   ];
-  
+
   // Add agentWebSocketService.close() if it exists
   if (typeof agentWebSocketService.close === 'function') {
     closePromises.push(agentWebSocketService.close());
   } else {
     logger.warn('Agent WebSocket service does not have a close method');
   }
-  
+
   await Promise.allSettled(closePromises).catch(closeErr => {
     logger.error(`Error during WebSocket server closure: ${closeErr.message}`);
   });
-  
+
   // Close HTTP server (only once)
   httpServer.close(() => {
     logger.info('HTTP server closed');

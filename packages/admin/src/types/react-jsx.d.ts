@@ -1,1 +1,0 @@
-// This file is deliberately empty. JSX declarations now in jsx-intrinsic.d.ts

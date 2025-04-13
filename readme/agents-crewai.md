@@ -72,8 +72,6 @@ packages/
     │   │   ├── mcpIntegration.ts        # MCP connection utilities
     │   │   ├── mcpBatchProcessor.ts     # Request batching system
     │   │   └── llmInferenceHelper.ts    # LLM inference utilities
-    │   └── examples/
-    │       └── mcpAgentExample.ts       # Example MCP agent usage
     └── docs/
         └── mcp-integration.md           # MCP integration documentation
 ```
@@ -179,13 +177,13 @@ The agent system integrates with the Model Context Protocol (MCP) server archite
 
 ### MCP-Enabled Agent Factory
 
-The `mcpAgentFactory.ts` provides enhanced agent creation with MCP integration:
+The `mcpAgentFactory.ts` provides enhanced agent creation with MCP integration that connects directly to your API and MCP server:
 
 ```typescript
-import { createMCPAgent } from '@kai/agents/core/mcpAgentFactory';
+import { createMCPEnabledAgent } from '@kai/agents/core/mcpAgentFactory';
 
-// Create an MCP-enabled agent
-const agent = await createMCPAgent({
+// Create an MCP-enabled agent that uses real services
+const agent = await createMCPEnabledAgent({
   id: 'material-expert-1',
   name: 'Material Expert',
   description: 'Provides detailed information about materials',
@@ -202,18 +200,45 @@ const agent = await createMCPAgent({
 const response = await agent.execute(userQuery);
 ```
 
+For image analysis capabilities:
+
+```typescript
+import { createImageCapableMaterialExpert } from '@kai/agents/core/mcpAgentFactory';
+
+// Create a material expert with image analysis capabilities via MCP
+const imageCapableAgent = await createImageCapableMaterialExpert({
+  id: 'image-material-expert-1',
+  name: 'Image Material Expert',
+  description: 'Analyzes material images and provides detailed information',
+  modelSettings: {
+    provider: 'openai',
+    model: 'gpt-4-vision',
+    temperature: 0.5
+  }
+});
+
+// Agent can process images and provide detailed analysis
+const imageAnalysis = await imageCapableAgent.analyzeImage(imageUrl);
+```
+
 ### LLM Inference Adapter
 
-The `llmInferenceMcpAdapter.ts` handles all language model operations through MCP:
+The `llmInferenceMcpAdapter.ts` handles all language model operations through MCP with direct connections to your API and MCP server:
 
-- **Chat completions** - For conversational agent interactions
-- **Text completions** - For structured text generation
-- **Embeddings** - For semantic representation of text
-- **Streaming responses** - For real-time interactions
+- **Chat completions** - For conversational agent interactions with direct API connections
+- **Text completions** - For structured text generation through your ML API endpoints
+- **Embeddings** - For semantic representation of text using your vector models
+- **Streaming responses** - For real-time interactions using WebSocket connections to your API
 
-### Batch Processing
+Each of these operations:
+1. Checks if MCP is enabled for the component
+2. If enabled, routes requests through the MCP server
+3. If disabled or if MCP is unavailable, falls back to direct API calls
+4. Provides comprehensive error handling and logging
 
-Agents benefit from automatic batching of similar operations:
+### Batch Processing and Request Optimization
+
+The MCP integration optimizes performance by batching similar operations to reduce API call overhead:
 
 ```typescript
 // These operations will be automatically batched if they occur within
@@ -224,6 +249,13 @@ const [resultA, resultB, resultC] = await Promise.all([
   agent.generateEmbedding(textC)
 ]);
 ```
+
+The batch processor:
+1. Collects similar requests within a configurable time window
+2. Combines them into a single MCP server call
+3. Routes the combined request to the appropriate service
+4. Distributes the results back to the original callers
+5. Provides detailed performance metrics for monitoring and optimization
 
 ## Agent Tools
 
@@ -265,9 +297,9 @@ const similarMaterials = await agent.invoke('vector_search', {
 });
 ```
 
-### MCP-Enabled Tools
+### MCP-Enabled Tools with API Integration
 
-These tools leverage the MCP architecture for improved performance:
+These tools leverage the MCP architecture and connect directly to your API services:
 
 ```typescript
 // Vector search using MCP
@@ -279,14 +311,22 @@ const similarMaterials = await agent.invoke('vector_search', {
   threshold: 0.75
 });
 
-// Image analysis using MCP
+// Image analysis using MCP with direct API connections
 const analysis = await agent.invoke('analyze_image', {
   imageUrl: 'https://example.com/material.jpg',
   useMCP: true,  // Explicitly use MCP for this operation
   mode: 'full',
-  detail_level: 'detailed'
+  detail_level: 'detailed',
+  extractColors: true,    // Use actual API parameters
+  extractPatterns: true   // that match your ML service
 });
 ```
+
+The tools use the following connections:
+- **Vector Search**: Connects to your Supabase vector database service
+- **Image Analysis**: Integrates with your ML image processing service
+- **LLM Inference**: Uses your API endpoints for LLM operations
+- **OCR Processing**: Connects to your document processing service
 
 ## Integration with Existing KAI Components
 
@@ -374,11 +414,13 @@ The MCP integration enhances both frontend and backend components:
 - Performance optimization and scaling
 - Additional specialized agents and tools
 
-### Phase 5: MCP Migration (Months 7-8) - Current
-- MCP integration for LLM operations
-- Performance measurement and optimization
-- Batch processing implementation
-- Advanced security and monitoring
+### Phase 5: MCP Migration (Months 7-8) - Completed
+- MCP integration for LLM operations ✓
+- Performance measurement and optimization ✓
+- Batch processing implementation ✓
+- Advanced security and monitoring ✓
+- Real service connections established ✓
+- Mock implementations removed ✓
 
 ## Setup and Usage
 
@@ -392,9 +434,9 @@ The MCP integration enhances both frontend and backend components:
 
 > **Note**: Installation instructions for CrewAI have been moved to the [Deployment Guide](./deployment-guide.md#crewai-integration-installation).
 
-### Example Usage
+### Example Usage with Real API Services
 
-Initialize the agent system:
+Initialize the agent system with connections to your actual services:
 
 ```typescript
 import { initializeAgentSystem } from '@kai/agents';
@@ -412,6 +454,13 @@ await initializeAgentSystem({
     serverUrl: process.env.MCP_SERVER_URL || 'http://localhost:8000',
     authToken: process.env.MCP_AUTH_TOKEN,
     healthCheckTimeout: 5000
+  },
+  apiServices: {
+    // Configure connections to your actual API services
+    mlApiUrl: process.env.ML_API_URL || 'http://localhost:3001/api',
+    vectorServiceUrl: process.env.VECTOR_SERVICE_URL,
+    imageProcessingUrl: process.env.IMAGE_PROCESSING_URL,
+    // Add additional service connections as needed
   }
 });
 ```
@@ -436,13 +485,13 @@ const insights = await agent.instance.processImage(imageUrl, {
 });
 ```
 
-Create an MCP-enabled agent:
+Create an MCP-enabled agent that connects to your services:
 
 ```typescript
-import { createMCPAgent } from '@kai/agents/core/mcpAgentFactory';
+import { createMCPEnabledAgent } from '@kai/agents/core/mcpAgentFactory';
 
-// Create an MCP-enabled Material Expert
-const mcpAgent = await createMCPAgent({
+// Create an MCP-enabled Material Expert with real service connections
+const mcpAgent = await createMCPEnabledAgent({
   id: 'mcp-material-expert-1',
   type: AgentType.MATERIAL_EXPERT,
   name: 'MCP Material Expert',
@@ -455,9 +504,16 @@ const mcpAgent = await createMCPAgent({
   }
 });
 
-// The agent will use MCP for all LLM operations
-// with transparent fallback to local implementation if MCP is unavailable
+// The agent will use MCP for all LLM operations with real service connections
+// and transparent fallback to direct API calls if MCP is unavailable
 const materialDetails = await mcpAgent.getDetailedInformation(materialId);
+
+// Execute operations that use your actual services
+const materialComparison = await mcpAgent.compareWithSimilar(materialId, {
+  similarityThreshold: 0.8,
+  maxResults: 5,
+  includeDetails: ['specifications', 'applications', 'pricing']
+});
 ```
 
 ## Technical Considerations

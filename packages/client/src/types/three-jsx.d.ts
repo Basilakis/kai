@@ -63,12 +63,23 @@ declare module 'three/examples/jsm/webxr/ARButton' {
   }
 }
 
+declare module 'three/examples/jsm/webxr/XREstimatedLight' {
+  import { Group, Light, WebGLRenderer } from 'three';
+
+  export class XREstimatedLight extends Group {
+    constructor(renderer: WebGLRenderer, lightProbe: any);
+    directionalLight?: Light;
+    dispose(): void;
+    addEventListener(type: string, listener: () => void): void;
+  }
+}
+
 declare module 'three-mesh-bvh' {
   import { BufferGeometry, Intersection, Mesh, Ray } from 'three';
 
   export function computeBoundsTree(this: BufferGeometry): void;
   export function disposeBoundsTree(this: BufferGeometry): void;
-  
+
   export interface AcceleratedRaycast {
     (ray: Ray, intersects: Intersection[]): void;
   }

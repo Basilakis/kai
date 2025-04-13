@@ -1,12 +1,16 @@
+/// <reference path="../types/gatsby.d.ts" />
+
 import React, { useState, useEffect } from 'react';
+import PrivateRoute from '../components/PrivateRoute';
 import { navigate } from 'gatsby';
 import Layout from '../components/Layout';
 import SEO from '../components/SEO';
 import historyService, { HistoryItem } from '../services/historyService';
+import { formatLocalizedDateTime } from '@kai/shared/utils/formatting';
 
 /**
  * History Page
- * 
+ *
  * Displays a chronological list of past material recognition attempts
  */
 const HistoryPage: React.FC = () => {
@@ -24,12 +28,12 @@ const HistoryPage: React.FC = () => {
       try {
         setIsLoading(true);
         setError(null);
-        
+
         // Fetch history data from API
         const response = await historyService.getRecognitionHistory(page, limit);
-        
+
         setHistoryItems(response.data);
-        
+
         // Set pagination if available
         if (response.pagination) {
           setTotalPages(response.pagination.totalPages);
@@ -41,55 +45,44 @@ const HistoryPage: React.FC = () => {
         setIsLoading(false);
       }
     };
-    
+
     fetchHistory();
   }, [page, limit]);
-  
-  // Format date for display
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { 
-      year: 'numeric', 
-      month: 'short', 
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
-  
+
+
   // View details of a history item
   const handleViewItem = (item: HistoryItem) => {
     setSelectedItem(item);
   };
-  
+
   // Close modal
   const handleCloseModal = () => {
     setSelectedItem(null);
   };
-  
+
   // Navigate to upload page
   const handleNewRecognition = () => {
     navigate('/upload');
   };
-  
+
   // Compare results from a history item
   const handleCompareResults = (item: HistoryItem) => {
     // Get the IDs of the materials to compare
     const materialIds = item.results.map(result => result.id);
-    
+
     // Navigate to the comparison page with the material IDs
     navigate(`/comparison?ids=${materialIds.join(',')}`);
   };
-  
+
   // Delete history item
   const handleDeleteItem = async (itemId: string) => {
     try {
       const success = await historyService.deleteHistoryItem(itemId);
-      
+
       if (success) {
         // Remove from local state
         setHistoryItems(items => items.filter(item => item.id !== itemId));
-        
+
         // Close modal if the deleted item was selected
         if (selectedItem?.id === itemId) {
           setSelectedItem(null);
@@ -103,9 +96,10 @@ const HistoryPage: React.FC = () => {
   };
 
   return (
-    <Layout>
-      <SEO title="Recognition History" />
-      
+    <PrivateRoute>
+      <Layout>
+        <SEO title="Recognition History" />
+
       <div className="max-w-7xl mx-auto py-8 px-4">
         {/* Header */}
         <div className="flex justify-between items-center mb-8">
@@ -115,7 +109,7 @@ const HistoryPage: React.FC = () => {
               Your past material recognition attempts
             </p>
           </div>
-          
+
           <button
             onClick={handleNewRecognition}
             className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
@@ -126,7 +120,7 @@ const HistoryPage: React.FC = () => {
             New Recognition
           </button>
         </div>
-        
+
         {/* Content */}
         {isLoading ? (
           <div className="bg-white rounded-lg shadow-md p-8 flex items-center justify-center">
@@ -144,7 +138,7 @@ const HistoryPage: React.FC = () => {
             </svg>
             <h3 className="text-lg font-medium text-gray-900 mb-1">No recognition history</h3>
             <p className="text-gray-500 mb-4">You haven't performed any material recognitions yet</p>
-            <button 
+            <button
               onClick={handleNewRecognition}
               className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
             >
@@ -161,8 +155,8 @@ const HistoryPage: React.FC = () => {
                     <div className="flex-shrink-0 mr-4">
                       {item.fileType === 'image' ? (
                         <div className="h-20 w-20 rounded-md overflow-hidden border border-gray-200 relative group">
-                          <img 
-                            src={item.imageUrl} 
+                          <img
+                            src={item.imageUrl}
                             alt={item.fileName}
                             className="h-full w-full object-cover"
                           />
@@ -172,7 +166,7 @@ const HistoryPage: React.FC = () => {
                           </div>
                           {/* Quick-view overlay */}
                           <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 flex items-center justify-center transition-all duration-200 opacity-0 group-hover:opacity-100">
-                            <button 
+                            <button
                               onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
                                 // Use type casting to access DOM event methods
                                 (e as any).stopPropagation();
@@ -199,16 +193,16 @@ const HistoryPage: React.FC = () => {
                         </div>
                       )}
                     </div>
-                    
+
                     {/* Info & Results Summary */}
                     <div className="flex-1">
                       <div className="flex justify-between items-start">
                         <div>
                           <h3 className="text-lg font-medium text-gray-900">{item.fileName}</h3>
                           <p className="text-sm text-gray-500">
-                            {formatDate(item.timestamp)} • {item.fileSize.toFixed(1)} MB
+                            {formatLocalizedDateTime(item.timestamp)} • {item.fileSize.toFixed(1)} MB
                           </p>
-                          
+
                           {/* Top match summary */}
                           {item.results.length > 0 && (
                             <div className="mt-2">
@@ -217,8 +211,8 @@ const HistoryPage: React.FC = () => {
                               </p>
                               <div className="flex items-center">
                                 <div className="flex-1 bg-gray-200 rounded-full h-2 mt-1 mb-1">
-                                  <div 
-                                    className="bg-blue-600 h-2 rounded-full" 
+                                  <div
+                                    className="bg-blue-600 h-2 rounded-full"
                                     style={{ width: `${(item.results[0]?.confidence ?? 0) * 100}%` }}
                                   ></div>
                                 </div>
@@ -228,7 +222,7 @@ const HistoryPage: React.FC = () => {
                               </div>
                             </div>
                           )}
-                          
+
                           {/* Multiple results indicator */}
                           {item.results.length > 1 && (
                             <p className="text-xs text-gray-500 mt-1">
@@ -236,7 +230,7 @@ const HistoryPage: React.FC = () => {
                             </p>
                           )}
                         </div>
-                        
+
                         {/* Actions dropdown */}
                         <div className="relative">
                           <div className="dropdown inline-block relative">
@@ -246,21 +240,21 @@ const HistoryPage: React.FC = () => {
                               </svg>
                             </button>
                             <div className="dropdown-menu hidden absolute right-0 mt-2 py-2 w-48 bg-white rounded-md shadow-xl z-10">
-                              <button 
+                              <button
                                 onClick={() => handleViewItem(item)}
                                 className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left"
                               >
                                 View Details
                               </button>
                               {item.results.length > 1 && (
-                                <button 
+                                <button
                                   onClick={() => handleCompareResults(item)}
                                   className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left"
                                 >
                                   Compare Results
                                 </button>
                               )}
-                              <button 
+                              <button
                                 onClick={() => handleDeleteItem(item.id)}
                                 className="block px-4 py-2 text-sm text-red-600 hover:bg-gray-100 w-full text-left"
                               >
@@ -272,17 +266,17 @@ const HistoryPage: React.FC = () => {
                       </div>
                     </div>
                   </div>
-                  
+
                   {/* Actions */}
                   <div className="mt-4 pt-3 border-t border-gray-200 flex justify-end space-x-3">
-                    <button 
+                    <button
                       onClick={() => handleViewItem(item)}
                       className="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded text-xs font-medium text-gray-700"
                     >
                       View Details
                     </button>
                     {item.results.length > 1 && (
-                      <button 
+                      <button
                         onClick={() => handleCompareResults(item)}
                         className="px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded text-xs font-medium text-white"
                       >
@@ -302,8 +296,8 @@ const HistoryPage: React.FC = () => {
                     onClick={() => setPage(Math.max(1, page - 1))}
                     disabled={page === 1}
                     className={`relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium ${
-                      page === 1 
-                        ? 'text-gray-300 cursor-not-allowed' 
+                      page === 1
+                        ? 'text-gray-300 cursor-not-allowed'
                         : 'text-gray-500 hover:bg-gray-50'
                     }`}
                   >
@@ -312,7 +306,7 @@ const HistoryPage: React.FC = () => {
                       <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
                     </svg>
                   </button>
-                  
+
                   {/* Page numbers */}
                   {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                     // Calculate page numbers to show (centered around current page)
@@ -326,7 +320,7 @@ const HistoryPage: React.FC = () => {
                     } else {
                       pageNum = page - 2 + i;
                     }
-                    
+
                     return (
                       <button
                         key={pageNum}
@@ -341,13 +335,13 @@ const HistoryPage: React.FC = () => {
                       </button>
                     );
                   })}
-                  
+
                   <button
                     onClick={() => setPage(Math.min(totalPages, page + 1))}
                     disabled={page === totalPages}
                     className={`relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium ${
-                      page === totalPages 
-                        ? 'text-gray-300 cursor-not-allowed' 
+                      page === totalPages
+                        ? 'text-gray-300 cursor-not-allowed'
                         : 'text-gray-500 hover:bg-gray-50'
                     }`}
                   >
@@ -362,15 +356,15 @@ const HistoryPage: React.FC = () => {
           </div>
         )}
       </div>
-      
+
       {/* Detail Modal */}
       {selectedItem && (
         <div className="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
           <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
             <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true" onClick={handleCloseModal}></div>
-            
+
             <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-            
+
             <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
               <div className="absolute top-0 right-0 pt-4 pr-4">
                 <button
@@ -384,22 +378,22 @@ const HistoryPage: React.FC = () => {
                   </svg>
                 </button>
               </div>
-              
+
               <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
                 <div className="sm:flex sm:items-start">
                   <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
                     <h3 className="text-lg leading-6 font-medium text-gray-900" id="modal-title">
                       Recognition Details
                     </h3>
-                    
+
                     <div className="mt-4">
                       {/* Enhanced file info with full-size image */}
                       <div className="flex flex-col sm:flex-row mb-4">
                         <div className="w-full sm:w-1/2 mb-4 sm:mb-0 sm:mr-4">
                           {selectedItem.fileType === 'image' ? (
                             <div className="relative rounded-lg overflow-hidden border border-gray-200 max-h-64 flex items-center justify-center">
-                              <img 
-                                src={selectedItem.imageUrl} 
+                              <img
+                                src={selectedItem.imageUrl}
                                 alt={selectedItem.fileName}
                                 className="max-w-full max-h-64 object-contain"
                               />
@@ -413,7 +407,7 @@ const HistoryPage: React.FC = () => {
                                   const y = 20 + ((hash * 2) % 40);
                                   const width = 25 + (hash % 20);
                                   const height = 25 + ((hash * 3) % 20);
-                                  
+
                                   // Use different colors for different materials
                                   const colors: string[] = [
                                     'rgba(0, 128, 255, 0.3)',
@@ -421,11 +415,11 @@ const HistoryPage: React.FC = () => {
                                     'rgba(0, 192, 64, 0.3)',
                                     'rgba(128, 0, 255, 0.3)'
                                   ];
-                                  
+
                                   // Get color with guaranteed value
                                   const color = colors[idx % colors.length] || 'rgba(0, 0, 0, 0.3)';
                                   const borderColor = color.replace('0.3', '0.7');
-                                  
+
                                   return (
                                     <div
                                       key={result.id}
@@ -462,12 +456,12 @@ const HistoryPage: React.FC = () => {
                           <div>
                             <p className="font-medium">{selectedItem.fileName}</p>
                             <p className="text-sm text-gray-500">
-                              {formatDate(selectedItem.timestamp)} • {selectedItem.fileSize.toFixed(1)} MB
+                              {formatLocalizedDateTime(selectedItem.timestamp)} • {selectedItem.fileSize.toFixed(1)} MB
                             </p>
                           </div>
                         </div>
                       </div>
-                      
+
                       {/* Results */}
                       <h4 className="font-medium text-gray-800 mb-2">Recognition Results</h4>
                       <div className="space-y-4">
@@ -494,16 +488,16 @@ const HistoryPage: React.FC = () => {
                                 {Math.round(result.confidence * 100)}% Match
                               </div>
                             </div>
-                            
+
                             {/* Enhanced confidence visualization */}
                             <div className="mt-3 mb-2">
                               <div className="flex items-center mb-1">
                                 <span className="text-xs text-gray-500 mr-2">Confidence:</span>
                                 <div className="flex-1 bg-gray-200 rounded-full h-2">
-                                  <div 
+                                  <div
                                     className={`h-2 rounded-full ${
-                                      result.confidence > 0.9 ? 'bg-green-500' : 
-                                      result.confidence > 0.75 ? 'bg-blue-500' : 
+                                      result.confidence > 0.9 ? 'bg-green-500' :
+                                      result.confidence > 0.75 ? 'bg-blue-500' :
                                       result.confidence > 0.6 ? 'bg-yellow-500' : 'bg-red-500'
                                     }`}
                                     style={{ width: `${result.confidence * 100}%` }}
@@ -520,7 +514,7 @@ const HistoryPage: React.FC = () => {
                                 'Low confidence match'}
                               </p>
                             </div>
-                            
+
                             {/* Material properties */}
                             <div className="mt-3 pt-2 border-t border-gray-100">
                               <div className="grid grid-cols-2 gap-1 text-xs">
@@ -537,7 +531,7 @@ const HistoryPage: React.FC = () => {
                   </div>
                 </div>
               </div>
-              
+
               <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
                 {selectedItem.results.length > 1 && (
                   <button
@@ -563,7 +557,8 @@ const HistoryPage: React.FC = () => {
           </div>
         </div>
       )}
-    </Layout>
+      </Layout>
+    </PrivateRoute>
   );
 };
 

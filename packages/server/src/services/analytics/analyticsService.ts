@@ -1,16 +1,19 @@
 /**
  * Analytics Service
- * 
+ *
  * This service provides functionality for tracking user interactions including:
  * - Search queries
  * - Agent AI prompts
  * - API requests
- * 
+ *
  * The tracked data can be used for generating reports, identifying trends,
  * and improving the user experience.
  */
 
-import { supabaseClient } from '../supabase/supabaseClient';
+import { supabase } from '../supabase/supabaseClient';
+import optimizedClient from '../../../../shared/src/services/supabase/optimizedClient';
+import { withConnection } from '../../../../shared/src/services/supabase/connectionPool';
+import { withCache } from '../../../../shared/src/services/supabase/queryCache';
 import { logger } from '../../utils/logger';
 
 // Event types for analytics tracking
@@ -27,7 +30,7 @@ export enum AnalyticsSourceType {
   API = 'api',
   INTERNAL = 'internal',
   CREW_AI_AGENT = 'crew_ai_agent',
-  USER_INTERFACE = 'user_interface', 
+  USER_INTERFACE = 'user_interface',
   SYSTEM = 'system',
   SCHEDULER = 'scheduler'
 }
@@ -113,15 +116,20 @@ class AnalyticsService {
   private async initializeService(): Promise<void> {
     // Check if the table exists, and create it if it doesn't
     try {
-      const { error } = await supabaseClient.getClient()
-        .from(this.tableName)
-        .select('id');
-      
-      if (error && error.code === '42P01') {
-        // Table doesn't exist, create it
-        logger.info(`Creating analytics_events table`);
-        await this.createAnalyticsTable();
-      }
+      // Use withConnection for better connection management
+      await withConnection(async (client) => {
+        const { error } = await client
+          .from(this.tableName)
+          .select('id');
+
+        if (error && error.code === '42P01') {
+          // Table doesn't exist, create it
+          logger.info(`Creating analytics_events table`);
+          await this.createAnalyticsTable();
+        }
+
+        return true; // Return value is required for withConnection
+      });
     } catch (err) {
       logger.error(`Error checking analytics table: ${err}`);
     }
@@ -132,13 +140,18 @@ class AnalyticsService {
    */
   private async createAnalyticsTable(): Promise<void> {
     try {
-      const { error } = await supabaseClient.getClient().rpc('create_analytics_table');
-      
-      if (error) {
-        logger.error(`Failed to create analytics table: ${error}`);
-        throw error;
-      }
-      
+      // Use withConnection for better connection management
+      await withConnection(async (client) => {
+        const { error } = await client.rpc('create_analytics_table');
+
+        if (error) {
+          logger.error(`Failed to create analytics table: ${error}`);
+          throw error;
+        }
+
+        return true; // Return value is required for withConnection
+      });
+
       logger.info('Analytics table created successfully');
     } catch (err) {
       logger.error(`Error creating analytics table: ${err}`);
@@ -148,7 +161,7 @@ class AnalyticsService {
 
   /**
    * Track an analytics event
-   * 
+   *
    * @param event The analytics event to track
    * @returns The ID of the created event
    */
@@ -159,34 +172,54 @@ class AnalyticsService {
         event.timestamp = new Date().toISOString();
       }
 
-      // Insert event into database
-      const { data, error } = await supabaseClient.getClient()
-        .from(this.tableName)
-        .insert([event]);
-
-      if (error) {
-        logger.error(`Failed to track analytics event: ${error}`);
-        throw error;
-      }
+      // Use optimized client for better performance
+      await optimizedClient.insert(
+        this.tableName,
+        event,
+        {
+          cacheEnabled: false, // Don't cache analytics inserts
+          useConnectionPool: true,
+          retryCount: 2 // Retry a couple times for reliability
+        }
+      );
 
       // If we need the ID, fetch the inserted record separately
       if (data && data[0] && data[0].id) {
         return data[0].id;
       } else {
-        // Using a more direct approach for querying without complex casting
+        // Using optimized client for better performance
         const timestamp = event.timestamp;
-        const { data: fetchedData, error: fetchError } = await supabaseClient.getClient()
-          .from(this.tableName)
-          .select('id');
-          
-        if (fetchError) {
-          logger.error(`Failed to fetch inserted analytics event: ${fetchError}`);
+
+        try {
+          // Use withCache to improve performance for repeated queries
+          const fetchedData = await withCache(
+            this.tableName,
+            'select_recent',
+            { timestamp },
+            async () => {
+              // Use optimized client for better performance
+              return optimizedClient.select(
+                this.tableName,
+                {
+                  columns: 'id,timestamp',
+                  filters: {},
+                  orderBy: 'timestamp',
+                  orderDirection: 'desc',
+                  limit: 10
+                },
+                { cacheTtlMs: 5000 } // Short cache time for recent inserts
+              );
+            },
+            5000 // Cache for 5 seconds
+          );
+
+          // Find the record with matching timestamp
+          const matchedRecord = fetchedData?.find((record: { timestamp: string; id: string }) => record.timestamp === timestamp);
+          return matchedRecord?.id || '';
+        } catch (err) {
+          logger.error(`Failed to fetch inserted analytics event: ${err}`);
           return '';
         }
-        
-        // Find the record with matching timestamp manually
-        const matchedRecord = fetchedData?.find((record: { timestamp: string; id: string }) => record.timestamp === timestamp);
-        return matchedRecord?.id || '';
       }
     } catch (err) {
       logger.error(`Error tracking analytics event: ${err}`);
@@ -197,7 +230,7 @@ class AnalyticsService {
 
   /**
    * Track a search event
-   * 
+   *
    * @param query The search query
    * @param resourceType The type of resource being searched
    * @param userId The ID of the user making the search
@@ -233,7 +266,7 @@ class AnalyticsService {
 
   /**
    * Track an agent prompt event
-   * 
+   *
    * @param prompt The agent prompt text
    * @param agentType The type of agent being used
    * @param userId The ID of the user interacting with the agent
@@ -266,7 +299,7 @@ class AnalyticsService {
 
   /**
    * Track an API request event
-   * 
+   *
    * @param path The API endpoint path
    * @param method The HTTP method used
    * @param userId The ID of the user making the request
@@ -301,7 +334,7 @@ class AnalyticsService {
 
   /**
    * Track a material view event
-   * 
+   *
    * @param materialId The ID of the material being viewed
    * @param userId The ID of the user viewing the material
    * @param parameters Additional parameters
@@ -328,7 +361,7 @@ class AnalyticsService {
 
   /**
    * Track a recognition event
-   * 
+   *
    * @param imageType The type of image used for recognition
    * @param userId The ID of the user performing recognition
    * @param parameters Additional parameters including recognition results
@@ -358,7 +391,7 @@ class AnalyticsService {
 
   /**
    * Track a crewAI agent activity event
-   * 
+   *
    * @param agentId The ID of the agent
    * @param agentType The type of agent
    * @param action The action performed by the agent
@@ -376,7 +409,7 @@ class AnalyticsService {
     return this.trackEvent({
       event_type: AnalyticsEventType.AGENT_PROMPT,
       resource_type: agentType,
-      parameters: { 
+      parameters: {
         agentId,
         action,
         status,
@@ -389,7 +422,7 @@ class AnalyticsService {
 
   /**
    * Query analytics events
-   * 
+   *
    * @param options Query options
    * @returns The matching analytics events
    */
@@ -397,45 +430,45 @@ class AnalyticsService {
     try {
       // Build query parameters
       const queryParams: Record<string, any> = {};
-      
+
       // Add filters
       if (options.eventType) {
         queryParams.event_type = options.eventType;
       }
-      
+
       if (options.resourceType) {
         queryParams.resource_type = options.resourceType;
       }
-      
+
       if (options.userId) {
         queryParams.user_id = options.userId;
       }
-      
+
       // Build filter conditions for date ranges (these can't be done with simple equality)
       const filterConditions = [];
-      
+
       if (options.startDate) {
         filterConditions.push(`timestamp >= '${options.startDate.toISOString()}'`);
       }
-      
+
       if (options.endDate) {
         filterConditions.push(`timestamp <= '${options.endDate.toISOString()}'`);
       }
-      
+
       // Handle pagination
       const paginationParams: Record<string, any> = {};
-      
+
       if (options.limit) {
         paginationParams.limit = options.limit;
       }
-      
+
       if (options.skip) {
         paginationParams.offset = options.skip;
       }
-      
+
       // Handle sorting
       let sortString = 'timestamp.desc'; // Default sort
-      
+
       if (options.sort) {
         const sortKey = Object.keys(options.sort)[0];
         if (sortKey) {
@@ -443,57 +476,58 @@ class AnalyticsService {
           sortString = `${sortKey}.${direction}`;
         }
       }
-      
+
       paginationParams.order = sortString;
-      
-      // Fetch all events
-      const { data, error } = await supabaseClient.getClient()
-        .from(this.tableName)
-        .select('*');
-      
-      if (error) {
-        logger.error(`Failed to query analytics events: ${error}`);
-        throw error;
-      }
-      
+
+      // Use optimized client for better performance with caching
+      const data = await optimizedClient.select(
+        this.tableName,
+        { columns: '*' },
+        {
+          cacheEnabled: true,
+          cacheTtlMs: 30000, // Cache for 30 seconds
+          useConnectionPool: true
+        }
+      );
+
       // Filter and process results manually
       let results = data || [];
-      
+
       // Apply filters with proper type annotations
       if (options.eventType) {
         results = results.filter((item: AnalyticsEvent) => item.event_type === options.eventType);
       }
-      
+
       if (options.resourceType) {
         results = results.filter((item: AnalyticsEvent) => item.resource_type === options.resourceType);
       }
-      
+
       if (options.userId) {
         results = results.filter((item: AnalyticsEvent) => item.user_id === options.userId);
       }
-      
+
       // Date filtering with proper type annotations
       if (options.startDate) {
         const startTimestamp = options.startDate.toISOString();
         results = results.filter((item: AnalyticsEvent) => item.timestamp && item.timestamp >= startTimestamp);
       }
-      
+
       if (options.endDate) {
         const endTimestamp = options.endDate.toISOString();
         results = results.filter((item: AnalyticsEvent) => item.timestamp && item.timestamp <= endTimestamp);
       }
-      
+
       // Sorting with proper type annotations
       if (options.sort) {
         const sortKey = Object.keys(options.sort)[0];
-        
+
         if (sortKey) {
           const sortDirection = options.sort[sortKey];
           results.sort((a: AnalyticsEvent, b: AnalyticsEvent) => {
             // Convert values to strings to ensure safe comparison
             const aValue = String(a[sortKey as keyof AnalyticsEvent] || '');
             const bValue = String(b[sortKey as keyof AnalyticsEvent] || '');
-            
+
             if (sortDirection === 'asc') {
               return aValue < bValue ? -1 : 1;
             } else {
@@ -507,7 +541,7 @@ class AnalyticsService {
           return (a.timestamp || '') > (b.timestamp || '') ? -1 : 1;
         });
       }
-      
+
       // Pagination
       if (options.skip !== undefined && options.limit !== undefined) {
         results = results.slice(options.skip, options.skip + options.limit);
@@ -524,26 +558,39 @@ class AnalyticsService {
 
   /**
    * Get trend analysis for analytics events
-   * 
+   *
    * @param options Trend analysis options
    * @returns Trend data grouped by timeframe
    */
   public async getTrends(options: TrendAnalysisOptions): Promise<Record<string, number>> {
     try {
       const { timeframe, eventType, startDate, endDate } = options;
-      
-      // Use RPC to get trend data grouped by timeframe
-      const { data, error } = await supabaseClient.getClient().rpc('get_analytics_trends', {
-        p_timeframe: timeframe,
-        p_event_type: eventType,
-        p_start_date: startDate?.toISOString(),
-        p_end_date: endDate?.toISOString()
-      });
 
-      if (error) {
-        logger.error(`Failed to get analytics trends: ${error}`);
-        throw error;
-      }
+      // Use withCache for better performance on trend queries
+      const data = await withCache(
+        'analytics_trends',
+        'get_trends',
+        { timeframe, eventType, startDate, endDate },
+        async () => {
+          // Use withConnection for better connection management
+          return withConnection(async (client) => {
+            const { data, error } = await client.rpc('get_analytics_trends', {
+              p_timeframe: timeframe,
+              p_event_type: eventType,
+              p_start_date: startDate?.toISOString(),
+              p_end_date: endDate?.toISOString()
+            });
+
+            if (error) {
+              logger.error(`Failed to get analytics trends: ${error}`);
+              throw error;
+            }
+
+            return data;
+          });
+        },
+        60000 // Cache for 1 minute
+      );
 
       // Convert array of [date, count] to Record<date, count>
       const trends: Record<string, number> = {};
@@ -560,23 +607,36 @@ class AnalyticsService {
 
   /**
    * Get analytics statistics
-   * 
+   *
    * @param startDate Optional start date for filtering stats
    * @param endDate Optional end date for filtering stats
    * @returns Analytics statistics
    */
   public async getStats(startDate?: Date, endDate?: Date): Promise<AnalyticsStats> {
     try {
-      // Use RPC to get analytics statistics
-      const { data, error } = await supabaseClient.getClient().rpc('get_analytics_stats', {
-        p_start_date: startDate?.toISOString(),
-        p_end_date: endDate?.toISOString()
-      });
+      // Use withCache for better performance on stats queries
+      const data = await withCache(
+        'analytics_stats',
+        'get_stats',
+        { startDate, endDate },
+        async () => {
+          // Use withConnection for better connection management
+          return withConnection(async (client) => {
+            const { data, error } = await client.rpc('get_analytics_stats', {
+              p_start_date: startDate?.toISOString(),
+              p_end_date: endDate?.toISOString()
+            });
 
-      if (error) {
-        logger.error(`Failed to get analytics stats: ${error}`);
-        throw error;
-      }
+            if (error) {
+              logger.error(`Failed to get analytics stats: ${error}`);
+              throw error;
+            }
+
+            return data;
+          });
+        },
+        60000 // Cache for 1 minute
+      );
 
       return data;
     } catch (err) {
@@ -594,7 +654,7 @@ class AnalyticsService {
 
   /**
    * Get top search queries
-   * 
+   *
    * @param limit The maximum number of queries to return
    * @param startDate Optional start date for filtering
    * @param endDate Optional end date for filtering
@@ -606,17 +666,30 @@ class AnalyticsService {
     endDate?: Date
   ): Promise<Array<{query: string; count: number}>> {
     try {
-      // Use RPC to get top search queries
-      const { data, error } = await supabaseClient.getClient().rpc('get_top_search_queries', {
-        p_limit: limit,
-        p_start_date: startDate?.toISOString(),
-        p_end_date: endDate?.toISOString()
-      });
+      // Use withCache for better performance on top queries
+      const data = await withCache(
+        'top_search_queries',
+        'get_top_queries',
+        { limit, startDate, endDate },
+        async () => {
+          // Use withConnection for better connection management
+          return withConnection(async (client) => {
+            const { data, error } = await client.rpc('get_top_search_queries', {
+              p_limit: limit,
+              p_start_date: startDate?.toISOString(),
+              p_end_date: endDate?.toISOString()
+            });
 
-      if (error) {
-        logger.error(`Failed to get top search queries: ${error}`);
-        throw error;
-      }
+            if (error) {
+              logger.error(`Failed to get top search queries: ${error}`);
+              throw error;
+            }
+
+            return data;
+          });
+        },
+        120000 // Cache for 2 minutes
+      );
 
       return data;
     } catch (err) {
@@ -627,7 +700,7 @@ class AnalyticsService {
 
   /**
    * Get top agent prompts
-   * 
+   *
    * @param limit The maximum number of prompts to return
    * @param startDate Optional start date for filtering
    * @param endDate Optional end date for filtering
@@ -639,17 +712,30 @@ class AnalyticsService {
     endDate?: Date
   ): Promise<Array<{prompt: string; count: number}>> {
     try {
-      // Use RPC to get top agent prompts
-      const { data, error } = await supabaseClient.getClient().rpc('get_top_agent_prompts', {
-        p_limit: limit,
-        p_start_date: startDate?.toISOString(),
-        p_end_date: endDate?.toISOString()
-      });
+      // Use withCache for better performance on top prompts
+      const data = await withCache(
+        'top_agent_prompts',
+        'get_top_prompts',
+        { limit, startDate, endDate },
+        async () => {
+          // Use withConnection for better connection management
+          return withConnection(async (client) => {
+            const { data, error } = await client.rpc('get_top_agent_prompts', {
+              p_limit: limit,
+              p_start_date: startDate?.toISOString(),
+              p_end_date: endDate?.toISOString()
+            });
 
-      if (error) {
-        logger.error(`Failed to get top agent prompts: ${error}`);
-        throw error;
-      }
+            if (error) {
+              logger.error(`Failed to get top agent prompts: ${error}`);
+              throw error;
+            }
+
+            return data;
+          });
+        },
+        120000 // Cache for 2 minutes
+      );
 
       return data;
     } catch (err) {
@@ -660,7 +746,7 @@ class AnalyticsService {
 
   /**
    * Get top viewed materials
-   * 
+   *
    * @param limit The maximum number of materials to return
    * @param startDate Optional start date for filtering
    * @param endDate Optional end date for filtering
@@ -672,17 +758,30 @@ class AnalyticsService {
     endDate?: Date
   ): Promise<Array<{materialId: string; name: string; count: number}>> {
     try {
-      // Use RPC to get top viewed materials
-      const { data, error } = await supabaseClient.getClient().rpc('get_top_materials', {
-        p_limit: limit,
-        p_start_date: startDate?.toISOString(),
-        p_end_date: endDate?.toISOString()
-      });
+      // Use withCache for better performance on top materials
+      const data = await withCache(
+        'top_materials',
+        'get_top_materials',
+        { limit, startDate, endDate },
+        async () => {
+          // Use withConnection for better connection management
+          return withConnection(async (client) => {
+            const { data, error } = await client.rpc('get_top_materials', {
+              p_limit: limit,
+              p_start_date: startDate?.toISOString(),
+              p_end_date: endDate?.toISOString()
+            });
 
-      if (error) {
-        logger.error(`Failed to get top materials: ${error}`);
-        throw error;
-      }
+            if (error) {
+              logger.error(`Failed to get top materials: ${error}`);
+              throw error;
+            }
+
+            return data;
+          });
+        },
+        120000 // Cache for 2 minutes
+      );
 
       return data;
     } catch (err) {
@@ -693,7 +792,7 @@ class AnalyticsService {
 
   /**
    * Clear analytics data (admin only)
-   * 
+   *
    * @param before Optional date to clear data before
    * @returns The number of deleted events
    */
@@ -703,20 +802,28 @@ class AnalyticsService {
         // This is just for documentation purposes as filtering isn't implemented yet
         logger.debug(`Clearing analytics data before ${before.toISOString()}`);
       }
-      
-      // Delete with a simpler approach
-      const { data, error } = await supabaseClient.getClient()
-        .from(this.tableName)
-        .delete();
-        
-      // Note: Without support for query filters, we might need to implement this differently,
-      // such as by fetching all records first, filtering them, and then deleting individually.
-      // For now, we'll just delete all records for simplicity.
 
-      if (error) {
-        logger.error(`Failed to clear analytics data: ${error}`);
-        throw error;
-      }
+      // Use optimized client for better performance
+      const data = await optimizedClient.executeQuery(
+        this.tableName,
+        'delete_all',
+        {},
+        async (client) => {
+          return client.from(this.tableName).delete();
+        },
+        {
+          cacheEnabled: false, // Don't cache delete operations
+          useConnectionPool: true
+        }
+      );
+
+      // Invalidate all caches related to analytics
+      optimizedClient.invalidateCache(this.tableName);
+      optimizedClient.invalidateCache('analytics_trends');
+      optimizedClient.invalidateCache('analytics_stats');
+      optimizedClient.invalidateCache('top_search_queries');
+      optimizedClient.invalidateCache('top_agent_prompts');
+      optimizedClient.invalidateCache('top_materials');
 
       return data?.length || 0;
     } catch (err) {

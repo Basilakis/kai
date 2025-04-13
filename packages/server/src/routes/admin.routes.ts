@@ -13,9 +13,11 @@ import datasetRoutes from './admin/dataset.routes';
 import analyticsRoutes from './admin/analytics.routes';
 import networkAccessRoutes from './admin/networkAccess.routes';
 import enhancedVectorRoutes from './admin/enhancedVector.routes';
+import subscriptionRoutes from './admin/subscription.admin.routes';
+import serviceCostRoutes from './admin/serviceCost.admin.routes';
 
 // Note: These imports would be implemented in a real application
-// For now, we'll create placeholder functions
+// TODO: implement actual logic if needed
 const getDashboardStats = async () => ({});
 const getSystemLogs = async () => [];
 const getPerformanceMetrics = async () => ({});
@@ -45,6 +47,8 @@ router.use('/datasets', datasetRoutes);
 router.use('/analytics', analyticsRoutes);
 router.use('/network-access', networkAccessRoutes);
 router.use('/enhanced-vector', enhancedVectorRoutes);
+router.use('/subscriptions', subscriptionRoutes);
+router.use('/service-costs', serviceCostRoutes);
 
 /**
  * @route   GET /api/admin/dashboard
@@ -53,7 +57,7 @@ router.use('/enhanced-vector', enhancedVectorRoutes);
  */
 router.get('/dashboard', asyncHandler(async (_req: Request, res: Response) => {
   const stats = await getDashboardStats();
-  
+
   res.status(200).json({
     success: true,
     data: stats
@@ -72,9 +76,9 @@ router.get('/logs', asyncHandler(async (_req: Request, res: Response) => {
   // const level = req.query.level as string;
   // const startDate = req.query.startDate ? new Date(req.query.startDate as string) : undefined;
   // const endDate = req.query.endDate ? new Date(req.query.endDate as string) : undefined;
-  
+
   const logs = await getSystemLogs();
-  
+
   res.status(200).json({
     success: true,
     count: logs.length,
@@ -90,9 +94,9 @@ router.get('/logs', asyncHandler(async (_req: Request, res: Response) => {
 router.get('/performance', asyncHandler(async (_req: Request, res: Response) => {
   // Timeframe parameter not used in this implementation
   // const timeframe = req.query.timeframe as string || '24h';
-  
+
   const metrics = await getPerformanceMetrics();
-  
+
   res.status(200).json({
     success: true,
     data: metrics
@@ -107,9 +111,9 @@ router.get('/performance', asyncHandler(async (_req: Request, res: Response) => 
 router.post('/backup', asyncHandler(async (_req: Request, res: Response) => {
   // Body parameter not used in this implementation
   // const { includeFiles = false } = req.body;
-  
+
   const backup = await backupDatabase();
-  
+
   res.status(200).json({
     success: true,
     message: 'Backup created successfully',
@@ -124,13 +128,13 @@ router.post('/backup', asyncHandler(async (_req: Request, res: Response) => {
  */
 router.post('/restore', asyncHandler(async (req: Request, res: Response) => {
   const { backupId } = req.body;
-  
+
   if (!backupId) {
     throw new ApiError(400, 'Backup ID is required');
   }
-  
+
   const result = await restoreDatabase();
-  
+
   res.status(200).json({
     success: true,
     message: 'Database restored successfully',
@@ -146,9 +150,9 @@ router.post('/restore', asyncHandler(async (req: Request, res: Response) => {
 router.get('/training', asyncHandler(async (_req: Request, res: Response) => {
   // Status parameter not used in this implementation
   // const status = req.query.status as string;
-  
+
   const trainingJobs = await getTrainingJobs();
-  
+
   res.status(200).json({
     success: true,
     count: trainingJobs.length,
@@ -170,17 +174,17 @@ router.post('/training/start', asyncHandler(async (req: Request, res: Response) 
     // batchSize,
     // learningRate
   } = req.body;
-  
+
   if (!modelType) {
     throw new ApiError(400, 'Model type is required');
   }
-  
+
   if (!datasetId) {
     throw new ApiError(400, 'Dataset ID is required');
   }
-  
+
   const job = await startTrainingJob();
-  
+
   res.status(200).json({
     success: true,
     message: 'Training job started successfully',
@@ -195,7 +199,7 @@ router.post('/training/start', asyncHandler(async (req: Request, res: Response) 
  */
 router.post('/training/:jobId/stop', asyncHandler(async (_req: Request, res: Response) => {
   const result = await stopTrainingJob();
-  
+
   res.status(200).json({
     success: true,
     message: 'Training job stopped successfully',
@@ -210,7 +214,7 @@ router.post('/training/:jobId/stop', asyncHandler(async (_req: Request, res: Res
  */
 router.get('/training/:jobId/status', asyncHandler(async (_req: Request, res: Response) => {
   const status = await getTrainingJobStatus();
-  
+
   res.status(200).json({
     success: true,
     data: status
@@ -229,9 +233,9 @@ router.get('/extracted-data', asyncHandler(async (_req: Request, res: Response) 
   // const status = req.query.status as string;
   // const page = parseInt(req.query.page as string) || 1;
   // const limit = parseInt(req.query.limit as string) || 10;
-  
+
   const extractedData = await getExtractedData();
-  
+
   res.status(200).json({
     success: true,
     count: extractedData.length,
@@ -248,13 +252,13 @@ router.put('/extracted-data/:id', asyncHandler(async (req: Request, res: Respons
   // ID parameter not used in this implementation
   // const { id } = req.params;
   const updates = req.body;
-  
+
   if (!updates) {
     throw new ApiError(400, 'Update data is required');
   }
-  
+
   const updatedData = await updateExtractedData();
-  
+
   res.status(200).json({
     success: true,
     message: 'Extracted data updated successfully',
@@ -300,7 +304,7 @@ router.get('/settings', asyncHandler(async (_req: Request, res: Response) => {
       alertsEnabled: true
     }
   };
-  
+
   res.status(200).json({
     success: true,
     data: settings
@@ -314,13 +318,13 @@ router.get('/settings', asyncHandler(async (_req: Request, res: Response) => {
  */
 router.put('/settings', asyncHandler(async (req: Request, res: Response) => {
   const updates = req.body;
-  
+
   if (!updates) {
     throw new ApiError(400, 'Settings updates are required');
   }
-  
+
   // In a real implementation, this would update a settings collection
-  
+
   res.status(200).json({
     success: true,
     message: 'Settings updated successfully',
@@ -336,7 +340,7 @@ router.put('/settings', asyncHandler(async (req: Request, res: Response) => {
 router.get('/stats', asyncHandler(async (_req: Request, res: Response) => {
   // Timeframe parameter not used in this implementation
   // const timeframe = req.query.timeframe as string || '30d';
-  
+
   // In a real implementation, this would fetch detailed statistics
   const stats = {
     users: {
@@ -387,7 +391,7 @@ router.get('/stats', asyncHandler(async (_req: Request, res: Response) => {
       averageResponseTime: 120 // ms
     }
   };
-  
+
   res.status(200).json({
     success: true,
     data: stats

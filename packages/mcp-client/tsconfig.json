@@ -1,15 +1,20 @@
 {
+  "extends": "../../tsconfig.json",
   "compilerOptions": {
-    "target": "es2019",
-    "types": ["node"],
+    "target": "es2019", // Keep target specific if needed
+    // "lib" is inherited from root
+    "types": ["node", "jest"], // Add jest types as it's a dev dependency
     "module": "commonjs",
+    "moduleResolution": "node", // Ensure node resolution
     "declaration": true,
     "outDir": "./dist",
-    "strict": true,
-    "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true,
-    "skipLibCheck": true
+    "strict": true, // Inherited, but can be explicit
+    "esModuleInterop": true, // Inherited
+    "forceConsistentCasingInFileNames": true, // Inherited
+    "skipLibCheck": true, // Inherited
+    "composite": false, // Override root composite if this is a leaf package
+    "noEmit": false // Override root noEmit to actually build
   },
-  "include": ["src"],
+  "include": ["src", "src/types"],
   "exclude": ["node_modules", "dist", "**/*.test.ts"]
 }

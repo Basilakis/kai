@@ -12,12 +12,18 @@ export interface SupabaseConfig {
     auth?: {
       autoRefreshToken?: boolean;
       persistSession?: boolean;
+      detectSessionInUrl?: boolean;
     };
     global?: {
       headers?: Record<string, string>;
     };
     db?: {
       schema?: string;
+    };
+    realtime?: {
+      endpoint?: string;
+      eventsPerSecond?: number;
+      headers?: Record<string, string>;
     };
   };
 }
@@ -28,6 +34,9 @@ export interface SupabaseConfig {
  * - Connection management
  * - Error handling
  * - Configuration
+ *
+ * This is the central implementation that should be used across all packages
+ * (client, server, shared) to ensure consistent behavior and configuration.
  */
 export class SupabaseManager {
   private static instance: SupabaseManager;
@@ -37,9 +46,22 @@ export class SupabaseManager {
 
   private constructor() {
     // Default configuration (override via init)
+    // Try different environment variable patterns to support various packages
+    const url = config.get('SUPABASE_URL') ||
+               process.env?.SUPABASE_URL ||
+               process.env?.GATSBY_SUPABASE_URL ||
+               process.env?.NEXT_PUBLIC_SUPABASE_URL ||
+               '';
+
+    const key = config.get('SUPABASE_KEY') ||
+               process.env?.SUPABASE_KEY ||
+               process.env?.GATSBY_SUPABASE_ANON_KEY ||
+               process.env?.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+               '';
+
     this.config = {
-      url: config.get('SUPABASE_URL') || '',
-      key: config.get('SUPABASE_KEY') || '',
+      url,
+      key,
       options: {
         auth: {
           autoRefreshToken: true,
@@ -47,6 +69,13 @@ export class SupabaseManager {
         }
       }
     };
+
+    // Log configuration status but not the actual keys
+    if (url && key) {
+      logger.debug('Supabase configuration found in environment');
+    } else {
+      logger.warn('Supabase URL or key not found in environment variables');
+    }
   }
 
   public static getInstance(): SupabaseManager {
@@ -58,6 +87,7 @@ export class SupabaseManager {
 
   /**
    * Initialize the Supabase client with configuration
+   * @param config Supabase configuration to override defaults
    */
   public init(config: SupabaseConfig): void {
     if (this.initialized) {
@@ -77,6 +107,8 @@ export class SupabaseManager {
   /**
    * Get the Supabase client instance
    * Initializes the client if it doesn't exist
+   * @returns The Supabase client instance
+   * @throws Error if URL or key are not configured
    */
   public getClient(): SupabaseClient {
     if (!this.client) {
@@ -102,6 +134,7 @@ export class SupabaseManager {
 
   /**
    * Check if the Supabase client is initialized
+   * @returns True if the client is initialized and ready to use
    */
   public isInitialized(): boolean {
     return this.initialized && this.client !== null;
@@ -109,9 +142,15 @@ export class SupabaseManager {
 
   /**
    * Get current configuration
+   * @returns The current Supabase configuration (without sensitive keys)
    */
-  public getConfig(): SupabaseConfig | null {
-    return this.config;
+  public getConfig(): Omit<SupabaseConfig, 'key'> {
+    // Return configuration without the key for security
+    const { key, ...safeConfig } = this.config;
+    return {
+      ...safeConfig,
+      key: key ? '[REDACTED]' : ''
+    };
   }
 
   /**
@@ -144,8 +183,17 @@ export class SupabaseManager {
   }
 }
 
-// Export singleton instance
+/**
+ * Singleton instance of the Supabase manager
+ * This should be the only instance used throughout the application
+ */
 export const supabase = SupabaseManager.getInstance();
+
+/**
+ * Alias for backward compatibility with existing code
+ * @deprecated Use `supabase` instead
+ */
+export const supabaseClient = supabase;
 
 // Export default for convenience
 export default supabase;

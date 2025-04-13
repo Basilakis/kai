@@ -2,7 +2,7 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "outDir": "./dist",
-    "rootDir": "../../", // Setting rootDir to include all packages
+    // Remove rootDir to allow inference or inheritance from base config
     "baseUrl": "./",
     "paths": {
       "@/*": ["src/*"],

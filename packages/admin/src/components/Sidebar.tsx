@@ -5,13 +5,13 @@ import '../types/global-jsx';
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { 
-  HomeIcon, 
-  UsersIcon, 
-  DocumentTextIcon, 
-  CubeIcon, 
-  GlobeAltIcon, 
-  CogIcon, 
+import {
+  HomeIcon,
+  UsersIcon,
+  DocumentTextIcon,
+  CubeIcon,
+  GlobeAltIcon,
+  CogIcon,
   XIcon,
   PhotographIcon,
   DatabaseIcon,
@@ -28,18 +28,20 @@ interface SidebarProps {
  */
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, closeSidebar }) => {
   const router = useRouter();
-  
+
   // Navigation items for the sidebar
   const navItems = [
     { name: 'Dashboard', href: '/dashboard', icon: HomeIcon },
     { name: 'User Management', href: '/users', icon: UsersIcon },
     { name: 'Subscription Tiers', href: '/subscription-tiers', icon: DatabaseIcon },
+    { name: 'Service Costs', href: '/service-costs', icon: DatabaseIcon },
     { name: 'Catalog Management', href: '/catalogs', icon: DocumentTextIcon },
     { name: 'PDF Processor', href: '/pdf-processor', icon: DocumentTextIcon },
     { name: 'Image Recognition', href: '/image-recognition', icon: PhotographIcon },
     { name: 'Knowledge Base', href: '/knowledge-base', icon: DatabaseIcon },
     { name: 'Material Management', href: '/materials', icon: CubeIcon },
     { name: 'Models', href: '/models', icon: DatabaseIcon },
+    { name: 'Training Monitor', href: '/training', icon: ChartBarIcon },
     { name: 'Datasets', href: '/datasets', icon: DatabaseIcon },
     { name: 'Reports', href: '/reports', icon: ChartBarIcon },
     { name: 'Addons', href: '/addons', icon: GlobeAltIcon },
@@ -62,7 +64,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, closeSidebar }) => {
       )}
 
       {/* Sidebar */}
-      <div 
+      <div
         className={`fixed inset-y-0 left-0 z-30 w-64 bg-white border-r border-gray-200 transition-transform duration-300 transform ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
         } lg:translate-x-0 lg:static lg:z-auto`}
@@ -74,7 +76,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, closeSidebar }) => {
               <span className="text-xl font-semibold text-blue-600">Kai Admin</span>
             </div>
           </Link>
-          <button 
+          <button
             className="p-1 text-gray-500 rounded-md hover:bg-gray-100 lg:hidden"
             onClick={closeSidebar}
           >
@@ -87,8 +89,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, closeSidebar }) => {
           {navItems.map((item) => {
             const active = isActive(item.href);
             return (
-              <Link 
-                key={item.name} 
+              <Link
+                key={item.name}
                 href={item.href}
               >
                 <div

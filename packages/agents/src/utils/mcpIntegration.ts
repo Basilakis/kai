@@ -177,6 +177,24 @@ export async function createMCPClient(): Promise<MCPClient> {
     try {
       mcpClientInstance = new MCPClientClass(MCP_SERVER_URL, clientConfig);
       logger.info(`MCP client successfully created for server: ${MCP_SERVER_URL}`);
+
+      // Apply authentication headers if enabled AFTER client creation
+      if (MCP_AUTH_ENABLED && MCP_AUTH_TOKEN && mcpClientInstance) {
+        try {
+          // Access the private axios instance using 'any' cast (less safe but avoids modifying client class for now)
+          const axiosInstance = (mcpClientInstance as any).client;
+          if (axiosInstance && axiosInstance.defaults && axiosInstance.defaults.headers) {
+            axiosInstance.defaults.headers.common['Authorization'] = `${MCP_AUTH_TYPE} ${MCP_AUTH_TOKEN}`;
+            logger.info(`Applied ${MCP_AUTH_TYPE} authentication header to MCP client`);
+          } else {
+            logger.warn('Could not access internal axios instance defaults to set auth header.');
+          }
+        } catch (authError) {
+           logger.error(`Failed to apply authentication headers to MCP client: ${authError}`);
+           // Decide if this should prevent client usage? For now, log and continue.
+        }
+      }
+
     } catch (instantiationError) {
       const errorMessage = instantiationError instanceof Error ? instantiationError.message : 'Unknown instantiation error';
       logger.error(`Failed to instantiate MCP client: ${errorMessage}`);

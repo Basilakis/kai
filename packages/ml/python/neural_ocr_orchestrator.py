@@ -368,10 +368,12 @@ class NeuralOCROrchestrator:
                 
                 # Extract and save region image
                 try:
+                    # Pass the element info to extract_region_image for page info
                     self._extract_region_image(
                         document_path,
                         region_image_path,
-                        (bbox['x'], bbox['y'], bbox['width'], bbox['height'])
+                        (bbox['x'], bbox['y'], bbox['width'], bbox['height']),
+                        element
                     )
                     
                     # Create document region
@@ -437,7 +439,8 @@ class NeuralOCROrchestrator:
         self, 
         document_path: str, 
         output_path: str, 
-        bbox: Tuple[int, int, int, int]
+        bbox: Tuple[int, int, int, int],
+        element_info: Dict[str, Any] = None
     ):
         """
         Extract region image from document
@@ -446,6 +449,7 @@ class NeuralOCROrchestrator:
             document_path: Path to the document
             output_path: Path for the extracted region
             bbox: Bounding box (x, y, width, height)
+            element_info: Optional element information including page number
         """
         # For image documents
         if document_path.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff')):
@@ -467,15 +471,45 @@ class NeuralOCROrchestrator:
             
             doc = fitz.open(document_path)
             
-            # Assume first page for now
-            # TODO: Handle multi-page documents with proper page detection
-            page = doc[0]
-            
-            # Extract region from the page
+            # Extract bbox components
             x, y, width, height = bbox
+            
+            # Determine which page contains this region
+            # For regions without explicit page info, detect based on position
+            page_number = 0
+            
+            # Check if we have page information in the element_info
+            if element_info and 'page' in element_info and isinstance(element_info['page'], int):
+                page_number = element_info['page']
+            else:
+                # Try to determine page by Y position relative to total document height
+                # This is a heuristic that works reasonably well for simple documents
+                # Future enhancement: Implement more sophisticated page boundary detection
+                y_pos = y / height if height > 0 else 0
+                page_number = min(int(y_pos * doc.page_count), doc.page_count - 1)
+            
+            # Ensure page number is within bounds
+            page_number = max(0, min(page_number, doc.page_count - 1))
+            page = doc[page_number]
+            
+            # Account for region potentially being at page boundary
+            page_rect = page.rect
+            x_adjusted = max(0, min(x, page_rect.width))
+            y_adjusted = max(0, min(y, page_rect.height))
+            width_adjusted = min(width, page_rect.width - x_adjusted)
+            height_adjusted = min(height, page_rect.height - y_adjusted)
+            
+            # Skip invalid regions (could happen with bad layout analysis)
+            if width_adjusted <= 0 or height_adjusted <= 0:
+                logger.warning(f"Invalid region dimensions after adjustment: {width_adjusted}x{height_adjusted}")
+                return
+                
+            # Extract the region with adjusted coordinates
             region = page.get_pixmap(
                 matrix=fitz.Matrix(2, 2),  # 2x zoom for better quality
-                clip=fitz.Rect(x, y, x+width, y+height)
+                clip=fitz.Rect(x_adjusted, y_adjusted, 
+                               x_adjusted + width_adjusted, 
+                               y_adjusted + height_adjusted)
             )
             
             # Save the region
@@ -483,13 +517,14 @@ class NeuralOCROrchestrator:
         else:
             raise ValueError(f"Unsupported document type: {document_path}")
     
-    def _convert_document_to_image(self, document_path: str, output_path: str):
+    def _convert_document_to_image(self, document_path: str, output_path: str, page_number: int = 0):
         """
-        Convert document to image (first page for PDFs)
+        Convert document to image
         
         Args:
             document_path: Path to the document
             output_path: Path for the output image
+            page_number: Page number to convert (default: 0 for first page)
         """
         # For PDFs, use PyMuPDF (import locally to avoid unnecessary dependency)
         if document_path.lower().endswith('.pdf'):
@@ -497,10 +532,26 @@ class NeuralOCROrchestrator:
             
             doc = fitz.open(document_path)
             
-            # Convert first page to image
-            page = doc[0]
+            # Validate page number
+            if page_number < 0 or page_number >= doc.page_count:
+                logger.warning(f"Invalid page number {page_number}. Using first page instead.")
+                page_number = 0
+            
+            # Convert requested page to image
+            page = doc[page_number]
             pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))  # 2x zoom for better quality
             pix.save(output_path)
+            
+            # Create a metadata file with document info
+            metadata_path = os.path.splitext(output_path)[0] + "_metadata.json"
+            with open(metadata_path, 'w', encoding='utf-8') as f:
+                json.dump({
+                    'document_path': document_path,
+                    'page_number': page_number,
+                    'total_pages': doc.page_count,
+                    'page_size': {'width': page.rect.width, 'height': page.rect.height},
+                    'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')
+                }, f, indent=2)
         
         # For image documents, just copy
         elif document_path.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff')):
@@ -509,6 +560,142 @@ class NeuralOCROrchestrator:
         else:
             raise ValueError(f"Unsupported document type: {document_path}")
     
+    def process_multi_page_document(self, document_path: str, output_dir: str = None) -> Dict[str, Any]:
+        """
+        Process a multi-page document with special handling for each page
+        
+        Args:
+            document_path: Path to the document
+            output_dir: Output directory for results
+            
+        Returns:
+            Dictionary with processing results
+        """
+        if not document_path.lower().endswith('.pdf'):
+            # For non-PDF documents, just use the regular process_document method
+            return self.process_document(document_path, output_dir)
+        
+        start_time = time.time()
+        
+        # Create output directory if specified
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
+        
+        # Process the PDF document
+        import fitz  # PyMuPDF
+        
+        results = {
+            "document": {
+                "path": document_path,
+                "type": "pdf",
+                "filename": os.path.basename(document_path),
+                "pages": []
+            },
+            "processing": {
+                "time": 0,
+                "engines_used": list(self.engines.keys()),
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+            },
+            "result": {
+                "text": "",
+                "structured_content": {
+                    "headings": [],
+                    "paragraphs": [],
+                    "tables": [],
+                    "forms": [],
+                    "technical_content": []
+                },
+                "statistics": {
+                    "region_count": 0,
+                    "average_confidence": 0.0,
+                    "engine_usage": {}
+                }
+            }
+        }
+        
+        # Open the PDF document
+        doc = fitz.open(document_path)
+        
+        # Process each page separately
+        for page_idx in range(doc.page_count):
+            logger.info(f"Processing page {page_idx+1}/{doc.page_count}")
+            
+            # Create a temporary image file for this page
+            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+                tmp_path = tmp.name
+            
+            # Convert page to image
+            page = doc[page_idx]
+            pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))  # 2x zoom for better quality
+            pix.save(tmp_path)
+            
+            # Create page-specific output directory
+            page_output_dir = None
+            if output_dir:
+                page_output_dir = os.path.join(output_dir, f"page_{page_idx+1}")
+                os.makedirs(page_output_dir, exist_ok=True)
+            
+            # Process the page as a single document
+            page_result = self.process_document(tmp_path, page_output_dir)
+            
+            # Clean up temporary file
+            try:
+                os.unlink(tmp_path)
+            except Exception as e:
+                logger.warning(f"Failed to delete temporary file: {e}")
+            
+            # Add page info to results
+            page_info = {
+                "page_number": page_idx + 1,
+                "page_size": {"width": page.rect.width, "height": page.rect.height},
+                "regions": page_result["regions"],
+                "text": page_result["result"]["text"],
+                "statistics": page_result["result"]["statistics"]
+            }
+            
+            results["document"]["pages"].append(page_info)
+            
+            # Aggregate page results into full document result
+            results["result"]["text"] += f"\n--- Page {page_idx+1} ---\n\n" + page_result["result"]["text"]
+            
+            # Aggregate structured content
+            for content_type in ["headings", "paragraphs", "tables", "forms", "technical_content"]:
+                for item in page_result["result"]["structured_content"][content_type]:
+                    # Add page number to item
+                    item["page"] = page_idx + 1
+                    results["result"]["structured_content"][content_type].append(item)
+            
+            # Update statistics
+            results["result"]["statistics"]["region_count"] += page_result["result"]["statistics"]["region_count"]
+            
+            # Update engine usage
+            for engine, count in page_result["result"]["statistics"]["engine_usage"].items():
+                if engine not in results["result"]["statistics"]["engine_usage"]:
+                    results["result"]["statistics"]["engine_usage"][engine] = 0
+                results["result"]["statistics"]["engine_usage"][engine] += count
+        
+        # Calculate overall confidence
+        total_regions = results["result"]["statistics"]["region_count"]
+        if total_regions > 0:
+            total_confidence = 0.0
+            for page_info in results["document"]["pages"]:
+                page_regions = len(page_info["regions"])
+                if page_regions > 0:
+                    total_confidence += page_info["statistics"]["average_confidence"] * page_regions
+            
+            results["result"]["statistics"]["average_confidence"] = total_confidence / total_regions
+        
+        # Calculate total processing time
+        results["processing"]["time"] = time.time() - start_time
+        
+        # Save result if output directory is specified
+        if output_dir:
+            result_path = os.path.join(output_dir, f"{Path(document_path).stem}_ocr_result.json")
+            with open(result_path, 'w', encoding='utf-8') as f:
+                json.dump(results, f, indent=2, ensure_ascii=False)
+        
+        return results
+
     def _get_optimal_engine(self, region: DocumentRegion) -> str:
         """
         Determine the optimal engine for a document region

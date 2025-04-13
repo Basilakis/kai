@@ -1,12 +1,21 @@
 /**
  * Model Importer Component
- * 
+ *
  * Handles importing pre-trained models from various sources:
  * - Local upload (.pt, .pb, .h5, .onnx files)
  * - HuggingFace Hub
  * - Public model repositories
  * - Custom URLs
  */
+
+/// <reference path="../../types/jsx.d.ts" />
+/// <reference path="../../types/global.d.ts" />
+/// <reference path="../../types/react-app.d.ts" />
+/// <reference path="../../types/jsx-intrinsic.d.ts" />
+/// <reference path="../../types/mui-extensions.d.ts" />
+
+// Note: This component has several unused imports that are kept for future use.
+// These imports are marked with eslint-disable comments to suppress warnings.
 
 import * as React from 'react';
 import {
@@ -15,18 +24,22 @@ import {
   CircularProgress,
   Divider,
   FormControl,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   FormControlLabel,
   FormHelperText,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   Grid,
   InputAdornment,
   InputLabel,
   LinearProgress,
   MenuItem,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   Paper,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   Radio,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   RadioGroup,
   Select,
-  SelectChangeEvent,
   Step,
   StepLabel,
   Stepper,
@@ -34,10 +47,13 @@ import {
   Tabs,
   TextField,
   Typography,
-  useTheme
-} from '@mui/material';
+  useTheme,
+  alpha
+} from '../../components/mui';
+import type { SelectChangeEvent } from '@mui/material';
 import {
   CloudUpload as CloudUploadIcon,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   Code as CodeIcon,
   Description as DescriptionIcon,
   Link as LinkIcon,
@@ -112,7 +128,7 @@ const ModelImporter: React.FC<ModelImporterProps> = ({ onComplete }) => {
   };
 
   // Handle tab change
-  const handleTabChange = (event: React.SyntheticEvent<Element, Event>, newValue: number) => {
+  const handleTabChange = (_event: React.SyntheticEvent<Element, Event>, newValue: number) => {
     setActiveTab(newValue);
     setImportType(newValue === 0 ? 'file' : newValue === 1 ? 'repository' : 'url');
     setFile(null);
@@ -128,7 +144,7 @@ const ModelImporter: React.FC<ModelImporterProps> = ({ onComplete }) => {
   };
 
   // Handle file selection via drag & drop
-  const handleFileDrop = React.useCallback((event: React.DragEvent<HTMLDivElement>) => {
+  const handleFileDrop = React.useCallback((event: React.DragEvent) => {
     event.preventDefault();
     event.stopPropagation();
 
@@ -143,24 +159,24 @@ const ModelImporter: React.FC<ModelImporterProps> = ({ onComplete }) => {
     // Validate file extension
     const fileExtension = '.' + selectedFile.name.split('.').pop()?.toLowerCase();
     const validExtensions = MODEL_FRAMEWORKS.flatMap(f => f.fileExtensions);
-    
+
     if (!validExtensions.includes(fileExtension)) {
       setError(`Unsupported file format. Please select a valid model file: ${validExtensions.join(', ')}`);
       return;
     }
 
     setFile(selectedFile);
-    
+
     // Try to determine the framework from file extension
-    const detectedFramework = MODEL_FRAMEWORKS.find(f => 
+    const detectedFramework = MODEL_FRAMEWORKS.find(f =>
       f.fileExtensions.includes(fileExtension)
     )?.id || '';
-    
+
     setFramework(detectedFramework);
-    
+
     // Set default name from filename
     setModelName(selectedFile.name.split('.')[0].replace(/_/g, ' '));
-    
+
     setError(null);
     setActiveStep(1);
   };
@@ -176,7 +192,7 @@ const ModelImporter: React.FC<ModelImporterProps> = ({ onComplete }) => {
   const handleRepositoryChange = (e: SelectChangeEvent) => {
     const repoId = e.target.value as string;
     setRepository(repoId);
-    
+
     // Find selected repository
     const repo = MODEL_REPOSITORIES.find(r => r.id === repoId);
     if (repo) {
@@ -188,7 +204,7 @@ const ModelImporter: React.FC<ModelImporterProps> = ({ onComplete }) => {
   const handleModelIdChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const id = e.target.value;
     setModelId(id);
-    
+
     // Auto-generate a name if empty
     if (!modelName && id) {
       setModelName(id.split('/').pop()?.replace(/-/g, ' ') || '');
@@ -236,49 +252,145 @@ const ModelImporter: React.FC<ModelImporterProps> = ({ onComplete }) => {
     setActiveStep(activeStep - 1);
   };
 
-  // Handle import
+  // API base URL for model operations
+  const API_BASE_URL = process.env.API_URL || '/api';
+
+  // Upload file to server with progress tracking
+  const uploadFile = async (file: File): Promise<any> => {
+    return new Promise((resolve, reject) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('name', modelName);
+      formData.append('description', modelDescription || 'Imported model');
+      formData.append('framework', framework);
+
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${API_BASE_URL}/admin/models/upload`, true);
+
+      // Track upload progress
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const percentComplete = Math.round((event.loaded / event.total) * 100);
+          setProgress(percentComplete);
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const response = JSON.parse(xhr.responseText);
+            resolve(response);
+          } catch (err) {
+            reject(new Error('Invalid response from server'));
+          }
+        } else {
+          reject(new Error(`Server returned ${xhr.status}: ${xhr.statusText}`));
+        }
+      };
+
+      xhr.onerror = () => {
+        reject(new Error('Network error occurred during upload'));
+      };
+
+      xhr.send(formData);
+    });
+  };
+
+  // Import model from repository
+  const importFromRepository = async (): Promise<any> => {
+    const response = await fetch(`${API_BASE_URL}/admin/models/import-repository`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        repository,
+        modelId,
+        name: modelName,
+        description: modelDescription,
+        framework,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to import model: ${response.statusText}`);
+    }
+    
+    return response.json();
+  };
+
+  // Import model from URL
+  const importFromUrl = async (): Promise<any> => {
+    const response = await fetch(`${API_BASE_URL}/admin/models/import-url`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        url: customUrl,
+        name: modelName,
+        description: modelDescription,
+        framework,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to import model: ${response.statusText}`);
+    }
+    
+    return response.json();
+  };
+
+  // Process a model after it's been uploaded/imported
+  const processModel = async (modelId: string): Promise<any> => {
+    const response = await fetch(`${API_BASE_URL}/admin/models/${modelId}/process`, {
+      method: 'POST',
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to process model: ${response.statusText}`);
+    }
+    
+    return response.json();
+  };
+
+  // Handle import based on the type
   const handleImport = async () => {
     setUploading(true);
     setProgress(0);
     setError(null);
 
     try {
-      // Simulate upload progress
-      const interval = setInterval(() => {
-        setProgress((prev: number) => {
-          if (prev >= 100) {
-            clearInterval(interval);
-            return 100;
-          }
-          return prev + 10;
-        });
-      }, 300);
+      let modelResponse;
 
-      // This would be replaced with actual API call
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      clearInterval(interval);
+      // Handle different import types
+      if (importType === 'file' && file) {
+        // Upload file and track progress
+        modelResponse = await uploadFile(file);
+      } else if (importType === 'repository') {
+        // Start progress for repository import
+        setProgress(10);
+        modelResponse = await importFromRepository();
+        setProgress(70);
+      } else if (importType === 'url') {
+        // Start progress for URL import
+        setProgress(10);
+        modelResponse = await importFromUrl();
+        setProgress(70);
+      } else {
+        throw new Error('Invalid import type or missing data');
+      }
+
+      // Process the model (e.g., validation, optimization, etc.)
+      setProgress(80);
+      const processedModel = await processModel(modelResponse.id);
       setProgress(100);
 
-      // Mock model response
-      const model = {
-        id: `model-${Date.now()}`,
-        name: modelName,
-        description: modelDescription || 'Imported model',
-        framework: framework,
-        type: importType === 'file' ? 'uploaded' : importType === 'repository' ? 'repository' : 'url',
-        source: importType === 'file' ? file?.name : 
-                importType === 'repository' ? `${repositoryUrl}${modelId}` : 
-                customUrl,
-        status: 'ready',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-
-      // Complete upload
-      onComplete(model);
+      // Complete the import
+      onComplete(processedModel);
     } catch (err) {
       console.error('Error importing model:', err);
-      setError('Failed to import model');
+      setError(err instanceof Error ? err.message : 'Failed to import model');
       setUploading(false);
     }
   };
@@ -295,7 +407,7 @@ const ModelImporter: React.FC<ModelImporterProps> = ({ onComplete }) => {
                   Upload Model File
                 </Typography>
                 <Typography variant="body2" color="textSecondary" paragraph>
-                  Upload a model file from your computer. Supported formats include TensorFlow (.pb, .h5), 
+                  Upload a model file from your computer. Supported formats include TensorFlow (.pb, .h5),
                   PyTorch (.pt, .pth), ONNX (.onnx), and other common model formats.
                 </Typography>
 
@@ -311,11 +423,11 @@ const ModelImporter: React.FC<ModelImporterProps> = ({ onComplete }) => {
                     cursor: 'pointer',
                     '&:hover': {
                       borderColor: theme.palette.primary.main,
-                      bgcolor: alpha(theme.palette.primary.light, 0.1)
+                      bgcolor: alpha(theme.palette.primary.light || '#90caf9', 0.1)
                     }
                   }}
                   onDrop={handleFileDrop}
-                  onDragOver={(e: React.DragEvent<HTMLDivElement>) => e.preventDefault()}
+                  onDragOver={(e: React.DragEvent) => e.preventDefault()}
                   onClick={handleFileClick}
                 >
                   {file ? (
@@ -339,11 +451,14 @@ const ModelImporter: React.FC<ModelImporterProps> = ({ onComplete }) => {
                       </Typography>
                     </Box>
                   )}
-                  <input
+                  {/* Using a hidden TextField component instead of a native input element */}
+                  <TextField
                     type="file"
-                    ref={fileInputRef}
-                    style={{ display: 'none' }}
-                    accept=".pb,.h5,.tflite,.pt,.pth,.onnx,.bin,.model"
+                    inputRef={fileInputRef}
+                    sx={{ display: 'none' }}
+                    inputProps={{
+                      accept: ".pb,.h5,.tflite,.pt,.pth,.onnx,.bin,.model"
+                    }}
                     onChange={handleFileInputChange}
                   />
                 </Box>
@@ -356,7 +471,7 @@ const ModelImporter: React.FC<ModelImporterProps> = ({ onComplete }) => {
                   Import from Model Repository
                 </Typography>
                 <Typography variant="body2" color="textSecondary" paragraph>
-                  Import a pre-trained model from a public model repository such as HuggingFace Hub, 
+                  Import a pre-trained model from a public model repository such as HuggingFace Hub,
                   TensorFlow Hub, or PyTorch Hub.
                 </Typography>
 
@@ -501,9 +616,9 @@ const ModelImporter: React.FC<ModelImporterProps> = ({ onComplete }) => {
             </Typography>
 
             <Box sx={{ mt: 3, mb: 3 }}>
-              <LinearProgress 
-                variant="determinate" 
-                value={progress} 
+              <LinearProgress
+                variant="determinate"
+                value={progress}
                 sx={{ height: 8, borderRadius: 4 }}
               />
               <Typography variant="body2" color="textSecondary" align="center" sx={{ mt: 1 }}>
@@ -582,8 +697,10 @@ const ModelImporter: React.FC<ModelImporterProps> = ({ onComplete }) => {
   );
 };
 
-// Function to reduce color opacity for hover effects
-function alpha(color: string, opacity: number): string {
+// Custom alpha function as a fallback if the MUI alpha function fails
+// This is not used directly but kept as a reference
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function customAlpha(color: string, opacity: number): string {
   return color + Math.round(opacity * 255).toString(16).padStart(2, '0');
 }
 

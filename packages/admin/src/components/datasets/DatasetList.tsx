@@ -1,6 +1,6 @@
 /**
  * Dataset List Component
- * 
+ *
  * Displays a list of datasets with actions for viewing, editing, and deleting
  */
 
@@ -24,13 +24,10 @@ import {
   FormControl,
   InputLabel,
   Select,
-  MenuItem
-} from '@mui/material';
-import DeleteIcon from '@mui/icons-material/Delete';
-import VisibilityIcon from '@mui/icons-material/Visibility';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import StorageIcon from '@mui/icons-material/Storage';
-import { Tooltip } from '@mui/material';
+  MenuItem,
+  Tooltip
+} from '../../components/mui';
+import { Delete as DeleteIcon, Visibility as VisibilityIcon, PlayArrow as PlayArrowIcon, Storage as StorageIcon } from '@mui/icons-material';
 
 // Interface for component props
 interface DatasetListProps {
@@ -79,7 +76,7 @@ const DatasetList: React.FC<DatasetListProps> = ({ datasets, onView, onDelete })
         return acc;
       }, []);
     setSourcesList(uniqueSources);
-    
+
     // Apply current filter
     applyFilters(datasets, sourceFilter);
   }, [datasets]);
@@ -92,12 +89,12 @@ const DatasetList: React.FC<DatasetListProps> = ({ datasets, onView, onDelete })
   // Filter datasets based on source
   const applyFilters = (data: typeof datasets, source: string) => {
     let filtered = [...data];
-    
+
     // Only apply source filter if it's enabled and a source is selected
     if (enableSourceFiltering && source) {
       filtered = filtered.filter(dataset => dataset.source === source);
     }
-    
+
     setFilteredDatasets(filtered);
   };
 
@@ -158,9 +155,9 @@ const DatasetList: React.FC<DatasetListProps> = ({ datasets, onView, onDelete })
                     }
                     label="Enable source filtering"
                   />
-                  <FormControl 
-                    sx={{ minWidth: 200 }} 
-                    size="small" 
+                  <FormControl
+                    sx={{ minWidth: 200 }}
+                    size="small"
                     disabled={!enableSourceFiltering || sourcesList.length === 0}
                   >
                     <InputLabel>Filter by source</InputLabel>

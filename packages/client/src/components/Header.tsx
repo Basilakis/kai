@@ -7,7 +7,7 @@ import { useUser } from '../providers/UserProvider';
  */
 const Header: React.FC = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const { user, isLoading } = useUser();
+  const { user, isLoading, logout } = useUser();
 
   const toggleMenu = () => {
     setIsMenuOpen(!isMenuOpen);
@@ -58,10 +58,22 @@ const Header: React.FC = () => {
             {!isLoading && (
               <div className="auth-buttons">
                 {user ? (
-                  <div className="user-profile-menu">
+                  <div className="user-profile-menu flex items-center gap-2">
                     <Link to="/profile" className="button secondary user-profile-link">
                       My Profile
                     </Link>
+                    <button 
+                      onClick={() => { 
+                        if (window.confirm('Are you sure you want to log out?')) {
+                          // Call logout from UserProvider
+                          logout();
+                        }
+                      }}
+                      className="button outline-danger"
+                      aria-label="Log out"
+                    >
+                      Log Out
+                    </button>
                   </div>
                 ) : (
                   <>

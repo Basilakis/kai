@@ -1,11 +1,12 @@
 /**
  * Supabase Hybrid Search Service
- * 
+ *
  * Combines vector similarity search with full-text search for improved results.
  * This implementation leverages both PostgreSQL's text search capabilities and
  * pgvector extension to provide more relevant search results.
  */
-import { supabaseClient } from './supabaseClient';
+import { supabase } from './supabaseClient';
+import { handleSupabaseError } from '../../../shared/src/utils/supabaseErrorHandler';
 import { logger } from '../../utils/logger';
 import { SupabaseVectorSearch } from './vector-search';
 
@@ -13,20 +14,20 @@ import { SupabaseVectorSearch } from './vector-search';
 interface HybridSearchConfig {
   // Text search parameters
   textQuery: string;
-  
+
   // Vector search parameters
   embedding: number[];
-  
+
   // Weights for combining scores (should sum to 1.0)
   textWeight?: number;
   vectorWeight?: number;
-  
+
   // Number of results to return (default: 10)
   limit?: number;
-  
+
   // Minimum combined score threshold (0.0 to 1.0)
   threshold?: number;
-  
+
   // Optional filters to apply to search
   filters?: Record<string, any>;
 }
@@ -45,14 +46,14 @@ const DEFAULT_CONFIG = {
  */
 export class SupabaseHybridSearch {
   private vectorSearch: SupabaseVectorSearch;
-  
+
   constructor() {
     this.vectorSearch = new SupabaseVectorSearch();
   }
-  
+
   /**
    * Perform hybrid search using both text search and vector similarity
-   * 
+   *
    * @param config Search configuration
    * @param tableName The table to search in
    * @param textColumns Array of columns to use for text search
@@ -77,15 +78,15 @@ export class SupabaseHybridSearch {
         threshold,
         filters
       } = mergedConfig;
-      
+
       // Get Supabase client
-      const client = supabaseClient.getClient();
-      
+      const client = supabase.getClient();
+
       // Verify weights sum to 1.0 (approximately)
       if (Math.abs(textWeight + vectorWeight - 1.0) > 0.001) {
         logger.warn(`Hybrid search weights don't sum to 1.0: text=${textWeight}, vector=${vectorWeight}`);
       }
-      
+
       // For materials table use specialized function
       if (tableName === 'materials' && filters && 'material_type' in filters) {
         const { data, error } = await client.rpc('hybrid_search_materials', {
@@ -96,15 +97,15 @@ export class SupabaseHybridSearch {
           match_count: limit,
           material_type: filters.material_type || null
         });
-        
+
         if (error) {
           logger.error(`Hybrid search materials error: ${error.message}`);
           throw error;
         }
-        
+
         return data;
       }
-      
+
       // Call the generic hybrid_search PostgreSQL function
       const { data, error } = await client.rpc('hybrid_search', {
         query_text: textQuery,
@@ -118,16 +119,26 @@ export class SupabaseHybridSearch {
         score_threshold: threshold,
         filter_obj: filters ? JSON.stringify(filters) : '{}'
       });
-      
+
       if (error) {
-        logger.error(`Hybrid search error: ${error.message}`);
-        throw error;
+        throw handleSupabaseError(error, 'search', {
+          tableName,
+          textColumns,
+          vectorColumn,
+          limit,
+          threshold
+        });
       }
-      
+
       return data;
     } catch (error) {
-      logger.error(`Hybrid search failed: ${error}`);
-      throw error;
+      throw handleSupabaseError(error, 'search', {
+        tableName,
+        textColumns,
+        vectorColumn,
+        limit,
+        threshold
+      });
     }
   }
 }

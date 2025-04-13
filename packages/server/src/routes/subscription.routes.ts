@@ -1,11 +1,13 @@
 /**
  * Subscription Routes
- * 
- * This file defines routes for managing subscription tiers and user subscriptions.
+ *
+ * This file defines routes for managing subscription tiers, user subscriptions, and credits.
  * It includes endpoints for:
  * - Viewing available subscription tiers
  * - Admin management of subscription tiers
  * - Users managing their own subscription
+ * - Credit management (balance, transactions, purchase, usage)
+ * - Payment method management
  */
 
 import express from 'express';
@@ -95,6 +97,130 @@ router.delete(
   authMiddleware,
   authorizeRoles(['admin']),
   asyncHandler(subscriptionController.deleteTier)
+);
+
+// Credit management routes
+/**
+ * @route   GET /api/subscriptions/credits
+ * @desc    Get user's credit balance
+ * @access  Private
+ */
+router.get(
+  '/credits',
+  authMiddleware,
+  asyncHandler(subscriptionController.getUserCreditBalance)
+);
+
+/**
+ * @route   GET /api/subscriptions/credits/transactions
+ * @desc    Get user's credit transactions
+ * @access  Private
+ */
+router.get(
+  '/credits/transactions',
+  authMiddleware,
+  asyncHandler(subscriptionController.getUserCreditTransactions)
+);
+
+/**
+ * @route   POST /api/subscriptions/credits/purchase
+ * @desc    Purchase credits
+ * @access  Private
+ */
+router.post(
+  '/credits/purchase',
+  authMiddleware,
+  asyncHandler(subscriptionController.purchaseCredits)
+);
+
+/**
+ * @route   POST /api/subscriptions/credits/use
+ * @desc    Use credits
+ * @access  Private
+ */
+router.post(
+  '/credits/use',
+  authMiddleware,
+  asyncHandler(subscriptionController.useUserCredits)
+);
+
+/**
+ * @route   POST /api/subscriptions/credits/use-service
+ * @desc    Use credits for a specific service
+ * @access  Private
+ */
+router.post(
+  '/credits/use-service',
+  authMiddleware,
+  asyncHandler(subscriptionController.useServiceCredits)
+);
+
+/**
+ * @route   GET /api/subscriptions/credits/usage-by-service
+ * @desc    Get credit usage by service
+ * @access  Private
+ */
+router.get(
+  '/credits/usage-by-service',
+  authMiddleware,
+  asyncHandler(subscriptionController.getUserCreditUsageByService)
+);
+
+/**
+ * @route   GET /api/subscriptions/service-costs
+ * @desc    Get all service costs
+ * @access  Private
+ */
+router.get(
+  '/service-costs',
+  authMiddleware,
+  asyncHandler(subscriptionController.getServiceCosts)
+);
+
+// Subscription management routes
+/**
+ * @route   POST /api/subscriptions/subscribe
+ * @desc    Subscribe to a paid plan
+ * @access  Private
+ */
+router.post(
+  '/subscribe',
+  authMiddleware,
+  asyncHandler(subscriptionController.subscribeUser)
+);
+
+/**
+ * @route   POST /api/subscriptions/cancel
+ * @desc    Cancel subscription
+ * @access  Private
+ */
+router.post(
+  '/cancel',
+  authMiddleware,
+  asyncHandler(subscriptionController.cancelUserSubscription)
+);
+
+/**
+ * @route   POST /api/subscriptions/change-plan
+ * @desc    Change subscription plan
+ * @access  Private
+ */
+router.post(
+  '/change-plan',
+  authMiddleware,
+  asyncHandler(subscriptionController.changeUserSubscriptionPlan)
+);
+
+// Payment method routes
+/**
+ * @route   GET /api/subscriptions/payment-methods
+ * @desc    Get user's payment methods
+ * @access  Private
+ */
+router.get(
+  '/payment-methods',
+  authMiddleware,
+  asyncHandler(subscriptionController.getPaymentMethods)
 );
 
 export default router;
