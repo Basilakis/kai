@@ -1,16 +1,15 @@
 import express, { Request, Response } from 'express';
 import { asyncHandler } from '../middleware/error.middleware';
-import { 
-  authMiddleware, 
-  authorizeRoles, 
+import {
+  authMiddleware,
+  authorizeRoles,
   tokenRefreshMiddleware,
-  rateLimitMiddleware,
-  validateUserOwnership
+  rateLimitMiddleware
 } from '../middleware/auth.middleware';
 import { ApiError } from '../middleware/error.middleware';
-import { 
-  getMaterialById, 
-  searchMaterials, 
+import {
+  getMaterialById,
+  searchMaterials,
   findSimilarMaterials,
   createMaterial,
   updateMaterial,
@@ -27,14 +26,14 @@ const router = express.Router();
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
+  destination: (req, _file, cb) => {
     // Create user-specific directory to segregate uploads
     const userId = req.user?.id || 'anonymous';
     const uploadDir = path.join(process.cwd(), 'uploads', 'recognition', userId);
     fs.mkdirSync(uploadDir, { recursive: true });
     cb(null, uploadDir);
   },
-  filename: (req, file, cb) => {
+  filename: (_req, file, cb) => {
     const uniqueName = `${uuidv4()}${path.extname(file.originalname)}`;
     cb(null, uniqueName);
   }
@@ -45,7 +44,7 @@ const upload = multer({
   limits: {
     fileSize: 10 * 1024 * 1024 // 10MB limit
   },
-  fileFilter: (req, file, cb) => {
+  fileFilter: (_req, file, cb) => {
     // Accept only image files
     if (!file.mimetype.startsWith('image/')) {
       return cb(new Error('Only image files are allowed'), false);
@@ -117,7 +116,7 @@ const upload = multer({
  *       500:
  *         description: Server error
  */
-router.get('/', 
+router.get('/',
   authMiddleware,
   tokenRefreshMiddleware,
   rateLimitMiddleware({ windowMs: 60 * 1000, maxRequests: 20 }), // 20 requests per minute
@@ -125,21 +124,21 @@ router.get('/',
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 10;
   const skip = (page - 1) * limit;
-  
+
   // Get user ID for filtering
   const userId = req.user?.id;
-  
+
   // Include user-specific filters if not admin
   const isAdmin = req.user?.role === 'admin';
   const userFilter = !isAdmin && userId ? { createdBy: userId } : {};
-  
+
   const { materials, total } = await searchMaterials({
     ...userFilter,
     limit,
     skip,
     sort: { updatedAt: -1 }
   });
-  
+
   res.status(200).json({
     success: true,
     count: materials.length,
@@ -194,7 +193,7 @@ router.get('/',
  *       500:
  *         description: Server error
  */
-router.get('/:id', 
+router.get('/:id',
   authMiddleware,
   tokenRefreshMiddleware,
   asyncHandler(async (req: Request, res: Response) => {
@@ -202,22 +201,22 @@ router.get('/:id',
   if (!materialId) {
     throw new ApiError(400, 'Material ID is required');
   }
-  
+
   const material = await getMaterialById(materialId);
-  
+
   if (!material) {
     throw new ApiError(404, `Material not found with id ${req.params.id}`);
   }
-  
+
   // Check if user has access to this material (admins can access all)
   const userId = req.user?.id;
   const isAdmin = req.user?.role === 'admin';
-  
+
   if (!isAdmin && material.createdBy && material.createdBy !== userId) {
     logger.warn(`User ${userId} attempted to access material ${req.params.id} created by ${material.createdBy}`);
     throw new ApiError(403, 'You do not have permission to access this material');
   }
-  
+
   res.status(200).json({
     success: true,
     data: material
@@ -232,7 +231,7 @@ router.get('/:id',
 router.post('/search',
   authMiddleware,
   tokenRefreshMiddleware,
-  rateLimitMiddleware({ windowMs: 60 * 1000, maxRequests: 20 }), // 20 requests per minute 
+  rateLimitMiddleware({ windowMs: 60 * 1000, maxRequests: 20 }), // 20 requests per minute
   asyncHandler(async (req: Request, res: Response) => {
   const {
     query,
@@ -246,16 +245,16 @@ router.post('/search',
     page = 1,
     sort = { updatedAt: -1 }
   } = req.body;
-  
+
   const skip = (page - 1) * limit;
-  
+
   // Get user ID for filtering
   const userId = req.user?.id;
-  
+
   // Include user-specific filters if not admin
   const isAdmin = req.user?.role === 'admin';
   const userFilter = !isAdmin && userId ? { createdBy: userId } : {};
-  
+
   const { materials, total } = await searchMaterials({
     ...userFilter,
     query,
@@ -269,7 +268,7 @@ router.post('/search',
     skip,
     sort
   });
-  
+
   res.status(200).json({
     success: true,
     count: materials.length,
@@ -288,7 +287,7 @@ router.post('/search',
  * @desc    Find similar materials to a given material
  * @access  Private - Authenticated users only
  */
-router.post('/similar/:id', 
+router.post('/similar/:id',
   authMiddleware,
   tokenRefreshMiddleware,
   rateLimitMiddleware({ windowMs: 60 * 1000, maxRequests: 10 }), // 10 requests per minute
@@ -298,31 +297,31 @@ router.post('/similar/:id',
     threshold = 0.7,
     materialType
   } = req.body;
-  
+
   // First check if user has access to the reference material
   const materialId = req.params.id;
   if (!materialId) {
     throw new ApiError(400, 'Material ID is required');
   }
-  
+
   const referenceMaterial = await getMaterialById(materialId);
-  
+
   if (!referenceMaterial) {
     throw new ApiError(404, `Material not found with id ${req.params.id}`);
   }
-  
+
   // Check user's permission to access this material (admins can access all)
   const userId = req.user?.id;
   const isAdmin = req.user?.role === 'admin';
-  
+
   if (!isAdmin && referenceMaterial.createdBy && referenceMaterial.createdBy !== userId) {
     logger.warn(`User ${userId} attempted to access material ${req.params.id} created by ${referenceMaterial.createdBy}`);
     throw new ApiError(403, 'You do not have permission to access this material');
   }
-  
+
   // Add user filter for similar materials
   const userFilter = !isAdmin && userId ? { createdBy: userId } : {};
-  
+
   const similarMaterials = await findSimilarMaterials(
     materialId,
     {
@@ -332,7 +331,7 @@ router.post('/similar/:id',
       ...userFilter
     }
   );
-  
+
   res.status(200).json({
     success: true,
     count: similarMaterials.length,
@@ -443,23 +442,23 @@ router.post(
     if (!req.file) {
       throw new ApiError(400, 'No image file uploaded');
     }
-    
+
     const imagePath = req.file.path;
     const modelType = req.body.modelType || 'hybrid';
     const confidenceThreshold = parseFloat(req.body.confidenceThreshold) || 0.6;
     const maxResults = parseInt(req.body.maxResults) || 5;
-    
+
     try {
       // Get user ID for ownership tracking
       const userId = req.user?.id || 'anonymous';
-      
+
       // Recognize materials in the image
       const recognitionResult = await recognizeMaterial(imagePath, {
         modelType: modelType as 'hybrid' | 'feature-based' | 'ml-based',
         confidenceThreshold,
         maxResults
       });
-      
+
       // Get full material details for each match
       const materialPromises = recognitionResult.matches.map(async (match: any) => {
         const material = await getMaterialById(match.materialId);
@@ -468,9 +467,9 @@ router.post(
           material
         };
       });
-      
+
       const matchesWithDetails = await Promise.all(materialPromises);
-      
+
       res.status(200).json({
         success: true,
         processingTime: recognitionResult.processingTime,
@@ -479,7 +478,7 @@ router.post(
           // Filter out materials the user doesn't have access to
           const isAdmin = req.user?.role === 'admin';
           const createdBy = match.material?.createdBy;
-          
+
           // Include if admin, or if no creator (public), or if created by this user
           return isAdmin || !createdBy || createdBy === userId;
         }),
@@ -514,9 +513,9 @@ router.post(
       ...req.body,
       createdBy: req.user?.id
     };
-    
+
     const material = await createMaterial(materialData);
-    
+
     res.status(201).json({
       success: true,
       data: material
@@ -538,18 +537,18 @@ router.put(
     if (!materialId) {
       throw new ApiError(400, 'Material ID is required');
     }
-    
+
     const material = await getMaterialById(materialId);
-    
+
     if (!material) {
       throw new ApiError(404, `Material not found with id ${req.params.id}`);
     }
-    
+
     const updatedMaterial = await updateMaterial(materialId, {
       ...req.body,
       updatedAt: new Date()
     });
-    
+
     res.status(200).json({
       success: true,
       data: updatedMaterial
@@ -571,15 +570,15 @@ router.delete(
     if (!materialId) {
       throw new ApiError(400, 'Material ID is required');
     }
-    
+
     const material = await getMaterialById(materialId);
-    
+
     if (!material) {
       throw new ApiError(404, `Material not found with id ${req.params.id}`);
     }
-    
+
     await deleteMaterial(materialId);
-    
+
     res.status(200).json({
       success: true,
       message: `Material ${req.params.id} deleted successfully`

@@ -2,7 +2,7 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "outDir": "./dist",
-    // Remove rootDir to allow inference or inheritance from base config
+    "rootDir": "../../", // Set rootDir to the project root to include shared package
     "baseUrl": "./",
     "paths": {
       "@/*": ["src/*"],
@@ -36,16 +36,22 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
+    "composite": true,
+    "declaration": true,
+    "declarationMap": true
   },
   "include": [
-    "src/**/*",
-    "../ml/src/index.ts",  /* Include ML package for type checking */
-    "../shared/src/**/*"   /* Include shared package for type checking */
+    "src/**/*"
   ],
   "exclude": [
     "node_modules",
     "dist",
-    "**/*.test.ts"
+    "**/*.test.ts",
+    "**/__tests__/**"
+  ],
+  "references": [
+    { "path": "../shared" },
+    { "path": "../ml" }
   ]
 }

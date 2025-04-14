@@ -96,6 +96,13 @@ import analyticsRoutes from './routes/analytics.routes';
 import subscriptionRoutes from './routes/subscription.routes';
 import enhancedVectorRoutes from './routes/enhancedVector.routes';
 import webhookRoutes from './routes/webhook.routes';
+import lightingRoutes from './routes/lighting.routes';
+import materialPropertiesRoutes from './routes/material-properties.routes';
+import cameraPoseRoutes from './routes/camera-pose.routes';
+import { sceneOptimizationRoutes } from './routes/scene-optimization.routes';
+import { roomLayoutRoutes } from './routes/room-layout.routes';
+import pointCloudRoutes from './routes/point-cloud.routes';
+import sceneGraphRoutes from './routes/scene-graph.routes';
 import { scheduleSessionCleanup } from './controllers/agents.controller';
 
 // Create Express app
@@ -154,6 +161,13 @@ app.use('/api/analytics', analyticsRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/vector/enhanced', enhancedVectorRoutes);
 app.use('/api/webhooks', webhookRoutes);
+app.use('/api/lighting', lightingRoutes);
+app.use('/api/material-properties', materialPropertiesRoutes);
+app.use('/api/camera-pose', cameraPoseRoutes);
+app.use('/api/scene-optimization', sceneOptimizationRoutes);
+app.use('/api/room-layout', roomLayoutRoutes);
+app.use('/api/point-cloud', pointCloudRoutes);
+app.use('/api/scene-graph', sceneGraphRoutes);
 
 /**
  * @openapi

@@ -1,0 +1,189 @@
+# Node pools configuration for Kubernetes cluster
+# These configurations would typically be applied through a cloud provider's API or UI,
+# but are documented here for reference and automation purposes.
+
+---
+# CPU-optimized node pool for general processing
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cpu-pool-config
+  namespace: kai-ml
+  labels:
+    node-pool: cpu-optimized
+data:
+  # These values would be used by infrastructure automation tools
+  pool_name: "cpu-optimized"
+  machine_type: "e2-standard-8"  # 8 vCPUs, 32 GB memory
+  disk_size_gb: "100"
+  min_nodes: "3"
+  max_nodes: "10"
+  enable_autoscaling: "true"
+  disk_type: "pd-ssd"
+  labels: |
+    node-type=cpu-optimized
+    workload-class=general
+  taints: |
+    node-type=cpu-optimized:NoSchedule
+  # Node selector for workloads targeting this pool
+  node_selector: |
+    node-type: cpu-optimized
+
+---
+# GPU-optimized node pool for deep learning inference
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gpu-pool-config
+  namespace: kai-ml
+  labels:
+    node-pool: gpu-optimized
+data:
+  pool_name: "gpu-optimized"
+  machine_type: "n1-standard-8"  # 8 vCPUs, 30 GB memory
+  accelerator_type: "nvidia-tesla-t4"
+  accelerator_count: "1"
+  disk_size_gb: "200"
+  min_nodes: "1"
+  max_nodes: "8"
+  enable_autoscaling: "true"
+  disk_type: "pd-ssd"
+  labels: |
+    node-type=gpu-optimized
+    workload-class=ml-inference
+    gpu=nvidia-t4
+  taints: |
+    node-type=gpu-optimized:NoSchedule
+  node_selector: |
+    node-type: gpu-optimized
+
+---
+# High-end GPU node pool for training and complex ML tasks
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gpu-high-end-pool-config
+  namespace: kai-ml
+  labels:
+    node-pool: gpu-high-end
+data:
+  pool_name: "gpu-high-end"
+  machine_type: "n1-standard-16"  # 16 vCPUs, 60 GB memory
+  accelerator_type: "nvidia-tesla-a100"
+  accelerator_count: "2"
+  disk_size_gb: "500"
+  min_nodes: "0"
+  max_nodes: "4"
+  enable_autoscaling: "true"
+  disk_type: "pd-ssd"
+  labels: |
+    node-type=gpu-high-end
+    workload-class=ml-training
+    gpu=nvidia-a100
+  taints: |
+    node-type=gpu-high-end:NoSchedule
+  node_selector: |
+    node-type: gpu-high-end
+
+---
+# Memory-optimized node pool for large model loading
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: memory-pool-config
+  namespace: kai-ml
+  labels:
+    node-pool: memory-optimized
+data:
+  pool_name: "memory-optimized"
+  machine_type: "e2-highmem-16"  # 16 vCPUs, 128 GB memory
+  disk_size_gb: "150"
+  min_nodes: "1"
+  max_nodes: "5"
+  enable_autoscaling: "true"
+  disk_type: "pd-ssd"
+  labels: |
+    node-type=memory-optimized
+    workload-class=memory-intensive
+  taints: |
+    node-type=memory-optimized:NoSchedule
+  node_selector: |
+    node-type: memory-optimized
+
+---
+# Storage-optimized node pool for data-intensive operations
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: storage-pool-config
+  namespace: kai-ml
+  labels:
+    node-pool: storage-optimized
+data:
+  pool_name: "storage-optimized"
+  machine_type: "n2-standard-8"
+  disk_size_gb: "2000"
+  disk_type: "pd-ssd"
+  local_ssd_count: "2"
+  min_nodes: "1"
+  max_nodes: "4"
+  enable_autoscaling: "true"
+  labels: |
+    node-type=storage-optimized
+    workload-class=data-intensive
+  taints: |
+    node-type=storage-optimized:NoSchedule
+  node_selector: |
+    node-type: storage-optimized
+
+---
+# Orchestration node pool for coordinator and control plane services
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: orchestration-pool-config
+  namespace: kai-ml
+  labels:
+    node-pool: orchestration
+data:
+  pool_name: "orchestration"
+  machine_type: "e2-standard-4"  # 4 vCPUs, 16 GB memory
+  disk_size_gb: "100"
+  min_nodes: "3"
+  max_nodes: "5"
+  enable_autoscaling: "true"
+  disk_type: "pd-ssd"
+  labels: |
+    node-type=orchestration
+    workload-class=control-plane
+  taints: |
+    node-type=orchestration:NoSchedule
+  node_selector: |
+    node-type: orchestration
+
+---
+# Spot/Preemptible node pool for cost-effective batch processing
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spot-pool-config
+  namespace: kai-ml
+  labels:
+    node-pool: spot-instances
+data:
+  pool_name: "spot-instances"
+  machine_type: "n2-standard-8"
+  disk_size_gb: "100"
+  min_nodes: "0"
+  max_nodes: "20"
+  enable_autoscaling: "true"
+  disk_type: "pd-standard"
+  spot: "true"
+  labels: |
+    node-type=spot
+    workload-class=batch-preemptible
+  taints: |
+    node-type=spot:NoSchedule
+    cloud.google.com/gke-spot="":NoSchedule
+  node_selector: |
+    node-type: spot

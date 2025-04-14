@@ -1,4 +1,6 @@
-import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse, AxiosError } from 'axios';
+import axios, { AxiosRequestConfig, AxiosResponse, AxiosError } from 'axios';
+// Import custom type definitions
+import '../types/axios';
 import { getAuthToken } from './auth.service';
 import { logger } from '../utils/logger'; // Assuming logger exists
 
@@ -7,7 +9,7 @@ const API_URL = process.env.REACT_APP_API_URL || '/api';
 
 // Create a configured Axios instance using the default export
 // This is the standard way to create an instance.
-const apiClient: AxiosInstance = axios.create({
+const apiClient = axios.create({
   baseURL: API_URL,
   headers: {
     'Content-Type': 'application/json',

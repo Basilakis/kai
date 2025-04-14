@@ -1,0 +1,349 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: task-queue-manager
+  namespace: kai-ml
+  labels:
+    app: task-queue-manager
+    component: processing
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: task-queue-manager
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: task-queue-manager
+        component: processing
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - task-queue-manager
+              topologyKey: "kubernetes.io/hostname"
+      containers:
+      - name: task-queue-manager
+        image: kai/task-queue-manager:latest
+        imagePullPolicy: Always
+        resources:
+          requests:
+            cpu: "2"
+            memory: "4Gi"
+          limits:
+            cpu: "4"
+            memory: "8Gi"
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        - name: REDIS_HOST
+          value: "redis-master.kai-ml.svc.cluster.local"
+        - name: REDIS_PORT
+          value: "6379"
+        - name: KAFKA_BOOTSTRAP_SERVERS
+          value: "kafka.kai-ml.svc.cluster.local:9092"
+        - name: ARGO_WORKFLOWS_API
+          value: "argo-server.argo.svc.cluster.local:2746"
+        - name: MAX_CONCURRENT_TASKS
+          value: "100"
+        - name: TASK_TIMEOUT_SECONDS
+          value: "3600"
+        # Mount secrets as environment variables
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: distributed-processing-secrets
+              key: redis-password
+        - name: KAFKA_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: distributed-processing-secrets
+              key: kafka-username
+        - name: KAFKA_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: distributed-processing-secrets
+              key: kafka-password
+        ports:
+        - containerPort: 3200
+          name: http
+        - containerPort: 9100
+          name: metrics
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        volumeMounts:
+        - name: config-volume
+          mountPath: /app/config
+        - name: workflow-templates
+          mountPath: /app/templates
+      volumes:
+      - name: config-volume
+        configMap:
+          name: task-queue-manager-config
+      - name: workflow-templates
+        configMap:
+          name: workflow-templates
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: task-queue-manager
+  namespace: kai-ml
+  labels:
+    app: task-queue-manager
+    component: processing
+spec:
+  ports:
+  - port: 80
+    targetPort: 3200
+    protocol: TCP
+    name: http
+  - port: 9100
+    targetPort: 9100
+    protocol: TCP
+    name: metrics
+  selector:
+    app: task-queue-manager
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: task-queue-manager-config
+  namespace: kai-ml
+data:
+  config.json: |
+    {
+      "queues": {
+        "highPriority": {
+          "concurrency": 50,
+          "rateLimitPerSecond": 100,
+          "maxRetries": 3,
+          "retryBackoffMs": 1000
+        },
+        "mediumPriority": {
+          "concurrency": 30,
+          "rateLimitPerSecond": 50,
+          "maxRetries": 3,
+          "retryBackoffMs": 2000
+        },
+        "lowPriority": {
+          "concurrency": 20,
+          "rateLimitPerSecond": 25,
+          "maxRetries": 2,
+          "retryBackoffMs": 5000
+        },
+        "batchProcessing": {
+          "concurrency": 10,
+          "rateLimitPerSecond": 10,
+          "maxRetries": 1,
+          "retryBackoffMs": 10000
+        }
+      },
+      "workflowOrchestration": {
+        "engine": "argo",
+        "namespace": "argo",
+        "serviceAccount": "argo-workflow",
+        "ttlAfterCompletionSeconds": 86400,
+        "defaultTimeoutSeconds": 3600,
+        "retryStrategy": {
+          "limit": 3,
+          "retryPolicy": "OnError",
+          "backoff": {
+            "duration": "5s",
+            "factor": 2,
+            "maxDuration": "1m"
+          }
+        }
+      },
+      "resources": {
+        "monitoring": {
+          "enabled": true,
+          "metricsPort": 9100,
+          "exporters": ["prometheus"]
+        },
+        "autoScaling": {
+          "enabled": true,
+          "minReplicas": 3,
+          "maxReplicas": 10,
+          "targetCPUUtilizationPercentage": 70,
+          "targetMemoryUtilizationPercentage": 80
+        }
+      },
+      "scheduling": {
+        "fairShare": {
+          "enabled": true,
+          "userWeights": {
+            "premium": 100,
+            "standard": 50,
+            "free": 10
+          }
+        },
+        "preemptive": {
+          "enabled": true,
+          "minPreemptionTimeSeconds": 300
+        }
+      },
+      "faultTolerance": {
+        "circuitBreaker": {
+          "enabled": true,
+          "failureThreshold": 5,
+          "resetTimeoutSeconds": 60
+        },
+        "deadLetterQueue": {
+          "enabled": true,
+          "maxSize": 1000,
+          "processingInterval": 300
+        }
+      }
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: workflow-templates
+  namespace: kai-ml
+data:
+  3d-reconstruction.yaml: |
+    apiVersion: argoproj.io/v1alpha1
+    kind: WorkflowTemplate
+    metadata:
+      name: 3d-reconstruction
+    spec:
+      entrypoint: main
+      arguments:
+        parameters:
+        - name: input-images
+          description: List of input image URLs
+        - name: quality-level
+          description: Quality level (low, medium, high)
+          default: medium
+        - name: output-format
+          description: Output format
+          default: glb
+      templates:
+      - name: main
+        dag:
+          tasks:
+          - name: feature-extraction
+            template: feature-extraction
+            arguments:
+              parameters:
+              - name: input-images
+                value: "{{workflow.parameters.input-images}}"
+              - name: quality-level
+                value: "{{workflow.parameters.quality-level}}"
+          - name: structure-from-motion
+            dependencies: [feature-extraction]
+            template: structure-from-motion
+            arguments:
+              parameters:
+              - name: features
+                value: "{{tasks.feature-extraction.outputs.result}}"
+              - name: quality-level
+                value: "{{workflow.parameters.quality-level}}"
+          - name: dense-reconstruction
+            dependencies: [structure-from-motion]
+            template: dense-reconstruction
+            arguments:
+              parameters:
+              - name: sparse-model
+                value: "{{tasks.structure-from-motion.outputs.result}}"
+              - name: quality-level
+                value: "{{workflow.parameters.quality-level}}"
+          - name: mesh-generation
+            dependencies: [dense-reconstruction]
+            template: mesh-generation
+            arguments:
+              parameters:
+              - name: point-cloud
+                value: "{{tasks.dense-reconstruction.outputs.result}}"
+              - name: quality-level
+                value: "{{workflow.parameters.quality-level}}"
+          - name: texture-mapping
+            dependencies: [mesh-generation]
+            template: texture-mapping
+            arguments:
+              parameters:
+              - name: mesh
+                value: "{{tasks.mesh-generation.outputs.result}}"
+              - name: input-images
+                value: "{{workflow.parameters.input-images}}"
+              - name: quality-level
+                value: "{{workflow.parameters.quality-level}}"
+          - name: model-export
+            dependencies: [texture-mapping]
+            template: model-export
+            arguments:
+              parameters:
+              - name: textured-mesh
+                value: "{{tasks.texture-mapping.outputs.result}}"
+              - name: output-format
+                value: "{{workflow.parameters.output-format}}"
+---
+apiVersion: autoscaling/v2beta2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: task-queue-manager
+  namespace: kai-ml
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: task-queue-manager
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 30
+      - type: Pods
+        value: 5
+        periodSeconds: 60
+      selectPolicy: Max

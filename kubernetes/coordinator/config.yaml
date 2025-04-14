@@ -1,0 +1,90 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coordinator-config
+  namespace: kai-ml
+  labels:
+    app: coordinator-service
+    component: orchestration
+data:
+  # Redis configuration
+  redis_host: "redis-master.kai-ml.svc.cluster.local"
+  redis_port: "6379"
+  
+  # Workflow configuration
+  workflow_namespace: "kai-ml"
+  workflow_archive_ttl: "168h"  # Keep workflow history for 7 days
+  
+  # Logging configuration
+  log_level: "info"
+  log_format: "json"
+  
+  # Resource allocation settings
+  resource_quota_mode: "fair-share"
+  enable_preemption: "true"
+  
+  # Caching configuration
+  enable_caching: "true"
+  cache_ttl: "24h"
+  
+  # Autoscaling configuration
+  enable_autoscaling: "true"
+  scale_down_delay: "10m"
+  
+  # Priority configuration
+  default_priority: "medium"
+  
+  # Task queue configuration
+  task_queue_config: |
+    {
+      "queues": {
+        "interactive": {
+          "maxConcurrent": 10,
+          "weight": 100
+        },
+        "batch": {
+          "maxConcurrent": 20,
+          "weight": 50
+        },
+        "maintenance": {
+          "maxConcurrent": 5,
+          "weight": 10
+        }
+      }
+    }
+  
+  # Quality tiers configuration
+  quality_tiers: |
+    {
+      "low": {
+        "resources": {
+          "cpu": "500m",
+          "memory": "2Gi",
+          "gpu": "0"
+        },
+        "timeout": "5m"
+      },
+      "medium": {
+        "resources": {
+          "cpu": "2",
+          "memory": "4Gi",
+          "gpu": "0.5"
+        },
+        "timeout": "15m"
+      },
+      "high": {
+        "resources": {
+          "cpu": "4",
+          "memory": "8Gi",
+          "gpu": "1"
+        },
+        "timeout": "30m"
+      }
+    }
+  
+  # Workflow templates path
+  workflow_templates_path: "/etc/coordinator/config/workflow-templates"
+  
+  # Monitoring configuration
+  prometheus_enabled: "true"
+  tracing_enabled: "true"

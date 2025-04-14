@@ -418,7 +418,7 @@ For both projects, configure these additional settings:
 
 ## Digital Ocean Kubernetes Deployment
 
-Digital Ocean Kubernetes (DOKS) is used to deploy the backend API server and ML services.
+The KAI ML Platform now uses a structured Kubernetes deployment process optimized for machine learning workloads. This section provides an overview of the deployment process on Digital Ocean Kubernetes (DOKS). For detailed configuration information, refer to the [Kubernetes Architecture](./kubernetes-architecture.md) documentation.
 
 ### 1. Setting up a Kubernetes Cluster
 
@@ -427,17 +427,33 @@ Digital Ocean Kubernetes (DOKS) is used to deploy the backend API server and ML 
 3. Configure the cluster:
    - Kubernetes Version: Latest stable version
    - Datacenter Region: Choose the region closest to your users
-   - Node Pool:
-     - Machine Type: Standard
-     - Node Plan: 
-       - For basic deployments: 2 GB / 1 vCPU ($12/month)
-       - For production: 4 GB / 2 vCPU ($24/month) or higher
-     - Node Count: 3 (for high availability)
-4. Add an additional node pool for ML services:
-   - Machine Type: CPU-Optimized or GPU-Optimized
-   - Node Plan: At least 8 GB / 4 vCPU ($48/month)
-   - Node Count: 2
-5. Name your cluster (e.g., `kai-production`)
+   - Node Pools:
+     - **Orchestration Pool**:
+       - Machine Type: Standard
+       - Node Plan: 4 GB / 2 vCPU or higher
+       - Node Count: 3 (for high availability)
+       - Labels: `node-type=orchestration`
+       
+     - **CPU-Optimized Pool**:
+       - Machine Type: CPU-Optimized
+       - Node Plan: 8 GB / 4 vCPU or higher
+       - Node Count: 3
+       - Labels: `node-type=cpu-optimized`
+       
+     - **GPU-Optimized Pool** (if needed):
+       - Machine Type: GPU-Optimized
+       - Node Plan: With NVIDIA GPUs
+       - Node Count: 2
+       - Labels: `node-type=gpu-optimized`
+       
+     - **Memory-Optimized Pool**:
+       - Machine Type: Memory-Optimized
+       - Node Plan: 16 GB RAM or higher
+       - Node Count: 2
+       - Labels: `node-type=memory-optimized`
+       
+4. Enable the NVIDIA GPU Operator (if using GPU nodes)
+5. Name your cluster (e.g., `kai-ml-cluster`)
 6. Click "Create Cluster"
 
 ### 2. Connecting to the Cluster
@@ -445,402 +461,177 @@ Digital Ocean Kubernetes (DOKS) is used to deploy the backend API server and ML 
 1. Once the cluster is created, download the kubeconfig file
 2. Set up kubectl to use this config:
    ```bash
-   export KUBECONFIG=~/Downloads/kai-production-kubeconfig.yaml
+   export KUBECONFIG=~/Downloads/kai-ml-cluster-kubeconfig.yaml
    ```
 3. Verify connection:
    ```bash
    kubectl get nodes
+   kubectl get nodes --show-labels
    ```
 
-### 3. Creating Docker Images
+### 3. Building and Pushing Docker Images
 
-Create Dockerfiles for the API server and ML services.
+The deployment requires several container images for different components:
 
-**API Server Dockerfile (Dockerfile.api)**:
+```bash
+# API Server
+docker build -t registry.example.com/kai/api-server:latest -f Dockerfile.api .
 
-```dockerfile
-FROM node:16-alpine AS builder
+# ML Services
+docker build -t registry.example.com/kai/ml-services:latest -f Dockerfile.ml .
 
-WORKDIR /app
+# Coordinator Service 
+docker build -t registry.example.com/kai/coordinator-service:latest -f packages/coordinator/Dockerfile .
 
-# Copy package files
-COPY package.json yarn.lock ./
-COPY packages/shared/package.json ./packages/shared/
-COPY packages/server/package.json ./packages/server/
+# MCP Server
+docker build -t registry.example.com/kai/mcp-server:latest -f packages/ml/Dockerfile.mcp .
 
-# Install dependencies
-RUN yarn install --frozen-lockfile
+# Mobile Optimization Services
+docker build -t registry.example.com/kai/mobile-optimization:latest -f packages/coordinator/Dockerfile.mobile .
 
-# Copy source code
-COPY packages/shared ./packages/shared/
-COPY packages/server ./packages/server/
+# WASM Compiler
+docker build -t registry.example.com/kai/wasm-compiler:latest -f packages/coordinator/Dockerfile.wasm .
 
-# Build packages
-RUN yarn workspace @kai/shared build
-RUN yarn workspace @kai/server build
-
-# Production image
-FROM node:16-alpine
-
-WORKDIR /app
-
-# Copy package files
-COPY package.json yarn.lock ./
-COPY packages/shared/package.json ./packages/shared/
-COPY packages/server/package.json ./packages/server/
-
-# Install production dependencies only
-RUN yarn install --frozen-lockfile --production
-
-# Copy built files
-COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
-COPY --from=builder /app/packages/server/dist ./packages/server/dist
-
-# Set environment variables
-ENV NODE_ENV=production
-ENV PORT=3000
-
-# Expose port
-EXPOSE 3000
-
-# Start server
-CMD ["node", "packages/server/dist/server.js"]
+# Push all images to your registry
+docker push registry.example.com/kai/api-server:latest
+docker push registry.example.com/kai/ml-services:latest
+docker push registry.example.com/kai/coordinator-service:latest
+docker push registry.example.com/kai/mcp-server:latest
+docker push registry.example.com/kai/mobile-optimization:latest
+docker push registry.example.com/kai/wasm-compiler:latest
 ```
 
-**ML Services Dockerfile (Dockerfile.ml)**:
+Replace `registry.example.com` with your actual container registry URL.
 
-```dockerfile
-FROM tensorflow/tensorflow:2.9.1-gpu
+### 4. Deploying with the Deployment Script
 
-WORKDIR /app
+The KAI ML Platform includes a dedicated deployment script that handles all aspects of the deployment process, including component dependencies and sequencing:
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    python3-pip \
-    python3-dev \
-    nodejs \
-    npm \
-    && rm -rf /var/lib/apt/lists/*
+```bash
+# Basic deployment
+./kubernetes/deploy.sh
 
-# Install yarn
-RUN npm install -g yarn
-
-# Copy package files
-COPY package.json yarn.lock ./
-COPY packages/shared/package.json ./packages/shared/
-COPY packages/ml/package.json ./packages/ml/
-
-# Copy requirements.txt
-COPY packages/ml/requirements.txt ./packages/ml/
-
-# Install Python dependencies
-RUN pip3 install --no-cache-dir -r packages/ml/requirements.txt
-
-# Install Node.js dependencies
-RUN yarn install --frozen-lockfile --production
-
-# Copy source code
-COPY packages/shared ./packages/shared/
-COPY packages/ml ./packages/ml/
-
-# Build TypeScript packages
-RUN yarn workspace @kai/shared build
-RUN yarn workspace @kai/ml build
-
-# Expose port
-EXPOSE 5000
-
-# Start ML service
-CMD ["python3", "packages/ml/python/server.py"]
+# With custom parameters
+./kubernetes/deploy.sh --context=kai-ml-cluster --registry=your-registry.example.com --tag=v1.2.3
 ```
 
-### 4. Creating Kubernetes Manifests
+The script supports several options:
+- `--context=<context>`: Kubernetes context to use
+- `--registry=<url>`: Container registry URL
+- `--tag=<tag>`: Image tag for all components
+- `--dry-run`: Validate configurations without applying changes
+- `--skip-infrastructure`: Skip infrastructure components
+- `--skip-coordinator`: Skip coordinator service components
+- `--skip-workflows`: Skip workflow templates
 
-Create the following Kubernetes manifests for the deployment:
+### 5. Deployment Components
 
-**Namespace (namespace.yaml)**:
+The deployment includes the following main components:
 
-```yaml
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: kai
+1. **Infrastructure**:
+   - Namespace and resource quotas
+   - Priority classes for workload scheduling
+   - Node pool configurations
+   - Monitoring stack (Prometheus, Grafana, Jaeger)
+   - Caching infrastructure (Redis)
+
+2. **Coordinator Service**:
+   - Central orchestration component
+   - Manages task queues and workflow scheduling
+   - Interfaces with Argo Workflows
+   - Provides API endpoints
+
+3. **Distributed Processing**:
+   - Handles distributed workloads
+   - Manages task distribution
+   - Coordinates work across nodes
+
+4. **Mobile Optimization**:
+   - Model compression
+   - LOD generation
+   - Draco mesh compression
+
+5. **WASM Compiler**:
+   - WebAssembly compilation for client-side models
+   - Browser optimization
+
+6. **Workflow Templates**:
+   - Argo workflow templates for standard ML pipelines
+   - 3D reconstruction pipeline
+
+### 6. Verification and Post-Installation
+
+After deployment, verify that all components are running correctly:
+
+```bash
+# Check namespace
+kubectl get namespace kai-ml
+
+# Check coordinator service
+kubectl get deployments -n kai-ml coordinator-service
+
+# Check pods
+kubectl get pods -n kai-ml
+
+# Check services
+kubectl get services -n kai-ml
+
+# Check Argo Workflows
+kubectl get workflowtemplates -n kai-ml
 ```
 
-**Secrets (secrets.yaml)**:
+Access the monitoring dashboards:
+- Grafana: http://<cluster-ip>:80 (via ingress)
+- Jaeger: http://<cluster-ip>:16686
 
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: kai-secrets
-  namespace: kai
-type: Opaque
-data:
-  # Base64 encoded secrets
-  mongodb-uri: <base64-encoded-mongodb-uri>
-  supabase-url: <base64-encoded-supabase-url>
-  supabase-key: <base64-encoded-supabase-key>
-  jwt-secret: <base64-encoded-jwt-secret>
-  s3-access-key: <base64-encoded-s3-access-key>
-  s3-secret-key: <base64-encoded-s3-secret-key>
-```
+### 7. Setting Up External Access
 
-**ConfigMap (configmap.yaml)**:
+1. Install the NGINX Ingress Controller if not already installed:
+   ```bash
+   kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.7.0/deploy/static/provider/cloud/deploy.yaml
+   ```
 
-```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: kai-config
-  namespace: kai
-data:
-  NODE_ENV: "production"
-  API_BASE_URL: "https://api.kai.yourdomain.com"
-  S3_BUCKET: "kai-production"
-  S3_REGION: "us-east-1"
-  CORS_ORIGIN: "https://kai.yourdomain.com,https://admin.kai.yourdomain.com"
-  LOG_LEVEL: "info"
-  PORT: "3000"
-```
+2. Create an ingress for the coordinator and other services:
+   ```yaml
+   apiVersion: networking.k8s.io/v1
+   kind: Ingress
+   metadata:
+     name: kai-ml-ingress
+     namespace: kai-ml
+     annotations:
+       kubernetes.io/ingress.class: "nginx"
+       cert-manager.io/cluster-issuer: "letsencrypt-prod"
+   spec:
+     tls:
+     - hosts:
+       - api.yourdomain.com
+       secretName: kai-ml-tls-secret
+     rules:
+     - host: api.yourdomain.com
+       http:
+         paths:
+         - path: /api/workflows
+           pathType: Prefix
+           backend:
+             service:
+               name: coordinator-service
+               port:
+                 number: 80
+         - path: /
+           pathType: Prefix
+           backend:
+             service:
+               name: api-server-service
+               port:
+                 number: 80
+   ```
 
-**API Server Deployment (api-server-deployment.yaml)**:
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: kai-api-server
-  namespace: kai
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: kai-api-server
-  template:
-    metadata:
-      labels:
-        app: kai-api-server
-    spec:
-      containers:
-      - name: api-server
-        image: ${DOCKER_REGISTRY}/kai-api-server:${IMAGE_TAG}
-        ports:
-        - containerPort: 3000
-        envFrom:
-        - configMapRef:
-            name: kai-config
-        env:
-        - name: MONGODB_URI
-          valueFrom:
-            secretKeyRef:
-              name: kai-secrets
-              key: mongodb-uri
-        - name: SUPABASE_URL
-          valueFrom:
-            secretKeyRef:
-              name: kai-secrets
-              key: supabase-url
-        - name: SUPABASE_KEY
-          valueFrom:
-            secretKeyRef:
-              name: kai-secrets
-              key: supabase-key
-        - name: JWT_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: kai-secrets
-              key: jwt-secret
-        - name: S3_ACCESS_KEY
-          valueFrom:
-            secretKeyRef:
-              name: kai-secrets
-              key: s3-access-key
-        - name: S3_SECRET_KEY
-          valueFrom:
-            secretKeyRef:
-              name: kai-secrets
-              key: s3-secret-key
-        resources:
-          requests:
-            memory: "512Mi"
-            cpu: "250m"
-          limits:
-            memory: "1Gi"
-            cpu: "500m"
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 3000
-          initialDelaySeconds: 5
-          periodSeconds: 10
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 3000
-          initialDelaySeconds: 15
-          periodSeconds: 20
-```
-
-**ML Services Deployment (ml-services-deployment.yaml)**:
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: kai-ml-services
-  namespace: kai
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: kai-ml-services
-  template:
-    metadata:
-      labels:
-        app: kai-ml-services
-    spec:
-      containers:
-      - name: ml-services
-        image: ${DOCKER_REGISTRY}/kai-ml-services:${IMAGE_TAG}
-        ports:
-        - containerPort: 5000
-        envFrom:
-        - configMapRef:
-            name: kai-config
-        env:
-        - name: MONGODB_URI
-          valueFrom:
-            secretKeyRef:
-              name: kai-secrets
-              key: mongodb-uri
-        - name: S3_ACCESS_KEY
-          valueFrom:
-            secretKeyRef:
-              name: kai-secrets
-              key: s3-access-key
-        - name: S3_SECRET_KEY
-          valueFrom:
-            secretKeyRef:
-              name: kai-secrets
-              key: s3-secret-key
-        resources:
-          requests:
-            memory: "2Gi"
-            cpu: "1000m"
-          limits:
-            memory: "4Gi"
-            cpu: "2000m"
-            nvidia.com/gpu: 1
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 5000
-          initialDelaySeconds: 30
-          periodSeconds: 30
-        volumeMounts:
-        - name: ml-models
-          mountPath: /app/models
-      volumes:
-      - name: ml-models
-        persistentVolumeClaim:
-          claimName: ml-models-pvc
-      nodeSelector:
-        node-type: ml
-```
-
-**Persistent Volume Claim (ml-models-pvc.yaml)**:
-
-```yaml
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: ml-models-pvc
-  namespace: kai
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 20Gi
-  storageClassName: do-block-storage
-```
-
-**Services (services.yaml)**:
-
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: kai-api-server-service
-  namespace: kai
-spec:
-  selector:
-    app: kai-api-server
-  ports:
-  - port: 80
-    targetPort: 3000
-  type: ClusterIP
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: kai-ml-services-service
-  namespace: kai
-spec:
-  selector:
-    app: kai-ml-services
-  ports:
-  - port: 80
-    targetPort: 5000
-  type: ClusterIP
-```
-
-**Ingress (ingress.yaml)**:
-
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: kai-ingress
-  namespace: kai
-  annotations:
-    kubernetes.io/ingress.class: "nginx"
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
-spec:
-  tls:
-  - hosts:
-    - api.kai.yourdomain.com
-    secretName: kai-tls-secret
-  rules:
-  - host: api.kai.yourdomain.com
-    http:
-      paths:
-      - path: /api/ml
-        pathType: Prefix
-        backend:
-          service:
-            name: kai-ml-services-service
-            port:
-              number: 80
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: kai-api-server-service
-            port:
-              number: 80
-```
-
-### 5. Setting Up Cert-Manager for TLS
-
-1. Install cert-manager:
+3. Install cert-manager for TLS:
    ```bash
    kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.11.0/cert-manager.yaml
    ```
 
-2. Create a ClusterIssuer:
+4. Create a ClusterIssuer for Let's Encrypt:
    ```yaml
    apiVersion: cert-manager.io/v1
    kind: ClusterIssuer
@@ -858,35 +649,32 @@ spec:
              class: nginx
    ```
 
-### 6. Applying Kubernetes Manifests
-
-Apply all manifests to the cluster:
-
-```bash
-kubectl apply -f namespace.yaml
-kubectl apply -f secrets.yaml
-kubectl apply -f configmap.yaml
-kubectl apply -f ml-models-pvc.yaml
-kubectl apply -f api-server-deployment.yaml
-kubectl apply -f ml-services-deployment.yaml
-kubectl apply -f services.yaml
-kubectl apply -f ingress.yaml
-```
-
-### 7. Setting Up Ingress Controller
-
-1. Install the NGINX Ingress Controller:
-   ```bash
-   kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.7.0/deploy/static/provider/cloud/deploy.yaml
-   ```
-
-2. After the Ingress Controller is deployed, get the Load Balancer IP:
+5. Configure DNS records to point to the Load Balancer IP:
    ```bash
    kubectl get service ingress-nginx-controller -n ingress-nginx
    ```
+   Create an A record for `api.yourdomain.com` pointing to the IP address.
 
-3. Configure your DNS records to point to this IP address:
-   - Create an A record for `api.kai.yourdomain.com` pointing to the Load Balancer IP
+### 8. Setting Up Argo Workflows
+
+The KAI ML Platform uses Argo Workflows for orchestrating ML pipelines. Install and configure it:
+
+```bash
+# Install Argo Workflows
+kubectl create namespace argo
+kubectl apply -n argo -f https://github.com/argoproj/argo-workflows/releases/download/v3.4.5/install.yaml
+
+# Configure Argo to work with the kai-ml namespace
+kubectl apply -f kubernetes/argo-rbac.yaml
+```
+
+Argo Workflows provides a UI that can be accessed at http://localhost:2746 after port-forwarding:
+
+```bash
+kubectl -n argo port-forward deployment/argo-server 2746:2746
+```
+
+For more detailed information about the Kubernetes architecture, node pools, resource management, security, and operational considerations, refer to the [Kubernetes Architecture](./kubernetes-architecture.md) documentation.
 
 ## Environment Variables
 

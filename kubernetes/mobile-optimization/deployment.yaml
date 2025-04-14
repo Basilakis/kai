@@ -1,0 +1,121 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mobile-optimization
+  namespace: kai-ml
+  labels:
+    app: mobile-optimization
+    component: optimization
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: mobile-optimization
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: mobile-optimization
+        component: optimization
+    spec:
+      containers:
+      - name: mobile-optimizer
+        image: kai/mobile-optimizer:latest
+        imagePullPolicy: Always
+        resources:
+          requests:
+            cpu: "1"
+            memory: "2Gi"
+          limits:
+            cpu: "2"
+            memory: "4Gi"
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        ports:
+        - containerPort: 3000
+          name: http
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        volumeMounts:
+        - name: config-volume
+          mountPath: /app/config
+        - name: models-volume
+          mountPath: /app/models
+      volumes:
+      - name: config-volume
+        configMap:
+          name: mobile-optimization-config
+      - name: models-volume
+        persistentVolumeClaim:
+          claimName: models-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mobile-optimization
+  namespace: kai-ml
+  labels:
+    app: mobile-optimization
+    component: optimization
+spec:
+  ports:
+  - port: 80
+    targetPort: 3000
+    protocol: TCP
+    name: http
+  selector:
+    app: mobile-optimization
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mobile-optimization-config
+  namespace: kai-ml
+data:
+  config.json: |
+    {
+      "draco": {
+        "compressionLevel": "high",
+        "quantizationBits": 14,
+        "quantizationRange": 1,
+        "useTexcoordCompression": true
+      },
+      "lod": {
+        "levels": [
+          {"threshold": 10, "reduction": 0.8},
+          {"threshold": 20, "reduction": 0.6},
+          {"threshold": 30, "reduction": 0.4},
+          {"threshold": 50, "reduction": 0.2}
+        ],
+        "preserveFeatures": true,
+        "boundaryPreservation": true
+      },
+      "adaptiveStreaming": {
+        "enabled": true,
+        "bandwidthThresholds": [
+          {"threshold": 1000000, "quality": "high"},
+          {"threshold": 500000, "quality": "medium"},
+          {"threshold": 250000, "quality": "low"}
+        ],
+        "chunkSize": 65536,
+        "priorityRegions": true
+      }
+    }

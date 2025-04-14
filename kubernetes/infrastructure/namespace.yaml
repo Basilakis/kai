@@ -1,0 +1,57 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kai-ml
+  labels:
+    name: kai-ml
+    component: ml-platform
+    environment: production
+
+---
+# Resource quotas for the kai-ml namespace
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: kai-ml-quota
+  namespace: kai-ml
+spec:
+  hard:
+    # Pod limits
+    pods: "100"
+    
+    # CPU limits
+    requests.cpu: "100"
+    limits.cpu: "200"
+    
+    # Memory limits
+    requests.memory: 200Gi
+    limits.memory: 400Gi
+    
+    # GPU limits
+    requests.nvidia.com/gpu: "16"
+    limits.nvidia.com/gpu: "16"
+    
+    # Storage limits
+    requests.storage: 500Gi
+    persistentvolumeclaims: "50"
+    
+    # Workflow limits
+    count/workflows.argoproj.io: "50"
+
+---
+# LimitRange defines default resource limits for containers in the namespace
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: kai-ml-limits
+  namespace: kai-ml
+spec:
+  limits:
+  - default:
+      cpu: 1
+      memory: 1Gi
+    defaultRequest:
+      cpu: 100m
+      memory: 128Mi
+    type: Container

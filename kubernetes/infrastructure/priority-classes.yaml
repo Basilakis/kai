@@ -1,0 +1,69 @@
+---
+# System-critical priority class for essential system components
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: system-critical
+value: 1000000
+globalDefault: false
+description: "This priority class is used for system-critical components that must not be preempted."
+
+---
+# Interactive priority class for user-facing requests requiring low latency
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: interactive
+value: 100000
+globalDefault: false
+description: "This priority class is used for interactive user requests that require low latency."
+
+---
+# High priority class for important batch jobs
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: high-priority-batch
+value: 50000
+globalDefault: false
+description: "This priority class is used for high-priority batch processing jobs."
+
+---
+# Medium priority class for normal batch jobs
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: medium-priority-batch
+value: 10000
+globalDefault: true
+description: "This priority class is used for medium-priority batch processing jobs (default)."
+
+---
+# Low priority class for non-urgent batch jobs
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: low-priority-batch
+value: 1000
+globalDefault: false
+description: "This priority class is used for low-priority batch processing jobs."
+
+---
+# Maintenance priority class for system maintenance tasks
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: maintenance
+value: 100
+globalDefault: false
+description: "This priority class is used for system maintenance tasks that can be preempted if necessary."
+
+---
+# Preemptible priority class for jobs that can be safely preempted
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: preemptible
+value: 0
+globalDefault: false
+description: "This priority class is used for preemptible workloads that run on spot/preemptible instances."

@@ -21,6 +21,7 @@ FROM base AS deps
 COPY package.json yarn.lock ./
 COPY packages/shared/package.json ./packages/shared/
 COPY packages/server/package.json ./packages/server/
+COPY packages/agents/package.json ./packages/agents/
 
 # Install all dependencies (including dev)
 RUN yarn install --frozen-lockfile
@@ -33,7 +34,8 @@ COPY --chown=nodeuser:nodejs . .
 
 # Build packages
 RUN yarn workspace @kai/shared build && \
-    yarn workspace @kai/server build
+    yarn workspace @kai/server build && \
+    yarn workspace @kai/agents build
 
 # STAGE 4: Production dependencies
 FROM base AS prod-deps
@@ -42,6 +44,7 @@ FROM base AS prod-deps
 COPY package.json yarn.lock ./
 COPY packages/shared/package.json ./packages/shared/
 COPY packages/server/package.json ./packages/server/
+COPY packages/agents/package.json ./packages/agents/
 
 # Install production dependencies only
 RUN yarn install --frozen-lockfile --production
@@ -69,12 +72,15 @@ RUN apk add --no-cache dumb-init tzdata curl && \
 COPY --from=prod-deps --chown=nodeuser:nodejs /app/node_modules ./node_modules
 COPY --from=prod-deps --chown=nodeuser:nodejs /app/packages/shared/node_modules ./packages/shared/node_modules
 COPY --from=prod-deps --chown=nodeuser:nodejs /app/packages/server/node_modules ./packages/server/node_modules
+COPY --from=prod-deps --chown=nodeuser:nodejs /app/packages/agents/node_modules ./packages/agents/node_modules
 
 # Copy built files
 COPY --from=builder --chown=nodeuser:nodejs /app/packages/shared/dist ./packages/shared/dist
 COPY --from=builder --chown=nodeuser:nodejs /app/packages/shared/package.json ./packages/shared/
 COPY --from=builder --chown=nodeuser:nodejs /app/packages/server/dist ./packages/server/dist
 COPY --from=builder --chown=nodeuser:nodejs /app/packages/server/package.json ./packages/server/
+COPY --from=builder --chown=nodeuser:nodejs /app/packages/agents/dist ./packages/agents/dist
+COPY --from=builder --chown=nodeuser:nodejs /app/packages/agents/package.json ./packages/agents/
 COPY --chown=nodeuser:nodejs package.json ./
 
 # Expose port

@@ -1,6 +1,6 @@
 /**
  * Agent Routes
- * 
+ *
  * Defines RESTful API endpoints for agent interaction,
  * connecting the frontend agent UI with the backend
  * agent system.
@@ -18,6 +18,7 @@ declare global {
       user?: {
         id: string;
         role: string;
+        email?: string;
       };
     }
   }
@@ -27,26 +28,25 @@ const router = express.Router();
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
+  destination: (_req, _file, cb) => {
     cb(null, 'uploads/');
   },
-  filename: (req, file, cb) => {
+  filename: (_req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
     const fileExt = file.originalname.split('.').pop();
     cb(null, `${file.fieldname}-${uniqueSuffix}.${fileExt}`);
   },
 });
 
-const upload = multer({ 
-  storage, 
+const upload = multer({
+  storage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
-  fileFilter: (req, file, cb) => {
+  fileFilter: (_req, file, cb) => {
     // Accept only image files
     if (file.mimetype.startsWith('image/')) {
-      cb(null, true);
+      return cb(null, true);
     } else {
-      cb(null, false);
-      return new Error('Only image files are allowed');
+      return cb(new Error('Only image files are allowed'), false);
     }
   }
 });
@@ -67,7 +67,7 @@ router.post('/session', authMiddleware, agentController.createSession);
  * @access  Private - Session owner only
  */
 router.post(
-  '/session/:sessionId/message', 
+  '/session/:sessionId/message',
   authMiddleware,
   validateSessionOwnership(), // Ensure user owns the session
   agentController.sendMessage
@@ -79,7 +79,7 @@ router.post(
  * @access  Private - Session owner only
  */
 router.get(
-  '/session/:sessionId/messages', 
+  '/session/:sessionId/messages',
   authMiddleware,
   validateSessionOwnership(), // Ensure user owns the session
   agentController.getMessages
@@ -104,7 +104,7 @@ router.post(
  * @access  Private - Session owner only
  */
 router.delete(
-  '/session/:sessionId', 
+  '/session/:sessionId',
   authMiddleware,
   validateSessionOwnership(), // Ensure user owns the session
   agentController.closeSession
@@ -127,10 +127,10 @@ router.get(
         message: 'Access denied: Admin role required'
       });
     }
-    
+
     // This would call a method to get system status
     // For now, just return a placeholder response
-    res.status(200).json({
+    return res.status(200).json({
       status: 'operational',
       sessions: {
         active: 42,
@@ -153,10 +153,10 @@ router.get(
 router.get(
   '/user/sessions',
   authMiddleware,
-  (req: Request, res: Response) => {
+  (_req: Request, res: Response) => {
     // This will be implemented in the controller
     // For now, provide a simple implementation here
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       sessions: []
     });

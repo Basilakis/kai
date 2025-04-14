@@ -1,0 +1,125 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coordinator-service
+  namespace: kai-ml
+  labels:
+    app: coordinator-service
+    component: orchestration
+spec:
+  replicas: 3  # Multiple replicas for high availability
+  selector:
+    matchLabels:
+      app: coordinator-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: coordinator-service
+        component: orchestration
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: coordinator-service-account  # Service account with permissions to create workflows
+      containers:
+      - name: coordinator
+        image: ${REGISTRY_URL}/kai/coordinator-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+        - containerPort: 8081
+          name: metrics
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "512Mi"
+          limits:
+            cpu: "2"
+            memory: "2Gi"
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: coordinator-config
+              key: redis_host
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: coordinator-config
+              key: redis_port
+        - name: WORKFLOW_NAMESPACE
+          valueFrom:
+            configMapKeyRef:
+              name: coordinator-config
+              key: workflow_namespace
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: coordinator-config
+              key: log_level
+        # Secrets as environment variables
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: coordinator-secrets
+              key: redis_password
+        # Add additional environment variables as needed
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 2
+          failureThreshold: 3
+        volumeMounts:
+        - name: config-volume
+          mountPath: /etc/coordinator/config
+          readOnly: true
+        - name: cache-volume
+          mountPath: /var/cache/coordinator
+      volumes:
+      - name: config-volume
+        configMap:
+          name: coordinator-config
+      - name: cache-volume
+        emptyDir: {}
+      # Affinity for better pod distribution
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - coordinator-service
+              topologyKey: "kubernetes.io/hostname"
+      # Use node selectors to run on appropriate nodes
+      nodeSelector:
+        node-type: orchestration
+      # Set appropriate tolerations based on node taints
+      tolerations:
+      - key: "node-type"
+        operator: "Equal"
+        value: "orchestration"
+        effect: "NoSchedule"

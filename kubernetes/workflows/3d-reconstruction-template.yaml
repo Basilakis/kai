@@ -1,0 +1,639 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: 3d-reconstruction
+  namespace: kai-ml
+  labels:
+    app: kai-ml
+    component: workflows
+    pipeline: 3d-reconstruction
+spec:
+  entrypoint: main
+  # Default workflow timeout (can be overridden per task)
+  activeDeadlineSeconds: 7200  # 2 hours max runtime
+  
+  # Default pod configuration
+  podGC:
+    strategy: OnWorkflowSuccess
+  
+  # Artifact repository for storing intermediate results
+  artifactRepositoryRef:
+    configMap: artifact-repository-config
+    key: s3
+  
+  # Volume templates for persistent storage
+  volumeClaimTemplates:
+  - metadata:
+      name: workdir
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 10Gi
+      storageClassName: standard
+  
+  # Parameters that can be passed to the workflow
+  arguments:
+    parameters:
+    - name: user-id
+      description: "User ID for tracking and resource accounting"
+    - name: subscription-tier
+      description: "User's subscription tier (free, standard, premium)"
+      default: "standard"
+    - name: input-images
+      description: "JSON array of input image URLs"
+    - name: quality-target
+      description: "Desired quality level (low, medium, high, auto)"
+      default: "auto"
+    - name: output-format
+      description: "Output format (nerf, gltf, usdz, etc.)"
+      default: "gltf"
+  
+  # Workflow templates
+  templates:
+  # Main workflow orchestration
+  - name: main
+    dag:
+      tasks:
+      # Quality assessment step
+      - name: assess-quality
+        template: assess-quality
+        arguments:
+          parameters:
+          - name: input-images
+            value: "{{workflow.parameters.input-images}}"
+          - name: quality-target
+            value: "{{workflow.parameters.quality-target}}"
+          - name: subscription-tier
+            value: "{{workflow.parameters.subscription-tier}}"
+      
+      # Branch based on quality assessment result
+      - name: quality-low
+        template: low-quality-pipeline
+        dependencies: [assess-quality]
+        when: "{{tasks.assess-quality.outputs.parameters.quality-level}} == low"
+        arguments:
+          parameters:
+          - name: input-images
+            value: "{{workflow.parameters.input-images}}"
+          - name: output-format
+            value: "{{workflow.parameters.output-format}}"
+      
+      - name: quality-medium
+        template: medium-quality-pipeline
+        dependencies: [assess-quality]
+        when: "{{tasks.assess-quality.outputs.parameters.quality-level}} == medium"
+        arguments:
+          parameters:
+          - name: input-images
+            value: "{{workflow.parameters.input-images}}"
+          - name: output-format
+            value: "{{workflow.parameters.output-format}}"
+      
+      - name: quality-high
+        template: high-quality-pipeline
+        dependencies: [assess-quality]
+        when: "{{tasks.assess-quality.outputs.parameters.quality-level}} == high"
+        arguments:
+          parameters:
+          - name: input-images
+            value: "{{workflow.parameters.input-images}}"
+          - name: output-format
+            value: "{{workflow.parameters.output-format}}"
+      
+      # Format conversion step (always executed)
+      - name: format-conversion
+        template: convert-format
+        dependencies: [quality-low, quality-medium, quality-high]
+        arguments:
+          parameters:
+          - name: input-model
+            value: >-
+              {{tasks.quality-low.outputs.parameters.model-path || 
+                tasks.quality-medium.outputs.parameters.model-path || 
+                tasks.quality-high.outputs.parameters.model-path}}
+          - name: output-format
+            value: "{{workflow.parameters.output-format}}"
+      
+      # Final cleanup and notification
+      - name: finalize
+        template: finalize
+        dependencies: [format-conversion]
+        arguments:
+          parameters:
+          - name: user-id
+            value: "{{workflow.parameters.user-id}}"
+          - name: output-url
+            value: "{{tasks.format-conversion.outputs.parameters.output-url}}"
+  
+  # Quality assessment template
+  - name: assess-quality
+    inputs:
+      parameters:
+      - name: input-images
+      - name: quality-target
+      - name: subscription-tier
+    outputs:
+      parameters:
+      - name: quality-level
+        valueFrom:
+          path: /tmp/quality-assessment/quality-level.txt
+    container:
+      image: ${REGISTRY_URL}/kai/quality-assessment:latest
+      command: [python, /app/assess_quality.py]
+      args:
+      - --input-images={{inputs.parameters.input-images}}
+      - --quality-target={{inputs.parameters.quality-target}}
+      - --subscription-tier={{inputs.parameters.subscription-tier}}
+      - --output-path=/tmp/quality-assessment/quality-level.txt
+      resources:
+        requests:
+          cpu: 500m
+          memory: 1Gi
+        limits:
+          cpu: 1
+          memory: 2Gi
+      volumeMounts:
+      - name: workdir
+        mountPath: /tmp/quality-assessment
+  
+  # Low quality reconstruction pipeline
+  - name: low-quality-pipeline
+    inputs:
+      parameters:
+      - name: input-images
+      - name: output-format
+    outputs:
+      parameters:
+      - name: model-path
+        valueFrom:
+          path: /tmp/reconstruction/model-path.txt
+    dag:
+      tasks:
+      # Image preprocessing (parallel)
+      - name: preprocess-images
+        template: preprocess-images
+        arguments:
+          parameters:
+          - name: input-images
+            value: "{{inputs.parameters.input-images}}"
+          - name: quality-level
+            value: "low"
+      
+      # Camera pose estimation (depends on preprocessed images)
+      - name: camera-pose-estimation
+        template: camera-pose-estimation-low
+        dependencies: [preprocess-images]
+        arguments:
+          parameters:
+          - name: preprocessed-images
+            value: "{{tasks.preprocess-images.outputs.parameters.preprocessed-images}}"
+      
+      # Generate simplified 3D model
+      - name: generate-model
+        template: generate-model-low
+        dependencies: [camera-pose-estimation]
+        arguments:
+          parameters:
+          - name: camera-poses
+            value: "{{tasks.camera-pose-estimation.outputs.parameters.camera-poses}}"
+          - name: preprocessed-images
+            value: "{{tasks.preprocess-images.outputs.parameters.preprocessed-images}}"
+  
+  # Medium quality reconstruction pipeline
+  - name: medium-quality-pipeline
+    inputs:
+      parameters:
+      - name: input-images
+      - name: output-format
+    outputs:
+      parameters:
+      - name: model-path
+        valueFrom:
+          path: /tmp/reconstruction/model-path.txt
+    dag:
+      tasks:
+      # Image preprocessing (parallel)
+      - name: preprocess-images
+        template: preprocess-images
+        arguments:
+          parameters:
+          - name: input-images
+            value: "{{inputs.parameters.input-images}}"
+          - name: quality-level
+            value: "medium"
+      
+      # Camera pose estimation (depends on preprocessed images)
+      - name: camera-pose-estimation
+        template: camera-pose-estimation-medium
+        dependencies: [preprocess-images]
+        arguments:
+          parameters:
+          - name: preprocessed-images
+            value: "{{tasks.preprocess-images.outputs.parameters.preprocessed-images}}"
+      
+      # Point cloud generation
+      - name: generate-point-cloud
+        template: generate-point-cloud
+        dependencies: [camera-pose-estimation]
+        arguments:
+          parameters:
+          - name: camera-poses
+            value: "{{tasks.camera-pose-estimation.outputs.parameters.camera-poses}}"
+          - name: preprocessed-images
+            value: "{{tasks.preprocess-images.outputs.parameters.preprocessed-images}}"
+      
+      # Generate medium quality 3D model
+      - name: generate-model
+        template: generate-model-medium
+        dependencies: [generate-point-cloud]
+        arguments:
+          parameters:
+          - name: point-cloud
+            value: "{{tasks.generate-point-cloud.outputs.parameters.point-cloud}}"
+          - name: camera-poses
+            value: "{{tasks.camera-pose-estimation.outputs.parameters.camera-poses}}"
+  
+  # High quality reconstruction pipeline
+  - name: high-quality-pipeline
+    inputs:
+      parameters:
+      - name: input-images
+      - name: output-format
+    outputs:
+      parameters:
+      - name: model-path
+        valueFrom:
+          path: /tmp/reconstruction/model-path.txt
+    dag:
+      tasks:
+      # Image preprocessing (parallel)
+      - name: preprocess-images
+        template: preprocess-images
+        arguments:
+          parameters:
+          - name: input-images
+            value: "{{inputs.parameters.input-images}}"
+          - name: quality-level
+            value: "high"
+      
+      # Camera pose estimation (depends on preprocessed images)
+      - name: camera-pose-estimation
+        template: camera-pose-estimation-high
+        dependencies: [preprocess-images]
+        arguments:
+          parameters:
+          - name: preprocessed-images
+            value: "{{tasks.preprocess-images.outputs.parameters.preprocessed-images}}"
+      
+      # Point cloud generation
+      - name: generate-point-cloud
+        template: generate-point-cloud
+        dependencies: [camera-pose-estimation]
+        arguments:
+          parameters:
+          - name: camera-poses
+            value: "{{tasks.camera-pose-estimation.outputs.parameters.camera-poses}}"
+          - name: preprocessed-images
+            value: "{{tasks.preprocess-images.outputs.parameters.preprocessed-images}}"
+      
+      # Generate high quality 3D model using DiffusionNeRF
+      - name: generate-nerf
+        template: generate-nerf
+        dependencies: [generate-point-cloud]
+        arguments:
+          parameters:
+          - name: point-cloud
+            value: "{{tasks.generate-point-cloud.outputs.parameters.point-cloud}}"
+          - name: camera-poses
+            value: "{{tasks.camera-pose-estimation.outputs.parameters.camera-poses}}"
+          - name: preprocessed-images
+            value: "{{tasks.preprocess-images.outputs.parameters.preprocessed-images}}"
+      
+      # Mesh extraction from NeRF
+      - name: extract-mesh
+        template: extract-mesh
+        dependencies: [generate-nerf]
+        arguments:
+          parameters:
+          - name: nerf-model
+            value: "{{tasks.generate-nerf.outputs.parameters.nerf-model}}"
+  
+  # Image preprocessing template
+  - name: preprocess-images
+    inputs:
+      parameters:
+      - name: input-images
+      - name: quality-level
+    outputs:
+      parameters:
+      - name: preprocessed-images
+        valueFrom:
+          path: /tmp/preprocessing/preprocessed-images.json
+    container:
+      image: ${REGISTRY_URL}/kai/image-preprocessing:latest
+      command: [python, /app/preprocess_images.py]
+      args:
+      - --input-images={{inputs.parameters.input-images}}
+      - --quality-level={{inputs.parameters.quality-level}}
+      - --output-path=/tmp/preprocessing/preprocessed-images.json
+      resources:
+        requests:
+          cpu: 1
+          memory: 2Gi
+        limits:
+          cpu: 2
+          memory: 4Gi
+      volumeMounts:
+      - name: workdir
+        mountPath: /tmp/preprocessing
+  
+  # Low quality camera pose estimation
+  - name: camera-pose-estimation-low
+    inputs:
+      parameters:
+      - name: preprocessed-images
+    outputs:
+      parameters:
+      - name: camera-poses
+        valueFrom:
+          path: /tmp/camera-poses/camera-poses.json
+    container:
+      image: ${REGISTRY_URL}/kai/colmap-sfm:latest
+      command: [python, /app/colmap_sfm_service.py]
+      args:
+      - --preprocessed-images={{inputs.parameters.preprocessed-images}}
+      - --quality=low
+      - --output-path=/tmp/camera-poses/camera-poses.json
+      resources:
+        requests:
+          cpu: 1
+          memory: 2Gi
+        limits:
+          cpu: 2
+          memory: 4Gi
+      volumeMounts:
+      - name: workdir
+        mountPath: /tmp/camera-poses
+  
+  # Medium quality camera pose estimation
+  - name: camera-pose-estimation-medium
+    inputs:
+      parameters:
+      - name: preprocessed-images
+    outputs:
+      parameters:
+      - name: camera-poses
+        valueFrom:
+          path: /tmp/camera-poses/camera-poses.json
+    container:
+      image: ${REGISTRY_URL}/kai/colmap-sfm:latest
+      command: [python, /app/colmap_sfm_service.py]
+      args:
+      - --preprocessed-images={{inputs.parameters.preprocessed-images}}
+      - --quality=medium
+      - --output-path=/tmp/camera-poses/camera-poses.json
+      resources:
+        requests:
+          cpu: 2
+          memory: 4Gi
+        limits:
+          cpu: 4
+          memory: 8Gi
+      volumeMounts:
+      - name: workdir
+        mountPath: /tmp/camera-poses
+  
+  # High quality camera pose estimation
+  - name: camera-pose-estimation-high
+    inputs:
+      parameters:
+      - name: preprocessed-images
+    outputs:
+      parameters:
+      - name: camera-poses
+        valueFrom:
+          path: /tmp/camera-poses/camera-poses.json
+    container:
+      image: ${REGISTRY_URL}/kai/colmap-sfm:latest
+      command: [python, /app/colmap_sfm_service.py]
+      args:
+      - --preprocessed-images={{inputs.parameters.preprocessed-images}}
+      - --quality=high
+      - --output-path=/tmp/camera-poses/camera-poses.json
+      resources:
+        requests:
+          cpu: 4
+          memory: 8Gi
+        limits:
+          cpu: 8
+          memory: 16Gi
+      volumeMounts:
+      - name: workdir
+        mountPath: /tmp/camera-poses
+  
+  # Point cloud generation template
+  - name: generate-point-cloud
+    inputs:
+      parameters:
+      - name: camera-poses
+      - name: preprocessed-images
+    outputs:
+      parameters:
+      - name: point-cloud
+        valueFrom:
+          path: /tmp/point-cloud/point-cloud-path.txt
+    container:
+      image: ${REGISTRY_URL}/kai/point-cloud:latest
+      command: [python, /app/point_cloud_service.py]
+      args:
+      - --camera-poses={{inputs.parameters.camera-poses}}
+      - --preprocessed-images={{inputs.parameters.preprocessed-images}}
+      - --output-path=/tmp/point-cloud/point-cloud-path.txt
+      resources:
+        requests:
+          cpu: 2
+          memory: 4Gi
+          nvidia.com/gpu: 1
+        limits:
+          cpu: 4
+          memory: 8Gi
+          nvidia.com/gpu: 1
+      volumeMounts:
+      - name: workdir
+        mountPath: /tmp/point-cloud
+  
+  # Low quality model generation
+  - name: generate-model-low
+    inputs:
+      parameters:
+      - name: camera-poses
+      - name: preprocessed-images
+    outputs:
+      parameters:
+      - name: model-path
+        valueFrom:
+          path: /tmp/reconstruction/model-path.txt
+    container:
+      image: ${REGISTRY_URL}/kai/model-generator:latest
+      command: [python, /app/generate_model.py]
+      args:
+      - --camera-poses={{inputs.parameters.camera-poses}}
+      - --preprocessed-images={{inputs.parameters.preprocessed-images}}
+      - --quality=low
+      - --output-path=/tmp/reconstruction/model-path.txt
+      resources:
+        requests:
+          cpu: 1
+          memory: 2Gi
+        limits:
+          cpu: 2
+          memory: 4Gi
+      volumeMounts:
+      - name: workdir
+        mountPath: /tmp/reconstruction
+  
+  # Medium quality model generation
+  - name: generate-model-medium
+    inputs:
+      parameters:
+      - name: point-cloud
+      - name: camera-poses
+    outputs:
+      parameters:
+      - name: model-path
+        valueFrom:
+          path: /tmp/reconstruction/model-path.txt
+    container:
+      image: ${REGISTRY_URL}/kai/model-generator:latest
+      command: [python, /app/generate_model.py]
+      args:
+      - --point-cloud={{inputs.parameters.point-cloud}}
+      - --camera-poses={{inputs.parameters.camera-poses}}
+      - --quality=medium
+      - --output-path=/tmp/reconstruction/model-path.txt
+      resources:
+        requests:
+          cpu: 2
+          memory: 4Gi
+          nvidia.com/gpu: 1
+        limits:
+          cpu: 4
+          memory: 8Gi
+          nvidia.com/gpu: 1
+      volumeMounts:
+      - name: workdir
+        mountPath: /tmp/reconstruction
+  
+  # NeRF generation template
+  - name: generate-nerf
+    inputs:
+      parameters:
+      - name: point-cloud
+      - name: camera-poses
+      - name: preprocessed-images
+    outputs:
+      parameters:
+      - name: nerf-model
+        valueFrom:
+          path: /tmp/nerf/nerf-model-path.txt
+    container:
+      image: ${REGISTRY_URL}/kai/diffusion-nerf:latest
+      command: [python, /app/diffusion_nerf_service.py]
+      args:
+      - --point-cloud={{inputs.parameters.point-cloud}}
+      - --camera-poses={{inputs.parameters.camera-poses}}
+      - --preprocessed-images={{inputs.parameters.preprocessed-images}}
+      - --output-path=/tmp/nerf/nerf-model-path.txt
+      resources:
+        requests:
+          cpu: 4
+          memory: 16Gi
+          nvidia.com/gpu: 2
+        limits:
+          cpu: 8
+          memory: 32Gi
+          nvidia.com/gpu: 2
+      volumeMounts:
+      - name: workdir
+        mountPath: /tmp/nerf
+      # Increase timeout for NeRF generation
+      activeDeadlineSeconds: 3600  # 1 hour
+  
+  # Mesh extraction from NeRF
+  - name: extract-mesh
+    inputs:
+      parameters:
+      - name: nerf-model
+    outputs:
+      parameters:
+      - name: model-path
+        valueFrom:
+          path: /tmp/reconstruction/model-path.txt
+    container:
+      image: ${REGISTRY_URL}/kai/nerf-mesh-extractor:latest
+      command: [python, /app/extract_mesh.py]
+      args:
+      - --nerf-model={{inputs.parameters.nerf-model}}
+      - --output-path=/tmp/reconstruction/model-path.txt
+      resources:
+        requests:
+          cpu: 2
+          memory: 8Gi
+          nvidia.com/gpu: 1
+        limits:
+          cpu: 4
+          memory: 16Gi
+          nvidia.com/gpu: 1
+      volumeMounts:
+      - name: workdir
+        mountPath: /tmp/reconstruction
+  
+  # Format conversion template
+  - name: convert-format
+    inputs:
+      parameters:
+      - name: input-model
+      - name: output-format
+    outputs:
+      parameters:
+      - name: output-url
+        valueFrom:
+          path: /tmp/conversion/output-url.txt
+    container:
+      image: ${REGISTRY_URL}/kai/format-converter:latest
+      command: [python, /app/convert_format.py]
+      args:
+      - --input-model={{inputs.parameters.input-model}}
+      - --output-format={{inputs.parameters.output-format}}
+      - --output-url-path=/tmp/conversion/output-url.txt
+      resources:
+        requests:
+          cpu: 1
+          memory: 2Gi
+        limits:
+          cpu: 2
+          memory: 4Gi
+      volumeMounts:
+      - name: workdir
+        mountPath: /tmp/conversion
+  
+  # Finalization template
+  - name: finalize
+    inputs:
+      parameters:
+      - name: user-id
+      - name: output-url
+    container:
+      image: ${REGISTRY_URL}/kai/workflow-finalizer:latest
+      command: [python, /app/finalize.py]
+      args:
+      - --user-id={{inputs.parameters.user-id}}
+      - --output-url={{inputs.parameters.output-url}}
+      resources:
+        requests:
+          cpu: 200m
+          memory: 256Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi

@@ -1,0 +1,188 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wasm-compiler
+  namespace: kai-ml
+  labels:
+    app: wasm-compiler
+    component: optimization
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: wasm-compiler
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: wasm-compiler
+        component: optimization
+    spec:
+      containers:
+      - name: wasm-compiler
+        image: kai/wasm-compiler:latest
+        imagePullPolicy: Always
+        resources:
+          requests:
+            cpu: "2"
+            memory: "4Gi"
+          limits:
+            cpu: "4"
+            memory: "8Gi"
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        - name: OPTIMIZATION_LEVEL
+          value: "3"
+        - name: WASM_FEATURES
+          value: "simd,threads,bulk-memory,reference-types"
+        ports:
+        - containerPort: 3100
+          name: http
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        volumeMounts:
+        - name: config-volume
+          mountPath: /app/config
+        - name: build-cache
+          mountPath: /app/cache
+        - name: output-volume
+          mountPath: /app/output
+      volumes:
+      - name: config-volume
+        configMap:
+          name: wasm-compiler-config
+      - name: build-cache
+        emptyDir: {}
+      - name: output-volume
+        persistentVolumeClaim:
+          claimName: wasm-output-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wasm-compiler
+  namespace: kai-ml
+  labels:
+    app: wasm-compiler
+    component: optimization
+spec:
+  ports:
+  - port: 80
+    targetPort: 3100
+    protocol: TCP
+    name: http
+  selector:
+    app: wasm-compiler
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wasm-compiler-config
+  namespace: kai-ml
+data:
+  config.json: |
+    {
+      "compiler": {
+        "emscripten": {
+          "version": "3.1.39",
+          "optimizationLevel": 3,
+          "features": ["WASM_BIGINT", "WASM_SIMD", "WASM_THREADS", "WASM_BULK_MEMORY"]
+        },
+        "wasmPackage": {
+          "enabled": true,
+          "version": "0.10.3"
+        }
+      },
+      "components": [
+        {
+          "name": "meshProcessor",
+          "sourceDir": "src/mesh",
+          "outputName": "mesh-processor.wasm",
+          "exports": ["simplifyMesh", "analyzeMesh", "transformMesh"],
+          "memory": {
+            "initial": 16,
+            "maximum": 128
+          }
+        },
+        {
+          "name": "materialProcessor",
+          "sourceDir": "src/material",
+          "outputName": "material-processor.wasm",
+          "exports": ["evaluateBRDF", "sampleTexture", "generateMipmap"],
+          "memory": {
+            "initial": 16,
+            "maximum": 64
+          }
+        },
+        {
+          "name": "imageProcessor",
+          "sourceDir": "src/image",
+          "outputName": "image-processor.wasm",
+          "exports": ["resizeImage", "applyFilter", "generateNormalMap"],
+          "memory": {
+            "initial": 16,
+            "maximum": 64
+          },
+          "features": ["SIMD"]
+        },
+        {
+          "name": "physicsProcessor",
+          "sourceDir": "src/physics",
+          "outputName": "physics-processor.wasm",
+          "exports": ["simulateRigidBody", "detectCollision", "applyConstraints"],
+          "memory": {
+            "initial": 32,
+            "maximum": 128
+          },
+          "features": ["THREADS"]
+        }
+      ],
+      "buildOptions": {
+        "minify": true,
+        "sourceMaps": false,
+        "debug": false,
+        "asyncCompilation": true,
+        "sharedMemory": true
+      },
+      "deployment": {
+        "cdn": {
+          "enabled": true,
+          "path": "https://cdn.kai.example.com/wasm/"
+        },
+        "versionControl": {
+          "enabled": true,
+          "strategy": "hash"
+        }
+      }
+    }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wasm-output-pvc
+  namespace: kai-ml
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: standard

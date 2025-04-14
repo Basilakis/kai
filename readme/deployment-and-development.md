@@ -490,95 +490,157 @@ docker push registry.example.com/kai-ml-services:latest
 docker push registry.example.com/kai-mcp-server:latest
 ```
 
-#### 5. Deployment Steps
+#### 5. Kubernetes Deployment (Recommended for Production)
 
-**Using Kubernetes (recommended for production)**
+The Kai platform uses a structured Kubernetes-based deployment process, optimized for ML workloads and scalability. The deployment is managed through a dedicated script that applies configurations in the correct order and handles environment-specific settings.
 
-1. Create Kubernetes manifests:
+##### 5.1. Kubernetes Architecture
 
-**api-server-deployment.yaml**
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: kai-api-server
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: kai-api-server
-  template:
-    metadata:
-      labels:
-        app: kai-api-server
-    spec:
-      containers:
-      - name: api-server
-        image: registry.example.com/kai-api-server:latest
-        ports:
-        - containerPort: 3000
-        env:
-        - name: NODE_ENV
-          value: "production"
-        - name: MONGODB_URI
-          valueFrom:
-            secretKeyRef:
-              name: kai-secrets
-              key: mongodb-uri
-        # Additional environment variables from ConfigMap
-        envFrom:
-        - configMapRef:
-            name: kai-api-config
-        resources:
-          requests:
-            memory: "512Mi"
-            cpu: "250m"
-          limits:
-            memory: "1Gi"
-            cpu: "500m"
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 3000
-          initialDelaySeconds: 5
-          periodSeconds: 10
+The deployment uses a dedicated namespace `kai-ml` with specialized components arranged in a hierarchical structure:
+
+```
+kubernetes/
+├── deploy.sh                        # Main deployment script
+├── coordinator/                     # Coordinator service manifests
+├── distributed-processing/          # Distributed processing components
+├── infrastructure/                  # Core infrastructure components
+├── mobile-optimization/             # Mobile optimization components
+├── wasm-compiler/                   # WebAssembly compiler components
+└── workflows/                       # Argo workflow templates
 ```
 
-2. Add health check and liveness probe to your Kubernetes deployment:
+##### 5.2. Deployment Script Usage
 
-```yaml
-spec:
-  template:
-    spec:
-      containers:
-      - name: kai-api-server
-        # ... existing configuration ...
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 3000
-          initialDelaySeconds: 30
-          periodSeconds: 15
-          timeoutSeconds: 5
-          failureThreshold: 3
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 3000
-          initialDelaySeconds: 5
-          periodSeconds: 10
-          timeoutSeconds: 3
-          failureThreshold: 2
-```
+The `kubernetes/deploy.sh` script manages the deployment process, handling component dependencies and order. Usage:
 
-3. Apply configurations:
 ```bash
-kubectl apply -f api-server-deployment.yaml
-kubectl apply -f ml-services-deployment.yaml
-kubectl apply -f api-server-service.yaml
-kubectl apply -f ml-services-service.yaml
-kubectl apply -f ingress.yaml
+# Basic deployment
+./kubernetes/deploy.sh
+
+# With custom parameters
+./kubernetes/deploy.sh --context=my-k8s-context --registry=my-registry.example.com --tag=v1.2.3
+
+# Selective deployment
+./kubernetes/deploy.sh --skip-infrastructure --skip-workflows
+
+# Dry run (validate configs without applying)
+./kubernetes/deploy.sh --dry-run
 ```
+
+Supported options:
+- `--context=<context>`: Kubernetes context to use (default: `kai-ml-cluster`)
+- `--registry=<url>`: Container registry URL (default: `registry.example.com`)
+- `--tag=<tag>`: Image tag (default: `latest`)
+- `--dry-run`: Validate configurations without applying changes
+- `--skip-infrastructure`: Skip infrastructure components
+- `--skip-coordinator`: Skip coordinator service components
+- `--skip-workflows`: Skip workflow templates
+
+##### 5.3. Component Structure
+
+###### 5.3.1. Infrastructure Components
+
+The base infrastructure includes:
+
+- **Namespace**: Defines the `kai-ml` namespace with resource quotas and limits.
+- **Priority Classes**: Seven distinct priority levels for workload scheduling:
+  - `system-critical`: Essential components that must not be preempted
+  - `interactive`: User-facing requests requiring low latency
+  - `high-priority-batch`: Important batch jobs
+  - `medium-priority-batch`: Normal batch jobs (default)
+  - `low-priority-batch`: Non-urgent batch jobs
+  - `maintenance`: System maintenance tasks
+  - `preemptible`: Jobs that can run on spot/preemptible instances
+- **Node Pools**: Specialized pools for different workload types:
+  - `cpu-optimized`: General processing
+  - `gpu-optimized`: ML inference (T4 GPUs)
+  - `gpu-high-end`: ML training (A100 GPUs)
+  - `memory-optimized`: Large model loading
+  - `storage-optimized`: Data-intensive operations
+  - `orchestration`: Control plane services
+  - `spot-instances`: Cost-effective batch processing
+- **Monitoring**: Prometheus and Grafana deployment for metrics collection and visualization
+- **Caching**: Redis master-replica setup with tiered caching strategy
+
+###### 5.3.2. Coordinator Service
+
+The coordinator service orchestrates ML workflows and manages resources:
+
+- **RBAC**: Service account with permissions to create and manage Argo workflows
+- **Configuration**: ConfigMap with settings for Redis, workflows, resource allocation, and quality tiers
+- **Service**: Exposes the coordinator API and metrics endpoints
+- **Deployment**: High-availability deployment (3 replicas) with health checks and resource constraints
+- **HPA**: Horizontal Pod Autoscaler for automatic scaling based on load
+- **PDB**: Pod Disruption Budget to ensure availability during cluster updates
+
+###### 5.3.3. Workflow Templates
+
+Argo workflow templates define reusable ML pipelines:
+
+- **3D Reconstruction**: Multi-stage pipeline for 3D model generation from images
+  - Quality assessment and branching
+  - Image preprocessing
+  - Camera pose estimation
+  - Point cloud generation
+  - NeRF generation and mesh extraction
+  - Format conversion
+
+##### 5.4. Advanced Features
+
+###### 5.4.1. Resource Management
+
+- **Node Selectors**: Components are scheduled on appropriate node pools
+- **Tolerations**: Allow pods to run on tainted nodes
+- **Pod Anti-Affinity**: Spread pods across nodes for high availability
+- **Resource Requests/Limits**: Define CPU, memory, and GPU requirements
+- **Priority Classes**: Assign priorities to ensure critical services get resources first
+
+###### 5.4.2. Argo Workflows Integration
+
+The deployment uses Argo Workflows for ML pipeline orchestration:
+
+- **Workflow Templates**: Reusable blueprint definitions for ML processes
+- **DAG Structure**: Define dependencies between workflow steps
+- **Conditional Execution**: Branch based on quality assessment or other factors
+- **Resource Allocation**: Assign appropriate resources to workflow steps
+- **Artifact Management**: Store and share data between workflow steps
+
+###### 5.4.3. Monitoring Stack
+
+The deployment includes a comprehensive monitoring stack:
+
+- **Prometheus**: Metrics collection and storage
+- **Grafana**: Dashboards for metrics visualization
+- **Jaeger**: Distributed tracing for request flows
+- **Custom Dashboards**: Pre-configured ML processing dashboards
+
+##### 5.5. Deployment Command Examples
+
+1. Deploy all components to default cluster:
+
+```bash
+./kubernetes/deploy.sh
+```
+
+2. Deploy with custom registry and tag:
+
+```bash
+./kubernetes/deploy.sh --registry=acr.azure.com/kai --tag=release-2023-04-13
+```
+
+3. Update only the coordinator service:
+
+```bash
+./kubernetes/deploy.sh --skip-infrastructure --skip-workflows
+```
+
+4. Perform a dry run to validate configurations:
+
+```bash
+./kubernetes/deploy.sh --dry-run
+```
+
+For more detailed information about the Kubernetes deployment, including post-installation steps and verification, refer to the [Kubernetes Architecture documentation](./kubernetes-architecture.md).
 
 **Using Docker Compose (for simpler deployments)**
 

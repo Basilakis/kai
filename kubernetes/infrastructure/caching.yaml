@@ -1,0 +1,405 @@
+---
+# Redis Master Deployment (for in-memory caching)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-master
+  namespace: kai-ml
+  labels:
+    app: redis
+    role: master
+    component: caching
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+      role: master
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: redis
+        role: master
+        component: caching
+    spec:
+      containers:
+      - name: master
+        image: redis:7.0-alpine
+        resources:
+          requests:
+            cpu: 500m
+            memory: 2Gi
+          limits:
+            cpu: 1
+            memory: 4Gi
+        ports:
+        - containerPort: 6379
+          name: redis
+        volumeMounts:
+        - name: redis-data
+          mountPath: /data
+        - name: redis-config
+          mountPath: /usr/local/etc/redis/redis.conf
+          subPath: redis.conf
+        command:
+        - redis-server
+        - /usr/local/etc/redis/redis.conf
+        livenessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 30
+          timeoutSeconds: 5
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 5
+          timeoutSeconds: 1
+      volumes:
+      - name: redis-data
+        persistentVolumeClaim:
+          claimName: redis-data
+      - name: redis-config
+        configMap:
+          name: redis-config
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-type
+                operator: In
+                values:
+                - memory-optimized
+      # Tolerate memory-optimized nodes
+      tolerations:
+      - key: "node-type"
+        operator: "Equal"
+        value: "memory-optimized"
+        effect: "NoSchedule"
+
+---
+# Redis Read Replicas (for improved read performance)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-replica
+  namespace: kai-ml
+  labels:
+    app: redis
+    role: replica
+    component: caching
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: redis
+      role: replica
+  template:
+    metadata:
+      labels:
+        app: redis
+        role: replica
+        component: caching
+    spec:
+      containers:
+      - name: replica
+        image: redis:7.0-alpine
+        resources:
+          requests:
+            cpu: 200m
+            memory: 1Gi
+          limits:
+            cpu: 500m
+            memory: 2Gi
+        ports:
+        - containerPort: 6379
+          name: redis
+        command:
+        - redis-server
+        - --replicaof
+        - redis-master
+        - "6379"
+        livenessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 30
+          timeoutSeconds: 5
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 5
+          timeoutSeconds: 1
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - redis
+              topologyKey: "kubernetes.io/hostname"
+
+---
+# Redis Master Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-master
+  namespace: kai-ml
+  labels:
+    app: redis
+    role: master
+    component: caching
+spec:
+  selector:
+    app: redis
+    role: master
+  ports:
+  - port: 6379
+    targetPort: 6379
+    name: redis
+  type: ClusterIP
+
+---
+# Redis Replica Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-replica
+  namespace: kai-ml
+  labels:
+    app: redis
+    role: replica
+    component: caching
+spec:
+  selector:
+    app: redis
+    role: replica
+  ports:
+  - port: 6379
+    targetPort: 6379
+    name: redis
+  type: ClusterIP
+
+---
+# Redis ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-config
+  namespace: kai-ml
+  labels:
+    app: redis
+    component: caching
+data:
+  redis.conf: |
+    # Redis configuration
+    # Enable AOF for persistence
+    appendonly yes
+    appendfsync everysec
+    
+    # Memory management
+    maxmemory 3gb
+    maxmemory-policy allkeys-lru
+    
+    # Connection settings
+    timeout 300
+    tcp-keepalive 60
+    
+    # Performance tuning
+    activerehashing yes
+    
+    # Snapshotting (periodic RDB snapshots)
+    save 900 1
+    save 300 10
+    save 60 10000
+    
+    # Security (protected mode is enabled by default)
+    protected-mode yes
+
+---
+# Redis PersistentVolumeClaim
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-data
+  namespace: kai-ml
+  labels:
+    app: redis
+    component: caching
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: standard
+
+---
+# Cache Manager Deployment (manages tiered caching strategy)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cache-manager
+  namespace: kai-ml
+  labels:
+    app: cache-manager
+    component: caching
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cache-manager
+  template:
+    metadata:
+      labels:
+        app: cache-manager
+        component: caching
+    spec:
+      containers:
+      - name: cache-manager
+        image: ${REGISTRY_URL}/kai/cache-manager:latest
+        resources:
+          requests:
+            cpu: 200m
+            memory: 512Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+        env:
+        - name: REDIS_HOST
+          value: redis-master
+        - name: REDIS_PORT
+          value: "6379"
+        - name: STORAGE_BUCKET
+          valueFrom:
+            configMapKeyRef:
+              name: storage-config
+              key: cache_bucket
+        - name: MEMORY_CACHE_SIZE
+          value: "1000"
+        - name: DISK_CACHE_SIZE
+          value: "10000"
+        - name: CACHE_TTL_SECONDS
+          value: "86400"  # 24 hours
+        volumeMounts:
+        - name: cache-local
+          mountPath: /cache
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: cache-local
+        emptyDir: {}
+      nodeSelector:
+        node-type: storage-optimized
+      tolerations:
+      - key: "node-type"
+        operator: "Equal"
+        value: "storage-optimized"
+        effect: "NoSchedule"
+
+---
+# Cache Manager Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: cache-manager
+  namespace: kai-ml
+  labels:
+    app: cache-manager
+    component: caching
+spec:
+  selector:
+    app: cache-manager
+  ports:
+  - port: 8080
+    targetPort: 8080
+    name: http
+  type: ClusterIP
+
+---
+# Content-Addressable Storage ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: storage-config
+  namespace: kai-ml
+  labels:
+    component: storage
+data:
+  cache_bucket: "kai-ml-cache"
+  cas_config: |
+    {
+      "storage": {
+        "memory": {
+          "maxItems": 10000,
+          "evictionPolicy": "lru"
+        },
+        "disk": {
+          "path": "/cache",
+          "maxSize": "20Gi",
+          "evictionPolicy": "lfu"
+        },
+        "object": {
+          "bucket": "kai-ml-cache",
+          "region": "us-west-1"
+        }
+      },
+      "caching": {
+        "default": {
+          "ttl": 86400,
+          "strategy": "tiered"
+        },
+        "tiers": [
+          {
+            "name": "preprocessed-images",
+            "ttl": 604800,
+            "pattern": "preprocess:*"
+          },
+          {
+            "name": "camera-poses",
+            "ttl": 2592000,
+            "pattern": "camera:*"
+          },
+          {
+            "name": "point-clouds",
+            "ttl": 1209600,
+            "pattern": "pointcloud:*"
+          },
+          {
+            "name": "nerf-models",
+            "ttl": 7776000,
+            "pattern": "nerf:*"
+          }
+        ]
+      },
+      "predictive": {
+        "enabled": true,
+        "minQueryCount": 5,
+        "predictionWindow": 3600,
+        "maxPredictions": 20
+      }
+    }

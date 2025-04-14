@@ -6,13 +6,11 @@ echo "Setting up KAI crewAI integration..."
 # Navigate to the agents package directory
 cd "$(dirname "$0")"
 
-# Install dependencies
-echo "Installing dependencies..."
-yarn add crewai crewai-tools langchain redis winston
-yarn add -D @types/node
+# NOTE: Dependencies are managed in packages/agents/package.json and installed via 'yarn install'.
+# The 'yarn add' commands previously here were redundant.
 
-# Create missing directories
-echo "Creating directory structure..."
+# Create missing directories (for local dev setup)
+echo "Creating directory structure if needed..."
 mkdir -p src/frontend
 mkdir -p src/backend
 mkdir -p logs
