@@ -15,13 +15,7 @@ declare module 'fs' {
   };
 }
 
-declare module 'process' {
-  export const env: {
-    [key: string]: string | undefined;
-    NODE_ENV?: 'development' | 'production' | 'test';
-  };
-  export function cwd(): string;
-}
+// Process is declared as a global variable in global.d.ts
 
 declare module 'path' {
   export function join(...paths: string[]): string;

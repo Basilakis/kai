@@ -1,8 +1,11 @@
+/// <reference path="../../types/node-types.d.ts" />
+
 import { Logger } from 'winston';
 import { createLogger } from '../../utils/logger';
 import * as fs from 'fs/promises'; // Use async fs
 import * as path from 'path';
 import { spawn } from 'child_process'; // Import spawn
+import { Buffer } from 'buffer'; // Explicitly import Buffer
 
 /**
  * LOD Level interface

@@ -1,0 +1,47 @@
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: coordinator
+  namespace: flux-system
+spec:
+  interval: 5m
+  chart:
+    spec:
+      chart: coordinator
+      version: ">=1.0.0"
+      sourceRef:
+        kind: HelmRepository
+        name: kai-charts
+        namespace: flux-system
+      interval: 1m
+  values:
+    replicaCount: 1
+    image:
+      repository: "${REGISTRY_URL}/coordinator"
+      tag: "${IMAGE_TAG}"
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 1024Mi
+      requests:
+        cpu: 500m
+        memory: 512Mi
+    autoscaling:
+      enabled: true
+      minReplicas: 1
+      maxReplicas: 5
+      targetCPUUtilizationPercentage: 80
+    rbac:
+      create: true
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      remediateLastFailure: true
+    cleanupOnFail: true
+  rollback:
+    timeout: 5m
+    cleanupOnFail: true
+  targetNamespace: kai-system-staging
+  releaseName: coordinator

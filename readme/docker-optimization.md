@@ -39,35 +39,163 @@ We've optimized the API server Docker build with the following improvements:
    - Better layer organization and caching
    - Explicit container configuration (ports, volumes, etc.)
 
-### ML Services (Dockerfile.ml)
+### Centralized GPU Base Image (Dockerfile.ml-base)
 
-The ML service Dockerfile has been optimized with these improvements:
+We've implemented a centralized GPU base image for all ML services:
 
-1. **Modern TensorFlow Base**
-   - Updated to a more recent TensorFlow base image
-   - Better GPU support and performance optimizations
-   - Reduced CVEs compared to older versions
+1. **Shared TensorFlow Base**
+   - Uses tensorflow/tensorflow:2.10.0-gpu base image
+   - Provides consistent GPU environment across all ML services
+   - Centralizes dependency management for common ML libraries
 
-2. **Separate Build Environments**
-   - Python dependencies installed in a dedicated build stage
-   - Node.js code built in a separate stage
-   - Optimized final runtime image that only includes necessary artifacts
+2. **Common Infrastructure**
+   - Standardized user setup (mluser) across all ML images
+   - Consistent environment variables
+   - Shared system dependencies
+   - Common Python packages used by multiple services
 
-3. **Dependency Management**
-   - Proper caching of pip and npm package installations
-   - Layer optimization for frequently changing vs. stable dependencies
-   - Clear separation between development and production dependencies
+3. **Simplified ML Service Dockerfiles**
+   - ML service Dockerfiles significantly reduced in size
+   - Focus only on service-specific code and dependencies
+   - Eliminates duplication of common setup steps
+   - Makes ML service Dockerfiles more maintainable
 
-4. **Security Hardening**
-   - Non-root user execution
-   - Minimal runtime permissions
-   - Removal of build tools from final image
-   - Explicit versioning of dependencies
+4. **Security and Consistency Benefits**
+   - Uniform security configuration
+   - Consistent permission model
+   - Centralized version control for common dependencies
+   - Easier updates across all ML services
 
-5. **Performance Optimizations**
-   - Proper use of PYTHONUNBUFFERED and other environment settings
-   - Optimized pip installation flags
-   - Reduced image size through careful layer management
+5. **Improved CI/CD Pipeline**
+   - Base image built first in the pipeline
+   - ML service images build in parallel using the base image
+   - Faster builds through better layer caching
+   - Updates to common dependencies need only one change
+
+### ML Services (Based on Dockerfile.ml-base)
+
+ML service Dockerfiles have been optimized to use the centralized base image:
+
+1. **Simplified Structure**
+   - Reduced from 30+ lines to ~10 lines of Dockerfile code
+   - Focus only on service-specific configuration
+   - Removed duplicated user, permission, and dependency setup
+
+2. **Dependency Management**
+   - Common dependencies in the base image
+   - Service-specific dependencies added as needed
+   - Clear separation between base and service-specific requirements
+
+3. **Workflow Optimization**
+   - Streamlined CI/CD for ML service updates
+   - Faster builds and deployments
+   - Easier maintenance and updates
+
+### Node.js Base Image (Dockerfile.node-base)
+
+We've implemented a centralized Node.js base image for all Node.js services:
+
+1. **Shared Node.js Base**
+   - Uses node:20-alpine base image
+   - Provides consistent Node.js environment across all services
+   - Centralizes dependency management for common Node.js libraries
+
+2. **Common Infrastructure**
+   - Standardized user setup (nodeuser) across all Node.js images
+   - Consistent security configuration
+   - Shared system dependencies like dumb-init for proper signal handling
+   - Common build tools and utilities
+
+3. **Simplified Node.js Service Dockerfiles**
+   - Node.js service Dockerfiles significantly reduced in size
+   - Focus only on service-specific code and dependencies
+   - Eliminates duplication of common setup steps
+   - Makes service Dockerfiles more maintainable
+
+4. **Security and Consistency Benefits**
+   - Uniform security configuration
+   - Consistent permission model
+   - Centralized version control for common dependencies
+   - Easier updates across all Node.js services
+
+5. **Improved CI/CD Pipeline**
+   - Base image built first in the pipeline
+   - Node.js service images build in parallel using the base image
+   - Faster builds through better layer caching
+   - Updates to common dependencies need only one change
+
+### Node.js Services (Based on Dockerfile.node-base)
+
+Node.js service Dockerfiles have been optimized to use the centralized base image:
+
+1. **Simplified Structure**
+   - Reduced from 25+ lines to ~5 lines of Dockerfile code for setup sections
+   - Focus only on service-specific configuration
+   - Removed duplicated user, permission, and dependency setup
+
+2. **Dependency Management**
+   - Common dependencies in the base image
+   - Service-specific dependencies added as needed
+   - Clear separation between base and service-specific requirements
+
+3. **Workflow Optimization**
+   - Streamlined CI/CD for service updates
+   - Faster builds and deployments
+   - Easier maintenance and updates
+
+### Python Base Image (Dockerfile.python-base)
+
+We've implemented a centralized Python base image for non-GPU Python services:
+
+1. **Shared Python Base**
+   - Uses python:3.9-slim base image
+   - Provides consistent Python environment for non-GPU services
+   - Centralizes dependency management for common Python libraries
+   - Smaller footprint than the GPU-based ML base image
+
+2. **Common Infrastructure**
+   - Standardized user setup (mluser) across all Python images
+   - Consistent environment variables
+   - Shared system dependencies
+   - Common Python packages used by multiple services
+
+3. **Simplified Service Dockerfiles**
+   - Non-GPU Python service Dockerfiles significantly reduced in size
+   - Focus only on service-specific code and dependencies
+   - Eliminates duplication of common setup steps
+   - Makes service Dockerfiles more maintainable
+
+4. **Security and Consistency Benefits**
+   - Uniform security configuration
+   - Consistent permission model
+   - Centralized version control for common dependencies
+   - Easier updates across all Python services
+
+5. **Improved CI/CD Pipeline**
+   - Base image built first in the pipeline
+   - Non-GPU Python service images build in parallel using the base image
+   - Faster builds through better layer caching
+   - Clear separation from GPU-dependent services
+
+### Python Services (Based on Dockerfile.python-base)
+
+Non-GPU Python service Dockerfiles have been optimized to use the centralized Python base image:
+
+1. **Simplified Structure**
+   - Reduced from 25+ lines to ~5 lines of Dockerfile code
+   - Focus only on service-specific configuration
+   - Removed duplicated user, permission, and dependency setup
+
+2. **Dependency Management**
+   - Common dependencies in the base image
+   - Service-specific dependencies added as needed
+   - Clear separation between base and service-specific requirements
+
+3. **Workflow Optimization**
+   - Streamlined CI/CD for service updates
+   - Faster builds and deployments
+   - Easier maintenance and updates
+   - Resource optimization by not requiring GPU for non-GPU services
 
 ## Build Context Optimization
 
@@ -129,9 +257,10 @@ A properly configured `.dockerignore` file can dramatically reduce:
 These optimized Dockerfiles work seamlessly with the CI/CD pipeline:
 
 1. The database migrations run before Docker images are built
-2. Docker builds occur in parallel for API and ML services
-3. The optimized images are deployed to Kubernetes
-4. Frontend deployments are coordinated with backend container updates
+2. The centralized GPU base image is built first
+3. Docker builds for all service images occur in parallel
+4. The optimized images are deployed to Kubernetes
+5. Frontend deployments are coordinated with backend container updates
 
 By implementing these Docker optimizations, the Kai platform achieves:
 - Faster build times in CI/CD pipelines
@@ -139,3 +268,5 @@ By implementing these Docker optimizations, the Kai platform achieves:
 - Reduced image sizes for faster deployments
 - Enhanced security posture
 - Better resource utilization in production
+- Simplified maintenance through centralized configuration
+- Consistent environments across all ML services

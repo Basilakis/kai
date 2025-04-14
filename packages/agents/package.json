@@ -25,10 +25,13 @@
     "python-shell": "^5.0.0",
     "redis": "^4.6.0",
     "three": "^0.160.0",
-    "winston": "^3.10.0"
+    "winston": "^3.10.0",
+    "@kai/shared": "workspace:*",
+    "uuid": "^9.0.0"
   },
   "devDependencies": {
     "@types/axios": "^0.14.0",
+    "@types/uuid": "^9.0.0",
     "@types/dotenv": "^8.2.0",
     "@types/jest": "^29.5.0",
     "@types/node": "^18.15.0",

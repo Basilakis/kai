@@ -373,14 +373,222 @@ class SceneGraphService:
         Returns:
             An updated scene graph with merged similar objects
         """
-        # Implementation would depend on the actual data structure
-        # This is a placeholder for the actual implementation
-        threshold = self.config["semantic_similarity_threshold"]
+        # Get configuration parameters
+        semantic_threshold = self.config["semantic_similarity_threshold"]
         spatial_threshold = self.config["spatial_relationship_distance_threshold"]
         
-        # TODO: Implement actual merging logic
-        # For now, just return the original graph
-        return graph_dict
+        if not graph_dict.get("nodes") or len(graph_dict["nodes"]) <= 1:
+            return graph_dict  # No nodes or just one node, nothing to merge
+        
+        # Create a deep copy to avoid modifying the original during processing
+        result = {
+            "nodes": [],
+            "edges": [] if "edges" in graph_dict else [],
+            "metadata": graph_dict.get("metadata", {})
+        }
+        
+        # Group nodes by type for initial filtering
+        nodes_by_type = {}
+        for node in graph_dict["nodes"]:
+            node_type = node.get("type", "unknown")
+            if node_type not in nodes_by_type:
+                nodes_by_type[node_type] = []
+            nodes_by_type[node_type].append(node)
+        
+        # Process each type group
+        merged_nodes = []
+        node_mapping = {}  # Maps original node IDs to merged node IDs
+        
+        for node_type, nodes in nodes_by_type.items():
+            # Skip if only one node of this type
+            if len(nodes) <= 1:
+                merged_nodes.extend(nodes)
+                for node in nodes:
+                    node_mapping[node["id"]] = node["id"]
+                continue
+            
+            # Check for similar nodes within the same type
+            processed_indices = set()
+            for i in range(len(nodes)):
+                if i in processed_indices:
+                    continue
+                
+                node_i = nodes[i]
+                similar_nodes = [node_i]
+                pos_i = np.array(node_i.get("position", [0, 0, 0]))
+                
+                # Find similar nodes
+                for j in range(i + 1, len(nodes)):
+                    if j in processed_indices:
+                        continue
+                    
+                    node_j = nodes[j]
+                    
+                    # Check positional similarity
+                    pos_j = np.array(node_j.get("position", [0, 0, 0]))
+                    distance = np.linalg.norm(pos_i - pos_j)
+                    
+                    # Check attribute similarity if needed
+                    attrs_i = node_i.get("attributes", {})
+                    attrs_j = node_j.get("attributes", {})
+                    attribute_similarity = self._compute_attribute_similarity(attrs_i, attrs_j)
+                    
+                    # If nodes are similar enough, group them
+                    if distance <= spatial_threshold and attribute_similarity >= semantic_threshold:
+                        similar_nodes.append(node_j)
+                        processed_indices.add(j)
+                
+                # Create a merged node if we found similar nodes
+                if len(similar_nodes) > 1:
+                    merged_node = self._create_merged_node(similar_nodes)
+                    merged_nodes.append(merged_node)
+                    
+                    # Update node mapping
+                    for node in similar_nodes:
+                        node_mapping[node["id"]] = merged_node["id"]
+                else:
+                    # Just add the single node as-is
+                    merged_nodes.append(node_i)
+                    node_mapping[node_i["id"]] = node_i["id"]
+                
+                processed_indices.add(i)
+        
+        # Add all merged and non-merged nodes to result
+        result["nodes"] = merged_nodes
+        
+        # Update edges to reference merged nodes
+        if "edges" in graph_dict:
+            for edge in graph_dict["edges"]:
+                source_id = edge.get("source", "")
+                target_id = edge.get("target", "")
+                
+                # Skip edges with unknown nodes
+                if not source_id or not target_id:
+                    continue
+                
+                # Map to new node IDs
+                new_source = node_mapping.get(source_id)
+                new_target = node_mapping.get(target_id)
+                
+                # Skip if either node was removed during merging
+                if not new_source or not new_target:
+                    continue
+                
+                # Create updated edge
+                new_edge = edge.copy()
+                new_edge["source"] = new_source
+                new_edge["target"] = new_target
+                
+                # Skip self-loops created by merging
+                if new_source == new_target:
+                    continue
+                
+                result["edges"].append(new_edge)
+        
+        # Add result metadata
+        if "metadata" not in result:
+            result["metadata"] = {}
+            
+        result["metadata"]["merged_nodes_count"] = len(graph_dict.get("nodes", [])) - len(merged_nodes)
+        result["metadata"]["processing"] = {
+            "merged": len(graph_dict.get("nodes", [])) > len(merged_nodes),
+            "semantic_threshold": semantic_threshold,
+            "spatial_threshold": spatial_threshold
+        }
+        
+        return result
+    
+    def _compute_attribute_similarity(self, attrs1: Dict, attrs2: Dict) -> float:
+        """
+        Compute similarity between two sets of attributes.
+        
+        Args:
+            attrs1: First attribute dictionary
+            attrs2: Second attribute dictionary
+            
+        Returns:
+            Similarity score between 0 and 1
+        """
+        if not attrs1 and not attrs2:
+            return 1.0  # Both empty means identical
+            
+        if not attrs1 or not attrs2:
+            return 0.0  # One empty means no similarity
+        
+        # Get all keys
+        all_keys = set(attrs1.keys()) | set(attrs2.keys())
+        if not all_keys:
+            return 1.0
+            
+        # Count matching values
+        matches = 0
+        for key in all_keys:
+            if key in attrs1 and key in attrs2:
+                value1 = attrs1[key]
+                value2 = attrs2[key]
+                
+                # Handle different data types
+                if isinstance(value1, (int, float)) and isinstance(value2, (int, float)):
+                    # Numerical comparison with 10% tolerance
+                    max_val = max(abs(value1), abs(value2), 1e-10)  # Avoid division by zero
+                    if abs(value1 - value2) / max_val < 0.1:
+                        matches += 1
+                else:
+                    # String/other comparison
+                    if value1 == value2:
+                        matches += 1
+        
+        return matches / len(all_keys)
+    
+    def _create_merged_node(self, nodes: List[Dict]) -> Dict:
+        """
+        Create a merged node from a list of similar nodes.
+        
+        Args:
+            nodes: List of nodes to merge
+            
+        Returns:
+            A merged node
+        """
+        if not nodes:
+            return {}
+            
+        if len(nodes) == 1:
+            return nodes[0].copy()
+        
+        # Generate new ID for merged node
+        merged_id = f"merged_{nodes[0]['id']}_{len(nodes)}"
+        
+        # Compute average position and size
+        positions = np.array([node.get("position", [0, 0, 0]) for node in nodes])
+        avg_position = positions.mean(axis=0).tolist()
+        
+        sizes = np.array([node.get("size", [1, 1, 1]) for node in nodes])
+        avg_size = sizes.mean(axis=0).tolist()
+        
+        # Take attributes from highest confidence node
+        highest_conf_node = max(nodes, key=lambda n: n.get("confidence", 0))
+        
+        # Combine labels if they differ
+        labels = set(node.get("label", "Unknown") for node in nodes)
+        if len(labels) == 1:
+            merged_label = next(iter(labels))
+        else:
+            merged_label = "+".join(sorted(labels))
+        
+        # Create merged node
+        merged_node = {
+            "id": merged_id,
+            "type": nodes[0].get("type", "unknown"),
+            "label": merged_label,
+            "position": avg_position,
+            "size": avg_size,
+            "confidence": sum(node.get("confidence", 1.0) for node in nodes) / len(nodes),
+            "attributes": highest_conf_node.get("attributes", {}).copy(),
+            "merged_from": [node["id"] for node in nodes]
+        }
+        
+        return merged_node
 
 # Health check function
 def health_check():

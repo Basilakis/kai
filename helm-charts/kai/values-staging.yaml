@@ -1,0 +1,47 @@
+# Staging-specific values for Kai Platform Helm chart
+# These values override the defaults in values.yaml
+
+global:
+  environment: "staging"
+  namespace: "kai-system-staging"
+  image:
+    tag: "staging"  # Will be overridden by CI/CD pipeline
+  labels:
+    environment: "staging"
+  resourceMultiplier: 1  # Base resources for staging
+
+# Staging-specific component settings
+coordinator:
+  replicaCount: 1
+  minReplicas: 1
+  maxReplicas: 5
+  pdbMinAvailable: 1
+  resources:
+    requests:
+      cpu: "200m"
+      memory: "512Mi"
+    limits:
+      cpu: "1000m"
+      memory: "2Gi"
+
+infrastructure:
+  caching:
+    redis:
+      replicaCount: 1
+      persistence:
+        size: 10Gi
+
+# API Server staging settings (mostly uses defaults)
+api-server:
+  enabled: true
+  replicaCount: 1
+  minReplicas: 1
+  maxReplicas: 5
+  pdbMinAvailable: 1
+  resources:
+    requests:
+      cpu: "200m"
+      memory: "512Mi"
+    limits:
+      cpu: "1000m"
+      memory: "2Gi"

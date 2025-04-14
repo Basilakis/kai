@@ -1,0 +1,13 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: coordinator-service-pdb
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "coordinator.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.pdbMinAvailable }}
+  selector:
+    matchLabels:
+      app: coordinator-service
+      {{- include "coordinator.selectorLabels" . | nindent 6 }}

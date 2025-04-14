@@ -1,0 +1,12 @@
+# Dockerfile for image-preprocessing worker
+FROM kai-ml-base:latest
+
+# Copy the specific worker script
+COPY packages/ml/python/preprocess_image.py ./preprocess_image.py
+
+# Copy any shared utility code if necessary
+# COPY packages/ml/python/utils ./utils
+
+# Set the command to run the worker script
+# Arguments will be passed by Argo Workflows based on the template
+CMD ["python", "preprocess_image.py"]

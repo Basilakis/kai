@@ -8,8 +8,12 @@
     "declarationMap": true,
     "sourceMap": true,
     "lib": ["es2020", "dom"],
-    "types": ["node"], // Restore explicit types
-    "typeRoots": ["../../node_modules/@types", "./node_modules/@types", "./src/types"],
+    "types": ["node"],
+    "typeRoots": [
+      "./src/types",
+      "./node_modules/@types",
+      "../../node_modules/@types"
+    ],
     "resolveJsonModule": true,
     "esModuleInterop": true,
     "module": "CommonJS",
@@ -20,5 +24,8 @@
     "forceConsistentCasingInFileNames": true
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "**/*.test.ts"]
+  "exclude": ["node_modules", "dist", "**/*.test.ts"],
+  "references": [ // Add reference to shared package
+    { "path": "../shared" }
+  ]
 }

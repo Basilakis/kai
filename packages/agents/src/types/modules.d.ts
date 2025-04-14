@@ -20,7 +20,4 @@ declare module 'python-shell' {
     }
 }
 
-declare module 'path' {
-    export function join(...paths: string[]): string;
-    export function dirname(path: string): string;
-}
+// Path module is already declared in node.d.ts

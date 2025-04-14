@@ -1,18 +1,11 @@
 # Optimized Dockerfile for API Server
-# Uses BuildKit features for faster builds
+# Uses BuildKit features for faster builds and centralized base image
 
 # STAGE 1: Base dependencies
-FROM node:20-alpine AS base
+FROM kai-node-base:latest AS base
 
 # Set working directory
 WORKDIR /app
-
-# Add non-root user
-RUN addgroup -g 1001 nodejs && \
-    adduser -D -u 1001 -G nodejs nodeuser
-
-# Install build dependencies
-RUN apk add --no-cache python3 make g++ tzdata curl
 
 # STAGE 2: Dependencies
 FROM base AS deps
@@ -24,6 +17,7 @@ COPY packages/server/package.json ./packages/server/
 COPY packages/agents/package.json ./packages/agents/
 
 # Install all dependencies (including dev)
+# Using the pre-configured yarn from the base image
 RUN yarn install --frozen-lockfile
 
 # STAGE 3: Builder
@@ -50,7 +44,7 @@ COPY packages/agents/package.json ./packages/agents/
 RUN yarn install --frozen-lockfile --production
 
 # STAGE 5: Production image
-FROM node:20-alpine AS runner
+FROM kai-node-base:latest AS runner
 
 # Set environment variables
 ENV NODE_ENV=production
@@ -60,13 +54,7 @@ ENV TZ=UTC
 # Set working directory
 WORKDIR /app
 
-# Add non-root user
-RUN addgroup -g 1001 nodejs && \
-    adduser -D -u 1001 -G nodejs nodeuser
-
-# Security hardening
-RUN apk add --no-cache dumb-init tzdata curl && \
-    echo "nodeuser:x:1001:1001::/home/nodeuser:/sbin/nologin" >> /etc/passwd
+# Security hardening - dumb-init already included in base image
 
 # Copy production dependencies
 COPY --from=prod-deps --chown=nodeuser:nodejs /app/node_modules ./node_modules

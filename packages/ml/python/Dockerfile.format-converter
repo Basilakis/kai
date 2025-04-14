@@ -1,0 +1,12 @@
+# Dockerfile for format-converter worker
+FROM kai-ml-base:latest
+
+# Copy the specific worker script
+COPY packages/ml/python/convert_format.py ./convert_format.py
+
+# Copy any shared utility code if necessary
+# COPY packages/ml/python/utils ./utils
+
+# Set the command to run the worker script
+# Arguments will be passed by Argo Workflows based on the template
+CMD ["python", "convert_format.py"]

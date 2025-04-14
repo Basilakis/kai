@@ -1,0 +1,15 @@
+<![CDATA[
+# Dockerfile for workflow-finalizer worker
+# This doesn't need GPU
+FROM kai-python-base:latest
+
+# Copy the specific worker script
+COPY packages/ml/python/finalize.py ./finalize.py
+
+# Copy any shared utility code if necessary
+# COPY packages/ml/python/utils ./utils
+
+# Set the command to run the worker script
+# Arguments will be passed by Argo Workflows based on the template
+CMD ["python", "finalize.py"]
+]]>

@@ -1,37 +1,29 @@
 {
+  "extends": "../../tsconfig.json", // Extend root config
   "compilerOptions": {
-    "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "outDir": "./dist",
-    "rootDir": "../../",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "declaration": true,
-    "resolveJsonModule": true,
-    "baseUrl": ".",
-    "paths": {
-      "*": ["node_modules/*", "src/types/*"],
-      "@kai/agents/*": ["src/*"],
-      "@kai/shared/*": ["../shared/src/*"]
-    },
-    "allowJs": true,
-    "allowSyntheticDefaultImports": true,
+    // Inherit most options from root config
+    "outDir": "./dist", // Specify output directory
+    "rootDir": "src", // Specify root source directory
+    "composite": true, // Enable project references
+    "types": ["node"], // Explicitly include Node.js types
     "typeRoots": [
+      "./src/types",
       "./node_modules/@types",
-      "./src/types"
-    ]
+      "../../node_modules/@types"
+    ],
+    // Remove module/moduleResolution to inherit from root
+    // Remove baseUrl/paths to rely on root config and references
+    // Remove lib, strict, esModuleInterop, skipLibCheck, etc. as they are in root
+    // Remove allowJs, allowSyntheticDefaultImports unless specifically needed
   },
-  "include": [
-    "src/**/*",
-    "src/types/**/*.d.ts",
-    "../shared/src/**/*"
+  "include": [ // Include only source files for this package
+    "src/**/*"
   ],
-  "exclude": [
+  "exclude": [ // Inherits exclude from root, can add specific ones if needed
     "node_modules",
     "dist"
+  ],
+  "references": [ // Add reference to shared package
+    { "path": "../shared" }
   ]
 }

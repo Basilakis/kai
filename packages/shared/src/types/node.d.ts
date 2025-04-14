@@ -49,6 +49,55 @@ declare module 'fs' {
     mtime: Date;
     ctime: Date;
   };
+
+  export namespace promises {
+    export function readFile(path: string, options?: { encoding?: string | null; flag?: string } | string | null): Promise<string | Buffer>;
+    export function writeFile(path: string, data: string | Buffer, options?: { encoding?: string | null; mode?: number | string; flag?: string } | string | null): Promise<void>;
+    export function mkdir(path: string, options?: { recursive?: boolean; mode?: number | string } | number | string): Promise<void>;
+    export function rmdir(path: string, options?: { recursive?: boolean; maxRetries?: number; retryDelay?: number }): Promise<void>;
+    export function unlink(path: string): Promise<void>;
+    export function readdir(path: string, options?: { encoding?: string | null; withFileTypes?: boolean } | string | null): Promise<string[]>;
+    export function stat(path: string): Promise<{
+      isFile(): boolean;
+      isDirectory(): boolean;
+      size: number;
+      mtime: Date;
+      ctime: Date;
+    }>;
+    export function mkdtemp(prefix: string): Promise<string>;
+    export function access(path: string, mode?: number): Promise<void>;
+    export function rm(path: string, options?: { recursive?: boolean; force?: boolean; maxRetries?: number; retryDelay?: number }): Promise<void>;
+  }
+}
+
+declare module 'os' {
+  export function tmpdir(): string;
+  export function hostname(): string;
+  export function platform(): string;
+  export function type(): string;
+  export function release(): string;
+  export function arch(): string;
+  export function cpus(): Array<{
+    model: string;
+    speed: number;
+    times: {
+      user: number;
+      nice: number;
+      sys: number;
+      idle: number;
+      irq: number;
+    };
+  }>;
+  export function totalmem(): number;
+  export function freemem(): number;
+  export function uptime(): number;
+  export function userInfo(): {
+    username: string;
+    uid: number;
+    gid: number;
+    shell: string;
+    homedir: string;
+  };
 }
 
 declare module 'crypto' {

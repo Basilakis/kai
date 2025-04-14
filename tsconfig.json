@@ -16,8 +16,18 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     // "types": ["react", "react-dom", "@types/node"], // Removed explicit types array
-    "typeRoots": ["./node_modules/@types", "./types"]
+    "typeRoots": ["./node_modules/@types", "./types"],
     // Removed problematic paths for MUI dependencies
+    "baseUrl": "." // Needed for paths to work
+    // Remove paths alias, rely on project references and node_modules linkage
   },
+  "references": [ // Add project references
+    { "path": "./packages/shared" },
+    { "path": "./packages/agents" },
+    { "path": "./packages/coordinator" },
+    { "path": "./packages/server" },
+    { "path": "./packages/ml" } 
+    // Add other TS packages if needed (client, admin, mcp-client?)
+  ],
   "exclude": ["**/node_modules", "**/dist", "**/.next"]
 }

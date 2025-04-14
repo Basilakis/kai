@@ -1,0 +1,40 @@
+# Dockerfile.ml-base
+# Centralized base image for all ML services
+FROM tensorflow/tensorflow:2.10.0-gpu
+
+# Set working directory
+WORKDIR /app
+
+# Add non-root user for better security
+RUN groupadd -g 1001 mluser && \
+    useradd -u 1001 -g mluser -s /bin/bash -m mluser
+
+# Install common system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    git \
+    wget \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install common Python packages
+COPY packages/ml/requirements.txt ./requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir \
+    matplotlib \
+    opencv-python-headless \
+    scikit-learn \
+    scikit-image
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PATH="/home/mluser/.local/bin:$PATH" \
+    TZ=UTC
+
+# Switch to non-root user by default (services can override if needed)
+USER mluser
+
+# The ENTRYPOINT and CMD will be specified by the service-specific Dockerfiles

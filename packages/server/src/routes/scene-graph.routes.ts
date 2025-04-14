@@ -130,11 +130,11 @@ router.post(
     let originalPath = modelFile.path; // Path where multer saved it
 
     // Use withTempDir to manage the lifecycle of the potentially moved file
-    await withTempDir(async (tempDirPath) => {
+    await withTempDir(async (_tempDirPath) => {
         // Optionally move the file to the managed temp dir if needed by the script
         // For simplicity, if runMlScript can handle the original path, we might not need to move it.
         // Assuming runMlScript needs the file path:
-        let inputPath = originalPath; 
+        let inputPath = originalPath;
 
         // If the script MUST run from a specific temp dir structure, move the file:
         // const newPath = path.join(tempDirPath, modelFile.filename);
@@ -224,7 +224,7 @@ router.post(
       const pointCloudFile = req.file as MulterFile;
       let originalPath = pointCloudFile.path;
 
-      await withTempDir(async (tempDirPath) => {
+      await withTempDir(async (_tempDirPath) => {
           // Assuming runMlScript can use the original path
           let inputPath = originalPath;
 

@@ -66,5 +66,14 @@ uvicorn>=0.22.0
 pytest>=7.3.0
 
 # CUDA support (optional, uncomment if using GPU)
+hdrnet-pytorch>=0.2.0
+envmapnet>=0.1.0
+materialnet>=1.0.0
+pycolmap>=0.3.0
+diffusionnerf>=0.1.0
+spaceformer>=0.2.0
+text2texture>=0.1.0
+point-e>=0.1.0
+scene-graph-3d>=0.1.0
 # cupy-cuda11x>=11.0.0  # Replace 11x with your CUDA version
 # torch-cuda>=2.0.0

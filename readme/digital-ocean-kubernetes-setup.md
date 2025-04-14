@@ -45,20 +45,38 @@ For a production Kai deployment, we recommend:
 - Number of Nodes: 3 (for high availability)
 - Name: `api-server-pool`
 
-### Step 4: Add a ML Services Node Pool
+### Step 4: Add Specialized Node Pools
 
-After creating the initial node pool, add a specialized node pool for ML services:
+After creating the initial node pool, add specialized node pools for the different workload types:
 
-1. Click **Add Node Pool**
-2. Configure the node pool:
+1. **CPU-Optimized Node Pool** (for the Coordinator service and general processing):
+   - Click **Add Node Pool**
    - Machine Type: CPU-Optimized Droplets
-   - Node Size: 8GB RAM / 4 vCPUs ($48/month) or higher
-   - Number of Nodes: 2
-   - Name: `ml-services-pool`
+   - Node Size: 8GB RAM / 4 vCPUs ($48/month)
+   - Number of Nodes: 3
+   - Name: `cpu-optimized-pool`
 
-**For production with heavy ML workloads**, consider:
-- CPU-Optimized Droplets with 16GB RAM / 8 vCPUs ($96/month)
-- GPU Droplets if available (for faster inference)
+2. **GPU Node Pool** (for ML inference tasks like NeRF generation):
+   - Click **Add Node Pool**
+   - Machine Type: GPU Droplets
+   - Node Size: With NVIDIA T4 GPUs
+   - Number of Nodes: 2
+   - Name: `gpu-optimized-pool`
+
+3. **Memory-Optimized Node Pool** (for large model loading):
+   - Click **Add Node Pool**
+   - Machine Type: Memory-Optimized Droplets
+   - Node Size: 16GB RAM / 4 vCPUs
+   - Number of Nodes: 1
+   - Name: `memory-optimized-pool`
+
+4. **Spot Instance Pool** (for cost-effective batch processing):
+   - Click **Add Node Pool**
+   - Enable Spot Instances
+   - Machine Type: Standard Droplets
+   - Node Size: 8GB RAM / 4 vCPUs
+   - Number of Nodes: 2-4
+   - Name: `spot-instances-pool`
 
 ### Step 5: Cluster Configuration
 
@@ -78,8 +96,17 @@ It's important to add Kubernetes labels to your node pools to control pod schedu
 # Label the API server nodes
 kubectl label nodes -l doks.digitalocean.com/node-pool=api-server-pool node-type=api-server
 
-# Label the ML services nodes
-kubectl label nodes -l doks.digitalocean.com/node-pool=ml-services-pool node-type=ml
+# Label the CPU-optimized nodes for coordinator service
+kubectl label nodes -l doks.digitalocean.com/node-pool=cpu-optimized-pool node-type=cpu-optimized workload-class=orchestration
+
+# Label the GPU nodes
+kubectl label nodes -l doks.digitalocean.com/node-pool=gpu-optimized-pool node-type=gpu-optimized workload-class=ml-inference gpu=nvidia-t4
+
+# Label the memory-optimized nodes
+kubectl label nodes -l doks.digitalocean.com/node-pool=memory-optimized-pool node-type=memory-optimized workload-class=model-loading
+
+# Label the spot instances
+kubectl label nodes -l doks.digitalocean.com/node-pool=spot-instances-pool node-type=spot-instance workload-class=batch-processing
 ```
 
 ### Node Selectors in Deployments
@@ -95,13 +122,37 @@ spec:
         node-type: api-server
 ```
 
-**ML Services Deployment:**
+**Coordinator Service Deployment:**
 ```yaml
 spec:
   template:
     spec:
       nodeSelector:
-        node-type: ml
+        node-type: cpu-optimized
+        workload-class: orchestration
+```
+
+**Argo Workflow Steps:**
+Different workflow steps can target specific node pools:
+
+```yaml
+# GPU-intensive steps (in the WorkflowTemplate)
+spec:
+  nodeSelector:
+    node-type: gpu-optimized
+    workload-class: ml-inference
+  
+# Memory-intensive steps
+spec:
+  nodeSelector:
+    node-type: memory-optimized
+    workload-class: model-loading
+    
+# Batch processing steps that can tolerate interruption
+spec:
+  nodeSelector:
+    node-type: spot-instance
+    workload-class: batch-processing
 ```
 
 ### Resource Limits and Requests
@@ -119,15 +170,28 @@ resources:
     cpu: "500m"
 ```
 
-**ML Services Deployment (per pod):**
+**Coordinator Service Deployment (per pod):**
 ```yaml
 resources:
   requests:
+    memory: "1Gi"
+    cpu: "500m"
+  limits:
     memory: "2Gi"
     cpu: "1000m"
-  limits:
+```
+
+**ML Workflow Steps (per pod, example for GPU steps):**
+```yaml
+resources:
+  requests:
     memory: "4Gi"
+    cpu: "1000m"
+    nvidia.com/gpu: "1"
+  limits:
+    memory: "8Gi"
     cpu: "2000m"
+    nvidia.com/gpu: "1"
 ```
 
 ## Networking Setup
@@ -178,9 +242,281 @@ Digital Ocean Kubernetes automatically provisions a Load Balancer when you creat
    EOF
    ```
 
+## Installing Argo Workflows
+
+Argo Workflows is a critical component for the KAI ML Platform, handling the orchestration of complex ML pipelines.
+
+### Step 1: Install Argo Workflows
+
+1. Create the argo namespace:
+   ```bash
+   kubectl create namespace argo
+   ```
+
+2. Install Argo Workflows using kubectl:
+   ```bash
+   kubectl apply -n argo -f https://github.com/argoproj/argo-workflows/releases/download/v3.4.5/install.yaml
+   ```
+
+3. Configure Argo to use the default service account in the namespace:
+   ```bash
+   kubectl patch configmap/workflow-controller-configmap \
+      -n argo \
+      --type merge \
+      -p '{"data":{"workflowNamespaces":"kai,argo"}}'
+   ```
+
+### Step 2: Create RBAC for Argo Workflows in the kai-ml namespace
+
+Create the necessary RBAC configuration for Argo Workflows to run in the `kai-ml` namespace:
+
+```bash
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: argo-workflow
+  namespace: kai-ml
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: workflow-role
+  namespace: kai-ml
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  - pods/exec
+  - pods/log
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  - secrets
+  - persistentvolumeclaims
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - argoproj.io
+  resources:
+  - workflows
+  - workflows/finalizers
+  - workflowtasksets
+  - workflowtasksets/finalizers
+  - workflowtemplates
+  - workflowtemplates/finalizers
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - update
+  - patch
+  - delete
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: workflow-rolebinding
+  namespace: kai-ml
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: workflow-role
+subjects:
+- kind: ServiceAccount
+  name: argo-workflow
+  namespace: kai-ml
+EOF
+```
+
+### Step 3: Create RBAC for the Coordinator Service
+
+The Coordinator service needs permissions to create and manage Argo Workflows:
+
+```bash
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: coordinator-service-account
+  namespace: kai-ml
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: coordinator-workflow-manager
+  namespace: kai-ml
+rules:
+- apiGroups:
+  - argoproj.io
+  resources:
+  - workflows
+  - workflows/finalizers
+  - workflowtemplates
+  - workflowtemplates/finalizers
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  - pods/log
+  - configmaps
+  - secrets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - persistentvolumeclaims
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - watch
+  - update
+  - patch
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: coordinator-workflow-manager-binding
+  namespace: kai-ml
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: coordinator-workflow-manager
+subjects:
+- kind: ServiceAccount
+  name: coordinator-service-account
+  namespace: kai-ml
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: coordinator-cluster-monitor
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - nodes
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - metrics.k8s.io
+  resources:
+  - pods
+  - nodes
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - custom.metrics.k8s.io
+  resources:
+  - "*"
+  verbs:
+  - get
+  - list
+  - watch
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: coordinator-cluster-monitor-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: coordinator-cluster-monitor
+subjects:
+- kind: ServiceAccount
+  name: coordinator-service-account
+  namespace: kai-ml
+EOF
+```
+
+### Step 4: Configure Artifact Repository
+
+Create a secret for accessing your S3-compatible storage:
+
+```bash
+kubectl create secret generic s3-artifact-repository \
+  --namespace kai-ml \
+  --from-literal=accessKey=YOUR_ACCESS_KEY \
+  --from-literal=secretKey=YOUR_SECRET_KEY
+```
+
+Configure an artifact repository for Argo to store input/output artifacts:
+
+```bash
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: artifact-repositories
+  namespace: kai-ml
+data:
+  s3: |
+    s3:
+      bucket: kai-workflow-artifacts
+      endpoint: nyc3.digitaloceanspaces.com
+      insecure: false
+      accessKeySecret:
+        name: s3-artifact-repository
+        key: accessKey
+      secretKeySecret:
+        name: s3-artifact-repository
+        key: secretKey
+      region: us-east-1
+EOF
+```
+
 ## Storage Configuration
 
-### Digital Ocean Block Storage for ML Models
+### Digital Ocean Block Storage for Persistent Data
 
 1. Create a StorageClass for Digital Ocean Block Storage:
    ```bash
@@ -199,14 +535,29 @@ Digital Ocean Kubernetes automatically provisions a Load Balancer when you creat
    EOF
    ```
 
-2. Create a PersistentVolumeClaim for ML models:
+2. Create a StorageClass for workflow data (with Delete reclaim policy):
+   ```bash
+   cat <<EOF | kubectl apply -f -
+   apiVersion: storage.k8s.io/v1
+   kind: StorageClass
+   metadata:
+     name: workflow-storage
+   provisioner: dobs.csi.digitalocean.com
+   parameters:
+     fsType: ext4
+   reclaimPolicy: Delete
+   allowVolumeExpansion: true
+   EOF
+   ```
+
+3. Create PVCs for shared resources:
    ```bash
    cat <<EOF | kubectl apply -f -
    apiVersion: v1
    kind: PersistentVolumeClaim
    metadata:
-     name: ml-models-pvc
-     namespace: kai
+     name: coordinator-cache-pvc
+     namespace: kai-ml
    spec:
      accessModes:
        - ReadWriteOnce
@@ -214,18 +565,36 @@ Digital Ocean Kubernetes automatically provisions a Load Balancer when you creat
        requests:
          storage: 20Gi
      storageClassName: do-block-storage
+   ---
+   apiVersion: v1
+   kind: PersistentVolumeClaim
+   metadata:
+     name: model-repository-pvc
+     namespace: kai-ml
+   spec:
+     accessModes:
+       - ReadWriteMany
+     resources:
+       requests:
+         storage: 50Gi
+     storageClassName: do-block-storage
    EOF
    ```
 
-3. Mount the PVC in your ML Services deployment:
+4. Volume handling in Argo Workflows:
+   Argo Workflows will use the `workflow-storage` StorageClass for its volume claim templates:
+   
    ```yaml
-   volumeMounts:
-   - name: ml-models
-     mountPath: /app/models
-   volumes:
-   - name: ml-models
-     persistentVolumeClaim:
-       claimName: ml-models-pvc
+   # In the WorkflowTemplate
+   volumeClaimTemplates:
+   - metadata:
+       name: workdir
+     spec:
+       accessModes: ["ReadWriteOnce"]
+       storageClassName: workflow-storage
+       resources:
+         requests:
+           storage: 10Gi
    ```
 
 ## Monitoring and Logging
@@ -242,31 +611,108 @@ DigitalOcean provides built-in monitoring capabilities:
    - Disk I/O
    - Network Traffic
 
-### Deploying Prometheus and Grafana
+### Deploy the Monitoring Stack
 
-For more advanced monitoring, deploy Prometheus and Grafana:
+The KAI ML Platform uses a comprehensive monitoring stack including Prometheus, Grafana, and Jaeger:
 
-1. Add the Prometheus Helm repository:
+1. Create a monitoring namespace:
+   ```bash
+   kubectl create namespace monitoring
+   ```
+
+2. Add the Prometheus Helm repository:
    ```bash
    helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
    helm repo update
    ```
 
-2. Install Prometheus and Grafana:
+3. Install Prometheus and Grafana:
    ```bash
-   kubectl create namespace monitoring
-   
    helm install prometheus prometheus-community/kube-prometheus-stack \
      --namespace monitoring \
-     --set grafana.adminPassword=your-secure-password
+     --set grafana.adminPassword=your-secure-password \
+     --values - <<EOF
+   grafana:
+     dashboards:
+       default:
+         kubernetes-dashboard:
+           url: https://raw.githubusercontent.com/dotdc/grafana-dashboards-kubernetes/master/dashboards/k8s-views-global.json
+         ml-workflows-dashboard:
+           url: https://raw.githubusercontent.com/argoproj/argo-workflows/master/examples/grafana-dashboard.json
+     dashboardProviders:
+       dashboardproviders.yaml:
+         apiVersion: 1
+         providers:
+         - name: 'default'
+           orgId: 1
+           folder: ''
+           type: file
+           disableDeletion: false
+           editable: true
+           options:
+             path: /var/lib/grafana/dashboards/default
+   EOF
    ```
 
-3. Access Grafana:
+4. Install Jaeger for distributed tracing:
    ```bash
-   kubectl port-forward -n monitoring svc/prometheus-grafana 3000:80
+   kubectl apply -f https://github.com/jaegertracing/jaeger-operator/releases/download/v1.37.0/jaeger-operator.yaml
+
+   # Wait for the operator to be ready, then create Jaeger instance
+   kubectl apply -f - <<EOF
+   apiVersion: jaegertracing.io/v1
+   kind: Jaeger
+   metadata:
+     name: jaeger
+     namespace: monitoring
+   spec:
+     strategy: production
+     storage:
+       type: elasticsearch
+       options:
+         es:
+           server-urls: http://elasticsearch:9200
+     ingress:
+       enabled: true
+       hosts:
+         - jaeger.yourdomain.com
+       tls:
+         - hosts:
+             - jaeger.yourdomain.com
+   EOF
    ```
-   
-   Then visit: http://localhost:3000
+
+5. Configure monitoring access:
+   ```bash
+   # Create Ingress for Grafana
+   kubectl apply -f - <<EOF
+   apiVersion: networking.k8s.io/v1
+   kind: Ingress
+   metadata:
+     name: grafana
+     namespace: monitoring
+     annotations:
+       kubernetes.io/ingress.class: nginx
+       cert-manager.io/cluster-issuer: letsencrypt-prod
+       nginx.ingress.kubernetes.io/ssl-redirect: "true"
+   spec:
+     tls:
+     - hosts:
+       - grafana.yourdomain.com
+       secretName: grafana-tls
+     rules:
+     - host: grafana.yourdomain.com
+       http:
+         paths:
+         - path: /
+           pathType: Prefix
+           backend:
+             service:
+               name: prometheus-grafana
+               port:
+                 number: 80
+   EOF
+   ```
 
 ### Setting Up Centralized Logging
 
@@ -299,18 +745,18 @@ Set up the Kubernetes Horizontal Pod Autoscaler (HPA) to automatically scale you
 
 1. Create an HPA for the API server:
    ```bash
-   kubectl autoscale deployment kai-api-server -n kai \
+   kubectl autoscale deployment kai-api-server -n kai-ml \
      --cpu-percent=75 \
      --min=3 \
      --max=10
    ```
 
-2. Create an HPA for the ML services:
+2. Create an HPA for the Coordinator service:
    ```bash
-   kubectl autoscale deployment kai-ml-services -n kai \
-     --cpu-percent=60 \
-     --min=2 \
-     --max=5
+   kubectl autoscale deployment coordinator-service -n kai-ml \
+     --cpu-percent=70 \
+     --min=3 \
+     --max=6
    ```
 
 ### Node Pool Autoscaling
@@ -322,7 +768,10 @@ Enable node pool autoscaling:
 3. Click **Edit** and enable autoscaling
 4. Set minimum and maximum node count:
    - API Server Pool: Min 3, Max 6
-   - ML Services Pool: Min 2, Max 4
+   - CPU-Optimized Pool: Min 3, Max 6
+   - GPU-Optimized Pool: Min 1, Max 4
+   - Memory-Optimized Pool: Min 1, Max 3
+   - Spot Instances Pool: Min 0, Max 6 (can scale to zero when not needed)
 
 ### Resource Quota Management
 
@@ -334,7 +783,7 @@ apiVersion: v1
 kind: ResourceQuota
 metadata:
   name: kai-quota
-  namespace: kai
+  namespace: kai-ml
 spec:
   hard:
     requests.cpu: "8"
@@ -364,9 +813,19 @@ EOF
    # Create a daily backup schedule
    velero schedule create daily-backup \
      --schedule="0 0 * * *" \
-     --include-namespaces kai
+     --include-namespaces kai-ml
    ```
+### Backing Up Argo Workflows
 
+For workflow state and templates:
+
+```bash
+# Backup Argo workflow templates
+kubectl get workflowtemplates -n kai-ml -o yaml > workflow-templates-backup.yaml
+
+# Backup completed workflows for reference
+kubectl get workflows -n kai-ml --field-selector status.phase=Succeeded -o yaml > completed-workflows-backup.yaml
+```
 2. Set up database backups (if using MongoDB outside the cluster):
    - Configure MongoDB Atlas backups
    - Set up periodic exports to S3
@@ -405,4 +864,6 @@ For node maintenance:
 
 Following this guide, you'll have a production-ready Kubernetes cluster on Digital Ocean optimized for running the Kai application. The cluster is configured with appropriate resources, monitoring, and high availability features to ensure reliable operation.
 
-Remember to regularly monitor your cluster, maintain backups, and keep your Kubernetes version up-to-date for the best performance and security.
+The architecture specifically supports the Argo Workflows-based orchestration of ML pipelines with specialized node pools for different workload types. This ensures efficient resource utilization, with GPU-intensive tasks running on appropriate hardware and lower-priority tasks utilizing cost-effective spot instances.
+
+Remember to regularly monitor your cluster, maintain backups, and keep your Kubernetes version up-to-date for the best performance and security. For more detailed information about the architecture, refer to the [Kubernetes Architecture Documentation](./kubernetes-architecture.md).

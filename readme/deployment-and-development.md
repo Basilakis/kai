@@ -25,6 +25,137 @@ This document provides comprehensive instructions for deploying Kai to productio
 - **Database**: Scale vertically for better performance, add read replicas for heavy read loads
 - **File Storage**: Scale storage based on catalog and image volume (estimate 2GB per 1000 materials)
 
+##### Kubernetes HPA Scaling Architecture
+
+The KAI Platform implements a sophisticated multi-layer scaling architecture in Kubernetes to efficiently manage resources:
+
+1. **Horizontal Pod Autoscaling (HPA) Mechanics**
+
+   The platform uses Kubernetes' Horizontal Pod Autoscaler to automatically adjust replica counts based on observed metrics:
+
+   ```yaml
+   apiVersion: autoscaling/v2
+   kind: HorizontalPodAutoscaler
+   metadata:
+     name: coordinator-service
+   spec:
+     scaleTargetRef:
+       apiVersion: apps/v1
+       kind: Deployment
+       name: coordinator-service
+     minReplicas: 3
+     maxReplicas: 10
+     metrics:
+     - type: Resource
+       resource:
+         name: cpu
+         target:
+           type: Utilization
+           averageUtilization: 80
+   ```
+
+   **How HPA Works in Our Platform**:
+   - The Kubernetes HPA controller continuously monitors metrics from the Coordinator service and other configured components
+   - The standard metrics-server component collects CPU and memory metrics from pods
+   - The controller compares current CPU utilization (80% target) against the specified threshold
+   - When utilization exceeds the threshold, the controller calculates the desired number of replicas to maintain the target utilization
+   - Replicas are added or removed accordingly, while always maintaining between 3 and 10 replicas
+
+   **Communication Flow with HPA:**
+   
+   Our platform communicates with the HPA through a metrics pipeline:
+   
+   - **Components expose metrics** via Prometheus annotations:
+     ```yaml
+     prometheus.io/scrape: "true"
+     prometheus.io/port: "8081"
+     prometheus.io/path: "/metrics"
+     ```
+   - **Metrics Collection Flow**:
+     1. `metrics-server` collects CPU/memory metrics from kubelet on each node
+     2. Prometheus scrapes application-specific metrics from component endpoints
+     3. Prometheus Adapter converts these metrics to the Kubernetes custom metrics API format
+     4. HPA controller queries these APIs every 15 seconds to make scaling decisions
+   
+   - **Communication Between Components**:
+     - **Coordinator Service → metrics-server**: Coordinator pods expose basic CPU/memory metrics via kubelet
+     - **Coordinator Service → Prometheus**: Coordinator exposes detailed metrics on the `/metrics` endpoint (port 8081)
+     - **Prometheus → Prometheus Adapter**: Converts detailed metrics to HPA-compatible format
+     - **HPA Controller → APIs**: Queries metrics APIs to obtain current utilization
+     - **HPA Controller → kube-apiserver**: Updates replica count on the target deployment when needed
+
+   - **Coordinator's Role**: The Coordinator service is central to the scaling architecture:
+     - Exposes workload metrics (queue depths, processing times, memory usage)
+     - Adjusts task concurrency based on observed cluster capacity
+     - Implements back-pressure when resources are constrained
+
+2. **Multi-Layered Scaling Approach**
+
+   Our platform implements scaling at multiple layers:
+   
+   - **Pod-level HPA**: Automatically scales deployments based on CPU, memory, or custom metrics
+     - Coordinator Service: 3-10 replicas based on CPU utilization
+     - Mobile Optimization Service: 1-3 replicas based on CPU utilization
+     - WASM Compiler: 1-3 replicas based on CPU utilization
+     - This handles fluctuations in API request volume and control plane activities
+   
+   - **Workflow Concurrency Management**: The Coordinator service manages task queues with:
+     - Priority-based queueing (interactive, batch, maintenance)
+     - Dynamic concurrency limits based on resource availability
+     - Resource reservation for high-priority workflows
+     - Configured through the `task_queue_config` setting:
+       ```
+       task_queue_config={"interactive":{"concurrency":5,"weight":10},"batch":{"concurrency":10,"weight":5},"maintenance":{"concurrency":2,"weight":1}}
+       ```
+     - Ensures high-priority workflows get resources first, while maintaining system stability
+   
+   - **Cluster Autoscaling**: Node pools scale automatically based on pending pods:
+     - When HPAs create new pods that can't be scheduled
+     - When Argo workflows spawn pods that require specialized resources
+     - Each node pool (CPU, GPU, memory-optimized) scales independently
+   
+   - **Resource Allocation Adjustment**: The ResourceManager service dynamically adjusts resource requests for workflows based on:
+     - Subscription tier limitations
+     - Current cluster utilization
+     - Quality level requirements (allocating appropriate GPU resources)
+     - This ensures optimal resource distribution during high-load periods
+
+3. **Results and Benefits**
+
+   The HPA configuration delivers these benefits:
+   
+   - **Cost Efficiency**: 
+     - During low-traffic periods, components scale down to minimum replicas
+     - CPU/memory resources are freed for other workloads or to allow node removal via cluster autoscaling
+     - This optimizes resource usage and reduces operational costs
+   
+   - **Responsive Performance**: 
+     - As user traffic increases, the system proactively adds replicas before performance degrades
+     - The 80% target utilization provides a buffer to handle traffic spikes during scaling events
+     - Maintaining minimum 3 replicas ensures high availability even during scaling
+   
+   - **Improved Reliability**: 
+     - The system can automatically recover from pod failures or node issues by creating new replicas
+     - Multiple layers of scaling provide defense-in-depth against resource exhaustion
+     - Priority-based queuing ensures critical workflows continue during high demand
+   
+   - **Resource Optimization**: 
+     - Efficient allocation based on actual usage patterns
+     - Dynamic adjustment prevents over-provisioning while maintaining performance
+   
+   - **Quality of Service**: 
+     - Performance guarantees for different subscription tiers
+     - Consistent user experience regardless of system load
+
+   **Monitoring Scale Behavior**:
+   - Dedicated Grafana dashboards include panels to monitor scaling behavior:
+     - Current/target replica counts
+     - CPU/memory utilization across replicas
+     - Scaling events timeline
+     - Queue depths by priority level
+   - To view these metrics, access the Grafana dashboard at: http://<cluster-ip>/grafana (after setting up port forwarding or ingress)
+   - Alerting rules trigger when scaling thresholds or resource constraints are reached
+
 ### Deployment Architecture
 
 #### Basic Architecture
@@ -477,17 +608,69 @@ CMD ["uvicorn", "mcp_server:app", "--host", "0.0.0.0", "--port", "8000"]
 
 Build and push to container registry:
 ```bash
+# API Server
 docker build -t kai-api-server:latest -f Dockerfile.api .
-docker build -t kai-ml-services:latest -f Dockerfile.ml .
+docker tag kai-api-server:latest registry.example.com/kai/api-server:latest
+
+# Coordinator Service
+docker build -t kai-coordinator:latest -f packages/coordinator/Dockerfile.coordinator .
+docker tag kai-coordinator:latest registry.example.com/kai/coordinator-service:latest
+
+# Worker Images for Argo Workflows
+docker build -t kai-quality-assessment:latest -f packages/ml/python/Dockerfile.quality-assessment .
+docker tag kai-quality-assessment:latest registry.example.com/kai/quality-assessment:latest
+
+docker build -t kai-image-preprocessing:latest -f packages/ml/python/Dockerfile.image-preprocessing .
+docker tag kai-image-preprocessing:latest registry.example.com/kai/image-preprocessing:latest
+
+docker build -t kai-colmap-sfm:latest -f packages/ml/python/Dockerfile.colmap-sfm .
+docker tag kai-colmap-sfm:latest registry.example.com/kai/colmap-sfm:latest
+
+docker build -t kai-point-cloud:latest -f packages/ml/python/Dockerfile.point-cloud .
+docker tag kai-point-cloud:latest registry.example.com/kai/point-cloud:latest
+
+docker build -t kai-model-generator:latest -f packages/ml/python/Dockerfile.model-generator .
+docker tag kai-model-generator:latest registry.example.com/kai/model-generator:latest
+
+docker build -t kai-diffusion-nerf:latest -f packages/ml/python/Dockerfile.diffusion-nerf .
+docker tag kai-diffusion-nerf:latest registry.example.com/kai/diffusion-nerf:latest
+
+docker build -t kai-nerf-mesh-extractor:latest -f packages/ml/python/Dockerfile.nerf-mesh-extractor .
+docker tag kai-nerf-mesh-extractor:latest registry.example.com/kai/nerf-mesh-extractor:latest
+
+docker build -t kai-format-converter:latest -f packages/ml/python/Dockerfile.format-converter .
+docker tag kai-format-converter:latest registry.example.com/kai/format-converter:latest
+
+docker build -t kai-workflow-finalizer:latest -f packages/ml/python/Dockerfile.workflow-finalizer .
+docker tag kai-workflow-finalizer:latest registry.example.com/kai/workflow-finalizer:latest
+
+# Mobile Optimization Services
+docker build -t kai-mobile-optimization:latest -f packages/coordinator/Dockerfile.mobile .
+docker tag kai-mobile-optimization:latest registry.example.com/kai/mobile-optimization:latest
+
+# WASM Compiler
+docker build -t kai-wasm-compiler:latest -f packages/coordinator/Dockerfile.wasm .
+docker tag kai-wasm-compiler:latest registry.example.com/kai/wasm-compiler:latest
+
+# MCP Server (if used)
 docker build -t kai-mcp-server:latest -f packages/ml/Dockerfile.mcp .
+docker tag kai-mcp-server:latest registry.example.com/kai/mcp-server:latest
 
-docker tag kai-api-server:latest registry.example.com/kai-api-server:latest
-docker tag kai-ml-services:latest registry.example.com/kai-ml-services:latest
-docker tag kai-mcp-server:latest registry.example.com/kai-mcp-server:latest
-
-docker push registry.example.com/kai-api-server:latest
-docker push registry.example.com/kai-ml-services:latest
-docker push registry.example.com/kai-mcp-server:latest
+# Push all images to your registry
+docker push registry.example.com/kai/api-server:latest
+docker push registry.example.com/kai/coordinator-service:latest
+docker push registry.example.com/kai/quality-assessment:latest
+docker push registry.example.com/kai/image-preprocessing:latest
+docker push registry.example.com/kai/colmap-sfm:latest
+docker push registry.example.com/kai/point-cloud:latest
+docker push registry.example.com/kai/model-generator:latest
+docker push registry.example.com/kai/diffusion-nerf:latest
+docker push registry.example.com/kai/nerf-mesh-extractor:latest
+docker push registry.example.com/kai/format-converter:latest
+docker push registry.example.com/kai/workflow-finalizer:latest
+docker push registry.example.com/kai/mobile-optimization:latest
+docker push registry.example.com/kai/wasm-compiler:latest
+docker push registry.example.com/kai/mcp-server:latest
 ```
 
 #### 5. Kubernetes Deployment (Recommended for Production)
@@ -641,6 +824,284 @@ The deployment includes a comprehensive monitoring stack:
 ```
 
 For more detailed information about the Kubernetes deployment, including post-installation steps and verification, refer to the [Kubernetes Architecture documentation](./kubernetes-architecture.md).
+
+##### 5.6. Flux GitOps Deployment
+
+The KAI Platform now supports a GitOps approach to deployment using Flux CD, which provides a fully automated, declarative way to manage Kubernetes resources. This approach offers significant advantages in terms of security, reliability, and operational efficiency.
+
+###### 5.6.1. Flux Architecture Overview
+
+Flux is a set of continuous and progressive delivery solutions for Kubernetes that are open and extensible. The Flux GitOps implementation consists of several controllers running in the Kubernetes cluster:
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                      Kubernetes Cluster                   │
+│                                                           │
+│  ┌─────────────────┐   ┌─────────────────┐               │
+│  │                 │   │                 │               │
+│  │  Source         │──▶│  Kustomize      │───┐           │
+│  │  Controller     │   │  Controller     │   │           │
+│  │                 │   │                 │   │           │
+│  └─────────────────┘   └─────────────────┘   │           │
+│          │                                    │           │
+│          │              ┌─────────────────┐   │           │
+│          └─────────────▶│                 │   │           │
+│                         │  Helm           │   │           │
+│                         │  Controller     │───┼──▶ Apply  │
+│                         │                 │   │    Changes│
+│  ┌─────────────────┐    └─────────────────┘   │           │
+│  │                 │                          │           │
+│  │  Notification   │◀─────────────────────────┘           │
+│  │  Controller     │                                      │
+│  │                 │                                      │
+│  └─────────────────┘                                      │
+│                                                           │
+└──────────────────────────────────────────────────────────┘
+```
+
+1. **Source Controller**: Manages Git/Helm repositories as sources of truth, fetches content, and detects changes
+2. **Kustomize Controller**: Applies Kubernetes resources defined through Kustomize
+3. **Helm Controller**: Manages Helm releases based on HelmRelease resources
+4. **Notification Controller**: Sends events to external systems (Slack, webhook endpoints)
+
+###### 5.6.2. GitOps Repository Structure
+
+The KAI Platform uses a structured GitOps repository with separate configurations for staging and production environments:
+
+```
+flux/
+├── clusters/
+│   ├── staging/            # Staging environment
+│   │   ├── flux-system/    # Flux core components
+│   │   │   ├── gotk-sync.yaml       # Git repository sync configuration
+│   │   │   └── kustomization.yaml   # Flux system components
+│   │   ├── sources/        # Source definitions (Helm repos, Git repos)
+│   │   │   ├── helm-repository.yaml # Helm repository source
+│   │   │   └── kustomization.yaml   # Sources kustomization
+│   │   ├── releases/       # Application deployments
+│   │   │   ├── coordinator.yaml     # Coordinator HelmRelease
+│   │   │   └── kustomization.yaml   # Releases kustomization
+│   │   └── kustomization.yaml       # Main kustomization file
+│   └── production/         # Production environment (similar structure)
+│       ├── flux-system/
+│       ├── sources/
+│       ├── releases/
+│       └── kustomization.yaml
+```
+
+###### 5.6.3. Installing Flux
+
+To install Flux on your Kubernetes cluster:
+
+1. **Install the Flux CLI**:
+   ```bash
+   # On macOS with Homebrew
+   brew install fluxcd/tap/flux
+
+   # On Linux
+   curl -s https://fluxcd.io/install.sh | sudo bash
+   ```
+
+2. **Check Kubernetes cluster compatibility**:
+   ```bash
+   flux check --pre
+   ```
+
+3. **Bootstrap Flux on your cluster**:
+   ```bash
+   # Generate a GitHub personal access token with 'repo' permissions
+   # and export it as an environment variable
+   export GITHUB_TOKEN=<your-github-token>
+
+   # Bootstrap Flux on the staging cluster
+   flux bootstrap github \
+     --owner=kai-platform \
+     --repository=kai-gitops \
+     --branch=main \
+     --path=clusters/staging \
+     --personal \
+     --kubeconfig=$HOME/.kube/kai-staging-config
+
+   # Bootstrap Flux on the production cluster
+   flux bootstrap github \
+     --owner=kai-platform \
+     --repository=kai-gitops \
+     --branch=main \
+     --path=clusters/production \
+     --personal \
+     --kubeconfig=$HOME/.kube/kai-production-config
+   ```
+
+###### 5.6.4. Creating HelmRelease Resources
+
+HelmRelease resources define how Flux should deploy applications using Helm charts:
+
+```yaml
+# Example: releases/coordinator.yaml
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: coordinator
+  namespace: flux-system
+spec:
+  interval: 5m
+  chart:
+    spec:
+      chart: coordinator
+      version: ">=1.0.0"
+      sourceRef:
+        kind: HelmRepository
+        name: kai-charts
+        namespace: flux-system
+      interval: 1m
+  values:
+    replicaCount: 3
+    image:
+      repository: "registry.example.com/coordinator"
+      tag: "v1.2.3"
+    resources:
+      limits:
+        cpu: 2000m
+        memory: 2048Mi
+      requests:
+        cpu: 1000m
+        memory: 1024Mi
+    autoscaling:
+      enabled: true
+      minReplicas: 3
+      maxReplicas: 10
+      targetCPUUtilizationPercentage: 70
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      remediateLastFailure: true
+    cleanupOnFail: true
+  rollback:
+    timeout: 5m
+    cleanupOnFail: true
+  targetNamespace: kai-system
+  releaseName: coordinator
+```
+
+###### 5.6.5. CI/CD Integration with Flux
+
+The CI/CD pipeline integrates with Flux through a dedicated job that updates the GitOps repository:
+
+1. **Add required secret**:
+   Add a Personal Access Token with repo scope to your GitHub repository secrets as `GITOPS_PAT`.
+
+2. **Configure workflow job**:
+   The GitHub Actions workflow includes a job to update the GitOps repository with new image versions:
+
+   ```yaml
+   update-gitops:
+     name: Update GitOps Repository
+     needs: build-docker-images
+     runs-on: ubuntu-latest
+     steps:
+       - name: Determine environment
+         id: env
+         run: |
+           if [[ "${{ github.ref }}" == "refs/heads/main" || "${{ github.event.inputs.environment }}" == "production" ]]; then
+             echo "DEPLOY_ENV=production" >> $GITHUB_ENV
+             echo "TARGET_BRANCH=main" >> $GITHUB_ENV
+           else
+             echo "DEPLOY_ENV=staging" >> $GITHUB_ENV
+             echo "TARGET_BRANCH=staging" >> $GITHUB_ENV
+           fi
+
+       - name: Checkout GitOps repository
+         uses: actions/checkout@v3
+         with:
+           repository: kai-platform/kai-gitops
+           path: gitops
+           token: ${{ secrets.GITOPS_PAT }}
+           ref: ${{ env.TARGET_BRANCH }}
+           
+       - name: Update image tags in HelmReleases
+         run: |
+           echo "Updating image tags for ${{ env.DEPLOY_ENV }} environment..."
+           
+           # Update coordinator release
+           cd gitops/clusters/${{ env.DEPLOY_ENV }}/releases
+           
+           # Use yq to update the image tag in the HelmRelease
+           yq e '.spec.values.image.tag = "${{ github.sha }}"' -i coordinator.yaml
+           
+           # Additional services can be updated similarly
+           
+           git config --global user.name "Kai CI Bot"
+           git config --global user.email "ci-bot@kai-platform.com"
+           
+           git add .
+           git commit -m "ci: update image tags to ${{ github.sha }} for ${{ env.DEPLOY_ENV }}" || echo "No changes to commit"
+           git push
+   ```
+
+3. **Flux reconciliation**:
+   After the CI/CD workflow updates the image tags in the GitOps repository, Flux automatically:
+   - Detects the changes in the repository
+   - Updates the HelmReleases with the new image tags
+   - Triggers Helm upgrades for the affected releases
+   - Reports the status of the reconciliation
+
+###### 5.6.6. Monitoring Flux and Deployments
+
+1. **Check Flux status**:
+   ```bash
+   # Get all Flux custom resources
+   flux get all
+   
+   # Check specific HelmReleases
+   flux get helmreleases
+   
+   # Get HelmRelease details
+   flux get helmrelease coordinator -n flux-system
+   ```
+
+2. **View Flux logs**:
+   ```bash
+   # View controller logs
+   flux logs --all-namespaces
+   
+   # View logs for a specific HelmRelease
+   flux logs --kind=helmrelease --name=coordinator
+   ```
+
+###### 5.6.7. Rollback with Flux
+
+If you need to roll back a deployment:
+
+1. **Revert the commit in the GitOps repository**:
+   ```bash
+   # Get the previous commit hash
+   git log --oneline
+
+   # Create a revert commit
+   git revert <commit-hash>
+   git push
+   ```
+
+2. **Force Flux reconciliation** (optional, Flux will reconcile automatically within the configured interval):
+   ```bash
+   flux reconcile kustomization flux-system --with-source
+   ```
+
+###### 5.6.8. Benefits of Flux GitOps
+
+The Flux GitOps approach provides several key benefits for KAI Platform deployments:
+
+1. **Declarative Configuration**: All Kubernetes resources are defined declaratively in Git
+2. **Automated Reconciliation**: Flux ensures the cluster state always matches the desired state in Git
+3. **Self-Healing**: Automatic recovery from drift or failed deployments
+4. **Enhanced Security**: No direct access to the Kubernetes cluster is needed for deployments
+5. **Complete Audit Trail**: All changes are tracked in Git with full history
+6. **Progressive Delivery**: Support for canary deployments and A/B testing
+7. **Multi-Cluster Management**: The same GitOps repository can manage multiple clusters
+
+For more detailed information about the Flux GitOps architecture, controllers, and workflow, refer to the [Kubernetes Architecture](./kubernetes-architecture.md) and [CI/CD Pipeline](./cicd-pipeline.md) documentation.
 
 **Using Docker Compose (for simpler deployments)**
 

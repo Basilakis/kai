@@ -225,7 +225,10 @@ export interface OwnershipValidationOptions {
   customValidator?: (req: Request) => Promise<boolean>;
 }
 
-// TODO: Replace in-memory token blacklist with a persistent store (e.g., Redis) in production
+// Import Redis client for persistent storage
+import redisClient from '../services/messaging/redisClient';
+
+// Fallback in-memory blacklist in case Redis is unavailable
 const tokenBlacklist = new Set<string>();
 
 /**
@@ -233,19 +236,41 @@ const tokenBlacklist = new Set<string>();
  * @param token JWT token to blacklist
  * @param expiresAt When the token expires (in seconds since epoch)
  */
-export const blacklistToken = (token: string, expiresAt?: number): void => {
-  tokenBlacklist.add(token);
-
-  // If token has expiration, schedule removal from blacklist after expiry
-  if (expiresAt) {
-    const nowSeconds = Math.floor(Date.now() / 1000);
-    const timeUntilExpiryMs = Math.max(0, (expiresAt - nowSeconds) * 1000); // Ensure non-negative
-
-    if (timeUntilExpiryMs > 0) {
-      setTimeout(() => {
-        tokenBlacklist.delete(token);
-        logger.debug(`Removed expired token from blacklist: ${token.substring(0, 10)}...`);
-      }, timeUntilExpiryMs);
+export const blacklistToken = async (token: string, expiresAt?: number): Promise<void> => {
+  try {
+    const client = await redisClient.getClient();
+    // If token has expiration, use Redis TTL to automatically remove after expiry
+    if (expiresAt) {
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      const timeUntilExpirySeconds = Math.max(0, expiresAt - nowSeconds);
+      
+      if (timeUntilExpirySeconds > 0) {
+        await client.set(`blacklisted_token:${token}`, '1', {
+          EX: timeUntilExpirySeconds
+        });
+        logger.debug(`Added token to Redis blacklist with expiry in ${timeUntilExpirySeconds}s: ${token.substring(0, 10)}...`);
+      }
+    } else {
+      // If no expiration, store without expiry
+      await client.set(`blacklisted_token:${token}`, '1');
+      logger.debug(`Added token to Redis blacklist without expiry: ${token.substring(0, 10)}...`);
+    }
+  } catch (error) {
+    logger.error('Error blacklisting token in Redis:', error);
+    // Fallback to in-memory if Redis fails
+    tokenBlacklist.add(token);
+    
+    // Schedule removal if expiry provided
+    if (expiresAt) {
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      const timeUntilExpiryMs = Math.max(0, (expiresAt - nowSeconds) * 1000);
+      
+      if (timeUntilExpiryMs > 0) {
+        setTimeout(() => {
+          tokenBlacklist.delete(token);
+          logger.debug(`Removed expired token from memory blacklist: ${token.substring(0, 10)}...`);
+        }, timeUntilExpiryMs);
+      }
     }
   }
 };
@@ -255,8 +280,16 @@ export const blacklistToken = (token: string, expiresAt?: number): void => {
  * @param token JWT token to check
  * @returns Whether the token is blacklisted
  */
-export const isTokenBlacklisted = (token: string): boolean => {
-  return tokenBlacklist.has(token);
+export const isTokenBlacklisted = async (token: string): Promise<boolean> => {
+  try {
+    const client = await redisClient.getClient();
+    const result = await client.get(`blacklisted_token:${token}`);
+    return result !== null;
+  } catch (error) {
+    logger.error('Error checking token blacklist in Redis:', error);
+    // Fallback to in-memory if Redis fails
+    return tokenBlacklist.has(token);
+  }
 };
 
 /**
@@ -289,8 +322,8 @@ export const authMiddleware = asyncHandler(
       return next(new ApiError(401, 'Not authorized, no token provided'));
     }
 
-    // Check if token is blacklisted (revoked)
-    if (isTokenBlacklisted(token)) {
+    // Check if token is blacklisted (revoked) - now async
+    if (await isTokenBlacklisted(token)) {
       logger.warn(`Attempt to use blacklisted token: ${token.substring(0, 10)}...`);
       return next(new ApiError(401, 'Not authorized, token has been revoked'));
     }
@@ -413,7 +446,7 @@ export const tokenRefreshMiddleware = asyncHandler(
         if (timeUntilExpiry <= 0 && !isTokenBlacklisted(req.token)) {
            logger.warn(`Blacklisting expired token used by user ${req.user.id}`);
            // Pass expirationTime which is already a number (seconds since epoch)
-           blacklistToken(req.token, expirationTime);
+           await blacklistToken(req.token, expirationTime);
            // Do NOT proceed with an expired token. authMiddleware should catch this,
            // but this adds an extra layer if needed.
            // return next(new ApiError(401, 'Token expired during request processing'));
@@ -506,17 +539,46 @@ interface RateLimitOptions {
 /**
  * In-memory rate limiter (would use Redis in production)
  */
-// TODO: Replace in-memory rate limiter with a persistent store (e.g., Redis) in production
-class RateLimiter {
+// Redis-based rate limiter with fallback to in-memory
+class RedisRateLimiter {
+  // In-memory fallback store
   private limits: Map<string, { count: number; resetAt: number }> = new Map();
 
   /**
-   * Check if a request exceeds rate limits
+   * Check if a request exceeds rate limits using Redis
    * @param key Unique key for the rate limit (e.g., IP + endpoint)
    * @param options Rate limit options
    * @returns Whether the request is allowed
    */
-  isAllowed(key: string, options: RateLimitOptions): boolean {
+  async isAllowed(key: string, options: RateLimitOptions): Promise<boolean> {
+    try {
+      const client = await redisClient.getClient();
+      const redisKey = `rate_limit:${key}`;
+      
+      // Use Redis to get current count
+      const count = await client.incr(redisKey);
+      
+      // If this is the first request, set expiry
+      if (count === 1) {
+        await client.expire(redisKey, Math.floor(options.windowMs / 1000));
+      }
+      
+      // Allow if count is less than or equal to max
+      return count <= options.maxRequests;
+    } catch (error) {
+      logger.error('Error checking rate limit in Redis:', error);
+      // Fallback to in-memory if Redis fails
+      return this.isAllowedInMemory(key, options);
+    }
+  }
+
+  /**
+   * In-memory fallback for rate limiting
+   * @param key Unique key for the rate limit
+   * @param options Rate limit options
+   * @returns Whether the request is allowed
+   */
+  private isAllowedInMemory(key: string, options: RateLimitOptions): boolean {
     const now = Date.now();
     let limit = this.limits.get(key);
 
@@ -543,14 +605,50 @@ class RateLimiter {
   /**
    * Get remaining requests for a key
    * @param key Unique key for the rate limit
+   * @param options Rate limit options for max requests
    * @returns Remaining requests and reset time
    */
-  getRateLimitInfo(key: string): { remaining: number, resetAt: number } | null {
+  async getRateLimitInfo(key: string, options: RateLimitOptions): Promise<{ remaining: number, resetAt: number } | null> {
+    try {
+      const client = await redisClient.getClient();
+      const redisKey = `rate_limit:${key}`;
+      
+      // Get current count and TTL
+      const [countStr, ttl] = await Promise.all([
+        client.get(redisKey),
+        client.ttl(redisKey)
+      ]);
+      
+      if (!countStr) {
+        return {
+          remaining: options.maxRequests,
+          resetAt: Date.now() + options.windowMs
+        };
+      }
+      
+      const count = parseInt(countStr, 10);
+      const remaining = Math.max(0, options.maxRequests - count);
+      const resetAt = Date.now() + (ttl * 1000);
+      
+      return { remaining, resetAt };
+    } catch (error) {
+      logger.error('Error getting rate limit info from Redis:', error);
+      // Fallback to in-memory if Redis fails
+      return this.getRateLimitInfoInMemory(key);
+    }
+  }
+
+  /**
+   * In-memory fallback for getting rate limit info
+   * @param key Unique key for the rate limit
+   * @returns Remaining requests and reset time
+   */
+  private getRateLimitInfoInMemory(key: string): { remaining: number, resetAt: number } | null {
     const limit = this.limits.get(key);
     if (!limit) {
       return null;
     }
-
+    
     return {
       remaining: Math.max(0, limit.count),
       resetAt: limit.resetAt
@@ -558,8 +656,8 @@ class RateLimiter {
   }
 }
 
-// Create a global rate limiter instance
-const rateLimiter = new RateLimiter();
+// Create a global Redis rate limiter instance
+const redisRateLimiter = new RedisRateLimiter();
 
 /**
  * Rate limiting middleware
@@ -569,16 +667,17 @@ const rateLimiter = new RateLimiter();
  * @returns Middleware function
  */
 export const rateLimitMiddleware = (options: RateLimitOptions = { windowMs: 60 * 1000, maxRequests: 100 }) => {
-  return (req: Request, res: Response, next: NextFunction) => {
+  return asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
     // Create a unique key based on IP and endpoint
     const ip = req.ip || req.socket.remoteAddress || 'unknown';
     const endpoint = req.originalUrl || req.url;
     const key = `${ip}:${endpoint}`;
 
     // Check if request is allowed
-    if (!rateLimiter.isAllowed(key, options)) {
+    const isAllowed = await redisRateLimiter.isAllowed(key, options);
+    if (!isAllowed) {
       // Get limit info
-      const limitInfo = rateLimiter.getRateLimitInfo(key);
+      const limitInfo = await redisRateLimiter.getRateLimitInfo(key, options);
 
       // Set rate limit headers
       if (limitInfo) {
@@ -597,15 +696,15 @@ export const rateLimitMiddleware = (options: RateLimitOptions = { windowMs: 60 *
     }
 
     // Set rate limit headers
-    const limitInfo = rateLimiter.getRateLimitInfo(key);
+    const limitInfo = await redisRateLimiter.getRateLimitInfo(key, options);
     if (limitInfo) {
       res.setHeader('X-RateLimit-Limit', options.maxRequests.toString());
-      res.setHeader('X-RateLimit-Remaining', Math.max(0, options.maxRequests - limitInfo.remaining).toString());
+      res.setHeader('X-RateLimit-Remaining', limitInfo.remaining.toString());
       res.setHeader('X-RateLimit-Reset', Math.ceil(limitInfo.resetAt / 1000).toString());
     }
 
     return next();
-  };
+  });
 };
 
 /**

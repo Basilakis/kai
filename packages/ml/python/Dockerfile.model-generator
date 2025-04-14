@@ -1,0 +1,12 @@
+# Dockerfile for model-generator worker
+FROM kai-ml-base:latest
+
+# Copy the specific worker script
+COPY packages/ml/python/generate_model.py ./generate_model.py
+
+# Copy any shared utility code if necessary
+# COPY packages/ml/python/utils ./utils
+
+# Set the command to run the worker script
+# Arguments will be passed by Argo Workflows based on the template
+CMD ["python", "generate_model.py"]

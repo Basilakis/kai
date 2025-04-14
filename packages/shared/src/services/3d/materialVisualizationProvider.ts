@@ -1,26 +1,25 @@
 import { BaseThreeDProvider } from './baseProvider';
 // Correctly import Material type from the right location
-import { Material } from '../../types/material'; 
-import { 
-  ModelEndpoints, 
-  ProcessingResult, 
-  ServiceError, 
+import { Material } from '../../types/material';
+import {
+  ModelEndpoints,
+  ProcessingResult,
+  ServiceError,
   MaterialVisualizationOptions,
   ExtractedTextures,
   HDREnvironmentMap,
-  EnvironmentMapOptions,
   TextureEnhancementOptions,
-  TextToTextureOptions,
-  TextureResult 
+  TextToTextureOptions
 } from './types';
+import { EnvironmentMapOptions } from './lightingEstimationService';
 import { LightingEstimationService } from './lightingEstimationService';
 import { materialNetProvider, MaterialProperties } from '../recognition/materialNetProvider';
-import { TextureEnhancementProvider } from './textureEnhancementProvider'; 
+import { TextureEnhancementProvider } from './textureEnhancementProvider';
 import { logger } from '../../utils/logger';
-import fs from 'fs'; 
-import path from 'path'; 
+import { promises as fs } from 'fs'; // Use fs.promises via destructuring
+import path from 'path';
 import os from 'os'; // Import os
-import { v4 as uuidv4 } from 'uuid'; 
+import { v4 as uuidv4 } from 'uuid';
 
 // Define MaterialImage locally if not exported/imported correctly
 interface MaterialImage {
@@ -28,27 +27,28 @@ interface MaterialImage {
     type: 'primary' | 'swatch' | 'context';
 }
 
-// Placeholder for withTempDir - needs proper implementation or import
-async function withTempDirPlaceholder<T>(callback: (tempDirPath: string) => Promise<T>): Promise<T> {
-    logger.warn('Using placeholder withTempDir. Refactor needed.');
-    // Using relative path as os.tmpdir() caused issues
-    const tempBase = './temp_shared_downloads'; 
-    fs.mkdirSync(tempBase, { recursive: true }); // Ensure base temp dir exists
-    const tempDirPath = path.join(tempBase, `kai-shared-temp-${uuidv4()}`);
-    fs.mkdirSync(tempDirPath, { recursive: true });
+// Updated withTempDir using fs/promises and os.tmpdir()
+async function withTempDir<T>(callback: (tempDirPath: string) => Promise<T>): Promise<T> {
+    let tempDirPath: string | undefined;
     try {
+        // Use os.tmpdir() and mkdtemp for secure temp directory creation
+        tempDirPath = await fs.mkdtemp(path.join(os.tmpdir(), 'kai-shared-temp-'));
+        logger.debug(`Created temporary directory: ${tempDirPath}`);
+        // Add check before calling callback
+        if (!tempDirPath) {
+             throw new Error("Temporary directory path could not be created.");
+        }
         const result = await callback(tempDirPath);
         return result;
     } finally {
-        try {
-            if (fs.existsSync(tempDirPath)) {
-                // Use async rmdir with callback for cleanup
-                fs.rmdir(tempDirPath, { recursive: true }, (err: Error | null) => { // Added type
-                   if (err) logger.error(`Failed to cleanup placeholder temp dir ${tempDirPath}`, { error: err });
-                });
+        if (tempDirPath) {
+            try {
+                // Use async rm with force and recursive options for cleanup
+                await fs.rm(tempDirPath, { recursive: true, force: true });
+                logger.debug(`Cleaned up temporary directory: ${tempDirPath}`);
+            } catch (e) {
+                logger.error(`Error during temp dir cleanup ${tempDirPath}`, { error: e });
             }
-        } catch (e) {
-            logger.error(`Error during placeholder temp dir cleanup check ${tempDirPath}`, { error: e });
         }
     }
 }
@@ -76,12 +76,12 @@ export class MaterialVisualizationProvider extends BaseThreeDProvider {
   private envMapCache: Map<string, HDREnvironmentMap> = new Map();
   private materialNetCache: Map<string, MaterialProperties> = new Map();
   private lightingService: LightingEstimationService;
-  private textureEnhancementProvider: TextureEnhancementProvider; 
+  private textureEnhancementProvider: TextureEnhancementProvider;
 
   constructor(modelEndpoints: ModelEndpoints) {
     super(modelEndpoints);
     this.lightingService = new LightingEstimationService(modelEndpoints);
-    this.textureEnhancementProvider = new TextureEnhancementProvider(modelEndpoints); 
+    this.textureEnhancementProvider = new TextureEnhancementProvider(modelEndpoints);
   }
 
   // Correct implementation of abstract methods from BaseThreeDProvider
@@ -101,7 +101,7 @@ export class MaterialVisualizationProvider extends BaseThreeDProvider {
   }): Promise<ProcessingResult> {
      logger.info('MaterialVisualizationProvider.processText called', { text, options });
      // Minimal implementation matching signature
-     if (options?.style === 'texture') { 
+     if (options?.style === 'texture') {
          // Delegate to texture provider if style matches
          return this.textureEnhancementProvider.generateTextureFromText(text, options);
      }
@@ -115,15 +115,15 @@ export class MaterialVisualizationProvider extends BaseThreeDProvider {
     options: MaterialVisualizationOptions
   ): Promise<ExtractedTextures> {
     // Use the actual Material type which includes 'images'
-    const images = material.images as MaterialImage[] | undefined; 
+    const images = material.images as MaterialImage[] | undefined;
 
     if (!images?.length && !options.textToTexture?.enabled) {
       throw new Error('No images available and text-to-texture not enabled');
     }
 
      const baseCacheKey = `${material.id}-${options.quality}`;
-     const enhancementKeyPart = options.textureEnhancement?.enabled 
-         ? `_enhance-${options.textureEnhancement.quality || 'medium'}-${options.textureEnhancement.scale || 4}` 
+     const enhancementKeyPart = options.textureEnhancement?.enabled
+         ? `_enhance-${options.textureEnhancement.quality || 'medium'}-${options.textureEnhancement.scale || 4}`
          : '';
      const textGenKeyPart = options.textToTexture?.enabled && options.textToTexture.prompt
          ? `_text-${options.textToTexture.prompt.substring(0, 20)}-${options.textToTexture.style || 'default'}-${options.textToTexture.size || 1024}`
@@ -142,7 +142,7 @@ export class MaterialVisualizationProvider extends BaseThreeDProvider {
     let primaryImage: MaterialImage | undefined = images?.find(img => img.type === 'primary');
     let primaryImageUrl: string | undefined = primaryImage?.url;
     let generatedOrEnhancedAlbedoPath: string | undefined;
-    let tempFilesToDelete: string[] = []; 
+    let tempFilesToDelete: string[] = [];
 
     try {
         // 1. Text-to-Texture Generation
@@ -155,10 +155,14 @@ export class MaterialVisualizationProvider extends BaseThreeDProvider {
             const textResult = await this.textureEnhancementProvider.generateTextureFromText(options.textToTexture.prompt, textOptions);
             if (textResult.success && textResult.outputPath) {
                 generatedOrEnhancedAlbedoPath = textResult.outputPath;
-                textures.albedo = generatedOrEnhancedAlbedoPath; 
-                primaryImageUrl = generatedOrEnhancedAlbedoPath; 
-                primaryImage = { url: primaryImageUrl, type: 'primary' }; 
+                textures.albedo = generatedOrEnhancedAlbedoPath;
+                primaryImageUrl = generatedOrEnhancedAlbedoPath;
+                primaryImage = { url: primaryImageUrl, type: 'primary' };
                 logger.info(`Generated texture saved to: ${generatedOrEnhancedAlbedoPath}`);
+                // Add generated file to cleanup list if it's temporary
+                if (generatedOrEnhancedAlbedoPath.includes(os.tmpdir())) {
+                    tempFilesToDelete.push(generatedOrEnhancedAlbedoPath);
+                }
             } else {
                 logger.warn('Text-to-texture generation failed', { materialId: material.id, error: textResult.error });
                 if (!primaryImageUrl) throw new Error('Text-to-texture failed and no primary image available.');
@@ -172,21 +176,28 @@ export class MaterialVisualizationProvider extends BaseThreeDProvider {
                 quality: options.textureEnhancement.quality,
                 scale: options.textureEnhancement.scale,
             };
-            
+
             const imagePathForEnhancement = await this.ensureFilePath(primaryImageUrl);
             if (imagePathForEnhancement) {
-                 if (imagePathForEnhancement !== primaryImageUrl) tempFilesToDelete.push(imagePathForEnhancement); 
+                 // Only add to delete list if it's a temporary download
+                 if (imagePathForEnhancement !== primaryImageUrl && imagePathForEnhancement.includes(os.tmpdir())) {
+                     tempFilesToDelete.push(imagePathForEnhancement);
+                 }
 
                  const enhanceResult = await this.textureEnhancementProvider.enhanceTexture(imagePathForEnhancement, enhanceOptions);
                  if (enhanceResult.success && enhanceResult.outputPath) {
                      generatedOrEnhancedAlbedoPath = enhanceResult.outputPath;
-                     textures.albedo = generatedOrEnhancedAlbedoPath; 
-                     primaryImageUrl = generatedOrEnhancedAlbedoPath; 
-                     primaryImage = { url: primaryImageUrl, type: 'primary' }; 
+                     textures.albedo = generatedOrEnhancedAlbedoPath;
+                     primaryImageUrl = generatedOrEnhancedAlbedoPath;
+                     primaryImage = { url: primaryImageUrl, type: 'primary' };
                      logger.info(`Enhanced texture saved to: ${generatedOrEnhancedAlbedoPath}`);
+                     // Add enhanced file to cleanup list if it's temporary
+                     if (generatedOrEnhancedAlbedoPath.includes(os.tmpdir())) {
+                         tempFilesToDelete.push(generatedOrEnhancedAlbedoPath);
+                     }
                  } else {
                      logger.warn('Texture enhancement failed, using original', { materialId: material.id, error: enhanceResult.error });
-                     textures.albedo = primaryImageUrl; 
+                     textures.albedo = primaryImageUrl;
                  }
             } else {
                  logger.warn('Could not get file path for enhancement, using original texture.', { materialId: material.id });
@@ -198,22 +209,32 @@ export class MaterialVisualizationProvider extends BaseThreeDProvider {
         }
 
         // 3. PBR Property Extraction
-        if (options.useMaterialNet && primaryImageUrl) { 
+        if (options.useMaterialNet && primaryImageUrl) {
             logger.info('Using MaterialNet for PBR property extraction', { materialId: material.id });
             try {
                 const imagePathForMaterialNet = await this.ensureFilePath(primaryImageUrl);
                 if (imagePathForMaterialNet) {
-                    if (imagePathForMaterialNet !== primaryImageUrl) tempFilesToDelete.push(imagePathForMaterialNet); 
+                    // Only add to delete list if it's a temporary download
+                    if (imagePathForMaterialNet !== primaryImageUrl && imagePathForMaterialNet.includes(os.tmpdir())) {
+                        tempFilesToDelete.push(imagePathForMaterialNet);
+                    }
 
-                    const materialProperties = await this.getMaterialNetProperties(imagePathForMaterialNet, options.quality); 
+                    const materialProperties = await this.getMaterialNetProperties(imagePathForMaterialNet, options.quality);
                     if (materialProperties) {
-                        textures.albedo = materialProperties.albedo || textures.albedo; 
+                        textures.albedo = materialProperties.albedo || textures.albedo;
                         textures.normal = materialProperties.normal;
                         textures.roughness = materialProperties.roughness;
                         textures.metallic = materialProperties.metalness;
                         textures.ao = materialProperties.ao;
                         textures.displacement = materialProperties.height;
-                        
+
+                        // Add MaterialNet output files to cleanup if they are temporary
+                        Object.values(materialProperties).forEach(p => {
+                            if (p && typeof p === 'string' && p.includes(os.tmpdir())) {
+                                tempFilesToDelete.push(p);
+                            }
+                        });
+
                         this.textureCache.set(cacheKey, textures);
                         logger.debug(`Cached textures for key: ${cacheKey}`);
                         return textures; // Return early
@@ -230,9 +251,9 @@ export class MaterialVisualizationProvider extends BaseThreeDProvider {
         }
 
         // Conventional extraction (fallback or if MaterialNet not used/failed)
-        if (primaryImage) { 
+        if (primaryImage) {
              // Use material.finish directly
-             const finish = material.finish; 
+             const finish = material.finish;
              switch (material.materialType) {
                 case 'metal':
                     textures.metallic = textures.metallic ?? await this.generateMetallicMap(primaryImage);
@@ -278,20 +299,38 @@ export class MaterialVisualizationProvider extends BaseThreeDProvider {
             code: 'TEXTURE_EXTRACTION_FAILED'
         });
     } finally {
-        tempFilesToDelete.forEach(filePath => {
-            if (fs.existsSync(filePath)) {
-                fs.unlink(filePath, (err: Error | null) => { // Use async unlink
-                    if (err) logger.warn(`Failed cleanup in finally block`, { path: filePath, error: err });
-                });
+        // Use async unlink in finally block
+        for (const filePath of tempFilesToDelete) {
+            try {
+                await fs.unlink(filePath);
+                logger.debug(`Cleaned up temporary file: ${filePath}`);
+            } catch (unlinkError: any) { // Use 'any' type for error
+                // Ignore errors if file doesn't exist (ENOENT), log others
+                if (unlinkError?.code !== 'ENOENT') {
+                    logger.warn(`Failed cleanup in finally block`, { path: filePath, error: unlinkError });
+                }
             }
-        });
+        }
     }
   }
 
   private async ensureFilePath(urlOrPath: string): Promise<string | undefined> {
-      if (!urlOrPath.startsWith('http://') && !urlOrPath.startsWith('https://')) {
-          return fs.existsSync(urlOrPath) ? urlOrPath : undefined;
+      // Check if it's a local path first
+      try {
+          await fs.access(urlOrPath); // Check if file exists and is accessible
+          logger.debug(`Using existing local file path: ${urlOrPath}`);
+          return urlOrPath;
+      } catch (accessError) {
+          // If access fails, assume it's not a valid local path or needs downloading
+          logger.debug(`Local path check failed for ${urlOrPath}, attempting download.`, { error: accessError });
       }
+
+      // Proceed with download if it looks like a URL
+      if (!urlOrPath.startsWith('http://') && !urlOrPath.startsWith('https://')) {
+          logger.warn(`Path is not a URL and not accessible locally: ${urlOrPath}`);
+          return undefined; // Not a URL and not accessible locally
+      }
+
       try {
           const response = await fetch(urlOrPath);
           if (!response.ok) {
@@ -300,31 +339,31 @@ export class MaterialVisualizationProvider extends BaseThreeDProvider {
           }
           const arrayBuffer = await response.arrayBuffer();
           const buffer = Buffer.from(arrayBuffer);
-          
-          // Use placeholder temp dir logic
-          return await withTempDirPlaceholder(async (tempDirPath) => {
+
+          // Use updated withTempDir logic
+          return await withTempDir(async (tempDirPath) => {
               const tempFileName = `${uuidv4()}${path.extname(new URL(urlOrPath).pathname) || '.tmp'}`;
               const tempFilePath = path.join(tempDirPath, tempFileName);
-              fs.writeFileSync(tempFilePath, buffer);
+              await fs.writeFile(tempFilePath, buffer); // Use async writeFile
               logger.debug(`Downloaded ${urlOrPath} to ${tempFilePath}`);
-              return tempFilePath; 
+              return tempFilePath;
           });
       } catch (error) {
-          logger.error(`Error downloading image from URL: ${urlOrPath}`, { error });
+          logger.error(`Error downloading or saving image from URL: ${urlOrPath}`, { error });
           return undefined;
       }
   }
 
    private async getMaterialNetProperties(
-    imagePath: string, 
+    imagePath: string,
     quality: 'low' | 'medium' | 'high'
   ): Promise<MaterialProperties | undefined> {
     try {
-      const cacheKey = `${imagePath}-${quality}`; 
+      const cacheKey = `${imagePath}-${quality}`;
       if (this.materialNetCache.has(cacheKey)) {
         return this.materialNetCache.get(cacheKey);
       }
-      const properties = await materialNetProvider.extractProperties(imagePath, { 
+      const properties = await materialNetProvider.extractProperties(imagePath, {
         quality: quality,
         outputFormat: 'png'
       });
@@ -335,7 +374,7 @@ export class MaterialVisualizationProvider extends BaseThreeDProvider {
     } catch (error) {
       logger.warn('Failed to extract MaterialNet properties', {
         error: error instanceof Error ? error.message : String(error),
-        imagePath 
+        imagePath
       });
       return undefined;
     }
@@ -348,7 +387,7 @@ export class MaterialVisualizationProvider extends BaseThreeDProvider {
     const images = material.images as MaterialImage[] | undefined;
     const legacyEnvMap = options.environmentMap;
     const lightingOptions = options.lighting || {};
-    
+
     if (lightingOptions.environmentMap || legacyEnvMap) {
       return {
         url: lightingOptions.environmentMap || legacyEnvMap!,
@@ -370,7 +409,7 @@ export class MaterialVisualizationProvider extends BaseThreeDProvider {
       if (primaryImage) {
         const envMapOptions: EnvironmentMapOptions = {
           // Provide default quality if undefined
-          quality: options.quality || 'medium', 
+          quality: options.quality || 'medium',
           intensity: lightingOptions.intensity,
           rotation: lightingOptions.rotation,
           toneMapping: lightingOptions.toneMapping
@@ -393,7 +432,7 @@ export class MaterialVisualizationProvider extends BaseThreeDProvider {
 
     const defaultType = lightingOptions.defaultType || 'neutral';
     // Provide default quality if undefined
-    const defaultMap = this.lightingService.getDefaultEnvironmentMap(options.quality || 'medium', defaultType); 
+    const defaultMap = this.lightingService.getDefaultEnvironmentMap(options.quality || 'medium', defaultType);
     this.envMapCache.set(cacheKey, defaultMap);
     return defaultMap;
   }
@@ -451,7 +490,7 @@ export class MaterialVisualizationProvider extends BaseThreeDProvider {
     options: MaterialVisualizationOptions
   ): Promise<void> {
      logger.info(`Setting up AR scene for material ${material.id}`, { textures, options });
-     if (!(globalThis.navigator as any)?.xr) { 
+     if (!(globalThis.navigator as any)?.xr) {
         logger.warn('WebXR not supported, skipping AR setup.');
         return;
      }
@@ -515,25 +554,25 @@ export class MaterialVisualizationProvider extends BaseThreeDProvider {
           environmentMap: envMap,
           quality: options.quality,
           physicallyBasedRendering: true,
-          container: domElement, 
+          container: domElement,
           material: {
             id: material.id,
             name: material.name,
             type: material.materialType
           }
         };
-        resolve(sceneConfig); 
+        resolve(sceneConfig);
       } catch (error) {
-        reject(new ServiceErrorImpl('Failed to set up Three.js scene config', { 
-          cause: error instanceof Error ? error : new Error(String(error)) 
+        reject(new ServiceErrorImpl('Failed to set up Three.js scene config', {
+          cause: error instanceof Error ? error : new Error(String(error))
         }));
       }
     });
   }
 
   public async initializeARSession(
-    _domElement: HTMLDivElement, 
-    material: Material, 
+    _domElement: HTMLDivElement,
+    material: Material,
     options: MaterialVisualizationOptions
   ): Promise<void> {
     try {
@@ -547,12 +586,12 @@ export class MaterialVisualizationProvider extends BaseThreeDProvider {
         }
       });
     } catch (error) {
-      throw new ServiceErrorImpl('Failed to initialize AR session', { 
-        cause: error instanceof Error ? error : new Error(String(error)) 
+      throw new ServiceErrorImpl('Failed to initialize AR session', {
+        cause: error instanceof Error ? error : new Error(String(error))
       });
     }
   }
-  
+
   public clearEnvironmentMapCache(): void {
     this.envMapCache.clear();
     this.lightingService.clearCache();

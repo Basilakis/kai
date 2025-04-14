@@ -16,345 +16,80 @@ on:
           - staging
           - production
 
-# Environment variables used across jobs
-env:
-  NODE_VERSION: '16'
-  PYTHON_VERSION: '3.9'
-  DOCKER_BUILDKIT: '1'
+# The following secrets are expected to be configured in the repository:
+# - DOCKER_USERNAME, DOCKER_PASSWORD, DOCKER_REGISTRY: Docker registry credentials
+# - GITOPS_PAT: Personal Access Token for GitOps repository
+# - KUBE_CONFIG_DATA: Base64-encoded Kubernetes config
+# - SUPABASE_URL_PRODUCTION, SUPABASE_KEY_PRODUCTION: Supabase production credentials
+# - SUPABASE_URL_STAGING, SUPABASE_KEY_STAGING: Supabase staging credentials
+# - VERCEL_TOKEN, VERCEL_ORG_ID: Vercel credentials
+# - VERCEL_PROJECT_ID_CLIENT, VERCEL_PROJECT_ID_ADMIN: Vercel project IDs
+# - SLACK_WEBHOOK: Slack notification webhook URL
 
 jobs:
-  # Build and test job runs on all branches
+  # Build and test job - reusable workflow
   build-and-test:
     name: Build and Test
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
+    uses: ./.github/workflows/build-test.yml
+    with:
+      node-version: '16'
+      python-version: '3.9'
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'yarn'
+  # Build Docker images - reusable workflow
+  build-docker-images:
+    name: Build Docker Images
+    needs: build-and-test
+    if: |
+      (github.ref == 'refs/heads/staging') ||
+      (github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch')
+    uses: ./.github/workflows/docker-build.yml
+    with:
+      environment: ${{ github.ref == 'refs/heads/main' || github.event.inputs.environment == 'production' && 'production' || 'staging' }}
+      tag-suffix: ${{ github.ref == 'refs/heads/main' || github.event.inputs.environment == 'production' && 'latest' || 'staging' }}
+    secrets:
+      docker_username: ${{ secrets.DOCKER_USERNAME }}
+      docker_password: ${{ secrets.DOCKER_PASSWORD }}
+      docker_registry: ${{ secrets.DOCKER_REGISTRY }}
 
-      - name: Install dependencies
-        run: yarn install --frozen-lockfile
-
-      - name: Run linting
-        run: yarn lint
-
-      - name: Run unit tests
-        run: yarn test
-
-      - name: Build packages
-        run: yarn build
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v3
-        with:
-          name: build-artifacts
-          path: |
-            packages/*/dist
-            packages/client/public
-            packages/admin/out
-          retention-days: 1
-
-  # Deploy to staging environment (only on staging branch or manual trigger)
+  # Deploy to staging
   deploy-staging:
     name: Deploy to Staging
-    needs: build-and-test
+    needs: build-docker-images
     if: |
-      (github.ref == 'refs/heads/staging') || 
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
-    runs-on: ubuntu-latest
-    # Using environment variables instead of environment setting
-    env:
-      DEPLOY_ENV: staging
-    concurrency: staging_environment
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      (github.ref == 'refs/heads/staging') ||
+      (github.event.inputs.environment == 'staging')
+    uses: ./.github/workflows/deploy-staging.yml
+    with:
+      sha: ${{ github.sha }}
+      kube-context: 'kai-staging-cluster'
+      api-url: 'https://api-staging.kai.yourdomain.com'
+    secrets:
+      gitops_pat: ${{ secrets.GITOPS_PAT }}
+      supabase_url: ${{ secrets.SUPABASE_URL_STAGING }}
+      supabase_key: ${{ secrets.SUPABASE_KEY_STAGING }}
+      vercel_token: ${{ secrets.VERCEL_TOKEN }}
+      vercel_org_id: ${{ secrets.VERCEL_ORG_ID }}
+      vercel_project_id_client: ${{ secrets.VERCEL_PROJECT_ID_CLIENT }}
+      vercel_project_id_admin: ${{ secrets.VERCEL_PROJECT_ID_ADMIN }}
 
-      - name: Download build artifacts
-        uses: actions/download-artifact@v3
-        with:
-          name: build-artifacts
-
-      # Deploy frontend client to Vercel staging
-      - name: Deploy Client to Vercel (Staging)
-        uses: amondnet/vercel-action@v25
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID_CLIENT }}
-          working-directory: ./packages/client
-          alias-domains: |
-            staging-kai-client.vercel.app
-          scope: ${{ secrets.VERCEL_ORG_ID }}
-
-      # Deploy admin panel to Vercel staging
-      - name: Deploy Admin to Vercel (Staging)
-        uses: amondnet/vercel-action@v25
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID_ADMIN }}
-          working-directory: ./packages/admin
-          alias-domains: |
-            staging-kai-admin.vercel.app
-          scope: ${{ secrets.VERCEL_ORG_ID }}
-
-      # Set up Docker for backend services
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      - name: Login to Container Registry
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-          registry: ${{ secrets.DOCKER_REGISTRY }}
-
-      # Build and push API server image
-      - name: Build and push API server (Staging)
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          file: ./Dockerfile.api
-          push: true
-          tags: |
-            ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-api-server:${{ github.sha }}
-            ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-api-server:staging
-          cache-from: type=registry,ref=${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-api-server:staging-cache
-          cache-to: type=registry,ref=${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-api-server:staging-cache,mode=max
-
-      # Build and push ML services image
-      - name: Build and push ML services (Staging)
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          file: ./Dockerfile.ml
-          push: true
-          tags: |
-            ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-ml-services:${{ github.sha }}
-            ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-ml-services:staging
-          cache-from: type=registry,ref=${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-ml-services:staging-cache
-          cache-to: type=registry,ref=${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-ml-services:staging-cache,mode=max
-
-      # Install kubectl for Kubernetes operations
-      - name: Install kubectl
-        uses: azure/setup-kubectl@v3
-        with:
-          version: 'latest'
-
-      - name: Set up kubeconfig
-        run: |
-          mkdir -p ~/.kube
-          echo "${{ secrets.KUBE_CONFIG_DATA }}" | base64 -d > ~/.kube/config
-          chmod 600 ~/.kube/config
-
-      # Run database migrations before deployment
-      - name: Setup Node.js for migrations
-        uses: actions/setup-node@v3
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          
-      - name: Install dependencies
-        run: yarn install --frozen-lockfile
-        
-      - name: Run database migrations (Staging)
-        run: |
-          echo "Running database migrations for staging environment..."
-          yarn tsc -p packages/server/tsconfig.json
-          cd packages/server
-          node dist/scripts/run-migrations.js
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL_STAGING }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY_STAGING }}
-          NODE_ENV: staging
-
-      # Deploy to Kubernetes staging environment
-      - name: Update Kubernetes deployments (Staging)
-        run: |
-          kubectl set image deployment/kai-api-server-staging api-server=${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-api-server:${{ github.sha }} -n kai-staging
-          kubectl set image deployment/kai-ml-services-staging ml-services=${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-ml-services:${{ github.sha }} -n kai-staging
-          kubectl rollout status deployment/kai-api-server-staging -n kai-staging
-          kubectl rollout status deployment/kai-ml-services-staging -n kai-staging
-
-      # Run integration tests against staging environment
-      - name: Setup Node.js for testing
-        uses: actions/setup-node@v3
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Run integration tests
-        run: |
-          export API_URL=https://api-staging.kai.yourdomain.com
-          yarn workspace @kai/server test:integration
-        env:
-          NODE_ENV: staging
-
-      # Notify on Slack (optional)
-      - name: Notify Slack on staging deployment
-        if: always()
-        uses: rtCamp/action-slack-notify@v2
-        env:
-          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
-          SLACK_CHANNEL: deployments
-          SLACK_TITLE: Staging Deployment ${{ job.status }}
-          SLACK_MESSAGE: "Kai Platform deployed to staging :rocket:"
-          SLACK_COLOR: ${{ job.status == 'success' && 'good' || 'danger' }}
-
-  # Deploy to production environment (only on main branch or manual trigger)
+  # Deploy to production
   deploy-production:
     name: Deploy to Production
-    needs: build-and-test
+    needs: build-docker-images
     if: |
-      (github.ref == 'refs/heads/main') || 
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
-    runs-on: ubuntu-latest
-    # Using environment variables instead of environment setting
-    env:
-      DEPLOY_ENV: production
-    concurrency: production_environment
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Download build artifacts
-        uses: actions/download-artifact@v3
-        with:
-          name: build-artifacts
-
-      # Deploy frontend client to Vercel production
-      - name: Deploy Client to Vercel (Production)
-        uses: amondnet/vercel-action@v25
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID_CLIENT }}
-          working-directory: ./packages/client
-          vercel-args: '--prod'
-          scope: ${{ secrets.VERCEL_ORG_ID }}
-
-      # Deploy admin panel to Vercel production
-      - name: Deploy Admin to Vercel (Production)
-        uses: amondnet/vercel-action@v25
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID_ADMIN }}
-          working-directory: ./packages/admin
-          vercel-args: '--prod'
-          scope: ${{ secrets.VERCEL_ORG_ID }}
-
-      # Set up Docker for backend services
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      - name: Login to Container Registry
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-          registry: ${{ secrets.DOCKER_REGISTRY }}
-
-      # Build and push API server image
-      - name: Build and push API server (Production)
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          file: ./Dockerfile.api
-          push: true
-          tags: |
-            ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-api-server:${{ github.sha }}
-            ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-api-server:latest
-          cache-from: type=registry,ref=${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-api-server:build-cache
-          cache-to: type=registry,ref=${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-api-server:build-cache,mode=max
-
-      # Build and push ML services image
-      - name: Build and push ML services (Production)
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          file: ./Dockerfile.ml
-          push: true
-          tags: |
-            ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-ml-services:${{ github.sha }}
-            ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-ml-services:latest
-          cache-from: type=registry,ref=${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-ml-services:build-cache
-          cache-to: type=registry,ref=${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-ml-services:build-cache,mode=max
-
-      # Install kubectl for Kubernetes operations
-      - name: Install kubectl
-        uses: azure/setup-kubectl@v3
-        with:
-          version: 'latest'
-
-      - name: Set up kubeconfig
-        run: |
-          mkdir -p ~/.kube
-          echo "${{ secrets.KUBE_CONFIG_DATA }}" | base64 -d > ~/.kube/config
-          chmod 600 ~/.kube/config
-
-      # Run database migrations before deployment
-      - name: Setup Node.js for migrations
-        uses: actions/setup-node@v3
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          
-      - name: Install dependencies
-        run: yarn install --frozen-lockfile
-        
-      - name: Run database migrations (Production)
-        run: |
-          echo "Running database migrations for production environment..."
-          yarn tsc -p packages/server/tsconfig.json
-          cd packages/server
-          node dist/scripts/run-migrations.js
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL_PRODUCTION }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY_PRODUCTION }}
-          NODE_ENV: production
-
-      # Deploy to Kubernetes production environment
-      - name: Update Kubernetes deployments (Production)
-        run: |
-          kubectl set image deployment/kai-api-server api-server=${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-api-server:${{ github.sha }} -n kai
-          kubectl set image deployment/kai-ml-services ml-services=${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-ml-services:${{ github.sha }} -n kai
-          kubectl rollout status deployment/kai-api-server -n kai
-          kubectl rollout status deployment/kai-ml-services -n kai
-
-      # Run smoke tests against production
-      - name: Run smoke tests
-        run: |
-          export API_URL=https://api.kai.yourdomain.com
-          yarn workspace @kai/server test:smoke
-        env:
-          NODE_ENV: production
-
-      # Update deployment status
-      - name: Update GitHub deployment status
-        uses: chrnorm/deployment-status@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          state: "success"
-          deployment-id: ${{ steps.deployment.outputs.deployment_id }}
-          environment-url: https://kai.yourdomain.com
-
-      # Notify on Slack (optional)
-      - name: Notify Slack on production deployment
-        if: always()
-        uses: rtCamp/action-slack-notify@v2
-        env:
-          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
-          SLACK_CHANNEL: deployments
-          SLACK_TITLE: Production Deployment ${{ job.status }}
-          SLACK_MESSAGE: "Kai Platform deployed to production :rocket:"
-          SLACK_COLOR: ${{ job.status == 'success' && 'good' || 'danger' }}
+      (github.ref == 'refs/heads/main') ||
+      (github.event.inputs.environment == 'production')
+    uses: ./.github/workflows/deploy-production.yml
+    with:
+      sha: ${{ github.sha }}
+      kube-context: 'kai-production-cluster'
+      api-url: 'https://api.kai.yourdomain.com'
+    secrets:
+      gitops_pat: ${{ secrets.GITOPS_PAT }}
+      supabase_url: ${{ secrets.SUPABASE_URL_PRODUCTION }}
+      supabase_key: ${{ secrets.SUPABASE_KEY_PRODUCTION }}
+      vercel_token: ${{ secrets.VERCEL_TOKEN }}
+      vercel_org_id: ${{ secrets.VERCEL_ORG_ID }}
+      vercel_project_id_client: ${{ secrets.VERCEL_PROJECT_ID_CLIENT }}
+      vercel_project_id_admin: ${{ secrets.VERCEL_PROJECT_ID_ADMIN }}

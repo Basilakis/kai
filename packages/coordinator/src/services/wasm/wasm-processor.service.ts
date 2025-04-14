@@ -1,8 +1,14 @@
+/// <reference path="../../types/node-types.d.ts" />
+
+// Import Node.js built-in modules with type declarations
+import { promises as fs } from 'fs';
+import * as path from 'path';
+import * as child_process from 'child_process';
+import { Buffer } from 'buffer'; // Explicitly import Buffer
+
+// Import winston logger
 import { Logger } from 'winston';
 import { createLogger } from '../../utils/logger';
-import * as fs from 'fs/promises';
-import * as path from 'path';
-import * as child_process from 'child_process'; // Import entire module
 
 /**
  * WebAssembly module source type
@@ -719,12 +725,16 @@ export class WasmProcessorService {
     ];
 
     // Execute wasm-opt
-    await this.executeProcess('wasm-opt', args);
+    await this.executeProcess('wasm-opt', args.filter((arg): arg is string => arg !== undefined));
 
     this.logger.info('Optimized WebAssembly binary', {
       outputPath
     });
 
+    // Ensure outputPath is a string
+    if (!outputPath) {
+      throw new Error('Output path is undefined');
+    }
     return outputPath;
   }
 
@@ -753,12 +763,19 @@ export class WasmProcessorService {
     await this.ensureDirectoryExists(path.dirname(outputPath));
 
     // Execute wasm2wat
+    if (!wasmPath || !outputPath) {
+      throw new Error('wasmPath or outputPath is undefined');
+    }
     await this.executeProcess('wasm2wat', [wasmPath, '-o', outputPath]);
 
     this.logger.info('Generated WebAssembly text format', {
       outputPath
     });
 
+    // Ensure outputPath is a string
+    if (!outputPath) {
+      throw new Error('Output path is undefined');
+    }
     return outputPath;
   }
 
@@ -822,9 +839,9 @@ export class WasmProcessorService {
   private async executeCompiler(
     compiler: string,
     args: string[],
-    sourcePath: string, // Keep for logging context if needed
-    outputPath: string, // Keep for logging context if needed
-    options: WasmCompilationOptions // Keep for logging context if needed
+    _sourcePath: string, // Keep for logging context if needed
+    _outputPath: string, // Keep for logging context if needed
+    _options: WasmCompilationOptions // Keep for logging context if needed
   ): Promise<string> {
     this.logger.debug('Executing compiler', {
       compiler,

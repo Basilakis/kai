@@ -1,7 +1,8 @@
 import * as k8s from '@kubernetes/client-node';
 import { Redis } from 'ioredis';
 import { Logger } from 'winston';
-import { QualityLevel, SubscriptionTier } from '../types';
+import { QualityLevel } from '../types'; // Keep QualityLevel if defined locally
+import { SubscriptionTier } from '@kai/shared'; // Import from shared package
 
 /**
  * Resource Manager Service

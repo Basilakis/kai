@@ -1,12 +1,14 @@
+/// <reference path="../../types/node-types.d.ts" />
+
 import { Logger } from 'winston';
 import { createLogger } from '../../utils/logger';
-import * as fs from 'fs/promises'; // Remove node: prefix
-import { Dirent, readdir as readdirCb } from 'fs'; // Remove node: prefix
-import * as path from 'path'; // Remove node: prefix
-import { spawn } from 'child_process'; // Remove node: prefix
-import * as util from 'util'; // Remove node: prefix
+import * as fs from 'fs/promises';
+import { Dirent } from 'fs';
+import * as path from 'path';
+import { spawn } from 'child_process';
 
-const readdirAsync = util.promisify(readdirCb); // Promisify readdir
+// Explicitly import Buffer type
+import { Buffer } from 'buffer';
 
 /**
  * Compression options for Draco compression
@@ -197,8 +199,8 @@ export class DracoCompressionService {
     async function scanDir(dir: string): Promise<void> {
       let entries: Dirent[] = [];
       try {
-        // Use promisified readdir with options, cast result
-        entries = await readdirAsync(dir, { withFileTypes: true }) as Dirent[];
+        // Use fs.promises.readdir directly instead of promisified version
+        entries = await fs.readdir(dir, { withFileTypes: true }) as Dirent[];
       } catch (err: any) {
          logger.error(`Error reading directory ${dir}: ${err.message}`);
          return; // Skip directory if cannot read

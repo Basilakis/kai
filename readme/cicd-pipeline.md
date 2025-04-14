@@ -39,108 +39,512 @@ Branch protection rules are set up to ensure code quality and control access:
 - Require status checks to pass before merging
 - No restrictions on who can push
 
-## CI/CD Pipeline Configuration
+## CI/CD Pipeline with Reusable Workflows
 
-The CI/CD pipeline is implemented using GitHub Actions. The workflow is defined in `.github/workflows/deploy.yml` and includes the following stages:
+The CI/CD pipeline is implemented using GitHub Actions with a modular, reusable workflow approach. This new implementation separates the pipeline into individual workflow files that can be called from the main workflow:
 
-1. **Build and Test**: Triggered on all branches
-   - Install dependencies
-   - Run linting
-   - Run unit tests
-   - Build packages
-
-2. **Deploy to Staging**: Triggered on `staging` branch
-   - Run database migrations for staging environment
-   - Deploy frontend to staging environment
-   - Deploy backend to staging environment
-   - Run integration tests
-
-3. **Deploy to Production**: Triggered ONLY on `main` branch
-   - Run database migrations for production environment
-   - Deploy frontend to production
-   - Deploy backend to production
-   - Run smoke tests
-   - Monitor deployment
-
-## Database Migrations in CI/CD
-
-A critical component of the deployment process is the automated database migration system that ensures schema changes are applied consistently across environments:
-
-### Migration Process
-
-1. **Migration Files**: SQL migration files stored in `packages/server/src/services/supabase/migrations/` follow a sequential naming convention (001_initial_schema.sql, 002_hybrid_search.sql, etc.)
-
-2. **Migration Execution**:
-   - During deployment, before any application containers are updated
-   - Migrations use a TypeScript script (`packages/server/scripts/run-migrations.ts`) 
-   - Each environment (staging, production) has its own migration state
-
-3. **Migration Tracking**:
-   - A `schema_migrations` table in Supabase records applied migrations
-   - Prevents duplicate execution of migrations across deployments
-   - Maintains an audit trail with timestamps for each applied migration
-
-### Migration CI/CD Integration
-
-The workflow includes dedicated steps for running migrations before deploying application changes:
+### Main Workflow File Structure
+The primary workflow is defined in `.github/workflows/deploy.yml` and orchestrates the entire CI/CD process by calling reusable workflows:
 
 ```yaml
-# Run database migrations before deployment
-- name: Setup Node.js for migrations
-  uses: actions/setup-node@v3
-  with:
-    node-version: ${{ env.NODE_VERSION }}
-    
-- name: Install dependencies
-  run: yarn install --frozen-lockfile
-  
-- name: Run database migrations (Staging)
-  run: |
-    echo "Running database migrations for staging environment..."
-    yarn tsc -p packages/server/tsconfig.json
-    cd packages/server
-    node dist/scripts/run-migrations.js
-  env:
-    SUPABASE_URL: ${{ secrets.SUPABASE_URL_STAGING }}
-    SUPABASE_KEY: ${{ secrets.SUPABASE_KEY_STAGING }}
-    NODE_ENV: staging
+name: Kai Platform CI/CD Pipeline
+
+jobs:
+  # Build and test job using reusable workflow
+  build-and-test:
+    name: Build and Test
+    uses: ./.github/workflows/build-test.yml
+    with:
+      node-version: '16'
+      python-version: '3.9'
+
+  # Build Docker images using reusable workflow
+  build-docker-images:
+    name: Build Docker Images
+    needs: build-and-test
+    uses: ./.github/workflows/docker-build.yml
+    with:
+      environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+      tag-suffix: ${{ github.ref == 'refs/heads/main' && 'latest' || 'staging' }}
+    secrets:
+      docker_username: ${{ secrets.DOCKER_USERNAME }}
+      docker_password: ${{ secrets.DOCKER_PASSWORD }}
+      docker_registry: ${{ secrets.DOCKER_REGISTRY }}
+
+  # Deploy to staging or production using environment-specific workflows
+  deploy-staging:
+    name: Deploy to Staging
+    needs: build-docker-images
+    if: github.ref == 'refs/heads/staging'
+    uses: ./.github/workflows/deploy-staging.yml
+    with:
+      sha: ${{ github.sha }}
+    secrets: # Secrets passed to the workflow
+      # Various secrets needed for deployment
+
+  deploy-production:
+    name: Deploy to Production
+    needs: build-docker-images
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/deploy-production.yml
+    with:
+      sha: ${{ github.sha }}
+    secrets: # Secrets passed to the workflow
+      # Various secrets needed for deployment
 ```
 
-Similar steps are included in the production deployment job with production-specific credentials.
+### Reusable Workflow Components
 
-### Migration Safety Features
+The CI/CD pipeline is now broken down into these reusable workflow files:
 
-The migration system includes several safety features:
+1. **Build and Test Workflow** (`.github/workflows/build-test.yml`)
+   - Accepts parameters for Node.js and Python versions
+   - Handles dependency installation, linting, testing, and building
+   - Uploads build artifacts for downstream jobs
+   - Can be called independently for PR validation
 
-1. **Idempotency**: Migrations are only applied once per environment
-2. **Fail-Fast**: If a migration fails, the deployment is halted to prevent inconsistent states
-3. **Sequentiality**: Migrations are always applied in the correct order
-4. **Environment Isolation**: Each environment maintains its own migration state
-5. **Transaction Support**: SQL migrations can use transactions for atomicity
+   ```yaml
+   on:
+     workflow_call:
+       inputs:
+         node-version:
+           type: string
+           default: '16'
+         python-version:
+           type: string
+           default: '3.9'
+   ```
 
-### Adding New Migrations
+2. **Docker Build Workflow** (`.github/workflows/docker-build.yml`)
+   - Builds all required Docker images in two phases
+   - First builds the centralized ML base image
+   - Then builds all service images in parallel using the matrix strategy
+   - Accepts parameters for environment-specific configuration
+   - Passes the ML base image reference to service builds
 
-To add a new database schema change:
+   ```yaml
+   on:
+     workflow_call:
+       inputs:
+         environment:
+           type: string
+           required: true
+         tag-suffix:
+           type: string
+           default: ''
+       secrets:
+         docker_username:
+           required: true
+         # Other required secrets
+   ```
 
-1. Create a new SQL file in the migrations directory with the next sequential number
-2. Commit the file to the repository
-3. The CI/CD pipeline will automatically apply the migration during the next deployment
+3. **Deploy Staging Workflow** (`.github/workflows/deploy-staging.yml`)
+   - Handles all staging-specific deployment steps
+   - Updates GitOps repository with new image tags
+   - Deploys frontend applications to Vercel
+   - Runs database migrations for staging environment
 
-## Setting Up Branch Protection
+4. **Deploy Production Workflow** (`.github/workflows/deploy-production.yml`)
+   - Similar to staging but with production-specific parameters
+   - Applies stricter deployment controls
+   - Uses production-specific secrets and configurations
 
-To configure branch protection for your repository:
+### Benefits of Reusable Workflows
 
-1. Go to your GitHub repository → Settings → Branches
-2. Under "Branch protection rules" click "Add rule"
-3. For the "main" branch:
-   - Enter "main" as the branch name pattern
-   - Check "Require pull request reviews before merging"
-   - Check "Require status checks to pass before merging"
-   - Check "Restrict who can push to matching branches"
-   - Add "Basilakis" as an allowed user to push to main
-   - Check "Include administrators" to enforce rules for everyone
-   - Click "Create" or "Save changes"
-4. Repeat with appropriate settings for "staging" and "development" branches
+This modular approach provides several key advantages:
+
+1. **DRY (Don't Repeat Yourself) Principle**
+   - Eliminates duplicated code between staging and production workflows
+   - Common logic is defined once and reused across workflows
+
+2. **Simplified Maintenance**
+   - Easier to update individual components without affecting others
+   - Clear separation of concerns between build, test, and deployment steps
+
+3. **Improved Readability**
+   - Each workflow file focuses on a specific responsibility
+   - Main workflow file serves as a clean, high-level orchestrator
+
+4. **Easier Troubleshooting**
+   - Issues can be isolated to specific workflow components
+   - Individual workflows can be tested independently
+
+5. **Consistent Environment Handling**
+   - Environment-specific logic is encapsulated in dedicated workflow files
+   - Reduces risk of environment configuration inconsistencies
+
+6. **Scalable Architecture**
+   - New environments can be added with minimal changes
+   - Additional workflow components can be easily integrated
+
+### Enhanced Docker Build Process
+
+The Docker build workflow has been optimized to build the centralized ML base image first, followed by all service images:
+
+```yaml
+jobs:
+  # First build the ML base image that other images depend on
+  build-ml-base-image:
+    name: Build ML Base Image
+    runs-on: ubuntu-latest
+    steps:
+      # Steps to build and push the ML base image
+      
+  # Then build all service images in parallel
+  build-service-images:
+    name: Build Service Images
+    needs: build-ml-base-image
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - name: api-server
+            dockerfile: ./Dockerfile.api
+          # Other service images in the matrix
+    steps:
+      # Steps to build and push service images
+      # Includes reference to the ML base image
+```
+
+This approach ensures that:
+1. The ML base image is available for all service builds
+2. Common layers are properly cached and reused
+3. Service Dockerfiles are kept simple and focused
+
+### GitOps Integration
+
+Both staging and production deployment workflows include steps to update the GitOps repository:
+
+```yaml
+# From deploy-staging.yml
+jobs:
+  update-gitops:
+    name: Update GitOps Repository
+    steps:
+      - name: Checkout GitOps repository
+        uses: actions/checkout@v3
+        with:
+          repository: kai-platform/kai-gitops
+          path: gitops
+          token: ${{ secrets.gitops_pat }}
+          ref: staging
+          
+      - name: Update image tags in HelmReleases
+        # Steps to update and commit changes
+```
+
+The production workflow uses a similar process but targets the `main` branch of the GitOps repository.
+
+### Docker Image Build Strategy
+
+The pipeline builds multiple Docker images for different components of the system:
+
+### API Server Image
+- Built from `Dockerfile.api` in the repository root
+- Contains the main API server, authentication, and business logic
+
+### Coordinator Service Image
+- Built from `packages/coordinator/Dockerfile.coordinator`
+- Provides orchestration for ML workflows via Argo Workflows
+- Handles resource allocation, quality assessment, and caching
+
+### ML Base Image
+- New centralized base image for all ML services
+- Built from `Dockerfile.ml-base` in the repository root
+- Provides consistent environment for ML workers
+- Contains common dependencies and infrastructure
+
+### Worker Images
+Each worker image is specialized for a specific task in the ML pipeline, now built using one of two centralized base images:
+
+#### GPU-Based ML Services
+These services inherit from the `kai-ml-base` image (built from `Dockerfile.ml-base`):
+- `kai-quality-assessment`: Assesses image quality and determines processing level
+- `kai-image-preprocessing`: Performs initial image preparation
+- `kai-colmap-sfm`: Runs Structure from Motion using COLMAP
+- `kai-point-cloud`: Generates point clouds from camera poses
+- `kai-model-generator`: Creates 3D models from point clouds or camera poses
+- `kai-diffusion-nerf`: Implements NeRF-based reconstruction
+- `kai-nerf-mesh-extractor`: Extracts mesh data from NeRF models
+- `kai-format-converter`: Converts models to different formats
+
+#### Non-GPU Python Services
+These services inherit from the `kai-python-base` image (built from `Dockerfile.python-base`):
+- `kai-workflow-finalizer`: Handles notifications and final cleanup
+
+This dual base image strategy ensures optimal resource utilization, with GPU-dependent services using the TensorFlow GPU base and lightweight services using a simpler Python base image.
+
+Each worker image is built from its respective Dockerfile in `packages/ml/python/` with significantly reduced size and complexity due to the use of centralized base images.
+
+## Automated Canary Deployments
+
+The CI/CD pipeline now includes support for automated canary deployments with health monitoring and automated rollback capabilities:
+
+### Canary Deployment Implementation
+
+The production deployment workflow (`deploy-production.yml`) has been enhanced with canary deployment support:
+
+```yaml
+on:
+  workflow_call:
+    inputs:
+      sha:
+        required: true
+        type: string
+      canary:
+        description: 'Whether to deploy as a canary release'
+        required: false
+        type: boolean
+        default: false
+      canary_weight:
+        description: 'Percentage of traffic to route to canary'
+        required: false
+        type: number
+        default: 20
+```
+
+This allows the workflow to be triggered with canary deployment parameters:
+
+```yaml
+deploy-production:
+  uses: ./.github/workflows/deploy-production.yml
+  with:
+    sha: ${{ github.sha }}
+    canary: true
+    canary_weight: 10
+```
+
+### Helm Chart Integration
+
+The Helm deployment script (`helm-charts/helm-deploy.sh`) has been updated to support canary deployments with the following parameters:
+
+- `--canary`: Enables canary deployment mode
+- `--canary-weight`: Percentage of traffic to route to the canary (default: 20%)
+- `--health-threshold`: Number of failures before marking deployment as degraded
+- `--critical-services`: Comma-separated list of services to monitor for health
+
+The Kai Helm chart's values.yaml has been updated with canary configuration:
+
+```yaml
+canary:
+  enabled: false
+  weight: 20
+  maxTimeMinutes: 30
+  healthThreshold: 5
+  criticalServices:
+    - api-server
+    - coordinator-service
+```
+
+### Health Monitoring and Automated Promotion/Rollback
+
+The canary deployment process includes automated health monitoring:
+
+1. **Initial Deployment**: The canary version is deployed alongside the stable version
+2. **Traffic Splitting**: Traffic is split between stable and canary according to the weight
+3. **Health Monitoring**: The process continuously monitors the health of critical services
+4. **Automated Decision**:
+   - If health checks succeed throughout the monitoring period, the canary is automatically promoted to stable
+   - If too many health checks fail, the canary is automatically rolled back
+
+The workflow implementation includes:
+
+```yaml
+- name: Monitor Deployment Health
+  id: health_check
+  run: |
+    echo "Monitoring production deployment health for 5 minutes..."
+    FAILURES=0
+    
+    for i in {1..30}; do
+      # Health check logic for critical services
+      # ...
+      
+      if [ $FAILURES -ge 5 ]; then
+        echo "health_status=degraded" >> $GITHUB_OUTPUT
+        break
+      fi
+      
+      sleep 10
+    done
+
+- name: Rollback if Needed
+  if: steps.health_check.outputs.health_status == 'degraded' && inputs.canary == 'true'
+  run: |
+    echo "::warning::Production health checks failed, rolling back canary deployment"
+    ./helm-charts/helm-deploy.sh \
+      --context=${{ env.KUBE_CONTEXT }} \
+      --env=production \
+      --release=kai-production \
+      --rollback
+```
+
+### Benefits of Automated Canary Deployments
+
+This implementation provides several key advantages:
+
+1. **Reduced Deployment Risk**: Only a small percentage of traffic is initially exposed to new versions
+2. **Early Problem Detection**: Issues are identified with minimal user impact
+3. **Automated Verification**: Health monitoring runs automatically without human intervention
+4. **Safety Net**: Automatic rollback prevents prolonged service degradation
+5. **Configurable Parameters**: Deployment teams can adjust canary settings based on risk tolerance
+
+### Usage in Workflow Dispatch
+
+The canary deployment can be triggered manually via workflow dispatch:
+
+```yaml
+workflow_dispatch:
+  inputs:
+    environment:
+      description: 'Environment to deploy to'
+      required: true
+      default: 'staging'
+      type: choice
+      options:
+        - staging
+        - production
+    canary:
+      description: 'Use canary deployment (production only)'
+      required: false
+      default: false
+      type: boolean
+    canary_weight:
+      description: 'Percentage of traffic to canary (1-50)'
+      required: false
+      default: '20'
+      type: string
+```
+
+This allows operations teams to make informed decisions about canary deployments on a case-by-case basis.
+## Kubernetes Deployment with Helm Charts
+
+The Kubernetes deployment now uses Helm charts for improved maintainability and consistency:
+
+1. **Helm Chart Structure**: Organized as a parent chart with subcharts for components:
+   ```
+   helm-charts/
+   ├── kai/                    # Main parent chart
+   │   ├── Chart.yaml          # Chart metadata with dependencies
+   │   ├── values.yaml         # Default values
+   │   ├── values-staging.yaml # Staging environment values
+   │   └── values-production.yaml # Production environment values
+   └── coordinator/            # Example subchart
+       ├── Chart.yaml
+       ├── values.yaml
+       └── templates/          # Resource templates
+           ├── _helpers.tpl    # Reusable template snippets
+           ├── deployment.yaml # Deployment template
+           ├── service.yaml    # Service template
+           ├── hpa.yaml        # Autoscaling template
+           ├── pdb.yaml        # Pod Disruption Budget template
+           ├── rbac.yaml       # RBAC resources template
+           └── configmap.yaml  # ConfigMap template
+   ```
+
+2. **Environment-Specific Configuration**: All environment differences are now managed in dedicated values files rather than script variables:
+   - `values.yaml` contains default configurations
+   - `values-staging.yaml` overrides for staging environment
+   - `values-production.yaml` overrides for production environment
+
+3. **Deployment Process**: The deployment uses the `helm-charts/helm-deploy.sh` script which:
+   - Supports the same parameters as the previous script (`--registry`, `--tag`, `--context`)
+   - Adds Helm-specific parameters (`--release` for release naming)
+   - Provides enhanced rollback capability with version history
+   - Enables more fine-grained control over deployment updates
+   - Includes built-in deployment verification
+
+4. **CI/CD Integration**: The GitHub Actions workflows use the Helm deployment script for both environments:
+   ```yaml
+   - name: Deploy to Kubernetes with Helm
+     run: |
+       ./helm-charts/helm-deploy.sh \
+         --context=${{ inputs.kube-context }} \
+         --registry=${{ secrets.docker_registry }}/${{ secrets.docker_username }} \
+         --tag=${{ inputs.sha }} \
+         --env=${{ env.DEPLOY_ENV }} \
+         --release=kai-${{ env.DEPLOY_ENV }}
+   ```
+
+5. **Improved Rollback**: The Helm-based rollback mechanism provides:
+   - Versioned releases for deterministic rollbacks
+   - Ability to roll back to any previous version, not just the last one
+   - Comprehensive rollback including all related resources
+   - Detailed history for auditing deployment changes
+
+## Flux GitOps Integration
+
+The CI/CD pipeline now integrates with Flux CD, providing a GitOps approach to Kubernetes deployments:
+
+### GitOps Repository Structure
+
+```
+flux/
+├── clusters/
+│   ├── staging/
+│   │   ├── flux-system/
+│   │   │   ├── gotk-sync.yaml       # Flux synchronization configuration
+│   │   │   └── kustomization.yaml   # Flux system components
+│   │   ├── sources/
+│   │   │   ├── helm-repository.yaml # Helm chart repository definition
+│   │   │   └── kustomization.yaml   # Sources kustomization
+│   │   ├── releases/
+│   │   │   ├── coordinator.yaml     # HelmRelease for coordinator service
+│   │   │   └── kustomization.yaml   # Releases kustomization
+│   │   └── kustomization.yaml       # Main kustomization including all components
+│   └── production/
+│       └── (Similar structure as staging)
+```
+
+### CI/CD Workflow Integration
+
+The deployment workflows include jobs that update the GitOps repository with new image versions:
+
+```yaml
+update-gitops:
+  name: Update GitOps Repository
+  runs-on: ubuntu-latest
+  steps:
+    - name: Checkout GitOps repository
+      # Checkout the GitOps repository...
+      
+    - name: Update image tags in HelmReleases
+      # Update image tags and commit changes...
+```
+
+This job:
+1. Determines the target environment (staging or production)
+2. Checks out the GitOps repository at the appropriate branch
+3. Updates image tags in the HelmRelease resources
+4. Commits and pushes changes to the GitOps repository
+
+### Flux Automation
+
+Flux operates by continuously monitoring the GitOps repository:
+
+1. **Source Controller**: Watches the Git repository for changes
+2. **Kustomize Controller**: Applies Kubernetes resources defined via kustomize
+3. **Helm Controller**: Manages Helm releases based on HelmRelease resources
+4. **Notification Controller**: Provides alerts and notifications for events
+
+When the CI/CD pipeline updates image tags in the GitOps repository, Flux automatically:
+1. Detects the changes via the Source Controller
+2. Processes the updated HelmRelease resources
+3. Deploys the new image versions to the cluster
+4. Reports status via the Notification Controller
+
+### Benefits of Flux GitOps
+
+The Flux GitOps approach provides several advantages:
+
+1. **Declarative Configuration**: All Kubernetes resources are defined as code in the GitOps repository
+2. **Automated Reconciliation**: Flux continuously ensures the cluster state matches the desired state in Git
+3. **Audit Trail**: All changes are tracked in Git with commit history and authorship
+4. **Self-Healing**: Flux automatically recovers from drift by reapplying the desired state
+5. **Enhanced Security**: Reduced need for direct cluster access; changes go through Git
+6. **Progressive Delivery**: Support for canary deployments and A/B testing
+7. **Multi-Cluster Management**: Simplified management of resources across multiple clusters
+8. **Simplified Rollbacks**: Reverting to a previous state is as simple as reverting a Git commit
 
 ## Required GitHub Secrets
 
@@ -152,8 +556,10 @@ The workflow requires the following secrets to be set in your GitHub repository:
 - `VERCEL_PROJECT_ID_CLIENT`: Project ID for the client application
 - `VERCEL_PROJECT_ID_ADMIN`: Project ID for the admin application
 
+### GitOps Repository Access
+- `GITOPS_PAT`: Personal access token for the GitOps repository
+
 ### Digital Ocean Kubernetes Secrets
-- `DIGITALOCEAN_ACCESS_TOKEN`: Access token for Digital Ocean API
 - `KUBE_CONFIG_DATA`: Base64-encoded kubeconfig file for your Kubernetes cluster
 
 ### Container Registry Secrets
@@ -161,24 +567,11 @@ The workflow requires the following secrets to be set in your GitHub repository:
 - `DOCKER_PASSWORD`: Docker Hub password or container registry password
 - `DOCKER_REGISTRY`: Container registry URL (e.g., docker.io, ghcr.io)
 
-### AWS Secrets (for S3/CloudFront Frontend Deployment)
-- `AWS_ACCESS_KEY_ID`: AWS access key with S3 and CloudFront permissions
-- `AWS_SECRET_ACCESS_KEY`: AWS secret access key
-- `AWS_REGION`: AWS region for deployment (e.g., us-east-1)
-- `CLIENT_BUCKET_NAME`: S3 bucket name for client static files
-- `ADMIN_BUCKET_NAME`: S3 bucket name for admin static files
-- `CLOUDFRONT_DISTRIBUTION_ID_CLIENT`: CloudFront distribution ID for client
-- `CLOUDFRONT_DISTRIBUTION_ID_ADMIN`: CloudFront distribution ID for admin
-
 ### Database and API Secrets
-- `MONGODB_URI`: MongoDB connection string
-- `SUPABASE_URL`: Supabase project URL (for general use)
-- `SUPABASE_KEY`: Supabase service role key (for general use)
 - `SUPABASE_URL_STAGING`: Supabase project URL for staging environment migrations
 - `SUPABASE_KEY_STAGING`: Supabase service role key for staging environment migrations
 - `SUPABASE_URL_PRODUCTION`: Supabase project URL for production environment migrations
 - `SUPABASE_KEY_PRODUCTION`: Supabase service role key for production environment migrations
-- `JWT_SECRET`: Secret for JWT token generation
 
 ## Adding GitHub Secrets
 
@@ -190,31 +583,59 @@ To add these secrets to your repository:
 4. Click "Add secret"
 5. Repeat for all required secrets
 
-## Pipeline Workflow File
+## Customizing the Workflow
 
-The GitHub Actions workflow file (`.github/workflows/deploy.yml`) implements the CI/CD pipeline according to these specifications. This file defines the automated processes that run when code is pushed to the repository.
+To customize the workflow for your specific needs:
 
-## Deployment Status and Monitoring
+1. Modify the core reusable workflow files for global changes:
+   - `.github/workflows/build-test.yml` - Build and test process
+   - `.github/workflows/docker-build.yml` - Docker image building
+   - `.github/workflows/deploy-staging.yml` - Staging deployment
+   - `.github/workflows/deploy-production.yml` - Production deployment
 
-The pipeline includes deployment status reporting via GitHub Deployments API. Each deployment creates a deployment record that you can monitor from the GitHub repository's Deployments tab.
+2. For environment-specific changes:
+   - Update only the relevant environment workflow
+   - Keep shared logic in the common workflow files
 
-Additionally, the pipeline sends notifications upon completion or failure via:
-- GitHub commit status checks
-- Optional Slack notifications (requires additional configuration)
-
-## Customizing the Pipeline
-
-To customize the pipeline for your specific needs:
-1. Modify the `.github/workflows/deploy.yml` file
-2. Add or remove stages as needed
-3. Adjust environment variables and deployment targets
-4. Update notification settings
+3. To add a new environment:
+   - Create a new environment-specific deployment workflow file
+   - Update the main workflow to call this new workflow with appropriate conditions
 
 ## Troubleshooting
 
 If you encounter issues with the pipeline:
 
 1. Check the Actions tab in your GitHub repository to see detailed logs
-2. Verify that all required secrets are properly configured
-3. Ensure branch protection rules are set correctly
-4. Confirm that the Basilakis user has proper access to the repository
+2. Look at the specific workflow run that failed to identify the problem
+3. For workflow-specific issues, check the individual reusable workflow files
+4. Verify that all required secrets are properly configured
+5. Ensure branch protection rules are set correctly
+
+### Troubleshooting Kubernetes Deployment
+
+For Kubernetes-specific issues:
+
+1. Check pod status and logs:
+   ```bash
+   kubectl get pods -n kai-ml
+   kubectl logs <pod-name> -n kai-ml
+   ```
+
+2. Check Argo Workflows:
+   ```bash
+   kubectl get workflows -n kai-ml
+   kubectl get workflowtemplates -n kai-ml
+   ```
+
+3. View the Coordinator service logs:
+   ```bash
+   kubectl logs -l app=coordinator-service -n kai-ml
+   ```
+
+4. Check for configuration issues:
+   ```bash
+   kubectl get configmaps -n kai-ml
+   kubectl get secrets -n kai-ml
+   ```
+
+The Coordinator service provides detailed logs about workflow submissions and their status, which is the first place to look when troubleshooting ML pipeline issues.

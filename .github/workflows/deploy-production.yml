@@ -1,0 +1,188 @@
+name: Deploy to Production
+
+on:
+  workflow_call:
+    inputs:
+      sha:
+        description: 'The commit SHA to deploy'
+        required: true
+        type: string
+      canary:
+        description: 'Whether to deploy as a canary release'
+        required: false
+        type: boolean
+        default: false
+      canary_weight:
+        description: 'Percentage of traffic to route to canary (if canary=true)'
+        required: false
+        type: number
+        default: 20
+    secrets:
+      docker_username:
+        required: true
+      docker_password: 
+        required: true
+      docker_registry:
+        required: true
+      kube_config:
+        required: true
+      gitops_ssh_key:
+        required: true
+      vercel_token:
+        required: true
+      vercel_org_id:
+        required: true
+      vercel_project_id_client:
+        required: true
+      vercel_project_id_admin:
+        required: true
+      supabase_url:
+        required: true
+      supabase_service_key:
+        required: true
+
+jobs:
+  deploy-to-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    env:
+      DEPLOY_ENV: "production"
+      KUBE_CONTEXT: "kubernetes-production"
+      DOCKER_BUILDKIT: "1"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: build-artifacts
+          path: .
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: "v1.25.0"
+
+      - name: Configure Kubernetes
+        run: |
+          echo "${{ secrets.kube_config }}" > kubeconfig
+          chmod 600 kubeconfig
+          echo "KUBECONFIG=$(pwd)/kubeconfig" >> $GITHUB_ENV
+
+      - name: Set up SSH for GitOps
+        uses: webfactory/ssh-agent@v0.7.0
+        with:
+          ssh-private-key: ${{ secrets.gitops_ssh_key }}
+
+      - name: Update GitOps Repository
+        run: |
+          git clone git@github.com:your-org/gitops-repo.git
+          cd gitops-repo
+          
+          # Update image tags for production environment
+          sed -i "s|image: .*kai-api-server:.*|image: ${{ secrets.docker_registry }}/${{ secrets.docker_username }}/kai-api-server:${{ inputs.sha }}|g" environments/production/kustomization.yaml
+          sed -i "s|image: .*kai-coordinator:.*|image: ${{ secrets.docker_registry }}/${{ secrets.docker_username }}/kai-coordinator:${{ inputs.sha }}|g" environments/production/kustomization.yaml
+          
+          # Commit and push changes
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          git add environments/production/
+          git commit -m "Update image tags for production to ${{ inputs.sha }}"
+          git push
+
+      - name: Run Database Migrations
+        run: |
+          # Set up Node.js for migrations
+          curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+          sudo apt-get install -y nodejs
+          
+          # Run Supabase migrations for production
+          npx supabase db push --db-url "${{ secrets.supabase_url }}" --auth-token "${{ secrets.supabase_service_key }}"
+
+      - name: Deploy to Kubernetes (Production)
+        run: |
+          # Deploy using Helm with canary options if selected
+          chmod +x ./helm-charts/helm-deploy.sh
+          
+          # Prepare canary flag if needed
+          CANARY_ARGS=""
+          if [ "${{ inputs.canary }}" = "true" ]; then
+            CANARY_ARGS="--canary --canary-weight=${{ inputs.canary_weight }} --critical-services=api-server,coordinator-service"
+          fi
+          
+          # Run the deployment
+          ./helm-charts/helm-deploy.sh \
+            --context=${{ env.KUBE_CONTEXT }} \
+            --registry=${{ secrets.docker_registry }}/${{ secrets.docker_username }} \
+            --tag=${{ inputs.sha }} \
+            --env=production \
+            --release=kai-production \
+            $CANARY_ARGS
+
+      - name: Deploy Client App to Vercel (Production)
+        uses: amondnet/vercel-action@v20
+        with:
+          zeit-token: ${{ secrets.vercel_token }}
+          vercel-token: ${{ secrets.vercel_token }}
+          vercel-org-id: ${{ secrets.vercel_org_id }}
+          vercel-project-id: ${{ secrets.vercel_project_id_client }}
+          working-directory: ./packages/client
+          vercel-args: "--prod"
+          alias-domains: |
+            kai-app.com
+            www.kai-app.com
+
+      - name: Deploy Admin Panel to Vercel (Production)
+        uses: amondnet/vercel-action@v20
+        with:
+          zeit-token: ${{ secrets.vercel_token }}
+          vercel-token: ${{ secrets.vercel_token }}
+          vercel-org-id: ${{ secrets.vercel_org_id }}
+          vercel-project-id: ${{ secrets.vercel_project_id_admin }}
+          working-directory: ./packages/admin
+          vercel-args: "--prod"
+          alias-domains: |
+            admin.kai-app.com
+
+      - name: Monitor Deployment Health
+        id: health_check
+        run: |
+          echo "Monitoring production deployment health for 5 minutes..."
+          FAILURES=0
+          
+          for i in {1..30}; do
+            # Check API health
+            if ! curl -s -f https://api.kai-app.com/health > /dev/null; then
+              FAILURES=$((FAILURES+1))
+            fi
+            
+            # Check coordinator health via Kubernetes
+            if ! kubectl --context=${{ env.KUBE_CONTEXT }} get pods -n kai-system -l app=coordinator-service | grep -q "Running"; then
+              FAILURES=$((FAILURES+1))
+            fi
+            
+            if [ $FAILURES -ge 5 ]; then
+              echo "::warning::Health check failures detected in production environment"
+              echo "health_status=degraded" >> $GITHUB_OUTPUT
+              break
+            fi
+            
+            sleep 10
+          done
+          
+          if [ $FAILURES -lt 5 ]; then
+            echo "health_status=healthy" >> $GITHUB_OUTPUT
+            echo "Production deployment appears healthy"
+          fi
+
+      - name: Rollback if Needed
+        if: steps.health_check.outputs.health_status == 'degraded' && inputs.canary == 'true'
+        run: |
+          echo "::warning::Production health checks failed, rolling back canary deployment"
+          ./helm-charts/helm-deploy.sh \
+            --context=${{ env.KUBE_CONTEXT }} \
+            --registry=${{ secrets.docker_registry }}/${{ secrets.docker_username }} \
+            --env=production \
+            --release=kai-production \
+            --rollback

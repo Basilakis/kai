@@ -515,6 +515,11 @@ export async function subscribeToPaidPlan(
       stripeCustomerId = customer.id;
     }
 
+    // Validate stripeCustomerId is defined
+    if (!stripeCustomerId) {
+      throw new Error('Failed to create or retrieve Stripe customer ID');
+    }
+    
     // Attach payment method to customer
     await stripeService.attachPaymentMethod(stripeCustomerId, paymentMethodId, true);
 
@@ -685,8 +690,8 @@ export async function changeSubscriptionPlan(
       return await updateUserSubscription(subscription.id, {
         tierId: newTierId,
         status: 'active',
-        stripeSubscriptionId: null,
-        stripePriceId: null,
+        stripeSubscriptionId: undefined,
+        stripePriceId: undefined,
         autoRenew: true,
         metadata: options.metadata
       });
@@ -761,5 +766,35 @@ export async function syncSubscriptionWithStripe(userId: string): Promise<UserSu
   } catch (error) {
     logger.error(`Failed to sync subscription with Stripe: ${error}`);
     throw error;
+  }
+}
+
+/**
+ * Get subscription tier by ID
+ * @param tierId Subscription tier ID
+ * @returns Subscription tier or null if not found
+ */
+export async function getSubscriptionTierById(tierId: string): Promise<any | null> {
+  try {
+    // Type assertion applied earlier in the chain
+    const { data, error } = await (supabaseClient.getClient()
+      .from('subscription_tiers') as any)
+      .select('*')
+      .eq('id', tierId)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        // Record not found
+        return null;
+      }
+      logger.error(`Error fetching subscription tier: ${error.message}`);
+      throw error;
+    }
+
+    return data;
+  } catch (error) {
+    logger.error(`Failed to get subscription tier: ${error}`);
+    return null;
   }
 }

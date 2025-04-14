@@ -1,0 +1,157 @@
+# Default values for Kai Platform Helm chart
+# This is a YAML-formatted file.
+
+# Canary deployment configuration
+canary:
+  enabled: false             # Whether this is a canary deployment
+  weight: 10                 # Percentage of traffic to route to canary (1-100)
+  analysis:
+    interval: 30             # Seconds between health checks
+    maxWeight: 50            # Maximum traffic percentage for canary
+    stepWeight: 10           # Percentage to increase on each successful check
+    threshold:
+      success: 95            # Minimum success rate required (percentage)
+      latency: 500           # Maximum acceptable latency (ms)
+  services:
+    - name: "api-server"     # List of critical services to monitor during canary deployment
+      port: 80
+      path: "/health"
+    - name: "coordinator-service"
+      port: 80
+      path: "/health"
+  metrics:
+    prometheus:
+      enabled: true          # Use Prometheus for metrics collection
+      address: "http://prometheus-server.monitoring:9090"
+  autoPromote: true          # Automatically promote canary to production if successful
+  autoRollback: true         # Automatically rollback canary if unhealthy
+
+# Global values shared across all subchart components
+global:
+  environment: "staging"  # Default environment
+  namespace: "kai-system-staging"
+  registry:
+    url: "registry.example.com"
+    username: ""
+    password: ""
+  image:
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  labels:
+    app: "kai-platform"
+    environment: "staging"
+  resourceMultiplier: 1  # Base multiplier for staging environment
+
+# Enable/disable components
+coordinator:
+  enabled: true
+  replicaCount: 1
+  minReplicas: 1
+  maxReplicas: 5
+  pdbMinAvailable: 1
+  resources:
+    requests:
+      cpu: "200m"
+      memory: "512Mi"
+    limits:
+      cpu: "1000m"
+      memory: "2Gi"
+  rbac:
+    create: true
+  service:
+    type: ClusterIP
+    port: 80
+
+infrastructure:
+  enabled: true
+  priorityClasses:
+    enabled: true
+  monitoring:
+    enabled: true
+  caching:
+    enabled: true
+    redis:
+      replicaCount: 1
+      persistence:
+        enabled: true
+        size: 10Gi
+
+mobile-optimization:
+  enabled: true
+  replicaCount: 1
+  minReplicas: 1
+  maxReplicas: 3
+  pdbMinAvailable: 1
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2000m"
+      memory: "4Gi"
+
+wasm-compiler:
+  enabled: true
+  replicaCount: 1
+  minReplicas: 1
+  maxReplicas: 3
+  pdbMinAvailable: 1
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2000m"
+      memory: "4Gi"
+
+workflows:
+  enabled: true
+  templates:
+    reconstruction:
+      enabled: true
+
+# API Server configuration
+api-server:
+  enabled: true
+  replicaCount: 1
+  minReplicas: 1
+  maxReplicas: 5
+  pdbMinAvailable: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  resources:
+    requests:
+      cpu: "200m"
+      memory: "512Mi"
+    limits:
+      cpu: "1000m"
+      memory: "2Gi"
+  service:
+    type: ClusterIP
+    port: 80
+
+# Backup configuration
+backup:
+  enabled: true
+  retentionCount: 5  # Keep 5 most recent backups
+
+# Health monitoring configuration
+monitoring:
+  health:
+    enabled: true
+    endpoints:
+      - name: "api-server"
+        path: "/health"
+        port: 80
+        initialDelaySeconds: 30
+        periodSeconds: 15
+        failureThreshold: 3
+      - name: "coordinator-service"
+        path: "/health"
+        port: 80
+        initialDelaySeconds: 30
+        periodSeconds: 15
+        failureThreshold: 3

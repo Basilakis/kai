@@ -1,0 +1,20 @@
+<![CDATA[
+# Dockerfile for quality-assessment worker
+FROM kai-ml-base:latest
+
+# Copy the specific worker script
+COPY packages/ml/python/assess_quality.py ./assess_quality.py
+
+# Copy any quality-assessment specific utility code
+# COPY packages/ml/python/utils ./utils
+
+# Install any quality-assessment specific dependencies
+# If this worker needs specific packages beyond what's in the base image:
+# USER root
+# RUN pip install --no-cache-dir specific-package
+# USER mluser
+
+# Set the command to run the worker script
+# Arguments will be passed by Argo Workflows based on the template
+CMD ["python", "assess_quality.py"]
+]]>

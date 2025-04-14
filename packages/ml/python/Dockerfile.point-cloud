@@ -1,0 +1,12 @@
+# Dockerfile for point-cloud worker
+FROM kai-ml-base:latest
+
+# Copy the specific worker script
+COPY packages/ml/python/point_cloud_service.py ./point_cloud_service.py
+
+# Copy any shared utility code if necessary
+# COPY packages/ml/python/utils ./utils
+
+# Set the command to run the worker script
+# Arguments will be passed by Argo Workflows based on the template
+CMD ["python", "point_cloud_service.py"]

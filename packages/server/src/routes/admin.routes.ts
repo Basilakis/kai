@@ -16,9 +16,121 @@ import enhancedVectorRoutes from './admin/enhancedVector.routes';
 import subscriptionRoutes from './admin/subscription.admin.routes';
 import serviceCostRoutes from './admin/serviceCost.admin.routes';
 
-// Note: These imports would be implemented in a real application
-// TODO: implement actual logic if needed
-const getDashboardStats = async () => ({});
+// Import services for dashboard stats
+import analyticsService from '../services/analytics/analyticsService';
+import subscriptionAnalytics from '../services/analytics/subscriptionAnalytics.service';
+import { logger } from '../utils/logger';
+
+/**
+ * Get comprehensive dashboard statistics
+ * @returns Dashboard statistics including analytics, subscription, and usage data
+ */
+const getDashboardStats = async () => {
+  try {
+    // Get general analytics statistics
+    const analyticsStats = await analyticsService.getStats();
+    
+    // Get subscription analytics
+    const subscriptionData = await subscriptionAnalytics.getSubscriptionAnalytics();
+    
+    // Get top search queries
+    const topSearchQueries = await analyticsService.getTopSearchQueries(5);
+    
+    // Get top viewed materials
+    const topMaterials = await analyticsService.getTopMaterials(5);
+    
+    // Get top agent prompts
+    const topAgentPrompts = await analyticsService.getTopAgentPrompts(5);
+    
+    // Get analytics trends for the past week
+    const pastWeekDate = new Date();
+    pastWeekDate.setDate(pastWeekDate.getDate() - 7);
+    
+    const trends = await analyticsService.getTrends({
+      timeframe: 'day',
+      startDate: pastWeekDate
+    });
+    
+    // Combine all data into comprehensive dashboard stats
+    return {
+      summary: {
+        totalUsers: subscriptionData.subscribers.total,
+        activeUsers: subscriptionData.subscribers.active,
+        monthlyRevenue: subscriptionData.revenue.monthly,
+        annualRevenue: subscriptionData.revenue.annual,
+        churnRate: subscriptionData.churnRate,
+        conversionRate: subscriptionData.conversionRate
+      },
+      analytics: {
+        totalEvents: analyticsStats.total,
+        byEventType: analyticsStats.byEventType,
+        byResourceType: analyticsStats.byResourceType,
+        averageResponseTime: analyticsStats.averageResponseTime,
+        trends
+      },
+      materials: {
+        topViewed: topMaterials
+      },
+      search: {
+        topQueries: topSearchQueries
+      },
+      agents: {
+        topPrompts: topAgentPrompts
+      },
+      subscriptions: {
+        tierDistribution: subscriptionData.tierDistribution,
+        recentActivity: subscriptionData.recentActivity.slice(0, 5),
+        creditUsage: subscriptionData.creditUsage
+      },
+      system: {
+        // Simplified system stats - in a real app, this would come from a monitoring service
+        uptime: Math.floor(process.uptime()),
+        currentTime: new Date().toISOString(),
+        environment: process.env.NODE_ENV || 'development'
+      }
+    };
+  } catch (error) {
+    logger.error(`Error getting dashboard stats: ${error}`);
+    
+    // Return empty stats object as fallback
+    return {
+      summary: {
+        totalUsers: 0,
+        activeUsers: 0,
+        monthlyRevenue: 0,
+        annualRevenue: 0,
+        churnRate: 0,
+        conversionRate: 0
+      },
+      analytics: {
+        totalEvents: 0,
+        byEventType: {},
+        byResourceType: {},
+        averageResponseTime: {},
+        trends: {}
+      },
+      materials: {
+        topViewed: []
+      },
+      search: {
+        topQueries: []
+      },
+      agents: {
+        topPrompts: []
+      },
+      subscriptions: {
+        tierDistribution: [],
+        recentActivity: [],
+        creditUsage: []
+      },
+      system: {
+        uptime: Math.floor(process.uptime()),
+        currentTime: new Date().toISOString(),
+        environment: process.env.NODE_ENV || 'development'
+      }
+    };
+  }
+};
 const getSystemLogs = async () => [];
 const getPerformanceMetrics = async () => ({});
 const backupDatabase = async () => ({});

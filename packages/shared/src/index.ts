@@ -7,6 +7,7 @@ export * from './types/recognition';
 export * from './types/user';
 export * from './types/crawler';
 export * from './types/material'; // Export new material types for Supabase
+export * from './types/subscription'; // Export subscription types
 
 // Utilities
 export * from './utils/validation';

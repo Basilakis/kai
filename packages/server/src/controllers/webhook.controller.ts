@@ -8,15 +8,15 @@ import { Request, Response } from 'express';
 import { logger } from '../utils/logger';
 import stripeService from '../services/payment/stripeService';
 import { supabaseClient } from '../services/supabase/supabaseClient';
+import { messageBrokerFactory } from '../services/messaging/messageBrokerFactory';
+import { MessageType } from '../services/messaging/messageBrokerInterface';
 import {
   getUserSubscription,
   updateUserSubscription,
-  syncSubscriptionWithStripe,
   getSubscriptionTierById
 } from '../models/userSubscription.model';
 import {
   addCredits,
-  getUserCredit,
   initializeUserCredit
 } from '../models/userCredit.model';
 import creditService from '../services/credit/creditService';
@@ -84,10 +84,10 @@ export const handleStripeWebhook = async (req: Request, res: Response) => {
     }
 
     // Return a 200 response to acknowledge receipt of the event
-    res.status(200).json({ received: true });
+    return res.status(200).json({ received: true });
   } catch (error) {
     logger.error(`Error handling Stripe webhook: ${error}`);
-    res.status(400).json({ error: 'Webhook error' });
+    return res.status(400).json({ error: 'Webhook error' });
   }
 };
 
@@ -130,7 +130,7 @@ async function handleSubscriptionCreated(subscription: any) {
 
     if (tier && tier.creditLimits && tier.creditLimits.includedCredits > 0) {
       // Initialize user credit if it doesn't exist
-      const userCredit = await creditService.initializeUserCredit(userId);
+      await creditService.initializeUserCredit(userId);
 
       // Add included credits from subscription tier
       await creditService.addCreditsToUser(
@@ -306,7 +306,32 @@ async function handleInvoicePaymentFailed(invoice: any) {
 
     logger.info(`Updated user subscription status to past_due for Stripe subscription: ${invoice.subscription}`);
 
-    // TODO: Send notification to user about failed payment
+    // Send notification to user about failed payment
+    try {
+      const broker = messageBrokerFactory.getDefaultBroker();
+
+      await broker.publish(
+        'system',
+        MessageType.USER_NOTIFICATION,
+        {
+          userId: data.userId,
+          title: 'Payment Failed',
+          message: 'Your subscription payment has failed. Please update your payment method to avoid service interruption.',
+          type: 'error',
+          actionUrl: '/subscription/payment-methods',
+          metadata: {
+            invoiceId: invoice.id,
+            subscriptionId: invoice.subscription,
+            failureReason: invoice.last_payment_error?.message || 'Payment processing failed'
+          }
+        },
+        'webhook-controller'
+      );
+
+      logger.info(`Sent payment failure notification to user ${data.userId}`);
+    } catch (notificationError) {
+      logger.error(`Failed to send payment failure notification: ${notificationError}`);
+    }
   } catch (error) {
     logger.error(`Error handling invoice payment failed: ${error}`);
   }

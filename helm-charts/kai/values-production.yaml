@@ -1,0 +1,73 @@
+# Production-specific values for Kai Platform Helm chart
+# These values override the defaults in values.yaml
+
+global:
+  environment: "production"
+  namespace: "kai-system"
+  image:
+    tag: "latest"  # Will be overridden by CI/CD pipeline
+  labels:
+    environment: "production"
+  resourceMultiplier: 2  # Higher resources for production
+
+# Production-specific component settings
+coordinator:
+  replicaCount: 3
+  minReplicas: 2
+  maxReplicas: 10
+  pdbMinAvailable: 2
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2000m"
+      memory: "4Gi"
+
+infrastructure:
+  caching:
+    redis:
+      replicaCount: 3
+      persistence:
+        size: 20Gi
+
+mobile-optimization:
+  replicaCount: 2
+  minReplicas: 2
+  maxReplicas: 8
+  pdbMinAvailable: 2
+  resources:
+    requests:
+      cpu: "1000m"
+      memory: "2Gi"
+    limits:
+      cpu: "4000m"
+      memory: "8Gi"
+
+# API Server production settings
+api-server:
+  enabled: true
+  replicaCount: 3
+  minReplicas: 2
+  maxReplicas: 10
+  pdbMinAvailable: 2
+  resources:
+    requests:
+      cpu: "500m"  # Example: 200m * 2 (multiplier) + base
+      memory: "1Gi" # Example: 512Mi * 2 (multiplier) + base
+    limits:
+      cpu: "2000m" # Example: 1000m * 2 (multiplier)
+      memory: "4Gi"  # Example: 2Gi * 2 (multiplier)
+
+wasm-compiler:
+  replicaCount: 2
+  minReplicas: 2
+  maxReplicas: 6
+  pdbMinAvailable: 2
+  resources:
+    requests:
+      cpu: "1000m"
+      memory: "2Gi"
+    limits:
+      cpu: "4000m"
+      memory: "8Gi"
