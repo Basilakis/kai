@@ -34,6 +34,128 @@ The monitoring system consists of:
 2. **Admin API**: Provides access to monitoring data through dedicated endpoints
 3. **Frontend Dashboard**: Visualizes monitoring data for administrators
 
+## Prometheus Integration
+
+The KAI platform uses Prometheus for metrics collection, aggregation, and storage. Prometheus is deployed as part of the monitoring stack in the `monitoring` namespace.
+
+### Key Components
+
+- **Prometheus Server**: Collects and stores time-series metrics data
+- **Alert Manager**: Handles alerts sent by Prometheus server
+- **Grafana**: Provides visualization and dashboards for Prometheus metrics
+
+### Metrics Collection
+
+Services expose metrics through annotations in their Kubernetes manifests:
+
+```yaml
+prometheus.io/scrape: "true"
+prometheus.io/port: "8080"
+prometheus.io/path: "/metrics"
+```
+
+These annotations enable Prometheus to automatically discover and scrape metrics from the services.
+
+### Available Metrics
+
+The platform exposes various metrics through the monitoring service:
+
+- **Workflow Metrics**: 
+  - `workflow_started_total`: Counter for started workflows
+  - `workflow_completed_total`: Counter for completed workflows
+  - `workflow_duration_seconds`: Histogram for workflow durations
+  - `workflow_error_total`: Counter for workflow errors
+  
+- **Resource Metrics**:
+  - `workflow_cpu_usage_cores`: Gauge for CPU usage
+  - `workflow_memory_usage_bytes`: Gauge for memory usage
+  - `workflow_gpu_usage_percent`: Gauge for GPU utilization
+  
+- **Cache Metrics**:
+  - `workflow_cache_hit_total`: Counter for cache hits
+  - `workflow_stage_duration_seconds`: Histogram for stage durations
+
+## Accessing Grafana
+
+Grafana provides visualization of all metrics collected by Prometheus. Here's how to access and use Grafana:
+
+### Access Methods
+
+#### Method 1: Domain Access (if configured)
+
+If Ingress has been set up:
+
+1. Navigate to `https://grafana.yourdomain.com` in your browser
+2. You'll be presented with the Grafana login screen
+
+#### Method 2: Port Forwarding
+
+For direct access:
+
+```bash
+# Start port-forwarding to access Grafana UI locally
+kubectl port-forward svc/prometheus-grafana 3000:80 -n monitoring
+```
+
+Then access Grafana at `http://localhost:3000` in your browser.
+
+### Login Credentials
+
+- **Username**: `admin`
+- **Password**: Set during installation
+
+If you don't know the password, retrieve it with:
+
+```bash
+kubectl get secret prometheus-grafana -n monitoring -o jsonpath="{.data.admin-password}" | base64 --decode ; echo
+```
+
+### Available Dashboards
+
+The following pre-configured dashboards are available:
+
+1. **Kubernetes Dashboard**: 
+   - Shows cluster-wide metrics
+   - Navigate to Dashboards → Browse → Default → Kubernetes Dashboard
+
+2. **ML Workflows Dashboard**: 
+   - Shows execution times and resource usage of ML pipelines
+   - Navigate to Dashboards → Browse → Default → ML Workflows Dashboard
+
+3. **ML Processing Dashboard**: 
+   - Shows metrics for different processing stages
+   - Navigate to Dashboards → Browse → Default → ML Processing Dashboard
+
+### Exploring Metrics
+
+To explore specific metrics:
+
+1. From the left menu, select "Explore"
+2. Select "Prometheus" as the data source
+3. Enter PromQL queries to retrieve specific metrics
+4. Example queries:
+   - `rate(workflow_completed_total[5m])` - Workflow completion rate
+   - `avg(workflow_duration_seconds) by (type)` - Average duration by workflow type
+   - `sum(workflow_error_total) by (type)` - Total errors by workflow type
+
+### Creating Custom Dashboards
+
+You can create custom dashboards for specific monitoring needs:
+
+1. Click the "+" icon in the left sidebar
+2. Select "Dashboard"
+3. Click "Add new panel"
+4. Configure the panel with Prometheus queries and appropriate visualizations
+
+### Troubleshooting Grafana Access
+
+If you're unable to access Grafana:
+
+1. Check if pods are running: `kubectl get pods -n monitoring`
+2. Verify services: `kubectl get svc -n monitoring`
+3. Check ingress (if using domain access): `kubectl get ingress -n monitoring`
+4. Check for port-forwarding issues
+
 ## API Endpoints
 
 ### Health Endpoints

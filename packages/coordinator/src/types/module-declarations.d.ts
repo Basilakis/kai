@@ -35,7 +35,7 @@ declare module './cache-manager.service' {
     createdAt: number;
     expiresAt: number;
   }
-  
+
   export class CacheManager {
     constructor(redis: import('ioredis').Redis, logger: import('winston').Logger);
     generateCacheKey(request: any): string;
@@ -140,6 +140,19 @@ declare module './monitoring.service' {
 }
 
 // Declare external module types if needed
+
+// Declaration for @kai/shared module
+declare module '@kai/shared' {
+  export type SubscriptionTier = 'free' | 'standard' | 'premium';
+
+  // Add other types from @kai/shared as needed
+  export interface User {
+    id: string;
+    email: string;
+    name?: string;
+    subscriptionTier: SubscriptionTier;
+  }
+}
 declare module '@kubernetes/client-node' {
   export class KubeConfig {
     loadFromDefault(): void;
@@ -154,7 +167,7 @@ declare module '@kubernetes/client-node' {
       plural: string,
       name: string
     ): Promise<{ body: any }>;
-    
+
     listNamespacedCustomObject(
       group: string,
       version: string,
