@@ -46,6 +46,7 @@ Welcome to the Kai documentation. This index provides links to all documentation
 
 - [Queue System](./queue-system.md) - Message broker and async processing
 - [Web Crawling](./web-crawling.md) - Web content extraction for materials
+- [Testing Approach](./testing-approach.md) - Testing strategy and best practices
 
 ### Deployment
 

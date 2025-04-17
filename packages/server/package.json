@@ -9,6 +9,9 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "jest --testPathIgnorePatterns=/node_modules/ --testRegex=\"\\\\.(test|spec)\\\\.[tj]sx?$\"",
+    "test:unit": "jest --testPathIgnorePatterns=/node_modules/,/integration/,/contract/ --testRegex=\"\\\\.(test|spec)\\\\.[tj]sx?$\"",
+    "test:integration": "jest --testPathIgnorePatterns=/node_modules/ --testPathPattern=src/tests/integration",
+    "test:contract": "jest --testPathIgnorePatterns=/node_modules/ --testPathPattern=src/tests/contract",
     "lint": "eslint . --ext .js,.ts"
   },
   "dependencies": {
