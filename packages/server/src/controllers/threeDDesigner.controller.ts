@@ -26,6 +26,9 @@ export class ThreeDDesignerController {
         });
       }
 
+      // Get user ID from request
+      const userId = req.user?.id;
+
       const options = {
         extractLayout: req.body.extractLayout !== 'false',
         detectObjects: req.body.detectObjects !== 'false',
@@ -33,12 +36,27 @@ export class ThreeDDesignerController {
         segmentScene: req.body.segmentScene !== 'false'
       };
 
-      const result = await threeDService.processImage(req.file.buffer, options);
+      try {
+        // Pass user ID to service for MCP integration
+        const result = await threeDService.processImage(req.file.buffer, options, userId);
 
-      res.json({
-        success: true,
-        data: result
-      });
+        res.json({
+          success: true,
+          data: result
+        });
+      } catch (error: any) {
+        // Check for insufficient credits error
+        if (error.message === 'Insufficient credits') {
+          return res.status(402).json({
+            success: false,
+            error: 'Insufficient credits',
+            message: 'You do not have enough credits to perform this action. Please purchase more credits.'
+          });
+        }
+
+        // Re-throw other errors
+        throw error;
+      }
     } catch (error) {
       console.error('Error processing image:', error);
       res.status(500).json({

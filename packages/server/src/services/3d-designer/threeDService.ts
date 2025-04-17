@@ -1,5 +1,7 @@
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
+import mcpClientService, { MCPServiceKey } from '../mcp/mcpClientService';
+import { logger } from '../../utils/logger';
 
 interface Scene3D {
   id: string;
@@ -73,6 +75,19 @@ export class ThreeDService {
   }
 
   /**
+   * Check if MCP is available for 3D operations
+   * @returns True if MCP is available
+   */
+  private async isMCPAvailable(): Promise<boolean> {
+    try {
+      return await mcpClientService.isMCPAvailable();
+    } catch (error) {
+      logger.error(`Error checking MCP availability: ${error}`);
+      return false;
+    }
+  }
+
+  /**
    * Process input (image or text) through the 3D reconstruction pipeline
    */
   async process(input: Buffer | string, options: {
@@ -80,16 +95,16 @@ export class ThreeDService {
     detectObjects?: boolean;
     estimateDepth?: boolean;
     segmentScene?: boolean;
-  }): Promise<ProcessingResult> {
+  }, userId?: string): Promise<ProcessingResult> {
     const result: ProcessingResult = {
       id: uuidv4()
     };
 
     try {
       if (options.inputType === 'image') {
-        return this.processImageInput(input as Buffer, options);
+        return this.processImageInput(input as Buffer, options, userId);
       } else {
-        return this.processTextInput(input as string, options);
+        return this.processTextInput(input as string, options, userId);
       }
     } catch (error) {
       console.error('Error processing input:', error);
@@ -104,12 +119,59 @@ export class ThreeDService {
     detectObjects?: boolean;
     estimateDepth?: boolean;
     segmentScene?: boolean;
-  }): Promise<ProcessingResult> {
+  }, userId?: string): Promise<ProcessingResult> {
     const result: ProcessingResult = {
       id: uuidv4()
     };
 
     try {
+      // Check if MCP is available and user ID is provided
+      const mcpAvailable = await this.isMCPAvailable();
+
+      if (mcpAvailable && userId) {
+        try {
+          // Save image to temporary file for MCP
+          const tempFilePath = `/tmp/${uuidv4()}.jpg`;
+          require('fs').writeFileSync(tempFilePath, imageBuffer);
+
+          try {
+            // Use MCP for 3D reconstruction
+            const mcpResult = await mcpClientService.reconstructModelFromImage(
+              userId,
+              tempFilePath,
+              {
+                model: 'nerfStudio',
+                format: 'glb',
+                quality: 'medium'
+              }
+            );
+
+            result.scene = {
+              modelUrl: mcpResult.modelUrl,
+              thumbnailUrl: mcpResult.thumbnailUrl
+            };
+
+            return result;
+          } finally {
+            // Clean up temporary file
+            try {
+              require('fs').unlinkSync(tempFilePath);
+            } catch (cleanupError) {
+              logger.warn(`Failed to clean up temporary file: ${cleanupError}`);
+            }
+          }
+        } catch (mcpError: any) {
+          // If MCP fails with insufficient credits, rethrow the error
+          if (mcpError.message === 'Insufficient credits') {
+            throw mcpError;
+          }
+
+          // For other MCP errors, log and fall back to direct API calls
+          logger.warn(`MCP 3D reconstruction failed, falling back to direct API calls: ${mcpError.message}`);
+        }
+      }
+
+      // Fall back to direct API calls if MCP is not available or failed
       // 1. NeRF-based reconstruction
       const [nerfStudioResult, instantNgpResult] = await Promise.all([
         this.runNerfStudio(imageBuffer),
@@ -146,12 +208,46 @@ export class ThreeDService {
   /**
    * Process text input using Shap-E and GET3D
    */
-  private async processTextInput(text: string, options: any): Promise<ProcessingResult> {
+  private async processTextInput(text: string, options: any, userId?: string): Promise<ProcessingResult> {
     const result: ProcessingResult = {
       id: uuidv4()
     };
 
     try {
+      // Check if MCP is available and user ID is provided
+      const mcpAvailable = await this.isMCPAvailable();
+
+      if (mcpAvailable && userId) {
+        try {
+          // Use MCP for text-to-3D generation
+          const mcpResult = await mcpClientService.generateTextTo3D(
+            userId,
+            text,
+            {
+              model: 'shapE',
+              format: 'glb',
+              quality: 'medium'
+            }
+          );
+
+          result.scene = {
+            modelUrl: mcpResult.modelUrl,
+            thumbnailUrl: mcpResult.thumbnailUrl
+          };
+
+          return result;
+        } catch (mcpError: any) {
+          // If MCP fails with insufficient credits, rethrow the error
+          if (mcpError.message === 'Insufficient credits') {
+            throw mcpError;
+          }
+
+          // For other MCP errors, log and fall back to direct API calls
+          logger.warn(`MCP text-to-3D generation failed, falling back to direct API calls: ${mcpError.message}`);
+        }
+      }
+
+      // Fall back to direct API calls if MCP is not available or failed
       // 1. Generate base structure with Shap-E
       const baseStructure = await this.generateBaseStructure(text);
 
@@ -315,8 +411,8 @@ export class ThreeDService {
     detectObjects?: boolean;
     estimateDepth?: boolean;
     segmentScene?: boolean;
-  }): Promise<ProcessingResult> {
-    return this.process(imageBuffer, { ...options, inputType: 'image' });
+  }, userId?: string): Promise<ProcessingResult> {
+    return this.process(imageBuffer, { ...options, inputType: 'image' }, userId);
   }
 
   /**
@@ -337,7 +433,7 @@ export class ThreeDService {
 
       for (let i = 0; i < count; i++) {
         // Generate variation using GET3D
-        const variation = await this.fillSceneDetails(sceneData, 
+        const variation = await this.fillSceneDetails(sceneData,
           `Variation ${i + 1} with style: ${constraints.style || 'default'}`
         );
 
@@ -403,10 +499,10 @@ export class ThreeDService {
 
   private exportToOBJ = (scene: Scene3D): string => {
     let content = '# Exported from KAI 3D Designer\n';
-    
+
     if (scene.reconstruction.mesh) {
       const { vertices, normals, uvs } = scene.reconstruction.mesh;
-      
+
       vertices?.forEach((v: number[]) => content += `v ${v.join(' ')}\n`);
       normals?.forEach((n: number[]) => content += `vn ${n.join(' ')}\n`);
       uvs?.forEach((uv: number[]) => content += `vt ${uv.join(' ')}\n`);

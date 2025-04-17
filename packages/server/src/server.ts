@@ -49,6 +49,7 @@ function validateSupabaseConfig() {
 import { errorHandler, notFound } from './middleware/error.middleware';
 import { authMiddleware } from './middleware/auth.middleware';
 import { analyticsMiddleware } from './middleware/analytics.middleware';
+import { securityHeaders, noCacheHeaders } from './middleware/security.middleware';
 import {
   defaultLimiter,
   authLimiter,
@@ -105,6 +106,11 @@ import pointCloudRoutes from './routes/point-cloud.routes';
 import sceneGraphRoutes from './routes/scene-graph.routes';
 import { scheduleSessionCleanup } from './controllers/agents.controller';
 
+// Import new feature routes
+import authEnhancedRoutes from './routes/auth/index.routes';
+import subscriptionEnhancedRoutes from './routes/subscription/index.routes';
+import creditRoutes from './routes/credit/index.routes';
+
 // Create Express app
 const app = express();
 const httpServer = http.createServer(app);
@@ -123,6 +129,9 @@ app.use(compression());
 app.use(morgan('dev'));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Add security headers to all responses
+app.use(securityHeaders);
 
 // Apply rate limiting before routes
 app.use('/api/auth', authLimiter); // Stricter limit for auth endpoints
@@ -145,15 +154,16 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
 
 
 // Set up routes after all prerequisites
-app.use('/api/auth', authRoutes);
-app.use('/api/users', authMiddleware, userRoutes);
+// Apply no-cache headers to sensitive routes
+app.use('/api/auth', noCacheHeaders, authRoutes);
+app.use('/api/users', authMiddleware, noCacheHeaders, userRoutes);
 app.use('/api/materials', materialRoutes);
 app.use('/api/catalogs', authMiddleware, catalogRoutes);
 app.use('/api/recognition', recognitionRoutes);
 app.use('/api/crawlers', authMiddleware, crawlerRoutes);
-app.use('/api/admin', authMiddleware, adminRoutes);
+app.use('/api/admin', authMiddleware, noCacheHeaders, adminRoutes);
 app.use('/api/pdf', authMiddleware, pdfRoutes);
-app.use('/api/credentials', authMiddleware, credentialsRoutes);
+app.use('/api/credentials', authMiddleware, noCacheHeaders, credentialsRoutes);
 app.use('/api/agents', agentRoutes);
 app.use('/api/ai', authMiddleware, aiRoutes);
 app.use('/api/search', searchRoutes);
@@ -168,6 +178,11 @@ app.use('/api/scene-optimization', sceneOptimizationRoutes);
 app.use('/api/room-layout', roomLayoutRoutes);
 app.use('/api/point-cloud', pointCloudRoutes);
 app.use('/api/scene-graph', sceneGraphRoutes);
+
+// Register new feature routes
+app.use('/api/auth', noCacheHeaders, authEnhancedRoutes); // Enhanced auth features
+app.use('/api/subscriptions', subscriptionEnhancedRoutes); // Enhanced subscription features
+app.use('/api/credits', noCacheHeaders, creditRoutes); // Credit system features
 
 /**
  * @openapi
@@ -209,7 +224,7 @@ app.get('/health', async (_req: Request, res: Response) => {
   try {
     // Use the health check service to get comprehensive health information
     const healthInfo = await healthCheckService.getHealth();
-    
+
     // Get database health status
     let dbHealth = { status: 'not_configured' };
     try {
@@ -219,7 +234,7 @@ app.get('/health', async (_req: Request, res: Response) => {
     } catch (dbError) {
       logger.warn('Database health check failed or service not initialized', { error: dbError });
     }
-    
+
     // Merge health information
     const mergedHealthInfo = {
       ...healthInfo,
@@ -228,7 +243,7 @@ app.get('/health', async (_req: Request, res: Response) => {
         database: dbHealth
       }
     };
-    
+
     res.status(200).json(mergedHealthInfo);
   } catch (error) {
     logger.error('Error retrieving health information:', error);
@@ -285,7 +300,7 @@ app.get('/health/detailed', authMiddleware, async (_req: Request, res: Response)
   try {
     // Get detailed health metrics including trends and system details
     const detailedHealth = await healthCheckService.getDetailedHealth();
-    
+
     // Get detailed database metrics if available
     let dbMetrics = { status: 'not_configured', metrics: {} };
     try {
@@ -294,7 +309,7 @@ app.get('/health/detailed', authMiddleware, async (_req: Request, res: Response)
     } catch (dbError) {
       logger.warn('Database detailed metrics check failed', { error: dbError });
     }
-    
+
     // Merge health information with database metrics
     const enhancedHealth = {
       ...detailedHealth,
@@ -305,7 +320,7 @@ app.get('/health/detailed', authMiddleware, async (_req: Request, res: Response)
         }
       }
     };
-    
+
     res.status(200).json(enhancedHealth);
   } catch (error) {
     logger.error('Error retrieving detailed health information:', error);
@@ -331,7 +346,7 @@ const startServer = async (): Promise<void> => {
   // Start health monitoring service with 2-minute interval
   healthCheckService.startMonitoring(120000);
   logger.info('Health monitoring service started');
-  
+
   // Initialize database service from container
   try {
     const dbService = getDatabaseService();
@@ -384,7 +399,7 @@ const shutdownGracefully = async (err?: Error): Promise<void> => {
   // Stop health monitoring
   healthCheckService.stopMonitoring();
   logger.info('Health monitoring service stopped');
-  
+
   // Close database connections
   try {
     const dbService = getDatabaseService();
