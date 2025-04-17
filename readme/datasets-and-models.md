@@ -373,6 +373,43 @@ When importing a model, you can configure:
 
 The system provides a training connector to link datasets with models for training or fine-tuning.
 
+### Dataset Splitting
+
+Before training, you can split your dataset into training, validation, and test sets:
+
+1. **Split Ratio Configuration**: Specify the percentage for each set
+2. **Stratified Splitting**: Maintain class distribution across sets
+3. **API-driven Splitting**: Use the dataset splitting API endpoint
+
+```javascript
+// Client-side code for splitting a dataset
+async function splitDataset(datasetId, splitConfig) {
+  try {
+    const response = await fetch(`/api/admin/datasets/${datasetId}/split`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        trainRatio: splitConfig.trainRatio, // e.g., 70
+        validationRatio: splitConfig.validationRatio, // e.g., 20
+        testRatio: splitConfig.testRatio, // e.g., 10
+        stratified: splitConfig.stratified // Maintain class distribution if true
+      }),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to split dataset: ${await response.text()}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Error splitting dataset:', error);
+    throw error;
+  }
+}
+```
+
 ### Training Configuration
 
 The training connector supports:
@@ -396,14 +433,16 @@ The training connector supports:
 
 To train a model with a dataset:
 
-1. Navigate to **Admin Panel → Models → Training**
-2. Select a dataset and model
-3. Configure training parameters
-4. Start the training process
-5. Monitor progress in real-time
+1. Navigate to **Admin Panel → Datasets → Dataset Details → Training Configuration**
+2. Configure model selection, split ratios, and data augmentation options
+3. Click "Start Training" to begin the process
+4. Monitor progress in real-time through the integrated visualization
 
+The system now supports two methods for starting a training job:
+
+#### Method 1: From Models Panel
 ```javascript
-// Client-side code for starting a training job
+// Client-side code for starting a training job from Models panel
 async function startModelTraining(config) {
   try {
     const response = await fetch('/api/admin/training/start', {
@@ -439,20 +478,62 @@ async function startModelTraining(config) {
 }
 ```
 
+#### Method 2: From Dataset Details Panel
+```javascript
+// Client-side code for starting a training job directly from a dataset
+async function startDatasetTraining(datasetId, trainingConfig) {
+  try {
+    const response = await fetch(`/api/admin/datasets/${datasetId}/train`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        config: {
+          modelArchitecture: trainingConfig.modelArchitecture,
+          pretrainedWeights: trainingConfig.pretrainedWeights,
+          splitRatios: trainingConfig.splitRatios,
+          stratifiedSplit: trainingConfig.stratifiedSplit,
+          hyperparameters: trainingConfig.hyperparameters,
+          augmentation: trainingConfig.augmentation
+        }
+      }),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Server responded with ${response.status}: ${await response.text()}`);
+    }
+    
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Error starting dataset training:', error);
+    throw error;
+  }
+}
+```
+
 ### Monitoring Training Progress
 
-The system provides real-time training metrics visualization:
+The system provides real-time training metrics visualization through WebSocket connections:
 
 ```javascript
 // Client-side code for monitoring training
-function subscribeToTrainingProgress(jobId, callbacks) {
-  const socket = new WebSocket(`wss://${window.location.host}/ws/training`);
+function subscribeToTrainingProgress(datasetId, callbacks) {
+  // Create WebSocket connection to the training progress server
+  const WS_URL = process.env.REACT_APP_WS_URL || window.location.origin.replace(/^http/, 'ws');
+  const socket = new WebSocket(`${WS_URL}/ws/training-progress`);
   
   socket.onopen = () => {
+    // Subscribe to updates for the specific dataset
     socket.send(JSON.stringify({
       type: 'subscribe',
-      jobId: jobId
+      datasetId: datasetId
     }));
+    
+    if (callbacks.onConnected) {
+      callbacks.onConnected();
+    }
   };
   
   socket.onmessage = (event) => {
@@ -474,9 +555,58 @@ function subscribeToTrainingProgress(jobId, callbacks) {
     }
   };
   
-  return () => {
-    socket.close();
+  socket.onerror = (error) => {
+    console.error('WebSocket error:', error);
+    if (callbacks.onError) {
+      callbacks.onError('WebSocket connection error');
+    }
   };
+  
+  socket.onclose = () => {
+    if (callbacks.onDisconnected) {
+      callbacks.onDisconnected();
+    }
+  };
+  
+  // Return a cleanup function
+  return () => {
+    if (socket.readyState === WebSocket.OPEN) {
+      socket.close();
+    }
+  };
+}
+```
+
+### Stopping a Training Job
+
+The system allows stopping a training job that is in progress:
+
+```javascript
+// Client-side code for stopping a training job
+async function stopTrainingJob(jobId) {
+  try {
+    const API_URL = process.env.REACT_APP_API_URL || window.location.origin;
+    
+    const response = await fetch(`${API_URL}/api/admin/training/${jobId}/stop`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        // Add authorization headers if required
+        ...(localStorage.getItem('auth_token') 
+          ? { 'Authorization': `Bearer ${localStorage.getItem('auth_token')}` } 
+          : {})
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Server responded with ${response.status}: ${await response.text()}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Failed to stop training job:', error);
+    throw error;
+  }
 }
 ```
 

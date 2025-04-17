@@ -1,10 +1,15 @@
 /**
  * Dataset Details Component
  * 
- * Displays detailed information about a dataset, including classes and sample images
+ * Displays detailed information about a dataset, including classes, statistics, and training configuration
  */
 
 import React, { useState, useEffect } from 'react';
+import BarChart from '../charts/BarChart';
+import SplitRatioControl from './SplitRatioControl';
+import ModelSelectionControl from './ModelSelectionControl';
+import DataAugmentationOptions from './DataAugmentationOptions';
+import DatasetTrainingProgress from '../training/DatasetTrainingProgress'; // Import the progress component
 import {
   Box,
   Button,
@@ -15,39 +20,123 @@ import {
   Divider,
   Grid,
   IconButton,
-  List,
-  ListItem,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
   Paper,
   Tab,
   Tabs,
   Typography,
+  Select,
+  MenuItem,
+  FormControlLabel,
+  Checkbox,
+  Slider,
+  TextField,
+  FormControl,
+  InputLabel,
+  FormGroup,
+  ListItemIcon,
+  ListItemText,
+  Alert,
+  AlertTitle,
+  List,
+  ListItem,
+  ListItemButton,
   useTheme
-} from '@mui/material';
-import {
-  Analytics as AnalyticsIcon,
-  Category as CategoryIcon,
-  Image as ImageIcon,
-  Settings as SettingsIcon,
-  PlayArrow as PlayArrowIcon
-} from '@mui/icons-material';
+} from '../mui';
 
-// Interface for component props
+// Import Material UI icons from centralized file
+import {
+  AnalyticsIcon,
+  CategoryIcon,
+  ImageIcon,
+  SettingsIcon,
+  PlayArrowIcon
+} from '../mui-icons';
+
+// Dataset details component props interface
 interface DatasetDetailsProps {
   dataset: {
     id: string;
     name: string;
     description?: string;
-    status: 'processing' | 'ready' | 'error';
-    classCount: number;
-    imageCount: number;
     source?: string;
+    status: string;
     createdAt: string;
     updatedAt: string;
+    classCount: number;
+    imageCount: number;
+    // Enhanced dataset statistics
+    statistics?: {
+      totalImages: number;
+      totalClasses: number;
+      averageImagesPerClass: number;
+      datasetSizeFormatted: string;
+      classDistribution: Array<{
+        name: string;
+        count: number;
+      }>;
+      imageQualityMetrics?: {
+        averageResolution: string;
+        formatDistribution: Array<{
+          format: string;
+          percentage: number;
+        }>;
+      };
+    };
   };
 }
+
+// Define TrainingConfiguration type (matching backend)
+interface TrainingConfiguration {
+  modelArchitecture: string; // From ModelConfig
+  pretrainedWeights: string; // From ModelConfig (mapped)
+  splitRatios: { train: number; validation: number; test: number };
+  stratified: boolean;
+  hyperparameters: { // From ModelConfig
+    batchSize: number;
+    learningRate: number;
+    epochs: number;
+  };
+  augmentation: { // From AugmentationOptions.techniques
+    rotation: boolean;
+    horizontalFlip: boolean;
+    brightnessContrast: boolean; 
+    crop: boolean; 
+    // Add other augmentation fields if needed
+  };
+}
+
+// Define ModelConfig type (matching ModelSelectionControl)
+interface ModelConfig {
+  architecture: string;
+  variant: string;
+  pretrained: boolean;
+  hyperparameters: {
+    batchSize: number;
+    learningRate: number;
+    epochs: number;
+  };
+}
+
+// Define AugmentationOptions type (matching DataAugmentationOptions)
+interface AugmentationOptions {
+  enabled: boolean;
+  techniques: {
+    rotation: boolean;
+    horizontalFlip: boolean;
+    verticalFlip: boolean;
+    randomCrop: boolean;
+    colorJitter: boolean;
+    randomErasing: boolean;
+    randomNoise: boolean;
+  };
+  intensities: {
+    rotationDegrees: number;
+    cropScale: number;
+    brightnessVariation: number;
+    erasePercent: number;
+  };
+}
+
 
 // Format date to local string
 const formatDate = (dateString: string): string => {
@@ -115,6 +204,24 @@ const DatasetDetails: React.FC<DatasetDetailsProps> = ({ dataset }) => {
   const [images, setImages] = useState(mockImages);
   const [selectedClass, setSelectedClass] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  
+  // State for training configuration and progress
+  const [trainingConfig, setTrainingConfig] = useState<TrainingConfiguration>({
+    modelArchitecture: 'efficientnet',
+    pretrainedWeights: 'imagenet',
+    splitRatios: { train: 70, validation: 20, test: 10 },
+    stratified: true,
+    hyperparameters: { batchSize: 32, learningRate: 0.001, epochs: 30 },
+    augmentation: { rotation: true, horizontalFlip: true, brightnessContrast: true, crop: false }
+  });
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+  const [trainingError, setTrainingError] = useState<string | null>(null);
+  const [isStartingTraining, setIsStartingTraining] = useState(false); // Loading state for start button
+
+  // State for tracking save configuration status
+  const [isSavingConfiguration, setIsSavingConfiguration] = useState(false);
+  const [saveConfigError, setSaveConfigError] = useState<string | null>(null);
+  const [saveConfigSuccess, setSaveConfigSuccess] = useState(false);
 
   // Handle tab change
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
@@ -150,6 +257,125 @@ const DatasetDetails: React.FC<DatasetDetailsProps> = ({ dataset }) => {
   const handleSelectClass = (classId: string) => {
     setSelectedClass(classId);
   };
+  
+  // Handler for top-level TrainingConfiguration changes
+  const handleTrainingConfigChange = (field: keyof TrainingConfiguration, value: any) => {
+    setTrainingConfig(prev => ({ ...prev, [field]: value }));
+  };
+  
+  // Handler for ModelSelectionControl changes
+  const handleModelSelectionChange = (newModelConfig: ModelConfig) => {
+    setTrainingConfig(prev => ({
+      ...prev,
+      modelArchitecture: newModelConfig.architecture,
+      pretrainedWeights: newModelConfig.pretrained ? 'imagenet' : 'none', // Map boolean to string
+      hyperparameters: newModelConfig.hyperparameters,
+    }));
+  };
+
+  // Handler for DataAugmentationOptions changes
+  const handleAugmentationChange = (newAugmentationOptions: AugmentationOptions) => {
+    // Update only the augmentation part of the main config
+    setTrainingConfig(prev => ({
+      ...prev,
+      augmentation: { 
+          rotation: newAugmentationOptions.techniques.rotation,
+          horizontalFlip: newAugmentationOptions.techniques.horizontalFlip,
+          brightnessContrast: newAugmentationOptions.techniques.colorJitter, 
+          crop: newAugmentationOptions.techniques.randomCrop, 
+          // Add other mappings if needed
+      }
+    }));
+  };
+
+  // Start a new training job using the real API endpoint
+  const handleStartTraining = async () => {
+    setIsStartingTraining(true);
+    setTrainingError(null);
+    setCurrentJobId(null); // Clear previous job ID if any
+
+    // Prepare configuration - create a new object with the correct structure
+    // instead of using delete which is causing a TypeScript error
+    const { stratified, ...restConfig } = trainingConfig;
+    const apiConfig = {
+      ...restConfig,
+      stratifiedSplit: stratified
+    };
+    
+    console.log('Starting training with config:', apiConfig);
+
+    try {
+      // Get the base API URL from environment or defaults
+      const API_URL = process.env.REACT_APP_API_URL || window.location.origin;
+      
+      // Make the actual API call to start training
+      const response = await fetch(`${API_URL}/api/admin/datasets/${dataset.id}/train`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          // Add authorization headers if required
+          ...(localStorage.getItem('auth_token') 
+            ? { 'Authorization': `Bearer ${localStorage.getItem('auth_token')}` } 
+            : {})
+        },
+        body: JSON.stringify({ config: apiConfig })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Server responded with ${response.status}: ${await response.text()}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data && data.jobId) {
+        console.log('Training job started with ID:', data.jobId);
+        setCurrentJobId(data.jobId);
+      } else {
+        throw new Error('No job ID returned from server');
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error('Failed to start training:', errorMessage);
+      setTrainingError(`Failed to start training job: ${errorMessage}`);
+    } finally {
+      setIsStartingTraining(false);
+    }
+  };
+  
+  // Stop a training job using the real API endpoint
+  const handleStopTraining = async () => {
+    if (!currentJobId) return;
+    
+    console.log('Stopping training job:', currentJobId);
+    
+    try {
+      const API_URL = process.env.REACT_APP_API_URL || window.location.origin;
+      
+      // Make API call to stop the training job
+      const response = await fetch(`${API_URL}/api/admin/training/${currentJobId}/stop`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          // Add authorization headers if required
+          ...(localStorage.getItem('auth_token') 
+            ? { 'Authorization': `Bearer ${localStorage.getItem('auth_token')}` } 
+            : {})
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Server responded with ${response.status}: ${await response.text()}`);
+      }
+      
+      // Clear the job ID to show the config form again
+      setCurrentJobId(null);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error('Failed to stop training job:', errorMessage);
+      alert(`Failed to stop training job: ${errorMessage}`);
+    }
+  };
+
 
   // Render tab content
   const getTabContent = () => {
@@ -237,6 +463,38 @@ const DatasetDetails: React.FC<DatasetDetailsProps> = ({ dataset }) => {
                     <Grid item xs={8}>
                       <Typography variant="body2">{dataset.imageCount}</Typography>
                     </Grid>
+                    {dataset.statistics && (
+                      <>
+                        <Grid item xs={4}>
+                          <Typography variant="body2" color="textSecondary">
+                            Dataset Size:
+                          </Typography>
+                        </Grid>
+                        <Grid item xs={8}>
+                          <Typography variant="body2">{dataset.statistics.datasetSizeFormatted}</Typography>
+                        </Grid>
+                        <Grid item xs={4}>
+                          <Typography variant="body2" color="textSecondary">
+                            Avg Images/Class:
+                          </Typography>
+                        </Grid>
+                        <Grid item xs={8}>
+                          <Typography variant="body2">{dataset.statistics.averageImagesPerClass.toFixed(2)}</Typography>
+                        </Grid>
+                        {dataset.statistics.imageQualityMetrics && (
+                          <>
+                            <Grid item xs={4}>
+                              <Typography variant="body2" color="textSecondary">
+                                Avg Resolution:
+                              </Typography>
+                            </Grid>
+                            <Grid item xs={8}>
+                              <Typography variant="body2">{dataset.statistics.imageQualityMetrics.averageResolution}</Typography>
+                            </Grid>
+                          </>
+                        )}
+                      </>
+                    )}
                   </Grid>
                 </Paper>
               </Grid>
@@ -246,20 +504,31 @@ const DatasetDetails: React.FC<DatasetDetailsProps> = ({ dataset }) => {
                     Class Distribution
                   </Typography>
                   <Divider sx={{ mb: 2 }} />
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                      height: '80%'
-                    }}
-                  >
-                    <AnalyticsIcon sx={{ fontSize: 80, color: 'text.secondary', mb: 2 }} />
-                    <Typography variant="body2" color="textSecondary">
-                      Class distribution visualization would appear here
-                    </Typography>
-                  </Box>
+                  {dataset.statistics?.classDistribution ? (
+                    <Box sx={{ height: 250 }}>
+                      <BarChart
+                        data={dataset.statistics.classDistribution}
+                        xKey="name"
+                        yKey="count"
+                        color="#8884d8"
+                      />
+                    </Box>
+                  ) : (
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        height: '80%'
+                      }}
+                    >
+                      <AnalyticsIcon sx={{ fontSize: 80, color: 'text.secondary', mb: 2 }} />
+                      <Typography variant="body2" color="textSecondary">
+                        No class distribution data available
+                      </Typography>
+                    </Box>
+                  )}
                 </Paper>
               </Grid>
               <Grid item xs={12}>
@@ -393,55 +662,206 @@ const DatasetDetails: React.FC<DatasetDetailsProps> = ({ dataset }) => {
                 Training Configuration
               </Typography>
               <Divider sx={{ mb: 3 }} />
-              <Typography variant="body1" paragraph>
-                Configure training parameters for this dataset. These settings will be used when you
-                initiate model training.
-              </Typography>
-              <Typography variant="body2" color="textSecondary" paragraph>
-                Training configuration UI would be implemented here, including:
-              </Typography>
-              <ul>
-                <li>
-                  <Typography variant="body2" color="textSecondary">
-                    Model selection (architecture)
+
+              {/* Display error if training failed to start */}
+              {trainingError && (
+                <Alert severity="error" sx={{ mb: 3 }}>
+                  <AlertTitle>Error Starting Training</AlertTitle>
+                  {trainingError}
+                </Alert>
+              )}
+
+              {/* Conditionally render Training Progress or Configuration Form */}
+              {currentJobId ? (
+                <Box>
+                  <Typography variant="subtitle1" gutterBottom fontWeight="bold">
+                    Training In Progress (Job ID: {currentJobId}) 
                   </Typography>
-                </li>
-                <li>
-                  <Typography variant="body2" color="textSecondary">
-                    Dataset splitting options (train/validation/test)
-                  </Typography>
-                </li>
-                <li>
-                  <Typography variant="body2" color="textSecondary">
-                    Hyperparameter settings
-                  </Typography>
-                </li>
-                <li>
-                  <Typography variant="body2" color="textSecondary">
-                    Data augmentation options
-                  </Typography>
-                </li>
-                <li>
-                  <Typography variant="body2" color="textSecondary">
-                    Transfer learning settings
-                  </Typography>
-                </li>
-              </ul>
-              <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end' }}>
-                <Button
-                  variant="contained"
-                  color="primary"
-                  startIcon={<PlayArrowIcon />}
-                  disabled={dataset.status !== 'ready'}
-                >
-                  Start Training
-                </Button>
-              </Box>
+                  {/* Pass datasetId instead of jobId */}
+                  <DatasetTrainingProgress datasetId={dataset.id} /> 
+                  <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
+                    <Button
+                      variant="outlined"
+                      color="error"
+                      onClick={handleStopTraining}
+                    >
+                      Stop Training
+                    </Button>
+                  </Box>
+                </Box>
+              ) : (
+                <>
+                  {/* Model Selection */}
+                  <Box sx={{ mb: 4 }}>
+                    <Typography variant="subtitle1" gutterBottom fontWeight="bold">
+                      Model Selection
+                    </Typography>
+                    {/* Pass the correct handler and initial config */}
+                    <ModelSelectionControl
+                      initialConfig={{ // Pass relevant parts of trainingConfig
+                        architecture: trainingConfig.modelArchitecture,
+                        variant: 'B0', // Need state for variant if configurable
+                        pretrained: trainingConfig.pretrainedWeights === 'imagenet',
+                        hyperparameters: trainingConfig.hyperparameters
+                      }}
+                      onChange={handleModelSelectionChange} 
+                      // Remove onNestedChange as ModelSelectionControl handles its own state
+                    />
+                  </Box>
+                  
+                  {/* Dataset Splitting */}
+                  <Box sx={{ mb: 4 }}>
+                    <Typography variant="subtitle1" gutterBottom fontWeight="bold">
+                      Dataset Splitting
+                    </Typography>
+                    <SplitRatioControl
+                      initialRatio={trainingConfig.splitRatios}
+                      onChange={(newSplit) => handleTrainingConfigChange('splitRatios', newSplit)}
+                    />
+                    <Grid container spacing={2}>
+                      <Grid item xs={12}>
+                        <FormControlLabel
+                          control={
+                            <Checkbox 
+                              checked={trainingConfig.stratified} 
+                              // Add explicit type for event
+                              onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleTrainingConfigChange('stratified', e.target.checked)} 
+                            />
+                          }
+                          label="Stratified split (maintain class distribution)"
+                        />
+                      </Grid>
+                    </Grid>
+                  </Box>
+
+                  {/* Hyperparameters are now part of ModelSelectionControl */}
+                  
+                  {/* Data Augmentation */}
+                  <Box sx={{ mb: 4 }}>
+                    <Typography variant="subtitle1" gutterBottom fontWeight="bold">
+                      Data Augmentation
+                    </Typography>
+                    {/* Pass the correct handler and initial options structure */}
+                    <DataAugmentationOptions
+                      initialOptions={{ // Pass relevant parts of trainingConfig
+                        enabled: true, // Assuming always enabled if shown, or add state
+                        techniques: {
+                          rotation: trainingConfig.augmentation.rotation,
+                          horizontalFlip: trainingConfig.augmentation.horizontalFlip,
+                          verticalFlip: false, // Add state if needed
+                          randomCrop: trainingConfig.augmentation.crop,
+                          colorJitter: trainingConfig.augmentation.brightnessContrast,
+                          randomErasing: false, // Add state if needed
+                          randomNoise: false // Add state if needed
+                        },
+                        intensities: { // Add state for intensities if needed
+                          rotationDegrees: 30,
+                          cropScale: 80,
+                          brightnessVariation: 25,
+                          erasePercent: 5
+                        }
+                      }}
+                      onChange={handleAugmentationChange} 
+                    />
+                  </Box>
+                  
+                  {/* Action Buttons */}
+                  <Box sx={{ mt: 4, display: 'flex', justifyContent: 'flex-end' }}>
+                    {/* Display success message if config was saved */}
+                    {saveConfigSuccess && (
+                      <Alert severity="success" sx={{ mb: 2 }}>
+                        Configuration saved successfully!
+                      </Alert>
+                    )}
+                    
+                    {/* Display error if saving failed */}
+                    {saveConfigError && (
+                      <Alert severity="error" sx={{ mb: 2 }}>
+                        {saveConfigError}
+                      </Alert>
+                    )}
+
+                    <Button
+                      variant="outlined"
+                      color="primary"
+                      sx={{ mr: 2 }}
+                      onClick={handleSaveConfiguration}
+                      disabled={isSavingConfiguration}
+                      startIcon={isSavingConfiguration ? <CircularProgress size={20} color="inherit" /> : null}
+                    >
+                      {isSavingConfiguration ? 'Saving...' : 'Save Configuration'}
+                    </Button>
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      startIcon={isStartingTraining ? <CircularProgress size={20} color="inherit" /> : <PlayArrowIcon />}
+                      disabled={dataset.status !== 'ready' || isStartingTraining}
+                      onClick={handleStartTraining}
+                    >
+                      {isStartingTraining ? 'Starting...' : 'Start Training'}
+                    </Button>
+                  </Box>
+                </>
+              )}
             </Paper>
           </Box>
         );
       default:
         return null;
+    }
+  };
+  
+  // Save training configuration without starting training
+  const handleSaveConfiguration = async () => {
+    // Reset status states
+    setIsSavingConfiguration(true);
+    setSaveConfigError(null);
+    setSaveConfigSuccess(false);
+    
+    // Prepare configuration object
+    const { stratified, ...restConfig } = trainingConfig;
+    const apiConfig = {
+      ...restConfig,
+      stratifiedSplit: stratified
+    };
+    
+    console.log('Saving training configuration:', apiConfig);
+    
+    try {
+      // Get the base API URL from environment or defaults
+      const API_URL = process.env.REACT_APP_API_URL || window.location.origin;
+      
+      // Make API call to save the configuration
+      const response = await fetch(`${API_URL}/api/admin/datasets/${dataset.id}/configuration`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          // Add authorization headers if required
+          ...(localStorage.getItem('auth_token') 
+            ? { 'Authorization': `Bearer ${localStorage.getItem('auth_token')}` } 
+            : {})
+        },
+        body: JSON.stringify({ config: apiConfig })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Server responded with ${response.status}: ${await response.text()}`);
+      }
+      
+      // Show success message
+      setSaveConfigSuccess(true);
+      
+      // Clear success message after 3 seconds
+      setTimeout(() => {
+        setSaveConfigSuccess(false);
+      }, 3000);
+      
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error('Failed to save configuration:', errorMessage);
+      setSaveConfigError(`Failed to save configuration: ${errorMessage}`);
+    } finally {
+      setIsSavingConfiguration(false);
     }
   };
 

@@ -1,6 +1,6 @@
 /**
  * OCR Service
- * 
+ *
  * This service is responsible for extracting text from images using Tesseract OCR.
  * It provides functionality to extract text from images and associate it with
  * the corresponding material images.
@@ -10,6 +10,8 @@ import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import { logger } from '../../utils/logger';
+import mcpClientService, { MCPServiceKey } from '../mcp/mcpClientService';
+import creditService from '../credit/creditService';
 
 /**
  * Interface for simple OCR result used by region-based OCR
@@ -34,13 +36,27 @@ export interface OCRResult {
 }
 
 /**
+ * Check if MCP is available for OCR processing
+ * @returns True if MCP is available
+ */
+async function isMCPAvailable(): Promise<boolean> {
+  try {
+    return await mcpClientService.isMCPAvailable();
+  } catch (error) {
+    logger.error(`Error checking MCP availability: ${error}`);
+    return false;
+  }
+}
+
+/**
  * Simple OCR function for region-based extraction
- * 
+ *
  * This function provides a simplified interface for the regionBasedOCR module
  * and returns a basic SimpleOCRResult with just text and confidence.
- * 
+ *
  * @param imagePath Path to the image file
  * @param options Optional OCR settings
+ * @param userId Optional user ID for MCP integration
  * @returns Promise with SimpleOCRResult containing extracted text and confidence
  */
 export async function performOCR(
@@ -49,12 +65,58 @@ export async function performOCR(
     language?: string;
     ocrEngine?: number;
     preprocess?: boolean;
-  } = {}
+  } = {},
+  userId?: string
 ): Promise<SimpleOCRResult> {
   try {
+    // Check if MCP is available and user ID is provided
+    const mcpAvailable = await isMCPAvailable();
+
+    if (mcpAvailable && userId) {
+      try {
+        // Check if user has enough credits
+        const hasEnoughCredits = await creditService.hasEnoughCreditsForService(
+          userId,
+          MCPServiceKey.OCR_PROCESSING,
+          1 // 1 credit per image
+        );
+
+        if (!hasEnoughCredits) {
+          throw new Error('Insufficient credits');
+        }
+
+        logger.info(`Using MCP for OCR processing: ${imagePath}`);
+
+        // Use MCP for OCR processing
+        const mcpResult = await mcpClientService.performOcr(
+          userId,
+          imagePath,
+          {
+            language: options.language,
+            ocrEngine: options.ocrEngine,
+            preprocess: options.preprocess
+          }
+        );
+
+        return {
+          text: mcpResult.text,
+          confidence: mcpResult.confidence
+        };
+      } catch (mcpError: any) {
+        // If MCP fails with insufficient credits, rethrow the error
+        if (mcpError.message === 'Insufficient credits') {
+          throw mcpError;
+        }
+
+        // For other MCP errors, log and fall back to direct implementation
+        logger.warn(`MCP OCR processing failed, falling back to direct implementation: ${mcpError.message}`);
+      }
+    }
+
+    // Fall back to direct implementation if MCP is not available or failed
     // Use the more detailed extractTextFromImage function
     const results = await extractTextFromImage(imagePath, options);
-    
+
     // If no results, return empty text with zero confidence
     if (!results || results.length === 0) {
       return {
@@ -62,13 +124,13 @@ export async function performOCR(
         confidence: 0
       };
     }
-    
+
     // Combine all text from results
     const combinedText = results.map(result => result.text).join('\n');
-    
+
     // Calculate average confidence
     const avgConfidence = results.reduce((sum, result) => sum + result.confidence, 0) / results.length;
-    
+
     return {
       text: combinedText,
       confidence: avgConfidence
@@ -84,9 +146,10 @@ export async function performOCR(
 
 /**
  * Extract text from an image using Tesseract OCR
- * 
+ *
  * @param imagePath Path to the image file
  * @param options OCR options
+ * @param userId Optional user ID for MCP integration
  * @returns Array of extracted text with confidence scores and bounding boxes
  */
 export async function extractTextFromImage(
@@ -95,10 +158,11 @@ export async function extractTextFromImage(
     language?: string;
     ocrEngine?: number;
     preprocess?: boolean;
-  } = {}
+  } = {},
+  userId?: string
 ): Promise<OCRResult[]> {
   logger.info(`Extracting text from image: ${imagePath}`);
-  
+
   // Default options
   const ocrOptions = {
     language: 'eng',
@@ -106,22 +170,68 @@ export async function extractTextFromImage(
     preprocess: true,
     ...options
   };
-  
+
   try {
     // Validate file exists
     if (!fs.existsSync(imagePath)) {
       throw new Error(`Image file not found: ${imagePath}`);
     }
-    
+
+    // Check if MCP is available and user ID is provided
+    const mcpAvailable = await isMCPAvailable();
+
+    if (mcpAvailable && userId) {
+      try {
+        // Check if user has enough credits
+        const hasEnoughCredits = await creditService.hasEnoughCreditsForService(
+          userId,
+          MCPServiceKey.OCR_PROCESSING,
+          1 // 1 credit per image
+        );
+
+        if (!hasEnoughCredits) {
+          throw new Error('Insufficient credits');
+        }
+
+        logger.info(`Using MCP for detailed OCR processing: ${imagePath}`);
+
+        // Use MCP for OCR processing
+        const mcpResult = await mcpClientService.performOcr(
+          userId,
+          imagePath,
+          {
+            language: ocrOptions.language,
+            ocrEngine: ocrOptions.ocrEngine,
+            preprocess: ocrOptions.preprocess
+          }
+        );
+
+        return mcpResult.regions.map(region => ({
+          text: region.text,
+          confidence: region.confidence,
+          boundingBox: region.boundingBox
+        }));
+      } catch (mcpError: any) {
+        // If MCP fails with insufficient credits, rethrow the error
+        if (mcpError.message === 'Insufficient credits') {
+          throw mcpError;
+        }
+
+        // For other MCP errors, log and fall back to direct implementation
+        logger.warn(`MCP detailed OCR processing failed, falling back to direct implementation: ${mcpError.message}`);
+      }
+    }
+
+    // Fall back to direct implementation if MCP is not available or failed
     // If preprocessing is enabled, preprocess the image
     let processedImagePath = imagePath;
     if (ocrOptions.preprocess) {
       processedImagePath = await preprocessImage(imagePath);
     }
-    
+
     // Run Tesseract OCR
     const ocrResults = await runTesseractOCR(processedImagePath, ocrOptions);
-    
+
     // Clean up preprocessed image if it's different from the original
     if (ocrOptions.preprocess && processedImagePath !== imagePath) {
       try {
@@ -130,7 +240,7 @@ export async function extractTextFromImage(
         logger.warn(`Failed to clean up preprocessed image: ${err}`);
       }
     }
-    
+
     return ocrResults;
   } catch (err) {
     logger.error(`OCR processing failed: ${err}`);
@@ -140,7 +250,7 @@ export async function extractTextFromImage(
 
 /**
  * Preprocess an image to improve OCR accuracy
- * 
+ *
  * @param imagePath Path to the image file
  * @returns Path to the preprocessed image
  */
@@ -148,35 +258,35 @@ async function preprocessImage(imagePath: string): Promise<string> {
   return new Promise((resolve, reject) => {
     // Create output path for preprocessed image
     const outputPath = `${imagePath.substring(0, imagePath.lastIndexOf('.'))}_preprocessed.png`;
-    
+
     // Run Python script for image preprocessing
     const pythonScript = path.join(process.cwd(), 'scripts', 'preprocess_image.py');
-    
+
     // Ensure the Python script exists
     if (!fs.existsSync(pythonScript)) {
       logger.warn(`Python preprocessing script not found: ${pythonScript}. Using original image.`);
       return resolve(imagePath);
     }
-    
+
     const pythonProcess = spawn('python', [pythonScript, imagePath, outputPath]);
-    
+
     let errorData = '';
-    
+
     pythonProcess.stderr.on('data', (data: Buffer) => {
       errorData += data.toString();
     });
-    
+
     pythonProcess.on('close', (code: number) => {
       if (code !== 0) {
         logger.warn(`Image preprocessing failed with code ${code}: ${errorData}. Using original image.`);
         return resolve(imagePath);
       }
-      
+
       if (!fs.existsSync(outputPath)) {
         logger.warn(`Preprocessed image not found at ${outputPath}. Using original image.`);
         return resolve(imagePath);
       }
-      
+
       logger.info(`Image preprocessed successfully: ${outputPath}`);
       resolve(outputPath);
     });
@@ -185,7 +295,7 @@ async function preprocessImage(imagePath: string): Promise<string> {
 
 /**
  * Run Tesseract OCR on an image
- * 
+ *
  * @param imagePath Path to the image file
  * @param options OCR options
  * @returns Array of OCR results
@@ -201,12 +311,12 @@ async function runTesseractOCR(
     // Create temporary output directory for Tesseract
     const outputDir = path.join(path.dirname(imagePath), 'ocr_output');
     const outputBase = path.join(outputDir, 'output');
-    
+
     // Ensure output directory exists
     if (!fs.existsSync(outputDir)) {
       fs.mkdirSync(outputDir, { recursive: true });
     }
-    
+
     // Run Tesseract OCR
     const tesseractProcess = spawn('tesseract', [
       imagePath,
@@ -217,29 +327,29 @@ async function runTesseractOCR(
       '-c', 'preserve_interword_spaces=1',
       'hocr' // Output format (HTML + OCR)
     ]);
-    
+
     let errorData = '';
-    
+
     tesseractProcess.stderr.on('data', (data: Buffer) => {
       errorData += data.toString();
     });
-    
+
     tesseractProcess.on('close', (code: number) => {
       if (code !== 0) {
         return reject(new Error(`Tesseract OCR failed with code ${code}: ${errorData}`));
       }
-      
+
       // Read the HOCR output file
       const hocrFile = `${outputBase}.hocr`;
       if (!fs.existsSync(hocrFile)) {
         return reject(new Error(`Tesseract output file not found: ${hocrFile}`));
       }
-      
+
       try {
         // Parse HOCR file to extract text, confidence, and bounding boxes
         const hocrContent = fs.readFileSync(hocrFile, 'utf8');
         const ocrResults = parseHOCR(hocrContent);
-        
+
         // Clean up temporary files
         try {
           fs.unlinkSync(hocrFile);
@@ -247,7 +357,7 @@ async function runTesseractOCR(
         } catch (err) {
           logger.warn(`Failed to clean up Tesseract output files: ${err}`);
         }
-        
+
         resolve(ocrResults);
       } catch (err) {
         reject(new Error(`Failed to parse Tesseract output: ${err}`));
@@ -258,21 +368,21 @@ async function runTesseractOCR(
 
 /**
  * Parse HOCR output to extract text, confidence, and bounding boxes
- * 
+ *
  * @param hocrContent HOCR content as string
  * @returns Array of OCR results
  */
 function parseHOCR(hocrContent: string): OCRResult[] {
   const results: OCRResult[] = [];
-  
+
   // Simple regex-based parsing for demonstration
   // In a production environment, use a proper HTML/XML parser
   const wordRegex = /<span class=['"]ocrx_word['"][^>]*title=['"]bbox (\d+) (\d+) (\d+) (\d+); conf: ([\d.-]+)['"][^>]*>(.*?)<\/span>/g;
-  
+
   let match;
   while ((match = wordRegex.exec(hocrContent)) !== null) {
     const [, x1, y1, x2, y2, confidence, text] = match;
-    
+
     if (text && text.trim()) {
       results.push({
         text: text.trim(),
@@ -286,16 +396,16 @@ function parseHOCR(hocrContent: string): OCRResult[] {
       });
     }
   }
-  
+
   // Group words into lines based on y-coordinate proximity
   const groupedResults = groupWordsIntoLines(results);
-  
+
   return groupedResults;
 }
 
 /**
  * Group words into lines based on y-coordinate proximity
- * 
+ *
  * @param words Array of word-level OCR results
  * @returns Array of line-level OCR results
  */
@@ -303,42 +413,42 @@ function groupWordsIntoLines(words: OCRResult[]): OCRResult[] {
   if (words.length === 0) {
     return [];
   }
-  
+
   // Sort words by y-coordinate (top to bottom)
   words.sort((a, b) => {
     if (!a.boundingBox || !b.boundingBox) return 0;
     return a.boundingBox.y - b.boundingBox.y;
   });
-  
+
   const lines: OCRResult[][] = [];
   // Handle the case when words[0] might be undefined
   let currentLine: OCRResult[] = [];
   if (words.length > 0 && words[0]) {
     currentLine = [words[0]];
   }
-  
+
   // Group words into lines
   for (let i = 1; i < words.length; i++) {
     const currentWord = words[i];
     // Skip undefined words
     if (!currentWord) continue;
-    
+
     const lastWord = currentLine.length > 0 ? currentLine[currentLine.length - 1] : null;
-    
-    // If there's no last word or either word doesn't have a bounding box, 
+
+    // If there's no last word or either word doesn't have a bounding box,
     // just add to current line
     if (!lastWord || !currentWord.boundingBox || !lastWord.boundingBox) {
       currentLine.push(currentWord);
       continue;
     }
-    
+
     // If the word is on the same line (y-coordinate within threshold)
     const yDiff = Math.abs(currentWord.boundingBox.y - lastWord.boundingBox.y);
     const heightThreshold = Math.max(
-      currentWord.boundingBox.height, 
+      currentWord.boundingBox.height,
       lastWord.boundingBox.height
     ) * 0.5;
-    
+
     if (yDiff < heightThreshold) {
       currentLine.push(currentWord);
     } else {
@@ -349,12 +459,12 @@ function groupWordsIntoLines(words: OCRResult[]): OCRResult[] {
       currentLine = [currentWord];
     }
   }
-  
+
   // Add the last line
   if (currentLine.length > 0) {
     lines.push(currentLine);
   }
-  
+
   // Sort words within each line by x-coordinate (left to right)
   lines.forEach(line => {
     line.sort((a, b) => {
@@ -362,20 +472,20 @@ function groupWordsIntoLines(words: OCRResult[]): OCRResult[] {
       return a.boundingBox.x - b.boundingBox.x;
     });
   });
-  
+
   // Combine words in each line into a single result
   return lines.map(line => {
     // Calculate average confidence
     const avgConfidence = line.reduce((sum, word) => sum + word.confidence, 0) / line.length;
-    
+
     // Combine text with spaces
     const text = line.map(word => word.text).join(' ');
-    
+
     // Calculate bounding box for the entire line
     const boundingBox = line.reduce(
       (box, word) => {
         if (!word.boundingBox) return box;
-        
+
         return {
           x: Math.min(box.x, word.boundingBox.x),
           y: Math.min(box.y, word.boundingBox.y),
@@ -390,7 +500,7 @@ function groupWordsIntoLines(words: OCRResult[]): OCRResult[] {
         height: 0
       }
     );
-    
+
     return {
       text,
       confidence: avgConfidence,
@@ -401,9 +511,10 @@ function groupWordsIntoLines(words: OCRResult[]): OCRResult[] {
 
 /**
  * Extract text from multiple images
- * 
+ *
  * @param imagePaths Array of paths to image files
  * @param options OCR options
+ * @param userId Optional user ID for MCP integration
  * @returns Array of OCR results for each image
  */
 export async function batchExtractTextFromImages(
@@ -413,15 +524,84 @@ export async function batchExtractTextFromImages(
     ocrEngine?: number;
     preprocess?: boolean;
     concurrency?: number;
-  } = {}
+  } = {},
+  userId?: string
 ): Promise<Record<string, OCRResult[]>> {
   const concurrency = options.concurrency || 4;
   const results: Record<string, OCRResult[]> = {};
-  
+
+  // Check if MCP is available and user ID is provided
+  const mcpAvailable = await isMCPAvailable();
+
+  if (mcpAvailable && userId) {
+    try {
+      // Check if user has enough credits for all images
+      const hasEnoughCredits = await creditService.hasEnoughCreditsForService(
+        userId,
+        MCPServiceKey.OCR_PROCESSING,
+        imagePaths.length // 1 credit per image
+      );
+
+      if (!hasEnoughCredits) {
+        throw new Error('Insufficient credits');
+      }
+
+      logger.info(`Using MCP for batch OCR processing of ${imagePaths.length} images`);
+
+      // Process images in batches to control concurrency
+      for (let i = 0; i < imagePaths.length; i += concurrency) {
+        const batch = imagePaths.slice(i, i + concurrency);
+        const batchPromises = batch.map(imagePath =>
+          mcpClientService.performOcr(userId, imagePath, {
+            language: options.language,
+            ocrEngine: options.ocrEngine,
+            preprocess: options.preprocess
+          })
+            .then(mcpResult => {
+              results[imagePath] = mcpResult.regions.map(region => ({
+                text: region.text,
+                confidence: region.confidence,
+                boundingBox: region.boundingBox
+              }));
+
+              // Track credit usage for each image
+              return creditService.useServiceCredits(
+                userId,
+                MCPServiceKey.OCR_PROCESSING,
+                1,
+                `${MCPServiceKey.OCR_PROCESSING} API usage`,
+                {
+                  endpoint: 'content/ocr',
+                  imagePath
+                }
+              );
+            })
+            .catch(err => {
+              logger.error(`Failed to extract text from ${imagePath} using MCP: ${err}`);
+              results[imagePath] = [];
+            })
+        );
+
+        await Promise.all(batchPromises);
+      }
+
+      return results;
+    } catch (mcpError: any) {
+      // If MCP fails with insufficient credits, rethrow the error
+      if (mcpError.message === 'Insufficient credits') {
+        throw mcpError;
+      }
+
+      // For other MCP errors, log and fall back to direct implementation
+      logger.warn(`MCP batch OCR processing failed, falling back to direct implementation: ${mcpError.message}`);
+    }
+  }
+
+  // Fall back to direct implementation if MCP is not available or failed
   // Process images in batches to control concurrency
   for (let i = 0; i < imagePaths.length; i += concurrency) {
     const batch = imagePaths.slice(i, i + concurrency);
-    const batchPromises = batch.map(imagePath => 
+    const batchPromises = batch.map(imagePath =>
       extractTextFromImage(imagePath, options)
         .then(ocrResults => {
           results[imagePath] = ocrResults;
@@ -431,9 +611,9 @@ export async function batchExtractTextFromImages(
           results[imagePath] = [];
         })
     );
-    
+
     await Promise.all(batchPromises);
   }
-  
+
   return results;
 }

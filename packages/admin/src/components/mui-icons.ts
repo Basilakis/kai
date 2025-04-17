@@ -13,6 +13,13 @@ import AddIcon from '@mui/icons-material/Add';
 import CodeIcon from '@mui/icons-material/Code';
 import StorageIcon from '@mui/icons-material/Storage';
 import VisibilityIcon from '@mui/icons-material/Visibility';
+import AnalyticsIcon from '@mui/icons-material/Analytics';
+import CategoryIcon from '@mui/icons-material/Category';
+import ImageIcon from '@mui/icons-material/Image';
+import SettingsIcon from '@mui/icons-material/Settings';
+import UploadFileIcon from '@mui/icons-material/UploadFile';
+import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import WarningIcon from '@mui/icons-material/Warning';
 
 // Re-export the individually imported icons
 export {
@@ -26,5 +33,12 @@ export {
   AddIcon,
   CodeIcon,
   StorageIcon,
-  VisibilityIcon
+  VisibilityIcon,
+  AnalyticsIcon,
+  CategoryIcon,
+  ImageIcon,
+  SettingsIcon,
+  UploadFileIcon,
+  CloudUploadIcon,
+  WarningIcon
 };

@@ -522,6 +522,8 @@ export const authorize = (options: AuthorizeOptions = {}) => {
  * Role-based authorization middleware (backward compatibility)
  * Checks if the user has the required role(s)
  * @param roles Array of roles that are allowed to access the route
+ * @deprecated Use the more flexible `authorize({ roles: ['role1', 'role2'] })` function instead,
+ * which supports additional options like network access type restrictions.
  */
 export const authorizeRoles = (roles: string[]) => {
   return authorize({ roles });

@@ -98,15 +98,15 @@ export class CsvParserService {
     try {
       // Read CSV file
       const csvContent = fs.readFileSync(csvFilePath, 'utf8');
-      
+
       // Parse CSV content
       const rows = this.parseCsvContent(csvContent, options);
-      
+
       if (rows.length === 0) {
         result.errors.push('CSV file contains no valid data rows.');
         return result;
       }
-      
+
       // Create the dataset
       const dataset = await supabaseDatasetService.createDataset({
         name: datasetName,
@@ -116,20 +116,20 @@ export class CsvParserService {
       });
 
       result.dataset = dataset;
-      
+
       // Process each row
       const classesMap = new Map<string, DatasetClass>();
-      
+
       for (let i = 0; i < rows.length; i++) {
         try {
           const row = rows[i];
-          
+
           // Ensure row has required fields
           if (!row || !row.image_path || !row.class_name) {
             result.warnings.push(`Row ${i + 1}: Missing required fields. Skipping.`);
             continue;
           }
-          
+
           // Get or create class
           let datasetClass: DatasetClass;
           if (classesMap.has(row.class_name)) {
@@ -147,7 +147,7 @@ export class CsvParserService {
             classesMap.set(row.class_name, datasetClass);
             result.classCount++;
           }
-          
+
           // Process image
           const imageData = await this.processImageFromCsvRow(row, datasetClass, dataset.id);
           if (imageData) {
@@ -169,7 +169,7 @@ export class CsvParserService {
     } catch (err) {
       logger.error(`Failed to process CSV file: ${err}`);
       result.errors.push(`Failed to process CSV file: ${err instanceof Error ? err.message : String(err)}`);
-      
+
       // If dataset was created, mark it as error
       if (result.dataset) {
         await supabaseDatasetService.updateDataset(result.dataset.id, {
@@ -182,18 +182,39 @@ export class CsvParserService {
   }
 
   /**
+   * Handle specific CSV parsing errors
+   * @param error Error object
+   * @param rowIndex Row index where error occurred
+   * @param result Processing result object
+   */
+  private handleCsvParsingError(error: Error, rowIndex: number, result: CsvProcessingResult): void {
+    if (error.message.includes('Invalid file format')) {
+      result.errors.push(`Row ${rowIndex + 1}: Invalid file format. Please check the file and try again.`);
+    } else if (error.message.includes('Missing required fields')) {
+      result.warnings.push(`Row ${rowIndex + 1}: Missing required fields. Skipping.`);
+    } else if (error.message.includes('Failed to download image')) {
+      result.warnings.push(`Row ${rowIndex + 1}: Failed to download image. Skipping.`);
+    } else {
+      result.warnings.push(`Row ${rowIndex + 1}: ${error.message}`);
+    }
+  }
+
+  /**
    * Parse CSV content into structured rows
    * @param content CSV file content
    * @param options Parsing options
    * @returns Array of parsed rows
    */
-  private parseCsvContent(content: string, options?: CsvParseOptions): CsvRow[] {
+  private parseCsvContent(content: string | Buffer, options?: CsvParseOptions): CsvRow[] {
     const delimiter = options?.delimiter || ',';
     const hasHeaderRow = options?.hasHeaderRow ?? true;
     const skipEmptyLines = options?.skipEmptyLines ?? true;
     
+    // Convert Buffer to string if needed
+    const contentStr = typeof content === 'string' ? content : content.toString('utf8');
+    
     // Split content into lines
-    const lines = content.split(/\r?\n/);
+    const lines = contentStr.split(/\r?\n/);
     
     // Remove empty lines if configured
     const nonEmptyLines = skipEmptyLines 
@@ -205,7 +226,7 @@ export class CsvParserService {
     }
     
     // Get header row or use default mapping
-    const headerRow = hasHeaderRow && nonEmptyLines.length > 0
+    const headerRow = (hasHeaderRow && nonEmptyLines.length > 0 && nonEmptyLines[0])
       ? this.splitCsvLine(nonEmptyLines[0], delimiter)
       : this.getDefaultHeaders();
     

@@ -11,7 +11,7 @@ The analytics system captures and stores user interaction data to provide insigh
 - API request volumes, patterns, and performance metrics
 - Material view trends and popular materials
 
-This data enables trend analysis, performance monitoring, and feature optimization based on actual usage patterns.
+This data enables trend analysis, performance monitoring, feature optimization, and predictive analytics based on actual usage patterns.
 
 ## Data Captured
 
@@ -34,7 +34,9 @@ The analytics system consists of these key components:
 2. **Analytics Service**: Service methods to track specific events (searches, agent prompts, etc.)
 3. **Database Schema**: Table structure and indexes for storing analytics data
 4. **Database Functions**: PostgreSQL functions that process raw data into insights
-5. **Admin Dashboard**: UI for visualizing analytics data and trends
+5. **Predictive Analytics**: Advanced capabilities for forecasting, anomaly detection, and user behavior prediction
+6. **Real-Time Analytics**: WebSocket-based system for processing and delivering analytics events in real-time
+7. **Admin Dashboard**: UI for visualizing analytics data, trends, and predictions
 
 ## Data Storage Options
 
@@ -187,6 +189,11 @@ Analytics data can be accessed through:
    - `GET /api/admin/analytics/top-searches` - Get most common searches
    - `GET /api/admin/analytics/top-prompts` - Get most common agent prompts
    - `GET /api/admin/analytics/top-materials` - Get most viewed materials
+   - `POST /api/analytics/predictive/forecast` - Generate time-series forecasts
+   - `POST /api/analytics/predictive/anomalies` - Detect anomalies in analytics data
+   - `POST /api/analytics/predictive/user-behavior` - Predict user behavior patterns
+   - `POST /api/analytics/real-time/event` - Track real-time analytics events
+   - `GET /api/analytics/real-time/events` - Get recent real-time events
 
 ## Best Practices
 
@@ -237,6 +244,54 @@ The choice between Supabase PostgreSQL and BigQuery depends on several factors:
 - Different teams have different analysis needs
 - Cost optimization for large datasets is a priority
 
+## Predictive Analytics Features
+
+The analytics system includes advanced predictive capabilities that leverage historical data to provide forward-looking insights:
+
+### 1. Time-Series Forecasting
+
+The time-series forecasting feature predicts future trends based on historical analytics data:
+
+- **Forecasting Models**: Uses statistical models to predict future values
+- **Configurable Parameters**: Adjustable forecast periods and intervals
+- **Event Type Filtering**: Generate forecasts for specific event types
+- **Resource Type Filtering**: Focus on particular resource categories
+- **MCP Integration**: Leverages the Model Context Protocol for advanced forecasting
+- **Visualization**: Interactive charts in the admin dashboard
+
+### 2. Anomaly Detection
+
+The anomaly detection system identifies unusual patterns in analytics data:
+
+- **Statistical Analysis**: Uses standard deviation-based detection
+- **Severity Classification**: Categorizes anomalies as low, medium, or high
+- **Threshold Configuration**: Adjustable sensitivity settings
+- **Visual Indicators**: Highlights anomalies in time-series charts
+- **Alert Potential**: Foundation for anomaly-based alerting
+- **MCP Integration**: Advanced detection through the Model Context Protocol
+
+### 3. User Behavior Prediction
+
+The user behavior prediction system anticipates user actions and preferences:
+
+- **Next Action Prediction**: Forecasts likely user actions
+- **Churn Risk Assessment**: Identifies users at risk of disengagement
+- **Engagement Scoring**: Predicts user engagement levels
+- **Content Preferences**: Recommends content based on predicted interests
+- **User Insights**: Provides activity level, interests, and usage patterns
+- **MCP Integration**: Sophisticated prediction through the Model Context Protocol
+
+### 4. Real-Time Analytics Processing
+
+The real-time analytics system processes events as they happen:
+
+- **WebSocket Delivery**: Instant updates via WebSocket connections
+- **Event Buffering**: Efficient processing of event batches
+- **Subscription Model**: Clients can subscribe to specific event types
+- **Filtering Capabilities**: Target specific event types or resources
+- **MCP Integration**: Enhanced processing through the Model Context Protocol
+- **Low Latency**: Minimal delay between event occurrence and processing
+
 ## Conclusion
 
-The analytics system provides valuable insights into user behavior while maintaining system performance. The initial Supabase PostgreSQL implementation offers a good balance of simplicity and functionality, with options to migrate to BigQuery or implement a hybrid approach as data volume grows.
+The analytics system provides valuable insights into user behavior while maintaining system performance. The initial Supabase PostgreSQL implementation offers a good balance of simplicity and functionality, with options to migrate to BigQuery or implement a hybrid approach as data volume grows. The addition of predictive analytics and real-time processing capabilities enhances the system's value by providing forward-looking insights and immediate feedback on user activity.

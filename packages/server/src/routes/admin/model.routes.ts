@@ -1,10 +1,22 @@
 import express, { Request, Response } from 'express';
 import { asyncHandler } from '../../middleware/error.middleware';
-import { authMiddleware } from '../../middleware/auth.middleware';
+import { authMiddleware, authorize } from '../../middleware/auth.middleware';
+import { NetworkAccessType } from '../../utils/network';
 import { ApiError } from '../../middleware/error.middleware';
 import multer, { diskStorage } from 'multer';
 import path from 'path';
 import fs from 'fs';
+
+// Extended interface for Stats to include birthtime
+interface StatsWithBirthtime extends fs.Stats {
+  birthtime: Date;
+}
+
+// Extended interface for Dirent to ensure TypeScript recognizes its properties
+interface DirentWithMethods extends fs.Dirent {
+  isDirectory(): boolean;
+  name: string;
+}
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../../utils/logger';
 import { 
@@ -16,17 +28,11 @@ import {
 
 const router = express.Router();
 
-// Admin-only middleware - ensures user has admin role
-const adminMiddleware = (req: Request, res: Response, next: Function) => {
-  // Get user from request (set by authMiddleware)
-  const user = (req as any).user;
-  
-  if (!user || user.role !== 'admin') {
-    throw new ApiError(403, 'Admin access required');
-  }
-  
-  next();
-};
+// Admin access with internal-only restriction
+const adminAccessMiddleware = authorize({
+  roles: ['admin'],
+  accessType: NetworkAccessType.INTERNAL_ONLY
+});
 
 // Configure multer for dataset uploads
 const storage = diskStorage({
@@ -56,7 +62,7 @@ const upload = multer({
 router.post(
   '/train',
   authMiddleware,
-  adminMiddleware,
+  adminAccessMiddleware,
   upload.single('dataset'),
   asyncHandler(async (req: Request, res: Response) => {
     const datasetPath = req.file?.path || req.body.datasetPath;
@@ -118,7 +124,7 @@ router.post(
 router.post(
   '/features',
   authMiddleware,
-  adminMiddleware,
+  adminAccessMiddleware,
   upload.single('dataset'),
   asyncHandler(async (req: Request, res: Response) => {
     const datasetPath = req.file?.path || req.body.datasetPath;
@@ -171,7 +177,7 @@ router.post(
 router.post(
   '/neural-network',
   authMiddleware,
-  adminMiddleware,
+  adminAccessMiddleware,
   upload.single('dataset'),
   asyncHandler(async (req: Request, res: Response) => {
     const datasetPath = req.file?.path || req.body.datasetPath;
@@ -241,7 +247,7 @@ router.post(
 router.post(
   '/vector-index',
   authMiddleware,
-  adminMiddleware,
+  adminAccessMiddleware,
   asyncHandler(async (req: Request, res: Response) => {
     const embeddingsDir = req.body.embeddingsDir;
     
@@ -284,7 +290,7 @@ router.post(
 router.get(
   '/list',
   authMiddleware,
-  adminMiddleware,
+  adminAccessMiddleware,
   asyncHandler(async (req: Request, res: Response) => {
     try {
       const modelsDir = path.join(process.cwd(), 'models');
@@ -294,9 +300,11 @@ router.get(
         fs.mkdirSync(modelsDir, { recursive: true });
       }
       
-      // Get all directories in the models directory
-      const modelTypes = fs.readdirSync(modelsDir, { withFileTypes: true })
-        .filter(dirent => dirent.isDirectory())
+      // Get all directories in the models directory with proper typing
+      // Using two-step type assertion with 'unknown' intermediate type for safety
+      const dirents = fs.readdirSync(modelsDir, { withFileTypes: true }) as unknown as fs.Dirent[];
+      const modelTypes = dirents
+        .filter(dirent => dirent.isDirectory && dirent.isDirectory())
         .map(dirent => dirent.name);
       
       // For each model type, get the models inside
@@ -305,13 +313,15 @@ router.get(
       for (const modelType of modelTypes) {
         const modelTypeDir = path.join(modelsDir, modelType);
         
-        // Get all files in the model type directory
-        const modelFiles = fs.readdirSync(modelTypeDir, { withFileTypes: true });
+        // Get all files in the model type directory with proper typing
+        // Using two-step type assertion with 'unknown' intermediate type for safety
+        const modelFiles = fs.readdirSync(modelTypeDir, { withFileTypes: true }) as unknown as fs.Dirent[];
         
         // Extract model info from files
         models[modelType] = modelFiles.map(file => {
           const filePath = path.join(modelTypeDir, file.name);
-          const stats = fs.statSync(filePath);
+          // Use proper typing for fs.Stats with birthtime
+          const stats = fs.statSync(filePath) as fs.Stats & { birthtime: Date };
           
           return {
             name: file.name,
@@ -344,7 +354,7 @@ router.get(
 router.delete(
   '/:type/:name',
   authMiddleware,
-  adminMiddleware,
+  adminAccessMiddleware,
   asyncHandler(async (req: Request, res: Response) => {
     const { type, name } = req.params;
     

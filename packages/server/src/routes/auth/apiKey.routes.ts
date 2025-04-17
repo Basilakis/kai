@@ -8,12 +8,13 @@
 import express from 'express';
 import { asyncHandler } from '../../middleware/error.middleware';
 import { authMiddleware } from '../../middleware/auth.middleware';
+import { requireModuleAccess } from '../../middleware/module-access.middleware';
 import apiKeyController from '../../controllers/apiKey.controller';
 
 const router = express.Router();
 
-// All routes require authentication
-router.use(authMiddleware);
+// All routes require authentication and api_keys module access
+router.use(authMiddleware, requireModuleAccess('api_keys'));
 
 /**
  * @route   GET /api/auth/api-keys

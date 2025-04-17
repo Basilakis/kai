@@ -1,7 +1,8 @@
 import express, { Request, Response } from 'express';
 import { asyncHandler } from '../middleware/error.middleware';
-import { authMiddleware, authorizeRoles } from '../middleware/auth.middleware';
+import { authMiddleware, authorizeRoles, authorize } from '../middleware/auth.middleware';
 import { ApiError } from '../middleware/error.middleware';
+import { NetworkAccessType } from '../utils/network';
 
 // Import the admin routes
 import modelRoutes from './admin/model.routes';
@@ -9,7 +10,7 @@ import queueRoutes from './admin/queue.routes';
 import categoryRoutes from './admin/category.routes';
 import metadataFieldRoutes from './admin/metadataField.routes';
 import knowledgeBaseRoutes from './admin/knowledgeBase.routes';
-import datasetRoutes from './admin/dataset.routes';
+import datasetRoutes from './admin/dataset.routes'; // Import the new dataset routes
 import analyticsRoutes from './admin/analytics.routes';
 import networkAccessRoutes from './admin/networkAccess.routes';
 import enhancedVectorRoutes from './admin/enhancedVector.routes';
@@ -146,8 +147,11 @@ const updateExtractedData = async () => ({});
 // @ts-ignore: Suppress TypeScript error while maintaining the project's pattern
 const router = express.Router();
 
-// All routes in this file require admin authentication
-router.use(authMiddleware, authorizeRoles(['admin']));
+// All routes in this file require admin authentication and internal-only access
+router.use(authMiddleware, authorize({ 
+  roles: ['admin'], 
+  accessType: NetworkAccessType.INTERNAL_ONLY 
+}));
 
 // Mount the submodule routes
 router.use('/model', modelRoutes);
@@ -155,7 +159,7 @@ router.use('/queue', queueRoutes);
 router.use('/category', categoryRoutes);
 router.use('/metadata-field', metadataFieldRoutes);
 router.use('/knowledge-base', knowledgeBaseRoutes);
-router.use('/datasets', datasetRoutes);
+router.use('/datasets', datasetRoutes); // Mount the new dataset routes
 router.use('/analytics', analyticsRoutes);
 router.use('/network-access', networkAccessRoutes);
 router.use('/enhanced-vector', enhancedVectorRoutes);

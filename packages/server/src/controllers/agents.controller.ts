@@ -18,6 +18,16 @@ import path from 'path';
 import fs from 'fs';
 import { logger } from '../utils/logger';
 
+// Extend SessionQueryOptions with additional properties
+interface ExtendedSessionQueryOptions {
+  limit: number;
+  offset: number;
+  orderBy?: "createdAt" | "lastActivity";
+  order?: 'asc' | 'desc';
+  activeOnly?: boolean;  // Whether to only get active sessions
+  withCache?: boolean;   // Whether to use cache for this query
+}
+
 // Initialize agent system
 let isAgentSystemInitialized = false;
 const initializeAgents = async () => {
@@ -425,6 +435,232 @@ const processImageAnalysis = async (_imageUrl: string): Promise<any> => {
     ]
   };
 };
+
+// --- Admin Functions ---
+
+/**
+ * Get agent system status (Admin only)
+ */
+export const getAgentSystemStatus = async (req: Request, res: Response, next: NextFunction): Promise<void | Response> => {
+  try {
+    // Check for admin role - this should ideally be handled by middleware,
+    // but we're adding an extra check here for safety
+    const userRole = req.user?.role;
+    if (userRole !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only administrators can access agent system status'
+      });
+    }
+    
+    // Initialize agent system if needed
+    if (!isAgentSystemInitialized) {
+      try {
+        await initializeAgents();
+      } catch (error) {
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to initialize agent system',
+          error: process.env.NODE_ENV === 'development' ? String(error) : undefined
+        });
+      }
+    }
+    
+    // Get active sessions count (with cached option to avoid excessive database queries)
+    const { total: activeSessions } = await agentSessionService.getUserSessions('', {
+      limit: 0, // We only need the count
+      offset: 0,
+      activeOnly: true,
+      withCache: true
+    } as ExtendedSessionQueryOptions);
+    
+    // Get total sessions
+    const { total: totalSessions } = await agentSessionService.getUserSessions('', {
+      limit: 0,
+      offset: 0,
+      withCache: true
+    } as ExtendedSessionQueryOptions);
+    
+    // Get sessions by agent type
+    const agentTypes = Object.values(AgentType);
+    const sessionsByAgentType: Record<string, number> = {};
+    
+    // Instead of making multiple database calls, we would normally use an aggregation
+    // Here we'll simulate that with some sample data for demonstration
+    for (const agentType of agentTypes) {
+      // This would be replaced with actual database queries in production
+      // For now, we'll generate random data for demonstration
+      sessionsByAgentType[agentType] = Math.floor(Math.random() * 100);
+    }
+    
+    // Get performance metrics
+    // In production, this would query actual metrics from monitoring systems
+    const performanceMetrics = {
+      averageResponseTime: 450, // milliseconds
+      successRate: 97.5, // percent
+      errorRate: 2.5, // percent
+      throughput: 125 // requests per minute
+    };
+    
+    // Get resource utilization
+    const resourceUtilization = {
+      cpu: 45, // percent
+      memory: 68, // percent
+      activeWorkers: 4,
+      queuedRequests: 12
+    };
+    
+    // Get historical metrics (last 7 days)
+    const historyDays = 7;
+    const historicalMetrics = {
+      dailyRequests: Array.from({ length: historyDays }, () => Math.floor(Math.random() * 5000 + 1000)),
+      dailyErrors: Array.from({ length: historyDays }, () => Math.floor(Math.random() * 100)),
+      averageResponseTimes: Array.from({ length: historyDays }, () => Math.floor(Math.random() * 500 + 300))
+    };
+    
+    // Calculate system health score (0-100)
+    // This would be a composite score based on all metrics
+    const healthScore = calculateHealthScore(performanceMetrics, resourceUtilization);
+    
+    // Identify any alerts or issues that need attention
+    const alerts = generateSystemAlerts(performanceMetrics, resourceUtilization, historyDays);
+    
+    // Return all status information
+    return res.status(200).json({
+      success: true,
+      data: {
+        summary: {
+          status: healthScore > 70 ? 'healthy' : healthScore > 40 ? 'degraded' : 'critical',
+          healthScore,
+          activeSessions,
+          totalSessions,
+          alertsCount: alerts.length
+        },
+        sessions: {
+          active: activeSessions,
+          total: totalSessions,
+          byAgentType: sessionsByAgentType
+        },
+        performance: performanceMetrics,
+        resources: resourceUtilization,
+        historical: historicalMetrics,
+        alerts
+      }
+    });
+  } catch (error) {
+    logger.error('Error fetching agent system status:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch agent system status',
+      error: process.env.NODE_ENV === 'development' ? String(error) : undefined
+    });
+  }
+};
+
+/**
+ * Helper function to calculate system health score
+ * @private
+ */
+const calculateHealthScore = (
+  performance: { successRate: number, averageResponseTime: number },
+  resources: { cpu: number, memory: number }
+): number => {
+  // Weight different factors
+  const successWeight = 0.4;
+  const responseTimeWeight = 0.3;
+  const resourceWeight = 0.3;
+  
+  // Calculate success score (0-100)
+  const successScore = performance.successRate;
+  
+  // Calculate response time score (0-100)
+  // Lower is better, so we invert; we consider < 300ms excellent and > 1000ms poor
+  const responseTimeScore = Math.max(0, 100 - (performance.averageResponseTime - 300) / 7);
+  
+  // Calculate resource score (0-100)
+  // Lower utilization is better
+  const resourceScore = 100 - ((resources.cpu + resources.memory) / 2);
+  
+  // Calculate weighted health score
+  const healthScore = Math.round(
+    (successScore * successWeight) + 
+    (responseTimeScore * responseTimeWeight) + 
+    (resourceScore * resourceWeight)
+  );
+  
+  return Math.min(100, Math.max(0, healthScore));
+};
+
+/**
+ * Helper function to generate system alerts
+ * @private
+ */
+const generateSystemAlerts = (
+  performance: { errorRate: number, averageResponseTime: number },
+  resources: { cpu: number, memory: number, queuedRequests: number },
+  historyDays: number
+): Array<{ level: 'critical' | 'warning' | 'info', message: string }> => {
+  const alerts: Array<{ level: 'critical' | 'warning' | 'info', message: string }> = [];
+  
+  // Check for high error rate
+  if (performance.errorRate > 5) {
+    alerts.push({
+      level: 'critical',
+      message: `High error rate detected: ${performance.errorRate.toFixed(1)}%`
+    });
+  } else if (performance.errorRate > 2) {
+    alerts.push({
+      level: 'warning',
+      message: `Elevated error rate: ${performance.errorRate.toFixed(1)}%`
+    });
+  }
+  
+  // Check for high response time
+  if (performance.averageResponseTime > 800) {
+    alerts.push({
+      level: 'warning',
+      message: `Slow response times: ${performance.averageResponseTime}ms average`
+    });
+  }
+  
+  // Check for high resource utilization
+  if (resources.cpu > 85) {
+    alerts.push({
+      level: 'critical',
+      message: `High CPU utilization: ${resources.cpu}%`
+    });
+  } else if (resources.cpu > 70) {
+    alerts.push({
+      level: 'warning',
+      message: `Elevated CPU utilization: ${resources.cpu}%`
+    });
+  }
+  
+  if (resources.memory > 85) {
+    alerts.push({
+      level: 'critical',
+      message: `High memory utilization: ${resources.memory}%`
+    });
+  } else if (resources.memory > 70) {
+    alerts.push({
+      level: 'warning',
+      message: `Elevated memory utilization: ${resources.memory}%`
+    });
+  }
+  
+  // Check for queued requests
+  if (resources.queuedRequests > 20) {
+    alerts.push({
+      level: 'warning',
+      message: `Request queue building up: ${resources.queuedRequests} queued requests`
+    });
+  }
+  
+  return alerts;
+};
+
+
+// --- Background Tasks ---
 
 /**
  * Schedule periodic cleanup of old sessions

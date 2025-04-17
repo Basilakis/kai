@@ -8,12 +8,13 @@
 import express from 'express';
 import { asyncHandler } from '../../middleware/error.middleware';
 import { authMiddleware } from '../../middleware/auth.middleware';
+import { requireModuleAccess } from '../../middleware/module-access.middleware';
 import teamController from '../../controllers/subscription/team.controller';
 
 const router = express.Router();
 
-// All routes require authentication
-router.use(authMiddleware);
+// All routes require authentication and team_subscriptions module access
+router.use(authMiddleware, requireModuleAccess('team_subscriptions'));
 
 /**
  * @route   GET /api/subscriptions/teams

@@ -109,6 +109,7 @@ export const DEFAULT_CUSTOM_RATE_LIMITS: Partial<RateLimit>[] = [
  * Default sensitive endpoints that should be internal-only
  */
 export const DEFAULT_RESTRICTED_ENDPOINTS: Partial<EndpointAccess>[] = [
+  // Existing endpoints
   {
     path: '/api/admin/analytics/data',
     method: 'DELETE',
@@ -138,5 +139,273 @@ export const DEFAULT_RESTRICTED_ENDPOINTS: Partial<EndpointAccess>[] = [
     method: 'POST',
     accessType: AccessType.INTERNAL_ONLY,
     description: 'Trigger database backup'
+  },
+
+  // Dataset endpoints - all internal only
+  {
+    path: '/api/admin/datasets',
+    method: 'GET',
+    accessType: AccessType.INTERNAL_ONLY,
+    description: 'List all datasets'
+  },
+  {
+    path: '/api/admin/datasets/:id',
+    method: 'GET',
+    accessType: AccessType.INTERNAL_ONLY,
+    description: 'Get dataset details'
+  },
+  {
+    path: '/api/admin/datasets/upload/zip',
+    method: 'POST',
+    accessType: AccessType.INTERNAL_ONLY,
+    description: 'Upload ZIP dataset'
+  },
+  {
+    path: '/api/admin/datasets/upload/csv',
+    method: 'POST',
+    accessType: AccessType.INTERNAL_ONLY,
+    description: 'Upload CSV dataset'
+  },
+  {
+    path: '/api/admin/datasets/import/premade',
+    method: 'POST',
+    accessType: AccessType.INTERNAL_ONLY,
+    description: 'Import premade dataset'
+  },
+  {
+    path: '/api/admin/datasets/:id/split',
+    method: 'POST',
+    accessType: AccessType.INTERNAL_ONLY,
+    description: 'Split dataset into train/validation/test sets'
+  },
+  {
+    path: '/api/admin/datasets/:id/train',
+    method: 'POST',
+    accessType: AccessType.INTERNAL_ONLY,
+    description: 'Start training job for dataset'
+  },
+  {
+    path: '/api/admin/datasets/:id/quality',
+    method: 'GET',
+    accessType: AccessType.INTERNAL_ONLY,
+    description: 'Get dataset quality metrics'
+  },
+  {
+    path: '/api/admin/datasets/:id',
+    method: 'DELETE',
+    accessType: AccessType.INTERNAL_ONLY,
+    description: 'Delete dataset'
+  },
+  {
+    path: '/api/admin/datasets/:id/classes',
+    method: 'GET',
+    accessType: AccessType.INTERNAL_ONLY,
+    description: 'List dataset classes'
+  },
+  {
+    path: '/api/admin/datasets/:id/images',
+    method: 'GET',
+    accessType: AccessType.INTERNAL_ONLY,
+    description: 'List dataset images'
+  },
+
+  // Training job endpoints - all internal only
+  {
+    path: '/api/admin/training/:jobId/status',
+    method: 'GET',
+    accessType: AccessType.INTERNAL_ONLY,
+    description: 'Get training job status'
+  },
+  {
+    path: '/api/admin/training/:jobId/metrics',
+    method: 'GET',
+    accessType: AccessType.INTERNAL_ONLY,
+    description: 'Get training job metrics'
+  },
+
+  // API Key endpoints
+  {
+    path: '/api/auth/api-keys',
+    method: 'GET',
+    accessType: AccessType.ANY,
+    description: 'Get user API keys'
+  },
+  {
+    path: '/api/auth/api-keys/:keyId',
+    method: 'GET',
+    accessType: AccessType.ANY,
+    description: 'Get API key by ID'
+  },
+  {
+    path: '/api/auth/api-keys',
+    method: 'POST',
+    accessType: AccessType.ANY,
+    description: 'Create API key'
+  },
+  {
+    path: '/api/auth/api-keys/:keyId',
+    method: 'PUT',
+    accessType: AccessType.ANY,
+    description: 'Update API key'
+  },
+  {
+    path: '/api/auth/api-keys/:keyId',
+    method: 'DELETE',
+    accessType: AccessType.ANY,
+    description: 'Delete API key'
+  },
+  {
+    path: '/api/auth/api-keys/scopes',
+    method: 'GET',
+    accessType: AccessType.ANY,
+    description: 'Get available API key scopes'
+  },
+
+  // Team subscription endpoints
+  {
+    path: '/api/subscriptions/teams',
+    method: 'GET',
+    accessType: AccessType.ANY,
+    description: 'Get user teams'
+  },
+  {
+    path: '/api/subscriptions/teams/:teamId',
+    method: 'GET',
+    accessType: AccessType.ANY,
+    description: 'Get team by ID'
+  },
+  {
+    path: '/api/subscriptions/teams',
+    method: 'POST',
+    accessType: AccessType.ANY,
+    description: 'Create team'
+  },
+  {
+    path: '/api/subscriptions/teams/:teamId',
+    method: 'PUT',
+    accessType: AccessType.ANY,
+    description: 'Update team'
+  },
+  {
+    path: '/api/subscriptions/teams/:teamId',
+    method: 'DELETE',
+    accessType: AccessType.ANY,
+    description: 'Delete team'
+  },
+  {
+    path: '/api/subscriptions/teams/:teamId/members',
+    method: 'GET',
+    accessType: AccessType.ANY,
+    description: 'Get team members'
+  },
+  {
+    path: '/api/subscriptions/teams/:teamId/members',
+    method: 'POST',
+    accessType: AccessType.ANY,
+    description: 'Invite team member'
+  },
+  {
+    path: '/api/subscriptions/teams/:teamId/members/accept',
+    method: 'POST',
+    accessType: AccessType.ANY,
+    description: 'Accept team invitation'
+  },
+  {
+    path: '/api/subscriptions/teams/:teamId/members/:memberId',
+    method: 'PUT',
+    accessType: AccessType.ANY,
+    description: 'Update team member'
+  },
+  {
+    path: '/api/subscriptions/teams/:teamId/members/:memberId',
+    method: 'DELETE',
+    accessType: AccessType.ANY,
+    description: 'Remove team member'
+  },
+  {
+    path: '/api/subscriptions/teams/:teamId/seats',
+    method: 'PUT',
+    accessType: AccessType.ANY,
+    description: 'Update team seats'
+  },
+  {
+    path: '/api/subscriptions/teams/:teamId/tier',
+    method: 'PUT',
+    accessType: AccessType.ANY,
+    description: 'Change team subscription tier'
+  },
+  {
+    path: '/api/subscriptions/teams/:teamId/cancel',
+    method: 'POST',
+    accessType: AccessType.ANY,
+    description: 'Cancel team subscription'
+  },
+  {
+    path: '/api/subscriptions/teams/:teamId/billing-preview',
+    method: 'GET',
+    accessType: AccessType.ANY,
+    description: 'Get team billing preview'
+  },
+
+  // Credit system endpoints
+  {
+    path: '/api/credits/transfer',
+    method: 'POST',
+    accessType: AccessType.ANY,
+    description: 'Transfer credits to another user'
+  },
+  {
+    path: '/api/credits/transfer/history',
+    method: 'GET',
+    accessType: AccessType.ANY,
+    description: 'Get credit transfer history'
+  },
+  {
+    path: '/api/credits/transfer/:transferId',
+    method: 'GET',
+    accessType: AccessType.ANY,
+    description: 'Get credit transfer by ID'
+  },
+  {
+    path: '/api/credits/transfer/find-user',
+    method: 'GET',
+    accessType: AccessType.ANY,
+    description: 'Find user by email for credit transfer'
+  },
+  {
+    path: '/api/credits/topup',
+    method: 'POST',
+    accessType: AccessType.ANY,
+    description: 'Top up user credits'
+  },
+  {
+    path: '/api/credits/alerts',
+    method: 'GET',
+    accessType: AccessType.ANY,
+    description: 'Get credit alerts'
+  },
+  {
+    path: '/api/credits/alerts',
+    method: 'POST',
+    accessType: AccessType.ANY,
+    description: 'Create credit alert'
+  },
+  {
+    path: '/api/credits/alerts/:alertId',
+    method: 'PUT',
+    accessType: AccessType.ANY,
+    description: 'Update credit alert'
+  },
+  {
+    path: '/api/credits/alerts/:alertId',
+    method: 'DELETE',
+    accessType: AccessType.ANY,
+    description: 'Delete credit alert'
+  },
+  {
+    path: '/api/credits/bulk',
+    method: 'POST',
+    accessType: AccessType.INTERNAL_ONLY,
+    description: 'Bulk credit management (admin only)'
   }
 ];

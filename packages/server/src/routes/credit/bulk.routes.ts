@@ -7,8 +7,8 @@
 
 import express from 'express';
 import { asyncHandler } from '../../middleware/error.middleware';
-import { authMiddleware } from '../../middleware/auth.middleware';
-import { adminMiddleware } from '../../middleware/admin.middleware';
+import { authMiddleware, authorizeRoles } from '../../middleware/auth.middleware';
+import { requireModuleAccess } from '../../middleware/module-access.middleware';
 import bulkController from '../../controllers/credit/bulk.controller';
 
 const router = express.Router();
@@ -31,7 +31,8 @@ router.get(
 router.post(
   '/packages',
   authMiddleware,
-  adminMiddleware,
+  requireModuleAccess('credits'),
+  authorizeRoles(['admin']),
   asyncHandler(bulkController.createBulkCreditPackage)
 );
 
@@ -43,7 +44,8 @@ router.post(
 router.put(
   '/packages/:packageId',
   authMiddleware,
-  adminMiddleware,
+  requireModuleAccess('credits'),
+  authorizeRoles(['admin']),
   asyncHandler(bulkController.updateBulkCreditPackage)
 );
 
@@ -55,7 +57,8 @@ router.put(
 router.delete(
   '/packages/:packageId',
   authMiddleware,
-  adminMiddleware,
+  requireModuleAccess('credits'),
+  authorizeRoles(['admin']),
   asyncHandler(bulkController.deleteBulkCreditPackage)
 );
 
@@ -77,6 +80,7 @@ router.get(
 router.post(
   '/purchase',
   authMiddleware,
+  requireModuleAccess('credits'),
   asyncHandler(bulkController.purchaseCredits)
 );
 
@@ -88,6 +92,7 @@ router.post(
 router.post(
   '/purchase-package',
   authMiddleware,
+  requireModuleAccess('credits'),
   asyncHandler(bulkController.purchaseCreditPackage)
 );
 

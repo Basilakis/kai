@@ -1,6 +1,6 @@
 /**
  * PDF Routes
- * 
+ *
  * This file contains routes for PDF operations like uploading and processing PDFs,
  * checking processing status, and retrieving extraction results.
  */
@@ -12,11 +12,11 @@ import * as fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { asyncHandler } from '../../middleware/error.middleware';
 import { authMiddleware } from '../../middleware/auth.middleware';
-import { 
-  queuePdfForProcessing, 
-  batchProcessPdfCatalogs, 
-  getPdfProcessingStatus, 
-  getAllPdfProcessingJobs 
+import {
+  queuePdfForProcessing,
+  batchProcessPdfCatalogs,
+  getPdfProcessingStatus,
+  getAllPdfProcessingJobs
 } from '../../services/pdf/pdfProcessor';
 import { ApiError } from '../../middleware/error.middleware';
 import { logger } from '../../utils/logger';
@@ -27,12 +27,12 @@ const router = express.Router();
 const storage = diskStorage({
   destination: (req, file, cb) => {
     const uploadDir = path.join('.', 'uploads', 'pdf');
-    
+
     // Create directory if it doesn't exist
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
-    
+
     cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
@@ -40,7 +40,7 @@ const storage = diskStorage({
     const uniqueSuffix = `${Date.now()}-${uuidv4()}`;
     const fileExt = path.extname(file.originalname);
     const fileName = `${path.basename(file.originalname, fileExt)}-${uniqueSuffix}${fileExt}`;
-    
+
     cb(null, fileName);
   }
 });
@@ -68,7 +68,7 @@ const upload = multer({
  * @desc    Upload and process a single PDF
  * @access  Private
  */
-router.post('/upload', 
+router.post('/upload',
   authMiddleware,
   upload.single('pdf'),
   asyncHandler(async (req: Request, res: Response) => {
@@ -76,32 +76,46 @@ router.post('/upload',
       throw new ApiError(400, 'No PDF file uploaded');
     }
 
-    const { 
-      catalogName = req.file.originalname, 
-      manufacturer = '', 
+    const {
+      catalogName = req.file.originalname,
+      manufacturer = '',
       priority = 'normal',
       extractImages = true,
       extractText = true,
       associateTextWithImages = true
     } = req.body;
 
-    // Queue PDF for processing
-    const jobId = await queuePdfForProcessing(req.file.path, {
-      userId: req.user!.id,
-      catalogName,
-      manufacturer,
-      priority: priority as 'low' | 'normal' | 'high',
-      extractImages: extractImages === 'true' || extractImages === true,
-      extractText: extractText === 'true' || extractText === true,
-      associateTextWithImages: associateTextWithImages === 'true' || associateTextWithImages === true
-    });
+    try {
+      // Queue PDF for processing
+      const jobId = await queuePdfForProcessing(req.file.path, {
+        userId: req.user!.id,
+        catalogName,
+        manufacturer,
+        priority: priority as 'low' | 'normal' | 'high',
+        extractImages: extractImages === 'true' || extractImages === true,
+        extractText: extractText === 'true' || extractText === true,
+        associateTextWithImages: associateTextWithImages === 'true' || associateTextWithImages === true
+      });
 
-    res.status(202).json({
-      success: true,
-      message: 'PDF queued for processing',
-      jobId,
-      status: 'pending'
-    });
+      res.status(202).json({
+        success: true,
+        message: 'PDF queued for processing',
+        jobId,
+        status: 'pending'
+      });
+    } catch (error: any) {
+      // Check for insufficient credits error
+      if (error.message === 'Insufficient credits' || error.statusCode === 402) {
+        return res.status(402).json({
+          success: false,
+          error: 'Insufficient credits',
+          message: 'You do not have enough credits to process this PDF. Please purchase more credits.'
+        });
+      }
+
+      // Re-throw other errors
+      throw error;
+    }
   })
 );
 
@@ -115,12 +129,12 @@ router.post('/batch-upload',
   upload.array('pdfs', 10), // Allow up to 10 PDFs at once
   asyncHandler(async (req: Request, res: Response) => {
     const files = req.files as Express.Multer.File[];
-    
+
     if (!files || files.length === 0) {
       throw new ApiError(400, 'No PDF files uploaded');
     }
 
-    const { 
+    const {
       manufacturer = '',
       priority = 'normal',
       extractImages = true,
@@ -128,29 +142,43 @@ router.post('/batch-upload',
       associateTextWithImages = true
     } = req.body;
 
-    // Create batch processing jobs
-    const batch = files.map(file => ({
-      filePath: file.path,
-      options: {
-        userId: req.user!.id,
-        catalogName: req.body[`name_${file.originalname}`] || file.originalname,
-        manufacturer,
-        priority: priority as 'low' | 'normal' | 'high',
-        extractImages: extractImages === 'true' || extractImages === true,
-        extractText: extractText === 'true' || extractText === true,
-        associateTextWithImages: associateTextWithImages === 'true' || associateTextWithImages === true
+    try {
+      // Create batch processing jobs
+      const batch = files.map(file => ({
+        filePath: file.path,
+        options: {
+          userId: req.user!.id,
+          catalogName: req.body[`name_${file.originalname}`] || file.originalname,
+          manufacturer,
+          priority: priority as 'low' | 'normal' | 'high',
+          extractImages: extractImages === 'true' || extractImages === true,
+          extractText: extractText === 'true' || extractText === true,
+          associateTextWithImages: associateTextWithImages === 'true' || associateTextWithImages === true
+        }
+      }));
+
+      // Queue batch for processing
+      const jobIds = await batchProcessPdfCatalogs(batch);
+
+      res.status(202).json({
+        success: true,
+        message: `${jobIds.length} PDFs queued for processing`,
+        jobIds,
+        status: 'pending'
+      });
+    } catch (error: any) {
+      // Check for insufficient credits error
+      if (error.message === 'Insufficient credits' || error.statusCode === 402) {
+        return res.status(402).json({
+          success: false,
+          error: 'Insufficient credits',
+          message: 'You do not have enough credits to process these PDFs. Please purchase more credits.'
+        });
       }
-    }));
 
-    // Queue batch for processing
-    const jobIds = await batchProcessPdfCatalogs(batch);
-
-    res.status(202).json({
-      success: true,
-      message: `${jobIds.length} PDFs queued for processing`,
-      jobIds,
-      status: 'pending'
-    });
+      // Re-throw other errors
+      throw error;
+    }
   })
 );
 

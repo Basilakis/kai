@@ -93,7 +93,12 @@ import credentialsRoutes from './routes/credentials.routes';
 import agentRoutes from './routes/agents.routes';
 import aiRoutes from './routes/ai.routes';
 import searchRoutes from './routes/search.routes';
+import multiModalSearchRoutes from './routes/multi-modal-search.routes';
+import conversationalSearchRoutes from './routes/conversational-search.routes';
+import domainSearchRoutes from './routes/domain-search.routes';
 import analyticsRoutes from './routes/analytics.routes';
+import realTimeAnalyticsRoutes from './routes/real-time-analytics.routes';
+import predictiveAnalyticsRoutes from './routes/predictive-analytics.routes';
 import subscriptionRoutes from './routes/subscription.routes';
 import enhancedVectorRoutes from './routes/enhancedVector.routes';
 import webhookRoutes from './routes/webhook.routes';
@@ -115,8 +120,9 @@ import creditRoutes from './routes/credit/index.routes';
 const app = express();
 const httpServer = http.createServer(app);
 
-// Import WebSocket service
+// Import WebSocket services
 import agentWebSocketService from './services/websocket/agent-websocket';
+import realTimeAnalyticsService from './services/analytics/real-time-analytics-service';
 
 // Set up security and basic middleware first
 app.use(cors({
@@ -167,7 +173,12 @@ app.use('/api/credentials', authMiddleware, noCacheHeaders, credentialsRoutes);
 app.use('/api/agents', agentRoutes);
 app.use('/api/ai', authMiddleware, aiRoutes);
 app.use('/api/search', searchRoutes);
+app.use('/api/search', multiModalSearchRoutes);
+app.use('/api/search', conversationalSearchRoutes);
+app.use('/api/search', domainSearchRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/analytics', realTimeAnalyticsRoutes);
+app.use('/api/analytics', predictiveAnalyticsRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/vector/enhanced', enhancedVectorRoutes);
 app.use('/api/webhooks', webhookRoutes);
@@ -376,6 +387,7 @@ const startServer = async (): Promise<void> => {
   trainingProgressServer.initialize(httpServer);
   knowledgeBaseEventsServer.initialize(httpServer);
   agentWebSocketService.initialize(httpServer);
+  realTimeAnalyticsService.initialize(httpServer);
 
   console.log('WebSocket servers initialized');
 
@@ -420,7 +432,8 @@ const shutdownGracefully = async (err?: Error): Promise<void> => {
   const closePromises = [
     queueEventsServer.close(),
     trainingProgressServer.close(),
-    knowledgeBaseEventsServer.close()
+    knowledgeBaseEventsServer.close(),
+    realTimeAnalyticsService.close()
   ];
 
   // Add agentWebSocketService.close() if it exists

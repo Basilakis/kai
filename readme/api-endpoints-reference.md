@@ -108,6 +108,25 @@ Rate limits can be configured for different networks:
 | `/api/ml/inference` | POST | Run model inference | Internal & External | 30 req/min |
 | `/api/ml/embeddings` | POST | Generate embeddings | Internal & External | 30 req/min |
 
+## Dataset APIs
+
+| Endpoint | Method | Description | Default Access | Default Rate Limit |
+|----------|--------|-------------|---------------|-------------------|
+| `/api/admin/datasets` | GET | List all datasets | Internal Only | 30 req/min |
+| `/api/admin/datasets/:id` | GET | Get dataset details | Internal Only | 30 req/min |
+| `/api/admin/datasets/upload/zip` | POST | Upload ZIP dataset | Internal Only | 5 req/min |
+| `/api/admin/datasets/upload/csv` | POST | Upload CSV dataset | Internal Only | 5 req/min |
+| `/api/admin/datasets/import/premade` | POST | Import premade dataset | Internal Only | 3 req/hour |
+| `/api/admin/datasets/:id/split` | POST | Split dataset into train/validation/test sets | Internal Only | 10 req/min |
+| `/api/admin/datasets/:id/train` | POST | Start training job for dataset | Internal Only | 3 req/hour |
+| `/api/admin/datasets/:id/quality` | GET | Get dataset quality metrics | Internal Only | 20 req/min |
+| `/api/admin/datasets/:id` | DELETE | Delete dataset | Internal Only | 5 req/min |
+| `/api/admin/datasets/:id/classes` | GET | List dataset classes | Internal Only | 30 req/min |
+| `/api/admin/datasets/:id/images` | GET | List dataset images | Internal Only | 30 req/min |
+| `/api/admin/training/:jobId/status` | GET | Get training job status | Internal Only | 30 req/min |
+| `/api/admin/training/:jobId/stop` | POST | Stop training job | Internal Only | 5 req/min |
+| `/api/admin/training/:jobId/metrics` | GET | Get training job metrics | Internal Only | 30 req/min |
+
 ## PDF Processing APIs
 
 | Endpoint | Method | Description | Default Access | Default Rate Limit |

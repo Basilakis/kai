@@ -5,6 +5,35 @@
  * This centralized approach ensures consistent error messages and makes debugging easier.
  */
 
+// --- Monitoring Service Integration (Example: Sentry) ---
+// TODO: Install the chosen SDK: npm install --save @sentry/browser @sentry/react (or others)
+// import * as Sentry from "@sentry/browser"; 
+// import { BrowserTracing } from "@sentry/tracing"; // If using tracing
+
+// TODO: Initialize the SDK early in your application lifecycle (e.g., index.tsx or App.tsx)
+/*
+if (process.env.NODE_ENV === 'production' && process.env.REACT_APP_SENTRY_DSN) {
+  Sentry.init({
+    dsn: process.env.REACT_APP_SENTRY_DSN,
+    integrations: [
+      // new BrowserTracing(), // Example: Add performance tracing
+      // Add other integrations as needed
+    ],
+    environment: process.env.NODE_ENV,
+    release: process.env.REACT_APP_VERSION || 'unknown-release', // Use your app version
+    // Set tracesSampleRate to 1.0 to capture 100%
+    // of transactions for performance monitoring.
+    // We recommend adjusting this value in production
+    tracesSampleRate: 0.2, // Adjust as needed
+  });
+  console.log("Sentry SDK initialized for production.");
+} else {
+  console.log("Sentry SDK not initialized (not in production or DSN missing).");
+}
+*/
+// --- End Monitoring Service Integration ---
+
+
 // Define error categories for better classification
 export enum ErrorCategory {
   NETWORK = 'network',
@@ -154,7 +183,7 @@ export function createAgentError(
 
 /**
  * Standard error reporter function
- * Can be extended to report to monitoring services
+ * Reports to console and integrates with monitoring service in production.
  */
 export function reportError(error: EnhancedError, additionalContext?: Record<string, any>): void {
   const context = {
@@ -162,18 +191,58 @@ export function reportError(error: EnhancedError, additionalContext?: Record<str
     ...(additionalContext || {})
   };
   
-  // Log to console in development
+  // Always log to console for visibility during development/debugging
   console.error(
     `[${error.category.toUpperCase()}] ${error.name}: ${error.message}`,
     {
-      timestamp: error.timestamp,
+      timestamp: error.timestamp.toISOString(), // Use ISO string for consistency
       statusCode: error.statusCode,
-      context
+      context,
+      stack: error.stack // Include stack trace in console log
     }
   );
   
-  // TODO: Add reporting to monitoring services in production
-  // Example: if (process.env.NODE_ENV === 'production') { sendToMonitoring(error); }
+  // Report errors to monitoring services ONLY in production
+  if (process.env.NODE_ENV === 'production') {
+    try {
+      // --- Actual Monitoring Service Call ---
+      // TODO: Ensure the SDK (e.g., Sentry) is imported and initialized above.
+      // TODO: Replace 'Sentry' with your actual SDK object if different.
+      
+      // Check if the SDK object and capture method exist (good practice)
+      // if (typeof Sentry !== 'undefined' && typeof Sentry.captureException === 'function') {
+        
+        // Prepare context for the monitoring service
+        const reportContext = {
+          tags: { 
+            category: error.category,
+            statusCode: error.statusCode?.toString() // Tags usually need to be strings
+          },
+          extra: {
+            timestamp: error.timestamp.toISOString(), 
+            // Include original error details if present
+            originalError: error.originalError ? { name: error.originalError.name, message: error.originalError.message } : undefined,
+            ...context // Spread the combined context
+          },
+          // Optionally add user context if available and SDK supports it
+          // user: { id: userId, email: userEmail } // Get user info from auth context/state
+        };
+
+        // Send the error to the monitoring service (Example: Sentry)
+        // Sentry.captureException(error, reportContext); 
+        
+        console.log("SIMULATING: Error reported to monitoring service.", { error: error.message, context: reportContext }); 
+        
+      // } else {
+      //   console.warn("Monitoring SDK (e.g., Sentry) not found or not initialized. Cannot report error.");
+      // }
+      // --- End Actual Monitoring Service Call ---
+
+    } catch (monitoringError) {
+      // Avoid infinite loop if monitoring service reporting itself fails
+      console.error('CRITICAL: Error reporting to monitoring service failed:', monitoringError);
+    }
+  }
 }
 
 /**

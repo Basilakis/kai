@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Box, 
-  Typography, 
-  Card, 
-  CardContent, 
-  Grid, 
+import {
+  Box,
+  Typography,
+  Card,
+  CardContent,
+  Grid,
   Paper,
   Tabs,
   Tab,
@@ -22,7 +22,8 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  TablePagination
+  TablePagination,
+  Divider
 } from '../../components/mui';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
@@ -34,11 +35,19 @@ import PieChartIcon from '@mui/icons-material/PieChart';
 import HistoryIcon from '@mui/icons-material/History';
 import ForumIcon from '@mui/icons-material/Forum';
 import InsightsIcon from '@mui/icons-material/Insights';
-import analyticsService, { 
-  AnalyticsEvent, 
-  AnalyticsStats, 
-  TopQuery, 
-  TopPrompt, 
+import TimelineIcon from '@mui/icons-material/Timeline';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import PersonIcon from '@mui/icons-material/Person';
+
+// Import predictive analytics components
+import TimeSeriesForecast from '../../components/analytics/TimeSeriesForecast';
+import AnomalyDetection from '../../components/analytics/AnomalyDetection';
+import UserBehaviorPrediction from '../../components/analytics/UserBehaviorPrediction';
+import analyticsService, {
+  AnalyticsEvent,
+  AnalyticsStats,
+  TopQuery,
+  TopPrompt,
   TopMaterial
 } from '../../services/analyticsService';
 
@@ -58,11 +67,12 @@ const AnalyticsPage: React.FC = () => {
   const [topSearches, setTopSearches] = useState<TopQuery[]>([]);
   const [topPrompts, setTopPrompts] = useState<TopPrompt[]>([]);
   const [topMaterials, setTopMaterials] = useState<TopMaterial[]>([]);
-  
+
   // State for UI
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState(0);
+  const [predictiveTab, setPredictiveTab] = useState(0);
   const [timeframe, setTimeframe] = useState<'day' | 'week' | 'month'>('day');
   const [startDate, setStartDate] = useState<Date | null>(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)); // 30 days ago
   const [endDate, setEndDate] = useState<Date | null>(new Date()); // today
@@ -91,31 +101,37 @@ const AnalyticsPage: React.FC = () => {
     setActiveTab(newValue);
   };
 
+  // Handle predictive tab change
+  // @ts-ignore - Using SyntheticEvent from our type declaration
+  const handlePredictiveTabChange = (_event: React.SyntheticEvent<Element, Event>, newValue: number) => {
+    setPredictiveTab(newValue);
+  };
+
   // Fetch all analytics data
   const fetchAnalyticsData = async () => {
     setLoading(true);
     setError(null);
-    
+
     try {
       // Fetch analytics stats
       const statsData = await analyticsService.getStats(startDate || undefined, endDate || undefined);
       setStats(statsData);
-      
+
       // Fetch trends data
       await fetchTrends();
-      
+
       // Fetch top searches
       const searchesData = await analyticsService.getTopSearchQueries(10, startDate || undefined, endDate || undefined);
       setTopSearches(searchesData);
-      
+
       // Fetch top agent prompts
       const promptsData = await analyticsService.getTopAgentPrompts(10, startDate || undefined, endDate || undefined);
       setTopPrompts(promptsData);
-      
+
       // Fetch top materials
       const materialsData = await analyticsService.getTopMaterials(10, startDate || undefined, endDate || undefined);
       setTopMaterials(materialsData);
-      
+
       // Fetch events
       const eventsData = await analyticsService.getEvents({
         startDate: startDate || undefined,
@@ -261,7 +277,7 @@ const AnalyticsPage: React.FC = () => {
             </CardContent>
           </Card>
         </Grid>
-        
+
         <Grid item xs={12} md={6} lg={3}>
           <Card>
             <CardContent>
@@ -274,7 +290,7 @@ const AnalyticsPage: React.FC = () => {
             </CardContent>
           </Card>
         </Grid>
-        
+
         <Grid item xs={12} md={6} lg={3}>
           <Card>
             <CardContent>
@@ -287,7 +303,7 @@ const AnalyticsPage: React.FC = () => {
             </CardContent>
           </Card>
         </Grid>
-        
+
         <Grid item xs={12} md={6} lg={3}>
           <Card>
             <CardContent>
@@ -424,8 +440,8 @@ const AnalyticsPage: React.FC = () => {
                     {topPrompts.map((prompt) => (
                       <TableRow key={prompt.prompt}>
                         <TableCell component="th" scope="row">
-                          {prompt.prompt.length > 50 
-                            ? `${prompt.prompt.substring(0, 50)}...` 
+                          {prompt.prompt.length > 50
+                            ? `${prompt.prompt.substring(0, 50)}...`
                             : prompt.prompt}
                         </TableCell>
                         <TableCell align="right">{prompt.count}</TableCell>
@@ -578,7 +594,7 @@ const AnalyticsPage: React.FC = () => {
                       <TableCell>{event.event_type}</TableCell>
                       <TableCell>{event.resource_type || 'N/A'}</TableCell>
                       <TableCell>
-                        {event.query 
+                        {event.query
                           ? (event.query.length > 30 ? `${event.query.substring(0, 30)}...` : event.query)
                           : 'N/A'}
                       </TableCell>
@@ -673,9 +689,9 @@ const AnalyticsPage: React.FC = () => {
               </FormControl>
             </Grid>
             <Grid item xs={12} md={3}>
-              <Button 
-                variant="contained" 
-                color="primary" 
+              <Button
+                variant="contained"
+                color="primary"
                 onClick={handleFilterChange}
                 disabled={loading}
                 fullWidth
@@ -688,28 +704,57 @@ const AnalyticsPage: React.FC = () => {
 
         {/* Main content with tabs */}
         <Paper sx={{ mb: 3 }}>
-          <Tabs 
-            value={activeTab} 
-            onChange={handleTabChange} 
-            indicatorColor="primary" 
+          <Tabs
+            value={activeTab}
+            onChange={handleTabChange}
+            indicatorColor="primary"
             textColor="primary"
             variant="fullWidth"
           >
             <Tab icon={<InsightsIcon />} label="Summary" />
             <Tab icon={<TrendingUpIcon />} label="Trends" />
             <Tab icon={<HistoryIcon />} label="Events" />
+            <Tab icon={<TimelineIcon />} label="Predictive" />
           </Tabs>
         </Paper>
 
         <Box>
           {/* Summary Dashboard Tab */}
           {activeTab === 0 && renderSummaryDashboard()}
-          
+
           {/* Trends Chart Tab */}
           {activeTab === 1 && renderTrendsChart()}
-          
+
           {/* Events Table Tab */}
           {activeTab === 2 && renderEventsTable()}
+
+          {/* Predictive Analytics Tab */}
+          {activeTab === 3 && (
+            <Box>
+              <Paper sx={{ mb: 3 }}>
+                <Tabs
+                  value={predictiveTab}
+                  onChange={handlePredictiveTabChange}
+                  indicatorColor="primary"
+                  textColor="primary"
+                  variant="fullWidth"
+                >
+                  <Tab icon={<TimelineIcon />} label="Forecasting" />
+                  <Tab icon={<ErrorOutlineIcon />} label="Anomaly Detection" />
+                  <Tab icon={<PersonIcon />} label="User Behavior" />
+                </Tabs>
+              </Paper>
+
+              {/* Time-Series Forecasting */}
+              {predictiveTab === 0 && <TimeSeriesForecast />}
+
+              {/* Anomaly Detection */}
+              {predictiveTab === 1 && <AnomalyDetection />}
+
+              {/* User Behavior Prediction */}
+              {predictiveTab === 2 && <UserBehaviorPrediction />}
+            </Box>
+          )}
         </Box>
       </Box>
     </LocalizationProvider>

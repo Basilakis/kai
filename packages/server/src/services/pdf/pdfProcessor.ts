@@ -1,6 +1,6 @@
 /**
  * PDF Processing Service
- * 
+ *
  * This service is responsible for extracting images and text from PDF catalogs.
  * It uses the ML package's PDF extraction functionality for PDF parsing and image extraction,
  * and Tesseract OCR for text extraction from images.
@@ -17,6 +17,8 @@ import { createMaterial } from '../../models/material.model';
 import { extractTextFromImage } from './ocrService';
 import { logger } from '../../utils/logger';
 import { STORAGE } from '@kai/shared';
+import mcpClientService, { MCPServiceKey } from '../mcp/mcpClientService';
+import creditService from '../credit/creditService';
 
 // Types
 interface ExtractedImage {
@@ -66,8 +68,21 @@ interface ProcessingResult {
 }
 
 /**
+ * Check if MCP is available for PDF processing
+ * @returns True if MCP is available
+ */
+async function isMCPAvailable(): Promise<boolean> {
+  try {
+    return await mcpClientService.isMCPAvailable();
+  } catch (error) {
+    logger.error(`Error checking MCP availability: ${error}`);
+    return false;
+  }
+}
+
+/**
  * Process a PDF catalog
- * 
+ *
  * @param filePath Path to the PDF file
  * @param options Processing options
  * @returns Processing result
@@ -85,7 +100,7 @@ export async function processPdfCatalog(
   }
 ): Promise<ProcessingResult> {
   logger.info(`Starting PDF processing for ${filePath}`);
-  
+
   // Default options
   const processingOptions = {
     extractImages: true,
@@ -94,21 +109,116 @@ export async function processPdfCatalog(
     deleteOriginalAfterProcessing: true,
     ...options
   };
-  
+
   try {
     // Validate file exists
     if (!fs.existsSync(filePath)) {
       throw new ApiError(404, `PDF file not found: ${filePath}`);
     }
-    
+
     // Create a unique ID for this catalog
     const catalogId = uuidv4();
-    
+
     // Create temporary directory for extracted files
     // Using relative path instead of process.cwd() to avoid Node.js type issues
     const tempDir = path.join('./temp', catalogId); // Relative to server root
     fs.mkdirSync(tempDir, { recursive: true });
-    
+
+    // Check if MCP is available and user ID is provided
+    const mcpAvailable = await isMCPAvailable();
+    const userId = processingOptions.userId;
+
+    if (mcpAvailable && userId) {
+      try {
+        // Check if user has enough credits
+        const hasEnoughCredits = await creditService.hasEnoughCreditsForService(
+          userId,
+          MCPServiceKey.PDF_PROCESSING,
+          5 // Estimate 5 credits for PDF processing
+        );
+
+        if (!hasEnoughCredits) {
+          throw new Error('Insufficient credits');
+        }
+
+        logger.info(`Using MCP for PDF processing: ${filePath}`);
+
+        // Create catalog record in database
+        const catalog = await createCatalog({
+          id: catalogId,
+          name: processingOptions.catalogName,
+          manufacturer: processingOptions.manufacturer,
+          originalFilePath: filePath,
+          status: 'processing',
+          totalPages: 0,
+          processedPages: 0,
+          createdBy: processingOptions.userId,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        });
+
+        // Use MCP for PDF processing
+        const mcpResult = await mcpClientService.processPdf(
+          userId,
+          filePath,
+          {
+            extractImages: processingOptions.extractImages,
+            extractText: processingOptions.extractText,
+            associateTextWithImages: processingOptions.associateTextWithImages,
+            outputDir: tempDir
+          }
+        );
+
+        // Track credit usage
+        await creditService.useServiceCredits(
+          userId,
+          MCPServiceKey.PDF_PROCESSING,
+          5, // Use 5 credits for PDF processing
+          'PDF processing',
+          {
+            catalogId,
+            fileName: path.basename(filePath),
+            pageCount: mcpResult.totalPages
+          }
+        );
+
+        // Update catalog with results
+        await updateCatalog(catalogId, {
+          totalPages: mcpResult.totalPages,
+          processedPages: mcpResult.totalPages,
+          materialsExtracted: mcpResult.materials?.length || 0,
+          status: 'completed',
+          completedAt: new Date()
+        });
+
+        // Clean up if requested
+        if (processingOptions.deleteOriginalAfterProcessing) {
+          try {
+            fs.unlinkSync(filePath);
+          } catch (err) {
+            logger.warn(`Failed to delete original PDF: ${err}`);
+          }
+        }
+
+        return {
+          catalogId,
+          totalPages: mcpResult.totalPages,
+          processedPages: mcpResult.processedPages || [],
+          materials: mcpResult.materials || [],
+          errors: mcpResult.errors || []
+        };
+      } catch (mcpError: any) {
+        // If MCP fails with insufficient credits, rethrow the error
+        if (mcpError.message === 'Insufficient credits') {
+          throw new ApiError(402, 'Insufficient credits', 'You do not have enough credits to process this PDF. Please purchase more credits.');
+        }
+
+        // For other MCP errors, log and fall back to direct implementation
+        logger.warn(`MCP PDF processing failed, falling back to direct implementation: ${mcpError.message}`);
+      }
+    }
+
+    // Fall back to direct implementation if MCP is not available or failed
     // Create catalog record in database
     const catalog = await createCatalog({
       id: catalogId,
@@ -122,50 +232,50 @@ export async function processPdfCatalog(
       createdAt: new Date(),
       updatedAt: new Date()
     });
-    
+
     // Extract images from PDF using Python script
     const extractedImages = await extractImagesFromPdf(filePath, tempDir);
-    
+
     // Update catalog with total pages
     await updateCatalog(catalogId, {
       totalPages: extractedImages.reduce((max, img) => Math.max(max, img.pageNumber), 0),
       status: 'extracting_images'
     });
-    
+
     // Process each extracted image
     const processedPages: ProcessedPage[] = [];
     const materials: any[] = [];
     const errors: any[] = [];
-    
+
     // Group images by page
     const imagesByPage = extractedImages.reduce((acc, img) => {
       // Initialize array if it doesn't exist
       if (!acc[img.pageNumber]) {
         acc[img.pageNumber] = [];
       }
-      
+
       // We know acc[img.pageNumber] exists now because we just created it
       acc[img.pageNumber]!.push(img);
       return acc;
     }, {} as Record<number, ExtractedImage[]>);
-    
+
     // Process each page
     for (const [pageNumber, images] of Object.entries(imagesByPage)) {
       const pageNum = parseInt(pageNumber);
-      
+
     // Update catalog progress
     await updateCatalog(catalogId, {
       processedPages: pageNum,
       status: 'processing_text' // Using a valid status from the union type
     });
-      
+
       const processedPage: ProcessedPage = {
         pageNumber: pageNum,
         images: [],
         texts: [],
         associations: []
       };
-      
+
       // Process each image on the page
       for (const image of images) {
         try {
@@ -173,24 +283,24 @@ export async function processPdfCatalog(
           // Fix: CATALOG_IMAGES doesn't exist, use CATALOGS instead
           const s3Key = `${STORAGE.FOLDERS.CATALOGS}/images/${catalogId}/${image.fileName}`;
           await uploadToS3(image.filePath, s3Key);
-          
+
           // Get S3 URL - await the Promise since Supabase Storage returns URLs asynchronously
           const s3Url = await getS3Url(s3Key);
-          
+
           // Update image with S3 info
           image.s3Key = s3Key;
           image.s3Url = s3Url;
-          
+
           // Extract text from image if enabled
           let extractedTexts: ExtractedText[] = [];
           if (processingOptions.extractText) {
             extractedTexts = await extractTextFromImage(image.filePath);
           }
-          
+
           // Add image and texts to processed page
           processedPage.images.push(image);
           processedPage.texts.push(...extractedTexts);
-          
+
           // Associate text with image if enabled
           if (processingOptions.associateTextWithImages && extractedTexts.length > 0) {
             const textIds = extractedTexts.map((_, index) => `${image.id}_text_${index}`);
@@ -198,7 +308,7 @@ export async function processPdfCatalog(
               imageId: image.id,
               textIds
             });
-            
+
             // Create material record from image and associated text
             const material = await createMaterialFromImageAndText(image, extractedTexts, {
               catalogId,
@@ -206,7 +316,7 @@ export async function processPdfCatalog(
               manufacturer: processingOptions.manufacturer,
               userId: processingOptions.userId
             });
-            
+
             materials.push(material);
           }
         } catch (err) {
@@ -218,10 +328,10 @@ export async function processPdfCatalog(
           });
         }
       }
-      
+
       processedPages.push(processedPage);
     }
-    
+
     // Clean up temporary files if enabled
     if (processingOptions.deleteOriginalAfterProcessing) {
       try {
@@ -233,7 +343,7 @@ export async function processPdfCatalog(
         logger.warn(`Error cleaning up temporary files: ${err}`);
       }
     }
-    
+
     // Update catalog status to completed
     await updateCatalog(catalogId, {
       status: errors.length > 0 ? 'completed_with_errors' : 'completed',
@@ -242,7 +352,7 @@ export async function processPdfCatalog(
       errorsCount: errors.length,
       completedAt: new Date()
     });
-    
+
     return {
       catalogId,
       totalPages: processedPages.length,
@@ -258,7 +368,7 @@ export async function processPdfCatalog(
 
 /**
  * Extract images from PDF using ML package's PDF extraction functionality
- * 
+ *
  * @param pdfPath Path to the PDF file
  * @param outputDir Directory to save extracted images
  * @returns Array of extracted images
@@ -266,10 +376,10 @@ export async function processPdfCatalog(
 async function extractImagesFromPdf(pdfPath: string, outputDir: string): Promise<ExtractedImage[]> {
   try {
     logger.info(`Extracting images from PDF: ${pdfPath} to ${outputDir}`);
-    
+
     // Ensure output directory exists
     fs.mkdirSync(outputDir, { recursive: true });
-    
+
     // Use ML package's PDF extraction functionality
     // Create options object with the correct structure
     const extractOptions = {
@@ -279,15 +389,15 @@ async function extractImagesFromPdf(pdfPath: string, outputDir: string): Promise
       imageFormat: 'jpg',
       imageQuality: 90
     };
-    
+
     // Pass options to extractFromPDF function
     const extractionResult = await extractFromPDF(pdfPath, extractOptions);
-    
+
     // Convert the extraction result to the expected format
     const extractedImages: ExtractedImage[] = extractionResult.images.map((img: PDFExtractedImage) => {
       // Create default coordinates if they don't exist
       const defaultCoords = { x: 0, y: 0, width: 100, height: 100 };
-      
+
       return {
         id: uuidv4(),
         pageNumber: img.page,
@@ -304,7 +414,7 @@ async function extractImagesFromPdf(pdfPath: string, outputDir: string): Promise
         }
       };
     });
-    
+
     logger.info(`Extracted ${extractedImages.length} images from PDF: ${pdfPath}`);
     return extractedImages;
   } catch (err) {
@@ -315,7 +425,7 @@ async function extractImagesFromPdf(pdfPath: string, outputDir: string): Promise
 
 /**
  * Create a material record from an image and associated text
- * 
+ *
  * @param image Extracted image
  * @param texts Extracted texts
  * @param options Additional options
@@ -333,10 +443,10 @@ async function createMaterialFromImageAndText(
 ): Promise<any> {
   // Combine all extracted texts
   const combinedText = texts.map(t => t.text).join(' ');
-  
+
   // Extract material properties from text using NLP (simplified for now)
   const materialProperties = extractMaterialProperties(combinedText);
-  
+
   // Create material record
   const material = await createMaterial({
     id: uuidv4(),
@@ -345,7 +455,7 @@ async function createMaterialFromImageAndText(
     manufacturer: options.manufacturer,
     collection: materialProperties.collection,
     series: materialProperties.series,
-    
+
     // Physical properties
     dimensions: materialProperties.dimensions || {
       width: 0,
@@ -360,10 +470,10 @@ async function createMaterialFromImageAndText(
     finish: materialProperties.finish || 'unknown',
     pattern: materialProperties.pattern,
     texture: materialProperties.texture,
-    
+
     // Technical specifications
     technicalSpecs: materialProperties.technicalSpecs || {},
-    
+
     // Images
     images: [{
       id: image.id,
@@ -377,7 +487,7 @@ async function createMaterialFromImageAndText(
         coordinates: image.coordinates
       }
     }],
-    
+
     // Metadata
     tags: materialProperties.tags || [],
     catalogId: options.catalogId,
@@ -386,7 +496,7 @@ async function createMaterialFromImageAndText(
     updatedAt: new Date(),
     createdBy: options.userId
   });
-  
+
   return material;
 }
 
@@ -394,23 +504,23 @@ async function createMaterialFromImageAndText(
  * Extract material properties from text using NLP
  * This is a simplified version - in a real implementation, this would use
  * more sophisticated NLP techniques or a trained model
- * 
+ *
  * @param text Text to extract properties from
  * @returns Extracted material properties
  */
 function extractMaterialProperties(text: string): any {
   // This is a simplified implementation
   // In a real application, this would use NLP techniques or a trained model
-  
+
   const properties: any = {
     tags: []
   };
-  
+
   // Extract name (first line or first sentence)
   const firstLine = text.split('\n')[0]?.trim() || '';
   const firstSentence = text.split('.')[0]?.trim() || '';
   properties.name = firstLine || firstSentence || 'Unknown Material';
-  
+
   // Extract dimensions
   const dimensionMatch = text.match(/(\d+)\s*[xX]\s*(\d+)(?:\s*[xX]\s*(\d+))?\s*(mm|cm|inch)?/);
   if (dimensionMatch) {
@@ -421,7 +531,7 @@ function extractMaterialProperties(text: string): any {
       unit: (dimensionMatch[4] || 'mm').toLowerCase()
     };
   }
-  
+
   // Extract color
   const colorMatch = text.match(/colou?r:?\s*([a-zA-Z\s]+)/i);
   if (colorMatch) {
@@ -431,7 +541,7 @@ function extractMaterialProperties(text: string): any {
     };
     properties.tags.push(colorMatch[1]?.trim().toLowerCase() || 'unknown');
   }
-  
+
   // Extract material type
   const materialTypes = ['ceramic', 'porcelain', 'natural stone', 'glass', 'metal', 'concrete', 'terrazzo', 'mosaic'];
   for (const type of materialTypes) {
@@ -441,7 +551,7 @@ function extractMaterialProperties(text: string): any {
       break;
     }
   }
-  
+
   // Extract finish
   const finishes = ['matte', 'glossy', 'polished', 'honed', 'textured', 'brushed', 'lappato', 'satin'];
   for (const finish of finishes) {
@@ -451,46 +561,46 @@ function extractMaterialProperties(text: string): any {
       break;
     }
   }
-  
+
   // Extract collection/series
   const collectionMatch = text.match(/collection:?\s*([a-zA-Z\s]+)/i);
   if (collectionMatch) {
     properties.collection = collectionMatch[1]?.trim() || '';
     properties.tags.push(collectionMatch[1]?.trim().toLowerCase() || '');
   }
-  
+
   const seriesMatch = text.match(/series:?\s*([a-zA-Z\s]+)/i);
   if (seriesMatch) {
     properties.series = seriesMatch[1]?.trim() || '';
     properties.tags.push(seriesMatch[1]?.trim().toLowerCase() || '');
   }
-  
+
   // Extract technical specifications
   properties.technicalSpecs = {};
-  
+
   // Water absorption
   const waterAbsorptionMatch = text.match(/water\s+absorption:?\s*([\d.]+)%?/i);
   if (waterAbsorptionMatch) {
     properties.technicalSpecs.waterAbsorption = parseFloat(waterAbsorptionMatch[1] || '0');
   }
-  
+
   // Slip resistance
   const slipResistanceMatch = text.match(/slip\s+resistance:?\s*([a-zA-Z0-9\s]+)/i);
   if (slipResistanceMatch) {
     properties.technicalSpecs.slipResistance = slipResistanceMatch[1]?.trim() || '';
   }
-  
+
   // Frost resistance
   if (text.toLowerCase().includes('frost resistant') || text.toLowerCase().includes('frost resistance')) {
     properties.technicalSpecs.frostResistance = true;
   }
-  
+
   return properties;
 }
 
 /**
  * Queue a PDF for processing
- * 
+ *
  * @param filePath Path to the PDF file
  * @param options Processing options
  * @returns Job ID
@@ -510,16 +620,16 @@ export async function queuePdfForProcessing(
 ): Promise<string> {
   // Import here to avoid circular dependency
   const { pdfQueue } = await import('./pdfQueue');
-  
+
   // Add job to queue
   const jobId = await pdfQueue.add(filePath, options);
-  
+
   return jobId;
 }
 
 /**
  * Queue multiple PDFs for batch processing
- * 
+ *
  * @param files Array of PDF files to process
  * @returns Array of job IDs
  */
@@ -540,37 +650,37 @@ export async function batchProcessPdfCatalogs(
 ): Promise<string[]> {
   // Import here to avoid circular dependency
   const { pdfQueue } = await import('./pdfQueue');
-  
+
   // Add batch to queue
   const jobIds = await pdfQueue.addBatch(files);
-  
+
   return jobIds;
 }
 
 /**
  * Get PDF processing job status
- * 
+ *
  * @param jobId Job ID
  * @returns Job status or null if not found
  */
 export async function getPdfProcessingStatus(jobId: string): Promise<any | null> {
   // Import here to avoid circular dependency
   const { pdfQueue } = await import('./pdfQueue');
-  
+
   // Get job from queue
   return pdfQueue.get(jobId);
 }
 
 /**
  * Get all PDF processing jobs
- * 
+ *
  * @param status Optional status filter
  * @returns Array of jobs
  */
 export async function getAllPdfProcessingJobs(status?: string): Promise<any[]> {
   // Import here to avoid circular dependency
   const { pdfQueue } = await import('./pdfQueue');
-  
+
   // Get jobs from queue
   return pdfQueue.getAll(status as any);
 }
@@ -578,7 +688,7 @@ export async function getAllPdfProcessingJobs(status?: string): Promise<any[]> {
 /**
  * Valid catalog status values
  */
-type CatalogStatus = 
+type CatalogStatus =
   | 'pending'
   | 'processing'
   | 'extracting_images'
@@ -589,7 +699,7 @@ type CatalogStatus =
 
 /**
  * Update processing progress for a catalog
- * 
+ *
  * @param catalogId Catalog ID
  * @param progress Progress data
  */

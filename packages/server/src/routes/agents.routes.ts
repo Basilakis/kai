@@ -9,7 +9,9 @@
 import express, { Request, Response } from 'express';
 import multer from 'multer';
 import * as agentController from '../controllers/agents.controller';
-import { authMiddleware, validateSessionOwnership } from '../middleware/auth.middleware';
+// Updated import to include authorizeRoles
+import { authMiddleware, validateSessionOwnership, authorizeRoles } from '../middleware/auth.middleware'; 
+import { asyncHandler } from '../middleware/error.middleware'; // Added import
 
 // Extend Express Request interface to add user property
 declare global {
@@ -116,33 +118,12 @@ router.delete(
  * @desc    Get agent system status
  * @access  Admin only
  */
+// Added authorizeRoles middleware
 router.get(
   '/admin/status',
-  authMiddleware,
-  (req: Request, res: Response) => {
-    // Verify user is an admin
-    if (req.user?.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied: Admin role required'
-      });
-    }
-
-    // This would call a method to get system status
-    // For now, just return a placeholder response
-    return res.status(200).json({
-      status: 'operational',
-      sessions: {
-        active: 42,
-        total: 1337
-      },
-      performance: {
-        avgResponseTime: '1.2s',
-        errorRate: '0.5%'
-      },
-      lastUpdated: new Date()
-    });
-  }
+  authMiddleware, 
+  authorizeRoles(['admin']), // Added admin role check
+  asyncHandler(agentController.getAgentSystemStatus)
 );
 
 /**
@@ -153,14 +134,7 @@ router.get(
 router.get(
   '/user/sessions',
   authMiddleware,
-  (_req: Request, res: Response) => {
-    // This will be implemented in the controller
-    // For now, provide a simple implementation here
-    return res.status(200).json({
-      success: true,
-      sessions: []
-    });
-  }
+  asyncHandler(agentController.getUserSessions)
 );
 
 export default router;

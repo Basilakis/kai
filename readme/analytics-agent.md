@@ -342,10 +342,40 @@ const createPredictiveAnalyticsTool = async (): Promise<Tool> => {
     description: 'Predict future trends based on historical data',
     func: async (args) => {
       const { metric, timeframe, parameters } = JSON.parse(args);
-      
-      // Implement prediction logic here
-      const prediction = await computePrediction(metric, timeframe, parameters);
-      
+
+      // Use the predictive analytics service
+      let prediction;
+
+      if (metric === 'time_series') {
+        // Generate time-series forecast
+        prediction = await predictiveAnalyticsService.generateTimeSeriesForecast({
+          eventType: parameters.eventType,
+          resourceType: parameters.resourceType,
+          startDate: new Date(parameters.startDate),
+          endDate: new Date(parameters.endDate),
+          forecastPeriods: parameters.forecastPeriods || 7,
+          interval: parameters.interval || 'day'
+        });
+      } else if (metric === 'anomalies') {
+        // Detect anomalies
+        prediction = await predictiveAnalyticsService.detectAnomalies({
+          eventType: parameters.eventType,
+          resourceType: parameters.resourceType,
+          startDate: new Date(parameters.startDate),
+          endDate: new Date(parameters.endDate),
+          interval: parameters.interval || 'day',
+          threshold: parameters.threshold || 2.0
+        });
+      } else if (metric === 'user_behavior') {
+        // Predict user behavior
+        prediction = await predictiveAnalyticsService.predictUserBehavior({
+          userId: parameters.userId,
+          predictionType: parameters.predictionType || 'next_action',
+          lookbackDays: parameters.lookbackDays || 30,
+          includeUserProfile: parameters.includeUserProfile !== false
+        });
+      }
+
       return JSON.stringify(prediction);
     }
   });

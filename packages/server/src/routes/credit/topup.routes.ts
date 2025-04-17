@@ -8,12 +8,13 @@
 import express from 'express';
 import { asyncHandler } from '../../middleware/error.middleware';
 import { authMiddleware } from '../../middleware/auth.middleware';
+import { requireModuleAccess } from '../../middleware/module-access.middleware';
 import topupController from '../../controllers/credit/topup.controller';
 
 const router = express.Router();
 
-// All routes require authentication
-router.use(authMiddleware);
+// All routes require authentication and credits module access
+router.use(authMiddleware, requireModuleAccess('credits'));
 
 /**
  * @route   GET /api/credits/topup/settings

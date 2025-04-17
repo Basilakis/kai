@@ -28,6 +28,9 @@ import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
 import Breadcrumbs from '@mui/material/Breadcrumbs';
 import Link from '@mui/material/Link';
+import List from '@mui/material/List';
+import ListItem from '@mui/material/ListItem';
+import ListItemButton from '@mui/material/ListItemButton';
 
 // Re-export the individually imported components
 export {
@@ -43,7 +46,10 @@ export {
   ListItemIcon,
   ListItemText,
   Breadcrumbs,
-  Link
+  Link,
+  List,
+  ListItem,
+  ListItemButton
 };
 
 // Re-export Theme type from @mui/material/styles

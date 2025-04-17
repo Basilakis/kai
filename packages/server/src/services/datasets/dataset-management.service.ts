@@ -8,10 +8,29 @@
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../../utils/logger';
 import supabaseDatasetService, { Dataset, DatasetClass, DatasetImage } from '../supabase/supabase-dataset-service';
-import { supabase } from '../supabase/supabaseClient';
+import supabase from '../supabase/supabaseClient';
+import { supabaseClient } from '../supabase/supabaseClient';
 import { handleSupabaseError } from '../../../../shared/src/utils/supabaseErrorHandler';
 import * as path from 'path';
 import * as fs from 'fs';
+
+// Interface for dataset statistics
+export interface DatasetStatistics {
+  totalImages: number;
+  totalClasses: number;
+  averageImagesPerClass: number;
+  datasetSize: string | number;
+  classDistribution: Record<string, number>;
+  imageQualityMetrics?: {
+    avgResolution?: { width: number; height: number };
+    lowResolutionCount?: number;
+    highResolutionCount?: number;
+  };
+  storageUtilization?: {
+    totalSize: string;
+    averageImageSize: string;
+  };
+}
 
 // Types for data cleaning
 export interface DataCleaningOptions {
@@ -235,6 +254,34 @@ export interface IncrementalLearningResult {
   newClasses: string[];
   totalClasses: number;
   totalImages: number;
+}
+
+/**
+ * Define the structure for Training Configuration
+ */
+export interface TrainingConfiguration {
+  modelArchitecture: 'efficientnet' | 'resnet' | 'mobilenet' | 'vit';
+  pretrainedWeights: 'imagenet' | 'none' | 'custom';
+  customCheckpointPath?: string; // Path if pretrainedWeights is 'custom'
+  splitRatios: { train: number; validation: number; test: number };
+  stratifiedSplit: boolean;
+  hyperparameters: {
+    batchSize: number;
+    learningRate: number;
+    epochs: number;
+    optimizer?: string; // e.g., 'adam', 'sgd'
+    lossFunction?: string; // e.g., 'crossentropy'
+  };
+  augmentation: {
+    rotation?: boolean;
+    flipHorizontal?: boolean;
+    brightnessContrast?: boolean;
+    crop?: boolean;
+    // Add other augmentation flags as needed
+  };
+  // Add other relevant config like output model name, etc.
+  outputModelName?: string;
+  userId?: string; // User initiating the training
 }
 
 /**
@@ -547,6 +594,74 @@ export class DatasetManagementService {
     }
 
     return result;
+  }
+
+  /**
+   * Calculate dataset statistics
+   * @param datasetId Dataset ID
+   * @returns Dataset statistics
+   */
+  public async calculateDatasetStatistics(datasetId: string): Promise<DatasetStatistics> {
+    logger.info(`Calculating statistics for dataset ${datasetId}`);
+
+    const statistics: DatasetStatistics = {
+      totalImages: 0,
+      totalClasses: 0,
+      averageImagesPerClass: 0,
+      datasetSize: 0,
+      classDistribution: {}
+    };
+
+    try {
+      // Get the dataset
+      const dataset = await supabaseDatasetService.getDatasetById(datasetId);
+      if (!dataset) {
+        throw new Error(`Dataset ${datasetId} not found`);
+      }
+
+      // Get classes for the dataset
+      const classes = await supabaseDatasetService.getDatasetClasses(datasetId);
+      statistics.totalClasses = classes.length;
+
+      // Calculate total images and class distribution
+      let totalSizeBytes = 0;
+      for (const cls of classes) {
+        const images = await supabaseDatasetService.getDatasetClassImages(cls.id, 1000, 0);
+        statistics.totalImages += images.length;
+        statistics.classDistribution[cls.name] = images.length;
+
+        // Calculate dataset size
+        for (const img of images) {
+          totalSizeBytes += img.fileSize || 0;
+        }
+      }
+
+      // Calculate average images per class
+      if (statistics.totalClasses > 0) {
+        statistics.averageImagesPerClass = statistics.totalImages / statistics.totalClasses;
+      }
+
+      // Convert dataset size to human-readable format
+      statistics.datasetSize = this.formatBytes(totalSizeBytes);
+    } catch (err) {
+      logger.error(`Error calculating dataset statistics: ${err}`);
+      throw new Error(`Failed to calculate dataset statistics: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    return statistics;
+  }
+
+  /**
+   * Format bytes into human-readable string
+   * @param bytes Number of bytes
+   * @returns Formatted string
+   */
+  private formatBytes(bytes: number): string {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   }
 
   /**
@@ -1548,6 +1663,222 @@ export class DatasetManagementService {
     // This would implement actual random augmentation
     // For now, return empty array as this is a placeholder
     return [];
+  }
+
+  /**
+   * Split a dataset into training, validation, and test sets
+   * @param datasetId Dataset ID
+   * @param splitRatios Ratios for train, validation, test (e.g., { train: 70, validation: 20, test: 10 })
+   * @param stratified Whether to maintain class distribution in splits
+   * @returns Object containing IDs or references to the split datasets/metadata
+   */
+  public async splitDataset(
+    datasetId: string,
+    splitRatios: { train: number; validation: number; test: number },
+    stratified = true
+  ): Promise<{ trainSetId: string; validationSetId: string; testSetId: string }> {
+    logger.info(`Splitting dataset ${datasetId} with ratios: ${JSON.stringify(splitRatios)}`);
+
+    try {
+      const totalRatio = splitRatios.train + splitRatios.validation + splitRatios.test;
+      if (Math.abs(totalRatio - 100) > 0.1) {
+        throw new Error('Split ratios must sum to 100');
+      }
+
+      // Get classes
+      const classes = await supabaseDatasetService.getDatasetClasses(datasetId);
+      if (!classes || classes.length === 0) {
+        throw new Error('Dataset has no classes to split.');
+      }
+
+      const trainImages: DatasetImage[] = [];
+      const validationImages: DatasetImage[] = [];
+      const testImages: DatasetImage[] = [];
+
+      // Perform splitting (stratified or simple)
+      for (const cls of classes) {
+        const images = await supabaseDatasetService.getDatasetClassImages(cls.id, 5000, 0); // Adjust limit as needed
+        
+        // Shuffle images within the class
+        const shuffledImages = images.sort(() => 0.5 - Math.random());
+        const classSize = shuffledImages.length;
+
+        const trainCount = Math.floor(classSize * (splitRatios.train / 100));
+        const validationCount = Math.floor(classSize * (splitRatios.validation / 100));
+        // Test count takes the remainder to ensure all images are assigned
+        const testCount = classSize - trainCount - validationCount; 
+
+        trainImages.push(...shuffledImages.slice(0, trainCount));
+        validationImages.push(...shuffledImages.slice(trainCount, trainCount + validationCount));
+        testImages.push(...shuffledImages.slice(trainCount + validationCount));
+      }
+
+      // In a real implementation, we would likely:
+      // 1. Create new dataset records (or metadata entries) for train, validation, test sets.
+      // 2. Associate the split images with these new sets in the database.
+      // For this example, we'll just log the counts and return placeholder IDs.
+
+      logger.info(`Split complete: Train(${trainImages.length}), Validation(${validationImages.length}), Test(${testImages.length})`);
+
+      // Placeholder: Update dataset metadata to indicate it has been split
+      await supabaseDatasetService.updateDataset(datasetId, {
+        metadata: {
+          ...(await supabaseDatasetService.getDatasetById(datasetId))?.metadata,
+          split: {
+            stratified,
+            ratios: splitRatios,
+            trainCount: trainImages.length,
+            validationCount: validationImages.length,
+            testCount: testImages.length,
+            timestamp: new Date().toISOString(),
+          }
+        }
+      });
+
+      // Return placeholder IDs - replace with actual IDs of created split sets/metadata
+      return {
+        trainSetId: `${datasetId}-train`,
+        validationSetId: `${datasetId}-validation`,
+        testSetId: `${datasetId}-test`
+      };
+
+    } catch (err) {
+      logger.error(`Error splitting dataset ${datasetId}: ${err}`);
+      throw new Error(`Failed to split dataset: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /**
+   * Start a training job for a dataset with specific configurations
+   * @param datasetId Dataset ID
+   * @param config Training configuration object
+   * @returns Job ID or status indicating the training has started
+   */
+  public async startDatasetTrainingJob(
+    datasetId: string,
+    config: TrainingConfiguration
+  ): Promise<{ jobId: string; status: string }> {
+    logger.info(`Starting training job for dataset ${datasetId} with config: ${JSON.stringify(config)}`);
+
+    try {
+      // 1. Validate Dataset and Configuration
+      const dataset = await supabaseDatasetService.getDatasetById(datasetId);
+      if (!dataset || dataset.status !== 'ready') {
+        throw new Error(`Dataset ${datasetId} is not ready for training.`);
+      }
+      // Add more validation for config parameters if needed
+
+      // 2. Ensure Dataset is Split (or split it if not already done)
+      let splitInfo = dataset.metadata?.split;
+      if (!splitInfo || 
+          splitInfo.ratios.train !== config.splitRatios.train ||
+          splitInfo.ratios.validation !== config.splitRatios.validation ||
+          splitInfo.ratios.test !== config.splitRatios.test ||
+          splitInfo.stratified !== config.stratifiedSplit) {
+            
+        logger.info(`Dataset ${datasetId} not split correctly or split needs update. Splitting now...`);
+        await this.splitDataset(datasetId, config.splitRatios, config.stratifiedSplit);
+        // Re-fetch dataset to get updated metadata
+        const updatedDataset = await supabaseDatasetService.getDatasetById(datasetId);
+        splitInfo = updatedDataset?.metadata?.split;
+        if (!splitInfo) {
+          throw new Error('Failed to split dataset or retrieve split information.');
+        }
+      }
+      
+      // 3. Prepare Training Job Payload
+      // This payload would be specific to the ML training service/queue being used
+      const trainingJobPayload = {
+        jobId: uuidv4(),
+        datasetId: datasetId,
+        userId: config.userId,
+        // Include references to train/validation/test sets (using IDs or paths)
+        // trainSetRef: splitInfo.trainSetId, // Assuming splitDataset returns actual IDs
+        // validationSetRef: splitInfo.validationSetId,
+        // testSetRef: splitInfo.testSetId,
+        trainingConfig: {
+          model: config.modelArchitecture,
+          weights: config.pretrainedWeights,
+          checkpoint: config.customCheckpointPath,
+          hyperparameters: config.hyperparameters,
+          augmentation: config.augmentation,
+          outputName: config.outputModelName || `${dataset.name}-model-${Date.now()}`
+        },
+        // Add callback URL or WebSocket info for progress updates
+        callbackUrl: `/api/webhooks/training-status/${uuidv4()}`, // Example
+      };
+
+      // 4. Trigger Training Job
+      logger.info(`Submitting training job ${trainingJobPayload.jobId} to ML backend/queue...`);
+      
+      try {
+        // Import the message broker service
+        // Note: In a production environment, this would be properly imported at the top of the file
+        // and dependency injected, but we're adding it inline for demonstration
+        const messagePublisher = require('../../services/messaging/message-publisher.service');
+        
+        // Publish message to the training jobs queue/topic
+        await messagePublisher.publish('training.jobs.dataset', {
+          jobId: trainingJobPayload.jobId,
+          type: 'dataset_training',
+          payload: trainingJobPayload,
+          timestamp: new Date().toISOString()
+        });
+        
+        logger.info(`Successfully published training job ${trainingJobPayload.jobId} to message broker`);
+      } catch (error) {
+        logger.error(`Failed to publish training job to message broker: ${error}`);
+        throw new Error(`Failed to start training job: Error publishing to message broker - ${error instanceof Error ? error.message : String(error)}`);
+      }
+
+      // 5. Update Dataset Status and Create Training Job Record
+      try {
+        // Update dataset status to indicate training is starting
+        await supabaseDatasetService.updateDataset(datasetId, { 
+          status: 'processing', // Using a valid status value
+          updatedAt: new Date(), // Using Date object instead of string
+          metadata: {
+            ...dataset.metadata,
+            lastTrainingJob: {
+              jobId: trainingJobPayload.jobId,
+              startedAt: new Date().toISOString()
+            }
+          }
+        });
+        
+        // Create a record in the training_jobs table
+        const { error } = await supabaseClient
+          .getClient()
+          .from('training_jobs')
+          .insert({
+            id: trainingJobPayload.jobId,
+            dataset_id: datasetId,
+            status: 'queued',
+            config: trainingJobPayload.trainingConfig,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
+          
+        if (error) {
+          logger.warn(`Failed to create training job record: ${error.message}`);
+        }
+      } catch (dbError) {
+        // Log the error but don't fail the entire operation 
+        // (the job is already submitted to the queue)
+        logger.warn(`Failed to update dataset or create training job record: ${dbError}`);
+      }
+
+      logger.info(`Training job ${trainingJobPayload.jobId} submitted successfully.`);
+
+      return {
+        jobId: trainingJobPayload.jobId,
+        status: 'queued' // Or 'submitted', 'pending' depending on backend
+      };
+
+    } catch (err) {
+      logger.error(`Error starting training job for dataset ${datasetId}: ${err}`);
+      throw new Error(`Failed to start training job: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 }
 

@@ -15,6 +15,8 @@ import optimizedClient from '../../../../shared/src/services/supabase/optimizedC
 import { withConnection } from '../../../../shared/src/services/supabase/connectionPool';
 import { withCache } from '../../../../shared/src/services/supabase/queryCache';
 import { logger } from '../../utils/logger';
+import mcpClientService, { MCPServiceKey } from '../mcp/mcpClientService';
+import creditService from '../credit/creditService';
 
 // Event types for analytics tracking
 export enum AnalyticsEventType {
@@ -110,9 +112,21 @@ class AnalyticsService {
   }
 
   /**
+   * Check if MCP is available for analytics processing
+   * @returns True if MCP is available
+   */
+  private async isMCPAvailable(): Promise<boolean> {
+    try {
+      return await mcpClientService.isMCPAvailable();
+    } catch (error) {
+      logger.error(`Error checking MCP availability: ${error}`);
+      return false;
+    }
+  }
+
+  /**
    * Initialize the service, creating database table if needed
    */
-
   private async initializeService(): Promise<void> {
     // Check if the table exists, and create it if it doesn't
     try {
@@ -172,6 +186,59 @@ class AnalyticsService {
         event.timestamp = new Date().toISOString();
       }
 
+      // Check if MCP is available and user ID is provided
+      const mcpAvailable = await this.isMCPAvailable();
+      const userId = event.user_id;
+
+      if (mcpAvailable && userId) {
+        try {
+          // Estimate event count (1 event = 1 unit)
+          const estimatedUnits = 1;
+
+          // Check if user has enough credits
+          const hasEnoughCredits = await creditService.hasEnoughCreditsForService(
+            userId,
+            MCPServiceKey.ANALYTICS_PROCESSING,
+            estimatedUnits
+          );
+
+          if (hasEnoughCredits) {
+            // Use MCP for analytics processing
+            const mcpResult = await mcpClientService.processAnalyticsEvent(
+              userId,
+              {
+                eventType: event.event_type,
+                resourceType: event.resource_type,
+                query: event.query,
+                parameters: event.parameters,
+                timestamp: event.timestamp,
+                source: event.source,
+                sourceDetail: event.source_detail
+              }
+            );
+
+            // Track credit usage
+            await creditService.useServiceCredits(
+              userId,
+              MCPServiceKey.ANALYTICS_PROCESSING,
+              estimatedUnits,
+              `${MCPServiceKey.ANALYTICS_PROCESSING} API usage`,
+              {
+                eventType: event.event_type,
+                timestamp: event.timestamp
+              }
+            );
+
+            return mcpResult.id;
+          }
+        } catch (mcpError: any) {
+          // For MCP errors, log and fall back to direct implementation
+          // We don't want to disrupt analytics for credit issues
+          logger.warn(`MCP analytics processing failed, falling back to direct implementation: ${mcpError.message}`);
+        }
+      }
+
+      // Fall back to direct implementation if MCP is not available or failed
       // Use optimized client for better performance
       await optimizedClient.insert(
         this.tableName,
@@ -424,10 +491,67 @@ class AnalyticsService {
    * Query analytics events
    *
    * @param options Query options
+   * @param requestUserId User ID making the request (for MCP integration)
    * @returns The matching analytics events
    */
-  public async queryEvents(options: AnalyticsQueryOptions = {}): Promise<AnalyticsEvent[]> {
+  public async queryEvents(options: AnalyticsQueryOptions = {}, requestUserId?: string): Promise<AnalyticsEvent[]> {
     try {
+      // Check if MCP is available and user ID is provided
+      const mcpAvailable = await this.isMCPAvailable();
+
+      if (mcpAvailable && requestUserId) {
+        try {
+          // Estimate query complexity (1 unit per query)
+          const estimatedUnits = 1;
+
+          // Check if user has enough credits
+          const hasEnoughCredits = await creditService.hasEnoughCreditsForService(
+            requestUserId,
+            MCPServiceKey.ANALYTICS_REPORTING,
+            estimatedUnits
+          );
+
+          if (hasEnoughCredits) {
+            // Use MCP for analytics query
+            const mcpResult = await mcpClientService.queryAnalyticsEvents(
+              requestUserId,
+              {
+                eventType: options.eventType,
+                resourceType: options.resourceType,
+                userId: options.userId,
+                startDate: options.startDate?.toISOString(),
+                endDate: options.endDate?.toISOString(),
+                limit: options.limit,
+                skip: options.skip,
+                sort: options.sort
+              }
+            );
+
+            // Track credit usage
+            await creditService.useServiceCredits(
+              requestUserId,
+              MCPServiceKey.ANALYTICS_REPORTING,
+              estimatedUnits,
+              `${MCPServiceKey.ANALYTICS_REPORTING} API usage`,
+              {
+                queryType: 'events',
+                filters: {
+                  eventType: options.eventType,
+                  resourceType: options.resourceType,
+                  userId: options.userId
+                }
+              }
+            );
+
+            return mcpResult;
+          }
+        } catch (mcpError: any) {
+          // For MCP errors, log and fall back to direct implementation
+          logger.warn(`MCP analytics query failed, falling back to direct implementation: ${mcpError.message}`);
+        }
+      }
+
+      // Fall back to direct implementation if MCP is not available or failed
       // Build query parameters
       const queryParams: Record<string, any> = {};
 
@@ -560,12 +684,61 @@ class AnalyticsService {
    * Get trend analysis for analytics events
    *
    * @param options Trend analysis options
+   * @param requestUserId User ID making the request (for MCP integration)
    * @returns Trend data grouped by timeframe
    */
-  public async getTrends(options: TrendAnalysisOptions): Promise<Record<string, number>> {
+  public async getTrends(options: TrendAnalysisOptions, requestUserId?: string): Promise<Record<string, number>> {
     try {
       const { timeframe, eventType, startDate, endDate } = options;
 
+      // Check if MCP is available and user ID is provided
+      const mcpAvailable = await this.isMCPAvailable();
+
+      if (mcpAvailable && requestUserId) {
+        try {
+          // Estimate query complexity (2 units per trends query)
+          const estimatedUnits = 2;
+
+          // Check if user has enough credits
+          const hasEnoughCredits = await creditService.hasEnoughCreditsForService(
+            requestUserId,
+            MCPServiceKey.ANALYTICS_TRENDS,
+            estimatedUnits
+          );
+
+          if (hasEnoughCredits) {
+            // Use MCP for analytics trends
+            const mcpResult = await mcpClientService.getAnalyticsTrends(
+              requestUserId,
+              {
+                timeframe,
+                eventType,
+                startDate: startDate?.toISOString(),
+                endDate: endDate?.toISOString()
+              }
+            );
+
+            // Track credit usage
+            await creditService.useServiceCredits(
+              requestUserId,
+              MCPServiceKey.ANALYTICS_TRENDS,
+              estimatedUnits,
+              `${MCPServiceKey.ANALYTICS_TRENDS} API usage`,
+              {
+                timeframe,
+                eventType
+              }
+            );
+
+            return mcpResult;
+          }
+        } catch (mcpError: any) {
+          // For MCP errors, log and fall back to direct implementation
+          logger.warn(`MCP analytics trends failed, falling back to direct implementation: ${mcpError.message}`);
+        }
+      }
+
+      // Fall back to direct implementation if MCP is not available or failed
       // Use withCache for better performance on trend queries
       const data = await withCache(
         'analytics_trends',
@@ -610,10 +783,57 @@ class AnalyticsService {
    *
    * @param startDate Optional start date for filtering stats
    * @param endDate Optional end date for filtering stats
+   * @param requestUserId User ID making the request (for MCP integration)
    * @returns Analytics statistics
    */
-  public async getStats(startDate?: Date, endDate?: Date): Promise<AnalyticsStats> {
+  public async getStats(startDate?: Date, endDate?: Date, requestUserId?: string): Promise<AnalyticsStats> {
     try {
+      // Check if MCP is available and user ID is provided
+      const mcpAvailable = await this.isMCPAvailable();
+
+      if (mcpAvailable && requestUserId) {
+        try {
+          // Estimate query complexity (2 units per stats query)
+          const estimatedUnits = 2;
+
+          // Check if user has enough credits
+          const hasEnoughCredits = await creditService.hasEnoughCreditsForService(
+            requestUserId,
+            MCPServiceKey.ANALYTICS_STATS,
+            estimatedUnits
+          );
+
+          if (hasEnoughCredits) {
+            // Use MCP for analytics stats
+            const mcpResult = await mcpClientService.getAnalyticsStats(
+              requestUserId,
+              {
+                startDate: startDate?.toISOString(),
+                endDate: endDate?.toISOString()
+              }
+            );
+
+            // Track credit usage
+            await creditService.useServiceCredits(
+              requestUserId,
+              MCPServiceKey.ANALYTICS_STATS,
+              estimatedUnits,
+              `${MCPServiceKey.ANALYTICS_STATS} API usage`,
+              {
+                startDate: startDate?.toISOString(),
+                endDate: endDate?.toISOString()
+              }
+            );
+
+            return mcpResult;
+          }
+        } catch (mcpError: any) {
+          // For MCP errors, log and fall back to direct implementation
+          logger.warn(`MCP analytics stats failed, falling back to direct implementation: ${mcpError.message}`);
+        }
+      }
+
+      // Fall back to direct implementation if MCP is not available or failed
       // Use withCache for better performance on stats queries
       const data = await withCache(
         'analytics_stats',
@@ -658,14 +878,87 @@ class AnalyticsService {
    * @param limit The maximum number of queries to return
    * @param startDate Optional start date for filtering
    * @param endDate Optional end date for filtering
+   * @param requestUserId User ID making the request (for MCP integration)
    * @returns Top search queries with counts
    */
   public async getTopSearchQueries(
     limit: number = 10,
     startDate?: Date,
-    endDate?: Date
+    endDate?: Date,
+    requestUserId?: string
   ): Promise<Array<{query: string; count: number}>> {
     try {
+      // Check if MCP is available and user ID is provided
+      const mcpAvailable = await this.isMCPAvailable();
+
+      if (mcpAvailable && requestUserId) {
+        try {
+          // Estimate query complexity (1 unit per search query)
+          const estimatedUnits = 1;
+
+          // Check if user has enough credits
+          const hasEnoughCredits = await creditService.hasEnoughCreditsForService(
+            requestUserId,
+            MCPServiceKey.ANALYTICS_REPORTING,
+            estimatedUnits
+          );
+
+          if (hasEnoughCredits) {
+            // Use MCP for top search queries
+            const mcpResult = await mcpClientService.queryAnalyticsEvents(
+              requestUserId,
+              {
+                eventType: 'search',
+                startDate: startDate?.toISOString(),
+                endDate: endDate?.toISOString(),
+                limit
+              }
+            );
+
+            // Process results to match expected format
+            const processedResults = [];
+            const queryCountMap: Record<string, number> = {};
+
+            // Count occurrences of each query
+            for (const event of mcpResult) {
+              const query = event.query || '';
+              if (query) {
+                queryCountMap[query] = (queryCountMap[query] || 0) + 1;
+              }
+            }
+
+            // Convert to array and sort
+            for (const [query, count] of Object.entries(queryCountMap)) {
+              processedResults.push({ query, count });
+            }
+
+            // Sort by count descending
+            processedResults.sort((a, b) => b.count - a.count);
+
+            // Limit results
+            const limitedResults = processedResults.slice(0, limit);
+
+            // Track credit usage
+            await creditService.useServiceCredits(
+              requestUserId,
+              MCPServiceKey.ANALYTICS_REPORTING,
+              estimatedUnits,
+              `${MCPServiceKey.ANALYTICS_REPORTING} API usage`,
+              {
+                queryType: 'top_searches',
+                limit
+              }
+            );
+
+            return limitedResults;
+          }
+        } catch (mcpError: any) {
+          // For MCP errors, log and fall back to direct implementation
+          logger.warn(`MCP top search queries failed, falling back to direct implementation: ${mcpError.message}`);
+        }
+      }
+
+      // Fall back to direct implementation if MCP is not available or failed
       // Use withCache for better performance on top queries
       const data = await withCache(
         'top_search_queries',
@@ -704,14 +997,88 @@ class AnalyticsService {
    * @param limit The maximum number of prompts to return
    * @param startDate Optional start date for filtering
    * @param endDate Optional end date for filtering
+   * @param requestUserId User ID making the request (for MCP integration)
    * @returns Top agent prompts with counts
    */
   public async getTopAgentPrompts(
     limit: number = 10,
     startDate?: Date,
-    endDate?: Date
+    endDate?: Date,
+    requestUserId?: string
   ): Promise<Array<{prompt: string; count: number}>> {
     try {
+      // Check if MCP is available and user ID is provided
+      const mcpAvailable = await this.isMCPAvailable();
+
+      if (mcpAvailable && requestUserId) {
+        try {
+          // Estimate query complexity (1 unit per agent prompts query)
+          const estimatedUnits = 1;
+
+          // Check if user has enough credits
+          const hasEnoughCredits = await creditService.hasEnoughCreditsForService(
+            requestUserId,
+            MCPServiceKey.ANALYTICS_REPORTING,
+            estimatedUnits
+          );
+
+          if (hasEnoughCredits) {
+            // Use MCP for top agent prompts
+            const mcpResult = await mcpClientService.queryAnalyticsEvents(
+              requestUserId,
+              {
+                eventType: 'agent_prompt',
+                startDate: startDate?.toISOString(),
+                endDate: endDate?.toISOString(),
+                limit
+              }
+            );
+
+            // Process results to match expected format
+            const processedResults = [];
+            const promptCountMap: Record<string, number> = {};
+
+            // Count occurrences of each prompt
+            for (const event of mcpResult) {
+              const parameters = event.parameters || {};
+              const prompt = parameters.prompt || '';
+              if (prompt) {
+                promptCountMap[prompt] = (promptCountMap[prompt] || 0) + 1;
+              }
+            }
+
+            // Convert to array and sort
+            for (const [prompt, count] of Object.entries(promptCountMap)) {
+              processedResults.push({ prompt, count });
+            }
+
+            // Sort by count descending
+            processedResults.sort((a, b) => b.count - a.count);
+
+            // Limit results
+            const limitedResults = processedResults.slice(0, limit);
+
+            // Track credit usage
+            await creditService.useServiceCredits(
+              requestUserId,
+              MCPServiceKey.ANALYTICS_REPORTING,
+              estimatedUnits,
+              `${MCPServiceKey.ANALYTICS_REPORTING} API usage`,
+              {
+                queryType: 'top_agent_prompts',
+                limit
+              }
+            );
+
+            return limitedResults;
+          }
+        } catch (mcpError: any) {
+          // For MCP errors, log and fall back to direct implementation
+          logger.warn(`MCP top agent prompts failed, falling back to direct implementation: ${mcpError.message}`);
+        }
+      }
+
+      // Fall back to direct implementation if MCP is not available or failed
       // Use withCache for better performance on top prompts
       const data = await withCache(
         'top_agent_prompts',
@@ -750,14 +1117,102 @@ class AnalyticsService {
    * @param limit The maximum number of materials to return
    * @param startDate Optional start date for filtering
    * @param endDate Optional end date for filtering
+   * @param requestUserId User ID making the request (for MCP integration)
    * @returns Top viewed materials with counts
    */
   public async getTopMaterials(
     limit: number = 10,
     startDate?: Date,
-    endDate?: Date
+    endDate?: Date,
+    requestUserId?: string
   ): Promise<Array<{materialId: string; name: string; count: number}>> {
     try {
+      // Check if MCP is available and user ID is provided
+      const mcpAvailable = await this.isMCPAvailable();
+
+      if (mcpAvailable && requestUserId) {
+        try {
+          // Estimate query complexity (1 unit per materials query)
+          const estimatedUnits = 1;
+
+          // Check if user has enough credits
+          const hasEnoughCredits = await creditService.hasEnoughCreditsForService(
+            requestUserId,
+            MCPServiceKey.ANALYTICS_REPORTING,
+            estimatedUnits
+          );
+
+          if (hasEnoughCredits) {
+            // Use MCP for top materials
+            const mcpResult = await mcpClientService.queryAnalyticsEvents(
+              requestUserId,
+              {
+                eventType: 'view',
+                resourceType: 'material',
+                startDate: startDate?.toISOString(),
+                endDate: endDate?.toISOString(),
+                limit
+              }
+            );
+
+            // Process results to match expected format
+            const processedResults = [];
+            const materialCountMap: Record<string, {id: string; name: string; count: number}> = {};
+
+            // Count occurrences of each material
+            for (const event of mcpResult) {
+              const parameters = event.parameters || {};
+              const materialId = parameters.materialId || '';
+              const materialName = parameters.materialName || 'Unknown Material';
+
+              if (materialId) {
+                if (!materialCountMap[materialId]) {
+                  materialCountMap[materialId] = {
+                    id: materialId,
+                    name: materialName,
+                    count: 0
+                  };
+                }
+                materialCountMap[materialId].count++;
+              }
+            }
+
+            // Convert to array and sort
+            for (const material of Object.values(materialCountMap)) {
+              processedResults.push({
+                materialId: material.id,
+                name: material.name,
+                count: material.count
+              });
+            }
+
+            // Sort by count descending
+            processedResults.sort((a, b) => b.count - a.count);
+
+            // Limit results
+            const limitedResults = processedResults.slice(0, limit);
+
+            // Track credit usage
+            await creditService.useServiceCredits(
+              requestUserId,
+              MCPServiceKey.ANALYTICS_REPORTING,
+              estimatedUnits,
+              `${MCPServiceKey.ANALYTICS_REPORTING} API usage`,
+              {
+                queryType: 'top_materials',
+                limit
+              }
+            );
+
+            return limitedResults;
+          }
+        } catch (mcpError: any) {
+          // For MCP errors, log and fall back to direct implementation
+          logger.warn(`MCP top materials failed, falling back to direct implementation: ${mcpError.message}`);
+        }
+      }
+
+      // Fall back to direct implementation if MCP is not available or failed
       // Use withCache for better performance on top materials
       const data = await withCache(
         'top_materials',

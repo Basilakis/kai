@@ -6,6 +6,7 @@ Welcome to the Kai documentation. This index provides links to all documentation
 
 - [Main Project Overview](./main-readme.md) - Complete introduction to the Kai system
 - [Folder Structure](./folder-structure.md) - Organization and component interactions
+- [Analytics System](./analytics-system.md) - Analytics architecture and predictive capabilities
 
 ## ML Components
 
