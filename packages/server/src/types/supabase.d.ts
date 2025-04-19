@@ -47,6 +47,7 @@ declare module '@supabase/supabase-js' {
     contains: (column: string, value: any) => PostgrestFilterBuilder<T>;
     containedBy: (column: string, value: any) => PostgrestFilterBuilder<T>;
     range: (column: string, from: any, to: any) => PostgrestFilterBuilder<T>;
+    range: (from: number, to: number) => PostgrestFilterBuilder<T>;
     textSearch: (column: string, query: string, options?: any) => PostgrestFilterBuilder<T>;
     filter: (column: string, operator: string, value: any) => PostgrestFilterBuilder<T>;
     match: (query: any) => PostgrestFilterBuilder<T>;

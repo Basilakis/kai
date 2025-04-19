@@ -42,6 +42,12 @@ export enum MCPServiceKey {
   CONVERSATIONAL_SEARCH = 'vector.conversational-search',
   DOMAIN_SEARCH = 'vector.domain-search',
 
+  // Messaging Services
+  EMAIL_NOTIFICATION = 'messaging.email',
+  SMS_NOTIFICATION = 'messaging.sms',
+  PUSH_NOTIFICATION = 'messaging.push',
+  WEBHOOK_NOTIFICATION = 'messaging.webhook',
+
   // Content Processing
   PDF_PROCESSING = 'content.pdf-processing',
   OCR_PROCESSING = 'content.ocr-processing',
@@ -1769,6 +1775,115 @@ class MCPClientService {
       logger.error(`Error predicting user behavior: ${error}`);
       throw error;
     }
+  }
+
+  /**
+   * Send email notification via MCP
+   * @param userId User ID
+   * @param options Email options
+   * @returns Email send result
+   */
+  public async sendEmail(
+    userId: string,
+    options: {
+      to: string | string[];
+      subject: string;
+      text?: string;
+      html?: string;
+      cc?: string | string[];
+      bcc?: string | string[];
+      attachments?: Array<{
+        filename: string;
+        content: string | Buffer;
+        contentType?: string;
+      }>;
+    }
+  ): Promise<{ messageId: string }> {
+    // Call MCP endpoint
+    return await this.callEndpoint<{ messageId: string }>(
+      userId,
+      MCPServiceKey.EMAIL_NOTIFICATION,
+      'messaging/email',
+      options,
+      1 // 1 credit per email
+    );
+  }
+
+  /**
+   * Send SMS notification via MCP
+   * @param userId User ID
+   * @param options SMS options
+   * @returns SMS send result
+   */
+  public async sendSMS(
+    userId: string,
+    options: {
+      to: string | string[];
+      message: string;
+    }
+  ): Promise<{ messageId: string }> {
+    // Call MCP endpoint
+    return await this.callEndpoint<{ messageId: string }>(
+      userId,
+      MCPServiceKey.SMS_NOTIFICATION,
+      'messaging/sms',
+      options,
+      1 // 1 credit per SMS
+    );
+  }
+
+  /**
+   * Send push notification via MCP
+   * @param userId User ID
+   * @param options Push notification options
+   * @returns Push notification result
+   */
+  public async sendPushNotification(
+    userId: string,
+    options: {
+      to: string | string[];
+      title: string;
+      body: string;
+      data?: Record<string, any>;
+      sound?: string;
+      badge?: number;
+      channelId?: string;
+      priority?: 'default' | 'normal' | 'high';
+    }
+  ): Promise<{ id: string; status: string }[]> {
+    // Call MCP endpoint
+    return await this.callEndpoint<{ id: string; status: string }[]>(
+      userId,
+      MCPServiceKey.PUSH_NOTIFICATION,
+      'messaging/push',
+      options,
+      1 // 1 credit per push notification
+    );
+  }
+
+  /**
+   * Send webhook notification via MCP
+   * @param userId User ID
+   * @param options Webhook options
+   * @returns Webhook send result
+   */
+  public async sendWebhook(
+    userId: string,
+    options: {
+      url: string;
+      method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
+      headers?: Record<string, string>;
+      payload: any;
+    }
+  ): Promise<{ status: number; data: any }> {
+    // Call MCP endpoint
+    return await this.callEndpoint<{ status: number; data: any }>(
+      userId,
+      MCPServiceKey.WEBHOOK_NOTIFICATION,
+      'messaging/webhook',
+      options,
+      1 // 1 credit per webhook
+    );
   }
 }
 

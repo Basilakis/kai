@@ -1,0 +1,254 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: multimodal-pattern-recognition-template
+  namespace: default
+spec:
+  entrypoint: pattern-recognition-main
+  arguments:
+    parameters:
+    - name: input-data-path
+      description: "Path to the input data"
+    - name: user-id
+      description: "User ID for tracking and permissions"
+    - name: job-id
+      description: "Unique job identifier"
+    - name: quality-tier
+      description: "Quality tier (standard, premium, enterprise)"
+      default: "standard"
+    - name: pattern-type
+      description: "Type of pattern analysis to perform (materials, textures, complete)"
+      default: "complete"
+    - name: confidence-threshold
+      description: "Minimum confidence threshold for pattern matching"
+      default: "0.75"
+    - name: text-query
+      description: "Optional text query for pattern-to-text matching"
+      default: ""
+
+  # Volume claims for persistent storage
+  volumeClaimTemplates:
+  - metadata:
+      name: workdir
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 20Gi
+      storageClassName: premium-rwo
+
+  # Main workflow definition
+  templates:
+  - name: pattern-recognition-main
+    steps:
+    - - name: validate-inputs
+        template: input-validation
+        arguments:
+          parameters:
+          - name: input-data-path
+            value: "{{workflow.parameters.input-data-path}}"
+          - name: user-id
+            value: "{{workflow.parameters.user-id}}"
+
+    - - name: prepare-data
+        template: data-preparation
+        arguments:
+          parameters:
+          - name: input-data-path
+            value: "{{workflow.parameters.input-data-path}}"
+          - name: pattern-type
+            value: "{{workflow.parameters.pattern-type}}"
+          - name: job-id
+            value: "{{workflow.parameters.job-id}}"
+
+    - - name: select-model
+        template: model-selection
+        arguments:
+          parameters:
+          - name: quality-tier
+            value: "{{workflow.parameters.quality-tier}}"
+          - name: pattern-type
+            value: "{{workflow.parameters.pattern-type}}"
+
+    - - name: run-pattern-recognition
+        template: pattern-recognition-execution
+        arguments:
+          parameters:
+          - name: model-path
+            value: "{{steps.select-model.outputs.parameters.selected-model-path}}"
+          - name: prepared-data-path
+            value: "{{steps.prepare-data.outputs.parameters.prepared-data-path}}"
+          - name: confidence-threshold
+            value: "{{workflow.parameters.confidence-threshold}}"
+          - name: text-query
+            value: "{{workflow.parameters.text-query}}"
+          - name: quality-tier
+            value: "{{workflow.parameters.quality-tier}}"
+
+    - - name: post-process-results
+        template: results-post-processing
+        arguments:
+          parameters:
+          - name: raw-results-path
+            value: "{{steps.run-pattern-recognition.outputs.parameters.raw-results-path}}"
+          - name: confidence-threshold
+            value: "{{workflow.parameters.confidence-threshold}}"
+
+    - - name: store-results
+        template: results-storage
+        arguments:
+          parameters:
+          - name: processed-results-path
+            value: "{{steps.post-process-results.outputs.parameters.processed-results-path}}"
+          - name: user-id
+            value: "{{workflow.parameters.user-id}}"
+          - name: job-id
+            value: "{{workflow.parameters.job-id}}"
+
+  # Input validation template
+  - name: input-validation
+    inputs:
+      parameters:
+      - name: input-data-path
+      - name: user-id
+    container:
+      image: ${REGISTRY}/pattern-validation:latest
+      command: ["/bin/sh", "-c"]
+      args: ["python /app/validate_inputs.py --input-path {{inputs.parameters.input-data-path}} --user-id {{inputs.parameters.user-id}}"]
+      resources:
+        requests:
+          memory: "512Mi"
+          cpu: "250m"
+        limits:
+          memory: "1Gi"
+          cpu: "500m"
+
+  # Data preparation template
+  - name: data-preparation
+    inputs:
+      parameters:
+      - name: input-data-path
+      - name: pattern-type
+      - name: job-id
+    outputs:
+      parameters:
+      - name: prepared-data-path
+        valueFrom:
+          path: /tmp/prepared-data-path.txt
+    container:
+      image: ${REGISTRY}/pattern-data-prep:latest
+      command: ["/bin/sh", "-c"]
+      args: ["python /app/prepare_data.py --input-path {{inputs.parameters.input-data-path}} --pattern-type {{inputs.parameters.pattern-type}} --job-id {{inputs.parameters.job-id}} --output-path-file /tmp/prepared-data-path.txt"]
+      volumeMounts:
+      - name: workdir
+        mountPath: /data
+      resources:
+        requests:
+          memory: "2Gi"
+          cpu: "1"
+        limits:
+          memory: "4Gi"
+          cpu: "2"
+
+  # Model selection template
+  - name: model-selection
+    inputs:
+      parameters:
+      - name: quality-tier
+      - name: pattern-type
+    outputs:
+      parameters:
+      - name: selected-model-path
+        valueFrom:
+          path: /tmp/selected-model-path.txt
+    container:
+      image: ${REGISTRY}/pattern-model-selector:latest
+      command: ["/bin/sh", "-c"]
+      args: ["python /app/select_model.py --quality-tier {{inputs.parameters.quality-tier}} --pattern-type {{inputs.parameters.pattern-type}} --output-file /tmp/selected-model-path.txt"]
+      resources:
+        requests:
+          memory: "512Mi"
+          cpu: "250m"
+        limits:
+          memory: "1Gi"
+          cpu: "500m"
+
+  # Pattern recognition execution template
+  - name: pattern-recognition-execution
+    inputs:
+      parameters:
+      - name: model-path
+      - name: prepared-data-path
+      - name: confidence-threshold
+      - name: text-query
+      - name: quality-tier
+    outputs:
+      parameters:
+      - name: raw-results-path
+        valueFrom:
+          path: /tmp/raw-results-path.txt
+    container:
+      image: ${REGISTRY}/multimodal-pattern-recognizer:latest
+      command: ["/bin/sh", "-c"]
+      args: ["python /app/run_recognition.py --model-path {{inputs.parameters.model-path}} --data-path {{inputs.parameters.prepared-data-path}} --confidence {{inputs.parameters.confidence-threshold}} --text-query \"{{inputs.parameters.text-query}}\" --output-file /tmp/raw-results-path.txt"]
+      volumeMounts:
+      - name: workdir
+        mountPath: /data
+      resources:
+        limits:
+          nvidia.com/gpu: 1
+          memory: "16Gi"
+        requests:
+          nvidia.com/gpu: 1
+          memory: "12Gi"
+          cpu: "4"
+      nodeSelector:
+        cloud.digitalocean.com/gpu-type: "nvidia-l40s"
+
+  # Results post-processing template
+  - name: results-post-processing
+    inputs:
+      parameters:
+      - name: raw-results-path
+      - name: confidence-threshold
+    outputs:
+      parameters:
+      - name: processed-results-path
+        valueFrom:
+          path: /tmp/processed-results-path.txt
+    container:
+      image: ${REGISTRY}/pattern-results-processor:latest
+      command: ["/bin/sh", "-c"]
+      args: ["python /app/post_process.py --input-path {{inputs.parameters.raw-results-path}} --confidence {{inputs.parameters.confidence-threshold}} --output-file /tmp/processed-results-path.txt"]
+      volumeMounts:
+      - name: workdir
+        mountPath: /data
+      resources:
+        requests:
+          memory: "2Gi"
+          cpu: "1"
+        limits:
+          memory: "4Gi"
+          cpu: "2"
+
+  # Results storage template
+  - name: results-storage
+    inputs:
+      parameters:
+      - name: processed-results-path
+      - name: user-id
+      - name: job-id
+    container:
+      image: ${REGISTRY}/pattern-results-storage:latest
+      command: ["/bin/sh", "-c"]
+      args: ["python /app/store_results.py --input-path {{inputs.parameters.processed-results-path}} --user-id {{inputs.parameters.user-id}} --job-id {{inputs.parameters.job-id}}"]
+      volumeMounts:
+      - name: workdir
+        mountPath: /data
+      resources:
+        requests:
+          memory: "1Gi"
+          cpu: "500m"
+        limits:
+          memory: "2Gi"
+          cpu: "1"

@@ -1,0 +1,327 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: parameter-registry
+  namespace: kai-ml
+  labels:
+    app: parameter-registry
+    component: ml-ops
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: parameter-registry
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: parameter-registry
+        component: ml-ops
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9100"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: parameter-registry
+        image: ${REGISTRY_URL}/kai/parameter-registry:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 5000
+          name: http
+        - containerPort: 9100
+          name: metrics
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+          limits:
+            cpu: "1"
+            memory: "2Gi"
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: parameter-registry-config
+              key: log_level
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: parameter-registry-config
+              key: redis_host
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: parameter-registry-config
+              key: redis_port
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: parameter-registry-secrets
+              key: database_url
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: parameter-registry-secrets
+              key: redis_password
+        - name: SUPABASE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: parameter-registry-config
+              key: supabase_url
+        - name: SUPABASE_SERVICE_ROLE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: parameter-registry-secrets
+              key: supabase_service_role_key
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 2
+          failureThreshold: 3
+        volumeMounts:
+        - name: config-volume
+          mountPath: /app/config
+          readOnly: true
+        - name: parameter-storage
+          mountPath: /app/data
+      volumes:
+      - name: config-volume
+        configMap:
+          name: parameter-registry-config
+      - name: parameter-storage
+        persistentVolumeClaim:
+          claimName: parameter-registry-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: parameter-registry
+  namespace: kai-ml
+  labels:
+    app: parameter-registry
+    component: ml-ops
+spec:
+  selector:
+    app: parameter-registry
+  ports:
+  - port: 80
+    targetPort: 5000
+    protocol: TCP
+    name: http
+  - port: 9100
+    targetPort: 9100
+    protocol: TCP
+    name: metrics
+  type: ClusterIP
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: parameter-registry-pvc
+  namespace: kai-ml
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: standard
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: parameter-registry-config
+  namespace: kai-ml
+data:
+  log_level: "info"
+  redis_host: "redis-master.kai-ml.svc.cluster.local"
+  redis_port: "6379"
+  supabase_url: "https://your-project.supabase.co"
+  material_defaults.json: |
+    {
+      "wood": {
+        "architecture": "vit",
+        "learning_rate": 0.0005,
+        "batch_size": 16,
+        "weight_decay": 5e-5,
+        "dropout": 0.3,
+        "data_augmentation": "texture_focused"
+      },
+      "metal": {
+        "architecture": "hybrid-cnn-vit",
+        "learning_rate": 0.0003,
+        "batch_size": 24,
+        "weight_decay": 1e-5,
+        "dropout": 0.2,
+        "data_augmentation": "reflection_focused"
+      },
+      "fabric": {
+        "architecture": "vit",
+        "learning_rate": 0.0007,
+        "batch_size": 32,
+        "weight_decay": 3e-5,
+        "dropout": 0.4,
+        "data_augmentation": "pattern_focused"
+      },
+      "stone": {
+        "architecture": "vit",
+        "learning_rate": 0.0004,
+        "batch_size": 16,
+        "weight_decay": 4e-5,
+        "dropout": 0.3,
+        "data_augmentation": "texture_color_balanced"
+      },
+      "glass": {
+        "architecture": "hybrid-cnn-vit",
+        "learning_rate": 0.0002,
+        "batch_size": 16,
+        "weight_decay": 2e-5,
+        "dropout": 0.2,
+        "data_augmentation": "transparency_reflection_focused"
+      },
+      "ceramic": {
+        "architecture": "vit",
+        "learning_rate": 0.0006,
+        "batch_size": 24,
+        "weight_decay": 4e-5,
+        "dropout": 0.3,
+        "data_augmentation": "pattern_shine_focused"
+      }
+    }
+  similarity_config.json: |
+    {
+      "similarityMethods": [
+        "jaccard",
+        "sequenceMatching"
+      ],
+      "similarity_threshold": 0.5,
+      "tokenization": {
+        "enableCamelCaseProcessing": true,
+        "enableSnakeCaseProcessing": true,
+        "minTokenLength": 3
+      }
+    }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: parameter-registry-network-policy
+  namespace: kai-ml
+spec:
+  podSelector:
+    matchLabels:
+      app: parameter-registry
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          component: ml-ops
+    - podSelector:
+        matchLabels:
+          component: processing
+    ports:
+    - protocol: TCP
+      port: 5000
+    - protocol: TCP
+      port: 9100
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: redis-master
+    ports:
+    - protocol: TCP
+      port: 6379
+  - to:
+    - podSelector:
+        matchLabels:
+          app: supabase-db
+    ports:
+    - protocol: TCP
+      port: 5432
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: parameter-registry-backup
+  namespace: kai-ml
+spec:
+  schedule: "0 2 * * *"  # Run daily at 2:00 AM
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: backup
+            image: ${REGISTRY_URL}/kai/parameter-registry-backup:latest
+            command: ["python", "/app/backup.py"]
+            env:
+            - name: BACKUP_DESTINATION
+              value: "s3://kai-backups/parameter-registry/"
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: parameter-registry-secrets
+                  key: aws_access_key_id
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: parameter-registry-secrets
+                  key: aws_secret_access_key
+            volumeMounts:
+            - name: parameter-storage
+              mountPath: /app/data
+              readOnly: true
+          volumes:
+          - name: parameter-storage
+            persistentVolumeClaim:
+              claimName: parameter-registry-pvc
+          restartPolicy: OnFailure
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: parameter-registry-hpa
+  namespace: kai-ml
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: parameter-registry
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80

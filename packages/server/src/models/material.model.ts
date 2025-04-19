@@ -3,18 +3,56 @@
  * 
  * This model represents materials in the system, including tiles, stone, wood, etc.
  * It stores material specifications, images, and metadata extracted from catalogs.
+ * 
+ * This model extends the shared Material type definition to maintain consistency
+ * across packages while adding server-specific database fields.
  */
 
 import mongoose from 'mongoose';
 // Get Schema from mongoose instance
 const { Schema } = mongoose;
-// Use type augmentation approach for TypeScript types
-import type { Document as MongooseDocument } from 'mongoose';
+// Define Document interface type from mongoose
+type Document = mongoose.Document;
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger';
 
+// Import shared material types using relative path
+import { 
+  Material, 
+  ServerMaterialBase, 
+  ExtendMaterial,
+  MaterialDimension, 
+  MaterialColor,
+  MaterialImage,
+  MaterialTypeEnum
+} from '../../../shared/src/types/material';
+
 /**
- * Base material schema definition
+ * Server-specific Material interface that extends the base Material interface
+ * This ensures type consistency across packages while allowing server-specific fields
+ */
+export interface ServerMaterial extends Material {
+  // Include id property from Material
+  id: string;
+  // Add MongoDB-specific properties
+  _id: mongoose.Types.ObjectId;
+  __v?: number;
+  
+  // Additional server-specific properties
+  indexStatus?: 'pending' | 'indexed' | 'failed';
+  processingStatus?: 'pending' | 'processing' | 'completed' | 'failed';
+  storageSize?: number;
+  lastModifiedBy?: string;
+  lastRetrievedAt?: Date;
+}
+
+/**
+ * Material document type for Mongoose
+ */
+export type MaterialDocument = ServerMaterial & Document;
+
+/**
+ * Base material schema definition - aligns with the shared Material structure
  */
 const materialSchema = new Schema(
   {
@@ -257,7 +295,7 @@ materialSchema.index({ seriesId: 1 });
 /**
  * Material document type
  */
-export type MaterialType = MongooseDocument & {
+export type MaterialType = Document & {
   id: string;
   name: string;
   description?: string;
@@ -348,7 +386,7 @@ const Material = mongoose.model<MaterialType>('Material', materialSchema);
  * @param materialData Material data
  * @returns Created material document
  */
-export async function createMaterial(materialData: Partial<MaterialType>): Promise<MaterialType> {
+export async function createMaterial(materialData: Partial<ServerMaterial>): Promise<MaterialDocument> {
   try {
     const material = new Material(materialData);
     await material.save();
@@ -365,7 +403,7 @@ export async function createMaterial(materialData: Partial<MaterialType>): Promi
  * @param id Material ID
  * @returns Material document
  */
-export async function getMaterialById(id: string): Promise<MaterialType | null> {
+export async function getMaterialById(id: string): Promise<MaterialDocument | null> {
   try {
     return await Material.findOne({ id });
   } catch (err) {
@@ -381,7 +419,7 @@ export async function getMaterialById(id: string): Promise<MaterialType | null> 
  * @param updateData Update data
  * @returns Updated material document
  */
-export async function updateMaterial(id: string, updateData: Partial<MaterialType>): Promise<MaterialType | null> {
+export async function updateMaterial(id: string, updateData: Partial<ServerMaterial>): Promise<MaterialDocument | null> {
   try {
     return await Material.findOneAndUpdate(
       { id },
@@ -400,7 +438,7 @@ export async function updateMaterial(id: string, updateData: Partial<MaterialTyp
  * @param id Material ID
  * @returns Deleted material document
  */
-export async function deleteMaterial(id: string): Promise<MaterialType | null> {
+export async function deleteMaterial(id: string): Promise<MaterialDocument | null> {
   try {
     return await Material.findOneAndDelete({ id });
   } catch (err) {
@@ -432,7 +470,7 @@ export async function searchMaterials(options: {
   skip?: number;
   sort?: Record<string, 1 | -1>;
 }): Promise<{
-  materials: MaterialType[];
+  materials: MaterialDocument[];
   total: number;
 }> {
   try {
@@ -558,7 +596,7 @@ export async function findSimilarMaterials(
     materialType?: string | string[];
   } = {}
 ): Promise<Array<{
-  material: MaterialType;
+  material: MaterialDocument;
   similarity: number;
 }>> {
   try {
@@ -594,7 +632,7 @@ export async function findSimilarMaterials(
     
     // Calculate similarity scores
     const similarMaterials = materials
-      .map((material: MaterialType) => {
+      .map((material: MaterialDocument) => {
         if (!material.vectorRepresentation || material.vectorRepresentation.length === 0) {
           return { material, similarity: 0 };
         }
@@ -726,13 +764,13 @@ export async function createMaterialFromImageAndText(
     manufacturer?: string;
     userId?: string;
   }
-): Promise<MaterialType> {
+): Promise<MaterialDocument> {
   try {
     // Extract material information from texts
     const extractedInfo = await extractMaterialInfoFromTexts(texts);
     
     // Create material data
-    const materialData: Partial<MaterialType> = {
+    const materialData: Partial<ServerMaterial> = {
       id: uuidv4(),
       name: extractedInfo.name || `Material from ${options.manufacturer || 'Unknown'} - ${image.fileName}`,
       description: extractedInfo.description,

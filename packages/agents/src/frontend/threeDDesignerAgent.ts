@@ -1,10 +1,11 @@
 import { Agent, Task } from 'crewai';
 import { MaterialDetails, MaterialSearchResult } from '../services/materialService';
-import { ThreeDService, RoomLayout } from '../services/3d-designer/threeDService';
+import { ThreeDService, RoomLayout, WorkflowStatus } from '../services/3d-designer/threeDService'; // Added WorkflowStatus
 import { MaterialService } from '../services/materialService';
 import { VectorService } from '../services/vectorService';
 import { ServiceConfig } from '../services/baseService';
 import { FurniturePlacementService } from '../services/3d-designer/furniturePlacementService';
+import { SubscriptionTier } from '@kai/shared'; // Import SubscriptionTier
 
 // Ensure this matches the expected ModelEndpoints interface in ThreeDService
 interface ThreeDDesignerConfig {
@@ -42,9 +43,9 @@ export class ThreeDDesignerAgent extends Agent {
     super({
       name: '3D Designer Agent',
       description: 'Expert in 3D visualization, design, and intelligent furniture placement',
-      backstory: `I am a specialized AI agent trained in 3D visualization and design. I can reconstruct 3D environments 
-                 from images using advanced neural rendering techniques, generate them from text descriptions, and create 
-                 physically accurate furniture arrangements. I have expertise in room layout analysis, object detection, 
+      backstory: `I am a specialized AI agent trained in 3D visualization and design. I can reconstruct 3D environments
+                 from images using advanced neural rendering techniques, generate them from text descriptions, and create
+                 physically accurate furniture arrangements. I have expertise in room layout analysis, object detection,
                  depth estimation, material recognition, and physics-based furniture placement optimization.`,
       goal: 'Create accurate 3D reconstructions from images and text descriptions, optimize layouts, suggest materials, and ensure physical accuracy'
     });
@@ -52,11 +53,26 @@ export class ThreeDDesignerAgent extends Agent {
     // Initialize API key
     this.anthropicApiKey = process.env.ANTHROPIC_API_KEY || '';
 
-    // Initialize services
-    this.threeDService = new ThreeDService(config.modelEndpoints);
-    this.furniturePlacementService = new FurniturePlacementService({
-      threeDFrontPath: config.threeDFrontPath
-    });
+    // Initialize services with proper error handling and logging
+    try {
+      // Constructor takes no arguments now
+      this.threeDService = new ThreeDService();
+      console.log('ThreeDService initialized successfully');
+    } catch (error) {
+      console.error('Failed to initialize ThreeDService:', error);
+      throw new Error('Failed to initialize ThreeDService');
+    }
+
+    try {
+      this.furniturePlacementService = new FurniturePlacementService({
+        threeDFrontPath: config.threeDFrontPath
+      });
+      console.log('FurniturePlacementService initialized successfully');
+    } catch (error) {
+      console.error('Failed to initialize FurniturePlacementService:', error);
+      throw new Error('Failed to initialize FurniturePlacementService');
+    }
+
     const serviceConfig: ServiceConfig = {
       baseURL: config.knowledgeBaseUrl,
       headers: {
@@ -64,17 +80,30 @@ export class ThreeDDesignerAgent extends Agent {
       }
     };
 
-    this.materialService = new MaterialService(serviceConfig);
-    this.vectorService = new VectorService(serviceConfig);
+    try {
+      this.materialService = new MaterialService(serviceConfig);
+      console.log('MaterialService initialized successfully');
+    } catch (error) {
+      console.error('Failed to initialize MaterialService:', error);
+      throw new Error('Failed to initialize MaterialService');
+    }
+
+    try {
+      this.vectorService = new VectorService(serviceConfig);
+      console.log('VectorService initialized successfully');
+    } catch (error) {
+      console.error('Failed to initialize VectorService:', error);
+      throw new Error('Failed to initialize VectorService');
+    }
   }
 
   async process2DDrawing(task: Task): Promise<any> {
     const taskData = JSON.parse(task.description);
     const { drawing } = taskData;
-    
+
     try {
       // Process the 2D architectural drawing
-      const roomLayout = await this.threeDService.processArchitecturalDrawing(drawing);
+      const roomLayout = await this.threeDService.processArchitecturalDrawing(drawing, 'userId', 'subscriptionTier' as SubscriptionTier);
 
       // Search for appropriate materials based on the architectural elements
       const materials = await this.searchRelevantMaterials({
@@ -100,16 +129,35 @@ export class ThreeDDesignerAgent extends Agent {
     }
   }
 
-  async generateRoomFromText(task: Task): Promise<any> {
+  // Add userId and subscriptionTier context, assuming they are available
+  async generateRoomFromText(task: Task, userId: string, subscriptionTier: SubscriptionTier = 'standard'): Promise<any> {
     const taskData = JSON.parse(task.description);
     const { rooms, style } = taskData;
+    const description = `Generate ${rooms} rooms with a ${style} style.`; // Create a text description
 
     try {
-      // Generate room layouts from specifications
-      const roomLayouts = await this.threeDService.generateRoomLayout({ rooms, style });
+      // Submit text-to-3d workflow
+      const workflowStatus: WorkflowStatus = await this.threeDService.processTextInput(
+        description,
+        { rooms, style }, // Pass original options if needed by workflow
+        userId,
+        subscriptionTier
+      );
+
+      if (!workflowStatus.outputUrl) {
+        throw new Error('Text-to-3D workflow finished without an output URL.');
+      }
+
+      // Fetch the result (assuming outputUrl points to JSON data for layouts)
+      const resultResponse = await fetch(workflowStatus.outputUrl); // Needs proper fetch logic (e.g., S3)
+      if (!resultResponse.ok) {
+        throw new Error(`Failed to fetch room layouts from ${workflowStatus.outputUrl}`);
+      }
+      const roomLayouts: RoomLayout[] = await resultResponse.json();
+
 
       // For each room, handle furniture placement if specified
-      const furnishedRooms = await Promise.all(roomLayouts.map(async (layout) => {
+      const furnishedRooms = await Promise.all(roomLayouts.map(async (layout: RoomLayout) => {
         const result = await this.furniturePlacementService.generateFurniturePlacement(
           `Generate furniture layout for ${layout.metadata.purpose || 'room'} with style ${style || 'modern'}`,
           {
@@ -126,7 +174,7 @@ export class ThreeDDesignerAgent extends Agent {
 
       // Search for appropriate materials
       const materials = await this.searchRelevantMaterials({
-        elements: furnishedRooms.flatMap(room => room.elements),
+        elements: furnishedRooms.flatMap((room: RoomLayout) => room.elements),
         style
       });
 
@@ -148,13 +196,38 @@ export class ThreeDDesignerAgent extends Agent {
     }
   }
 
-  async refineResult(task: Task): Promise<any> {
+  // Add userId and subscriptionTier context
+  async refineResult(task: Task, userId: string, subscriptionTier: SubscriptionTier = 'standard'): Promise<any> {
     const taskData = JSON.parse(task.description);
-    const { result, feedback, options } = taskData;
+    // Assuming 'result' contains the ID or URL of the previous result to refine
+    const { result: previousResultRef, feedback, options } = taskData;
 
     try {
-      // Refine the result based on feedback
-      const refinedResult = await this.threeDService.refineResult(result, feedback, options);
+      // Submit a refinement workflow
+      // Note: threeDService needs a method like submitWorkflow or similar
+      // Let's assume processTextInput can handle refinement with context
+      const workflowStatus: WorkflowStatus = await this.threeDService.processTextInput(
+         `Refine the 3D model based on the following feedback: ${feedback}`,
+         {
+           refinementTarget: previousResultRef, // Pass reference to previous result
+           feedback: feedback,
+           options: options
+         },
+         userId,
+         subscriptionTier
+      );
+
+       if (!workflowStatus.outputUrl) {
+        throw new Error('Refinement workflow finished without an output URL.');
+      }
+
+      // Fetch the refined result
+      const resultResponse = await fetch(workflowStatus.outputUrl); // Needs proper fetch logic
+      if (!resultResponse.ok) {
+        throw new Error(`Failed to fetch refined result from ${workflowStatus.outputUrl}`);
+      }
+      const refinedResult = await resultResponse.json();
+
 
       // Generate response explaining the refinements
       const response = await this.generateRefinementResponse(refinedResult, feedback);

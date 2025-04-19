@@ -87,62 +87,102 @@ graph TD
 - Sparse embeddings using BM25 and TF-IDF
 - HNSW indexing for fast approximate nearest neighbor search
 - Specialized indexes per material category
+- Dynamic embedding generation with model selection
+- Auto-normalization and dimension handling
+- Custom tokenization for domain-specific terms
+- Multi-lingual support with language detection
 
 **Customization Points:**
 - Embedding models can be configured in `enhanced_text_embeddings.py`
 - Index parameters can be adjusted in the migration file
 - Storage settings controlled via the config object in the service
+- Custom tokenization rules for domain-specific terminology
 
 ### 2. Hybrid Retrieval System
 
 **Files:**
 - `packages/ml/python/hybrid_retriever.py` - Multi-stage retrieval implementation
+- `packages/server/src/types/enhancedVector.types.ts` - TypeScript type definitions
+- `packages/server/src/controllers/enhancedVector.controller.ts` - API endpoints
+- `packages/server/src/services/supabase/enhanced-vector-service.ts` - Service implementation
+- `packages/server/src/utils/enhancedVectorValidation.ts` - Input validation
 
 **Key Features:**
-- Multi-stage retrieval (dense, sparse, metadata)
-- Ensemble approaches with configurable strategies
-- Contextualized re-ranking of results
-- Flexible filtering and query refinement
+- Advanced multi-stage retrieval combining five approaches:
+  1. Dense vector embedding search (semantic similarity)
+  2. Sparse vector search (keyword/feature matching)
+  3. Metadata filtering (structured property matching)
+  4. Ensemble approach for result blending with adaptive weighting
+  5. Contextualized re-ranking with performance monitoring
+- Knowledge base integration with bidirectional linking
+- Distributive retrieval for heterogeneous data sources
+- Performance optimization with query profiling and auto-tuning
+- Streaming support for large responses
+- Comprehensive API with query, batch, and streaming interfaces
+- Material relationship mapping with transitive discovery
+- Advanced filtering with nested property support
+- Semantic indexing with automated classification
 
 **Customization Points:**
-- Retrieval strategies can be configured via the `strategy` parameter
-- Ensemble weights adjustable in `_blend_results` method
-- Re-ranking parameters in `_rerank_results` method
-- Filtering logic in `_apply_filters` method
+- Retrieval strategies can be configured via the `strategy` parameter (`hybrid`, `vector_first`, `knowledge_first`, `balanced`, `adaptive`)
+- Ensemble weights adjustable in `_combine_results` method with dense, sparse, and metadata weights
+- Re-ranking parameters in `_rerank_results` method including property matching boost
+- Filtering logic in `_apply_filters` method with support for advanced operators
+- Knowledge base integration via the `use_knowledge_base` parameter
+- Performance profiles for different use cases (`speed`, `quality`, `balanced`)
 
 ### 3. Context Assembly System
 
 **Files:**
 - `packages/ml/python/context_assembler.py` - Context organization
+- `packages/ml/python/hybrid_retriever.py` - Contains `ContextAssembler` class
 
 **Key Features:**
 - Structured property extraction from knowledge base
 - Relationship context incorporation
 - Vector-knowledge integration
 - Optimized formatting for downstream LLM use
+- Knowledge graph context extraction
+- Material relationship mapping
+- Bidirectional linking between materials and knowledge
+- Cross-reference validation for data consistency
+- Hierarchical context organization with priority levels
 
 **Customization Points:**
 - Knowledge sources prioritization in `_gather_knowledge` method
-- Relationship mapping parameters in `_process_relationships` method
+- Relationship mapping parameters in `_get_relationships` method
 - Context structure in `_format_context` method
-- Maximum context sizes in the configuration
+- Knowledge graph context in `_get_knowledge_graph_context` method
+- Maximum context sizes in the configuration via `max_context_items` parameter
+- Priority weighting for different context types
 
 ### 4. Generative Enhancement Layer
 
 **Files:**
 - `packages/ml/python/generative_enhancer.py` - LLM integration
+- `packages/ml/python/hybrid_retriever.py` - Contains `GenerativeEnhancer` class
 
 **Key Features:**
 - LLM integration for content enhancement
 - Factual grounding with knowledge base
 - Citation system for transparency
-- Multiple enhancement types (explanations, similarities, applications)
+- Multiple enhancement types (explanations, comparisons, applications)
+- Source extraction for proper attribution
+- Template-based prompt generation
+- Adaptive response formatting based on query type
+- Confidence scoring for generated content
+- Structured output options for machine consumption
 
 **Customization Points:**
 - LLM model selection in the configuration
-- Prompt templates in `_build_*_prompt` methods
+- Customizable prompt templates:
+  - `explanation_template` for material explanations
+  - `comparison_template` for similarity comparisons
+  - `application_template` for application recommendations
 - Response processing in `_process_*` methods
-- Enhancement types in the configuration
+- Property formatting in `_format_properties` method
+- Context formatting in `_format_context` method
+- Confidence threshold settings
 
 ### 5. Unified RAG Service
 
@@ -150,18 +190,123 @@ graph TD
 - `packages/ml/python/material_rag_service.py` - Orchestration service
 - `packages/ml/python/rag_bridge_handler.py` - Bridge to TypeScript
 - `packages/ml/src/rag-bridge.ts` - TypeScript integration
+- `packages/ml/python/hybrid_retriever.py` - Contains `MaterialRAGService` class
+- `packages/server/src/controllers/enhancedVector.controller.ts` - API endpoints
 
 **Key Features:**
 - Pipeline orchestration across all components
-- Caching for performance optimization
+- Caching for performance optimization with TTL settings
 - Streaming support for progressive delivery
 - Comprehensive API with query, batch, and streaming interfaces
+- Image-based search capabilities
+- Material comparison features
+- MCP (Material Computing Platform) integration
+- Performance monitoring and telemetry
+- Dynamic configuration management
+- Cross-platform operation via bridge handlers
 
 **Customization Points:**
 - Service configuration in the constructor
-- Caching parameters in the configuration
-- Stream chunk size and format in streaming methods
-- Error handling strategies
+- Caching parameters: `cache_results` and `cache_ttl_seconds`
+- Result enhancement options in `_enhance_results` method
+- Image search parameters in `search_by_image` method
+- Material comparison in `compare_materials` method
+- API integration with vector search configurations
+- Performance monitoring settings
+
+## Integration with EnhancedVector System
+
+The RAG system now fully integrates with the enhanced vector capabilities through the EnhancedVector API layer:
+
+### EnhancedVector TypeScript Integration
+
+**Files:**
+- `packages/server/src/types/enhancedVector.types.ts` - Type definitions
+- `packages/server/src/controllers/enhancedVector.controller.ts` - API controllers
+- `packages/server/src/routes/enhancedVector.routes.ts` - API routes
+- `packages/server/src/services/supabase/enhanced-vector-service.ts` - Service implementation
+- `packages/server/src/utils/enhancedVectorValidation.ts` - Input validation
+
+**Key Features:**
+- Strongly typed interfaces for all vector operations
+- Support for both dense and sparse vector embeddings with hybrid search
+- API endpoints for vector search and knowledge integration
+- Performance monitoring and configuration management
+- Advanced filtering with nested property support
+- Bidirectional linking between materials and knowledge
+- Extensible adapter pattern for multiple vector storage backends
+- Comprehensive error handling and validation
+- Detailed query profiling and optimization suggestions
+- Result pagination and cursor-based navigation
+
+**API Endpoints:**
+- `POST /api/vector/enhanced/embeddings` - Generate embeddings for text
+- `GET /api/vector/enhanced/search` - Search materials using text query
+- `GET /api/vector/enhanced/materials/:id/similar` - Find similar materials
+- `GET /api/vector/enhanced/knowledge/search` - Search with knowledge base integration
+- `GET /api/vector/enhanced/knowledge/materials/:id/similar` - Find similar materials with knowledge
+- `POST /api/vector/enhanced/knowledge/route` - Route a query between vector search and knowledge base
+- `POST /api/vector/enhanced/knowledge/context` - Assemble context from materials and knowledge
+- `GET /api/vector/enhanced/performance` - Get vector search performance statistics
+- `GET /api/vector/enhanced/configs` - Get vector search configurations
+- `POST /api/vector/enhanced/filter` - Advanced filtering with nested properties
+- `GET /api/vector/enhanced/profile` - Profile a search query for optimization
+- `POST /api/vector/enhanced/bulk` - Batch processing for multiple queries
+
+### MCP (Material Computing Platform) Integration
+
+The enhanced vector system includes integration with the MCP service for:
+- Embedding generation with model selection
+- Vector search with performance optimization
+- Fallback mechanisms when MCP is unavailable
+- Credit management for paid API usage
+- Distributed processing across multiple nodes
+- Batch operation for efficiency
+- Result caching with configurable TTL
+- Performance monitoring and reporting
+
+### Integration with CrewAI Agents
+
+The RAG system now integrates with the CrewAI agent architecture:
+
+**Files:**
+- `packages/agents/src/tools/vectorSearch.ts` - Vector search tool for agents
+- `packages/agents/src/services/adapters/vectorSearchMcpAdapter.ts` - MCP adapter for vector search
+
+**Key Features:**
+- Agent tools for semantic search operations
+- Knowledge base integration for enhanced agent capabilities
+- Unified type definitions for vector operations
+- AI-driven query refinement and expansion
+- Context-aware search customization
+- Material relationship exploration
+- AgentSystem integration for coordinated search
+
+**Usage Example:**
+```typescript
+// Create an agent with vector search capabilities
+const materialExpert = await createAgent({
+  id: 'material-expert-1',
+  type: AgentType.MATERIAL_EXPERT,
+  tools: [vectorSearchTool, knowledgeBaseTool]
+});
+
+// Use vector search with knowledge integration
+const searchResults = await materialExpert.invoke('vector_search', {
+  mode: 'text',
+  query: 'durable white marble for bathroom flooring',
+  limit: 5,
+  useKnowledgeBase: true,
+  includeRelationships: true
+});
+
+// Get detailed context for the materials
+const context = await materialExpert.invoke('get_material_context', {
+  materialIds: searchResults.map(r => r.id),
+  detailLevel: 'comprehensive',
+  includeApplications: true
+});
+```
 
 ## Customization Options
 
@@ -172,6 +317,8 @@ The RAG system uses a hierarchical configuration system that can be customized a
 1. **Default Configuration**: Base settings in each component
 2. **Global Configuration**: System-wide settings in the RAG service
 3. **Query-specific Configuration**: Parameters for individual queries
+4. **Vector Search Configurations**: Persistent configurations stored in the database
+5. **Performance Profiles**: Pre-configured settings for different use cases
 
 Example of customizing the global configuration:
 
@@ -436,12 +583,13 @@ self.config = {
     # ...
     "retrieval": {
         "max_results": 10,         # Number of results to retrieve
-        "strategy": "hybrid",      # dense, sparse, hybrid, or metadata
+        "strategy": "hybrid",      # dense, sparse, hybrid, adaptive, or metadata
         "threshold": 0.65,         # Minimum similarity score
         "dense_weight": 0.7,       # Weight of dense embeddings in hybrid
         "sparse_weight": 0.3,      # Weight of sparse embeddings in hybrid
         "reranking_enabled": True, # Whether to re-rank results
-        "reranking_model": "cross-encoder/ms-marco-MiniLM-L-6-v2"
+        "reranking_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+        "adaptive_weighting": True # Dynamically adjust weights based on query
     },
     # ...
 }
@@ -465,8 +613,62 @@ self.config = {
             "application"             # Include application recommendations
         ],
         "detail_level": "medium",     # brief, medium, or detailed
+        "formatting_style": "structured" # structured, conversational, technical
     },
     # ...
+}
+```
+
+### Performance Profiles
+
+The system now includes pre-configured performance profiles:
+
+```python
+PERFORMANCE_PROFILES = {
+    "speed": {
+        "retrieval": {
+            "max_results": 5,
+            "strategy": "vector_first",
+            "reranking_enabled": False,
+            "threshold": 0.7
+        },
+        "generation": {
+            "model": "gpt-3.5-turbo",
+            "detail_level": "brief"
+        },
+        "enable_cache": True,
+        "cache_ttl": 86400  # 24 hours
+    },
+    "quality": {
+        "retrieval": {
+            "max_results": 15,
+            "strategy": "hybrid",
+            "reranking_enabled": True,
+            "threshold": 0.6,
+            "dense_weight": 0.6,
+            "sparse_weight": 0.4
+        },
+        "generation": {
+            "model": "gpt-4",
+            "detail_level": "detailed"
+        },
+        "enable_cache": True,
+        "cache_ttl": 3600  # 1 hour
+    },
+    "balanced": {
+        "retrieval": {
+            "max_results": 10,
+            "strategy": "hybrid",
+            "reranking_enabled": True,
+            "threshold": 0.65
+        },
+        "generation": {
+            "model": "gpt-4",
+            "detail_level": "medium"
+        },
+        "enable_cache": True,
+        "cache_ttl": 7200  # 2 hours
+    }
 }
 ```
 

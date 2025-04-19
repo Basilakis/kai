@@ -1,0 +1,341 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: multimodal-pattern-recognition
+  namespace: kai-ml
+  labels:
+    app: multimodal-pattern-recognition
+    component: ml-services
+spec:
+  replicas: 1  # Start with 1 replica - will be autoscaled
+  selector:
+    matchLabels:
+      app: multimodal-pattern-recognition
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: multimodal-pattern-recognition
+        component: ml-services
+        gpu-enabled: "true"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9100"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: multimodal-pattern-recognition
+        image: ${REGISTRY_URL}/kai/multimodal-pattern-recognition:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8000
+          name: http
+        - containerPort: 9100
+          name: metrics
+        resources:
+          requests:
+            cpu: "4"
+            memory: "16Gi"
+            nvidia.com/gpu: 1
+          limits:
+            cpu: "8"
+            memory: "32Gi"
+            nvidia.com/gpu: 1
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: multimodal-pattern-config
+              key: log_level
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: multimodal-pattern-config
+              key: redis_host
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: multimodal-pattern-config
+              key: redis_port
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: multimodal-pattern-secrets
+              key: redis_password
+        - name: MODEL_CACHE_DIR
+          value: "/models/cache"
+        - name: TRANSFORMER_CACHE_DIR
+          value: "/models/transformers"
+        - name: USE_CUDA
+          value: "true"
+        - name: MAX_BATCH_SIZE
+          valueFrom:
+            configMapKeyRef:
+              name: multimodal-pattern-config
+              key: max_batch_size
+        - name: DEFAULT_VISION_MODEL
+          valueFrom:
+            configMapKeyRef:
+              name: multimodal-pattern-config
+              key: default_vision_model
+        - name: DEFAULT_TEXT_MODEL
+          valueFrom:
+            configMapKeyRef:
+              name: multimodal-pattern-config
+              key: default_text_model
+        - name: VECTOR_DB_URL
+          valueFrom:
+            secretKeyRef:
+              name: multimodal-pattern-secrets
+              key: vector_db_url
+        - name: MCP_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: multimodal-pattern-secrets
+              key: mcp_api_key
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 60  # Longer due to model loading
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        volumeMounts:
+        - name: config-volume
+          mountPath: /app/config
+          readOnly: true
+        - name: models-volume
+          mountPath: /models
+        - name: shared-data-volume
+          mountPath: /shared-data
+      volumes:
+      - name: config-volume
+        configMap:
+          name: multimodal-pattern-config
+      - name: models-volume
+        persistentVolumeClaim:
+          claimName: multimodal-models-pvc
+      - name: shared-data-volume
+        persistentVolumeClaim:
+          claimName: ml-shared-data-pvc
+      # Use node with appropriate GPU
+      nodeSelector:
+        gpu-type: nvidia-a10
+      # Use RuntimeClass for GPU support
+      runtimeClassName: nvidia-gpu
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: multimodal-pattern-recognition
+  namespace: kai-ml
+  labels:
+    app: multimodal-pattern-recognition
+    component: ml-services
+spec:
+  selector:
+    app: multimodal-pattern-recognition
+  ports:
+  - port: 80
+    targetPort: 8000
+    protocol: TCP
+    name: http
+  - port: 9100
+    targetPort: 9100
+    protocol: TCP
+    name: metrics
+  type: ClusterIP
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: multimodal-models-pvc
+  namespace: kai-ml
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: managed-premium
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: multimodal-pattern-config
+  namespace: kai-ml
+data:
+  log_level: "info"
+  redis_host: "redis-master.kai-ml.svc.cluster.local"
+  redis_port: "6379"
+  max_batch_size: "8"
+  default_vision_model: "vit-base-patch16-224"
+  default_text_model: "bert-base-uncased"
+  model_config.json: |
+    {
+      "supportedModels": {
+        "vision": [
+          {
+            "name": "vit-base-patch16-224",
+            "description": "Vision Transformer (base variant)",
+            "minGPUMemory": "8GB",
+            "recommendedGPUMemory": "16GB"
+          },
+          {
+            "name": "clip-vit-base-patch32",
+            "description": "CLIP Vision Encoder",
+            "minGPUMemory": "8GB",
+            "recommendedGPUMemory": "16GB" 
+          }
+        ],
+        "text": [
+          {
+            "name": "bert-base-uncased",
+            "description": "BERT Base (uncased)",
+            "minGPUMemory": "4GB",
+            "recommendedGPUMemory": "8GB"
+          },
+          {
+            "name": "clip-vit-base-patch32",
+            "description": "CLIP Text Encoder",
+            "minGPUMemory": "4GB",
+            "recommendedGPUMemory": "8GB"
+          }
+        ],
+        "multimodal": [
+          {
+            "name": "clip",
+            "description": "OpenAI CLIP",
+            "visionEncoder": "clip-vit-base-patch32",
+            "textEncoder": "clip-vit-base-patch32",
+            "minGPUMemory": "8GB",
+            "recommendedGPUMemory": "16GB"
+          },
+          {
+            "name": "custom-multimodal",
+            "description": "Custom multimodal model with cross-attention",
+            "visionEncoder": "vit-base-patch16-224",
+            "textEncoder": "bert-base-uncased",
+            "minGPUMemory": "16GB",
+            "recommendedGPUMemory": "24GB"
+          }
+        ]
+      }
+    }
+---
+# Training Job for MultiModal Pattern Recognition
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: multimodal-pattern-training
+  namespace: kai-ml
+spec:
+  template:
+    spec:
+      containers:
+      - name: multimodal-pattern-training
+        image: ${REGISTRY_URL}/kai/multimodal-pattern-training:latest
+        resources:
+          requests:
+            cpu: "8"
+            memory: "32Gi"
+            nvidia.com/gpu: 2
+          limits:
+            cpu: "16"
+            memory: "64Gi"
+            nvidia.com/gpu: 2
+        env:
+        - name: LOG_LEVEL
+          value: "info"
+        - name: NUM_EPOCHS
+          value: "10"
+        - name: BATCH_SIZE
+          value: "16"
+        - name: LEARNING_RATE
+          value: "2e-5"
+        - name: WARMUP_STEPS
+          value: "500"
+        - name: VISION_ENCODER
+          value: "vit-base-patch16-224"
+        - name: TEXT_ENCODER
+          value: "bert-base-uncased"
+        - name: USE_CONTRASTIVE_LOSS
+          value: "true"
+        - name: DATASET_PATH
+          value: "/datasets/multimodal-patterns"
+        - name: OUTPUT_DIR
+          value: "/models/multimodal-pattern-output"
+        volumeMounts:
+        - name: models-volume
+          mountPath: /models
+        - name: datasets-volume
+          mountPath: /datasets
+      volumes:
+      - name: models-volume
+        persistentVolumeClaim:
+          claimName: multimodal-models-pvc
+      - name: datasets-volume
+        persistentVolumeClaim:
+          claimName: ml-datasets-pvc
+      restartPolicy: Never
+      nodeSelector:
+        gpu-type: nvidia-a100
+      runtimeClassName: nvidia-gpu
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: multimodal-pattern-recognition-hpa
+  namespace: kai-ml
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: multimodal-pattern-recognition
+  minReplicas: 1
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 30
+      - type: Pods
+        value: 2
+        periodSeconds: 60
+      selectPolicy: Max

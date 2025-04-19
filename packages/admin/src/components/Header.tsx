@@ -1,5 +1,15 @@
-import React, { useState, useRef, useEffect } from 'react';
+// Fix import order - React must be first
+import * as React from 'react';
+const { useState, useRef, useEffect } = React;
+// Use proper import syntax for Next.js Link
 import Link from 'next/link';
+// Import types directly to avoid project include issues
+import {
+  NavItem,
+  HeaderBehavior,
+  createNavigationHandler,
+  headerClassNames as cn
+} from '../../../shared/src/components/interfaces/HeaderInterfaces';
 
 // Define a simple SVG props type
 type IconProps = {
@@ -7,6 +17,14 @@ type IconProps = {
   'aria-hidden'?: boolean | string;
   [key: string]: any;
 };
+
+// Define navigation items for the admin panel
+const navItems: NavItem[] = [
+  { label: 'Dashboard', path: '/dashboard' },
+  { label: 'Materials', path: '/materials' },
+  { label: 'Users', path: '/users' },
+  { label: 'Settings', path: '/settings' }
+];
 
 // Use inline SVG components instead of importing heroicons
 // This avoids package version compatibility issues
@@ -49,8 +67,9 @@ const LogoutIcon = (props: IconProps) => (
 
 // No router import needed since we're using window.location.href
 
+// Extend HeaderProps with our specific needs
 interface HeaderProps {
-  toggleSidebar: () => void;
+  toggleSidebar: () => void; // Add explicit type
 }
 
 // Auth service for handling authentication
@@ -85,7 +104,7 @@ const authService = {
 /**
  * Header component for the admin panel
  */
-const Header: React.FC<HeaderProps> = ({ toggleSidebar }) => {
+const Header: React.FC<HeaderProps> = ({ toggleSidebar }: HeaderProps) => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   // No need for router since we're using window.location.href

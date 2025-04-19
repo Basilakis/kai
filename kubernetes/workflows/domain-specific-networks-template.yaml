@@ -1,0 +1,299 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: domain-specific-networks-template
+  namespace: default
+spec:
+  entrypoint: domain-networks-main
+  arguments:
+    parameters:
+    - name: input-texture-path
+      description: "Path to the input texture data"
+    - name: user-id
+      description: "User ID for tracking and permissions"
+    - name: job-id
+      description: "Unique job identifier"
+    - name: quality-tier
+      description: "Quality tier (standard, premium, enterprise)"
+      default: "standard"
+    - name: material-type
+      description: "Material type if known (wood, metal, fabric, stone, ceramic, etc.)"
+      default: "auto-detect"
+    - name: process-type
+      description: "Type of processing to perform (analysis, enhancement, classification)"
+      default: "analysis"
+    - name: output-format
+      description: "Format for the output results"
+      default: "json"
+
+  # Volume claims for persistent storage
+  volumeClaimTemplates:
+  - metadata:
+      name: workdir
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 10Gi
+      storageClassName: premium-rwo
+
+  # Main workflow definition
+  templates:
+  - name: domain-networks-main
+    steps:
+    - - name: validate-inputs
+        template: input-validation
+        arguments:
+          parameters:
+          - name: input-texture-path
+            value: "{{workflow.parameters.input-texture-path}}"
+          - name: user-id
+            value: "{{workflow.parameters.user-id}}"
+
+    - - name: extract-textures
+        template: texture-extraction
+        arguments:
+          parameters:
+          - name: input-texture-path
+            value: "{{workflow.parameters.input-texture-path}}"
+          - name: job-id
+            value: "{{workflow.parameters.job-id}}"
+
+    - - name: determine-domain
+        template: domain-classification
+        arguments:
+          parameters:
+          - name: extracted-textures-path
+            value: "{{steps.extract-textures.outputs.parameters.extracted-textures-path}}"
+          - name: material-type
+            value: "{{workflow.parameters.material-type}}"
+
+    - - name: select-specialized-model
+        template: model-selection
+        arguments:
+          parameters:
+          - name: domain-type
+            value: "{{steps.determine-domain.outputs.parameters.detected-domain}}"
+          - name: quality-tier
+            value: "{{workflow.parameters.quality-tier}}"
+          - name: process-type
+            value: "{{workflow.parameters.process-type}}"
+
+    - - name: run-domain-network
+        template: domain-network-execution
+        arguments:
+          parameters:
+          - name: model-path
+            value: "{{steps.select-specialized-model.outputs.parameters.model-path}}"
+          - name: textures-path
+            value: "{{steps.extract-textures.outputs.parameters.extracted-textures-path}}"
+          - name: domain-type
+            value: "{{steps.determine-domain.outputs.parameters.detected-domain}}"
+          - name: quality-tier
+            value: "{{workflow.parameters.quality-tier}}"
+          - name: process-type
+            value: "{{workflow.parameters.process-type}}"
+
+    - - name: process-results
+        template: results-processing
+        arguments:
+          parameters:
+          - name: raw-results-path
+            value: "{{steps.run-domain-network.outputs.parameters.raw-results-path}}"
+          - name: output-format
+            value: "{{workflow.parameters.output-format}}"
+          - name: process-type
+            value: "{{workflow.parameters.process-type}}"
+
+    - - name: store-results
+        template: results-storage
+        arguments:
+          parameters:
+          - name: processed-results-path
+            value: "{{steps.process-results.outputs.parameters.processed-results-path}}"
+          - name: user-id
+            value: "{{workflow.parameters.user-id}}"
+          - name: job-id
+            value: "{{workflow.parameters.job-id}}"
+          - name: domain-type
+            value: "{{steps.determine-domain.outputs.parameters.detected-domain}}"
+
+  # Input validation template
+  - name: input-validation
+    inputs:
+      parameters:
+      - name: input-texture-path
+      - name: user-id
+    container:
+      image: ${REGISTRY}/texture-validation:latest
+      command: ["/bin/sh", "-c"]
+      args: ["python /app/validate_texture_inputs.py --input-path {{inputs.parameters.input-texture-path}} --user-id {{inputs.parameters.user-id}}"]
+      resources:
+        requests:
+          memory: "512Mi"
+          cpu: "250m"
+        limits:
+          memory: "1Gi"
+          cpu: "500m"
+
+  # Texture extraction template
+  - name: texture-extraction
+    inputs:
+      parameters:
+      - name: input-texture-path
+      - name: job-id
+    outputs:
+      parameters:
+      - name: extracted-textures-path
+        valueFrom:
+          path: /tmp/extracted-textures-path.txt
+    container:
+      image: ${REGISTRY}/texture-extractor:latest
+      command: ["/bin/sh", "-c"]
+      args: ["python /app/extract_textures.py --input-path {{inputs.parameters.input-texture-path}} --job-id {{inputs.parameters.job-id}} --output-path-file /tmp/extracted-textures-path.txt"]
+      volumeMounts:
+      - name: workdir
+        mountPath: /data
+      resources:
+        requests:
+          memory: "2Gi"
+          cpu: "1"
+        limits:
+          memory: "4Gi"
+          cpu: "2"
+
+  # Domain classification template
+  - name: domain-classification
+    inputs:
+      parameters:
+      - name: extracted-textures-path
+      - name: material-type
+    outputs:
+      parameters:
+      - name: detected-domain
+        valueFrom:
+          path: /tmp/detected-domain.txt
+    container:
+      image: ${REGISTRY}/domain-classifier:latest
+      command: ["/bin/sh", "-c"]
+      args: ["python /app/classify_domain.py --textures-path {{inputs.parameters.extracted-textures-path}} --material-hint {{inputs.parameters.material-type}} --output-file /tmp/detected-domain.txt"]
+      volumeMounts:
+      - name: workdir
+        mountPath: /data
+      resources:
+        requests:
+          memory: "2Gi"
+          cpu: "1"
+          nvidia.com/gpu: 1
+        limits:
+          memory: "4Gi"
+          cpu: "2"
+          nvidia.com/gpu: 1
+      nodeSelector:
+        cloud.digitalocean.com/gpu-type: "nvidia-l40s"
+
+  # Model selection template
+  - name: model-selection
+    inputs:
+      parameters:
+      - name: domain-type
+      - name: quality-tier
+      - name: process-type
+    outputs:
+      parameters:
+      - name: model-path
+        valueFrom:
+          path: /tmp/model-path.txt
+    container:
+      image: ${REGISTRY}/domain-model-selector:latest
+      command: ["/bin/sh", "-c"]
+      args: ["python /app/select_domain_model.py --domain {{inputs.parameters.domain-type}} --quality-tier {{inputs.parameters.quality-tier}} --process-type {{inputs.parameters.process-type}} --output-file /tmp/model-path.txt"]
+      resources:
+        requests:
+          memory: "512Mi"
+          cpu: "250m"
+        limits:
+          memory: "1Gi"
+          cpu: "500m"
+
+  # Domain network execution template
+  - name: domain-network-execution
+    inputs:
+      parameters:
+      - name: model-path
+      - name: textures-path
+      - name: domain-type
+      - name: quality-tier
+      - name: process-type
+    outputs:
+      parameters:
+      - name: raw-results-path
+        valueFrom:
+          path: /tmp/raw-results-path.txt
+    container:
+      image: ${REGISTRY}/domain-specific-network:latest
+      command: ["/bin/sh", "-c"]
+      args: ["python /app/run_domain_network.py --model-path {{inputs.parameters.model-path}} --textures-path {{inputs.parameters.textures-path}} --domain-type {{inputs.parameters.domain-type}} --quality-tier {{inputs.parameters.quality-tier}} --process-type {{inputs.parameters.process-type}} --output-file /tmp/raw-results-path.txt"]
+      volumeMounts:
+      - name: workdir
+        mountPath: /data
+      resources:
+        limits:
+          nvidia.com/gpu: 1
+          memory: "16Gi"
+        requests:
+          nvidia.com/gpu: 1
+          memory: "12Gi"
+          cpu: "4"
+      nodeSelector:
+        cloud.digitalocean.com/gpu-type: "nvidia-l40s"
+
+  # Results processing template
+  - name: results-processing
+    inputs:
+      parameters:
+      - name: raw-results-path
+      - name: output-format
+      - name: process-type
+    outputs:
+      parameters:
+      - name: processed-results-path
+        valueFrom:
+          path: /tmp/processed-results-path.txt
+    container:
+      image: ${REGISTRY}/domain-results-processor:latest
+      command: ["/bin/sh", "-c"]
+      args: ["python /app/process_domain_results.py --input-path {{inputs.parameters.raw-results-path}} --output-format {{inputs.parameters.output-format}} --process-type {{inputs.parameters.process-type}} --output-file /tmp/processed-results-path.txt"]
+      volumeMounts:
+      - name: workdir
+        mountPath: /data
+      resources:
+        requests:
+          memory: "2Gi"
+          cpu: "1"
+        limits:
+          memory: "4Gi"
+          cpu: "2"
+
+  # Results storage template
+  - name: results-storage
+    inputs:
+      parameters:
+      - name: processed-results-path
+      - name: user-id
+      - name: job-id
+      - name: domain-type
+    container:
+      image: ${REGISTRY}/domain-results-storage:latest
+      command: ["/bin/sh", "-c"]
+      args: ["python /app/store_domain_results.py --input-path {{inputs.parameters.processed-results-path}} --user-id {{inputs.parameters.user-id}} --job-id {{inputs.parameters.job-id}} --domain-type {{inputs.parameters.domain-type}}"]
+      volumeMounts:
+      - name: workdir
+        mountPath: /data
+      resources:
+        requests:
+          memory: "1Gi"
+          cpu: "500m"
+        limits:
+          memory: "2Gi"
+          cpu: "1"

@@ -38,12 +38,13 @@ spec:
           name: metrics
         resources:
           requests:
-            cpu: "500m"
-            memory: "512Mi"
+            cpu: "1"           # Increased from 500m
+            memory: "1Gi"      # Increased from 512Mi
           limits:
-            cpu: "2"
-            memory: "2Gi"
+            cpu: "4"           # Increased from 2
+            memory: "4Gi"      # Increased from 2Gi
         env:
+        # Base environment variables
         - name: NODE_ENV
           value: "production"
         - name: REDIS_HOST
@@ -72,7 +73,33 @@ spec:
             secretKeyRef:
               name: coordinator-secrets
               key: redis_password
-        # Add additional environment variables as needed
+              
+        # New environment variables for feature integration
+        - name: NOTIFICATION_SYSTEM_ENABLED
+          value: "true"
+        - name: NOTIFICATION_SERVICE_URL
+          value: "http://notification-service:8080/api/v1"
+        - name: PARAMETER_REGISTRY_ENABLED
+          value: "true"
+        - name: PARAMETER_REGISTRY_URL
+          value: "http://parameter-registry-service:8080/api/v1"
+        - name: PARAMETER_REGISTRY_GRPC_URL
+          value: "parameter-registry-service:9090"
+        - name: WEBHOOK_SERVICE_ENABLED
+          value: "true"
+        - name: WEBHOOK_SERVICE_URL
+          value: "http://webhook-service:8080/api/v1"
+        
+        # ML Feature configurations
+        - name: MULTIMODAL_PATTERN_RECOGNITION_ENABLED
+          value: "true"
+        - name: DOMAIN_SPECIFIC_NETWORKS_ENABLED
+          value: "true"
+        - name: ML_WORKFLOW_BASE_PATH
+          value: "/etc/coordinator/config/workflow-templates"
+        - name: GPU_RESOURCES_ENABLED
+          value: "true"
+          
         livenessProbe:
           httpGet:
             path: /health

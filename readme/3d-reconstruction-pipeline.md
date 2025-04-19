@@ -37,9 +37,54 @@ This document outlines the 3D reconstruction pipeline implementation for the Cre
   - Parallel training implementation
   - Multi-view synthesis
   - High-quality scene reconstruction
-  - Dependencies: 
+  - Dependencies:
     - `nerfstudio>=0.3.0`
     - `instant-ngp>=1.0.0`
+
+### 6. Gaussian Splatting as an Alternative
+- **Gaussian Splatting Implementation**
+  - 10-20x faster rendering speeds compared to traditional NeRF
+  - Comparable or better visual quality with improved detail retention
+  - More efficient training (hours instead of days)
+  - Better handling of complex geometries and transparent/reflective surfaces
+  
+  **Technical Implementation:**
+  - Based on 3D Gaussian Splatting framework and NVIDIA's Splatfacto
+  - Custom Python service (`gaussian_splatting_service.py`) handles:
+    - 3D point cloud to Gaussian primitives conversion
+    - Optimization of 3D Gaussians (position, scale, rotation, opacity)
+    - Progressive coarsening for LOD management
+    - Export to mesh and point-cloud formats
+  
+  **Integration Points:**
+  - TypeScript bridge (`gaussian-splatting-bridge.ts`) connects frontend to Python backend
+  - Enhanced ThreeJS viewer with dedicated GaussianSplattingLoader
+  - Support for real-time Gaussian rendering with WebGL
+  - Progressive loading and streaming for large scenes
+  
+  **Compatibility Considerations:**
+  - Hardware requirements: 
+    - GPU with 8GB+ VRAM for training
+    - Standard WebGL-capable GPU for rendering
+  - Browser compatibility:
+    - Full support in Chrome/Edge/Firefox with WebGL 2.0
+    - Limited support in Safari (iOS performance limitations)
+  - Memory usage:
+    - Can require 1.5-2x more memory than mesh-based formats for complex scenes
+    - Progressive streaming helps mitigate memory issues on mobile devices
+  
+  **Potential Integration Issues:**
+  - Non-trivial conversion from Gaussian representation to traditional meshes
+  - May require custom shader implementation for optimal rendering
+  - Cannot use standard PBR material system directly on Gaussian points
+  - Limited multi-user editing capabilities for Gaussian-based scenes
+  
+  **Advantages over NeRF:**
+  - Real-time rendering without separate mesh extraction step
+  - Better preservation of fine details and transparency
+  - More efficient training pipeline (3-5x faster)
+  - Direct export to optimized point cloud formats
+  - Better interaction with scene lighting and global illumination
 
 ### 6. 3D Model Processing
 - **BlenderProc**

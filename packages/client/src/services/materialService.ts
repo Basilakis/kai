@@ -12,21 +12,13 @@ import unifiedSearchService from './unifiedSearchService';
 
 // Base API URL is now handled by apiClient
 
-// Material types
+// Import the shared types
+import { ClientMaterial, MaterialSearchResult } from '../types/material';
+
+// Additional property type not in the shared definitions
 export interface MaterialProperty {
   name: string;
   value: string;
-}
-
-export interface Material {
-  id: string;
-  name: string;
-  description: string;
-  category: string;
-  manufacturer: string;
-  imageUrl: string;
-  properties: Record<string, string>;
-  createdAt: string;
 }
 
 export interface MaterialFilters {
@@ -45,13 +37,13 @@ export interface MaterialsResponse {
     totalPages: number;
     limit: number;
   };
-  data: Material[];
+  data: ClientMaterial[];
 }
 
 export interface SimilarMaterialsResponse {
   success: boolean;
   count: number;
-  data: Material[];
+  data: ClientMaterial[];
 }
 
 /**
@@ -76,7 +68,7 @@ export const getMaterials = async (
 /**
  * Get a specific material by ID
  */
-export const getMaterialById = async (id: string): Promise<Material> => {
+export const getMaterialById = async (id: string): Promise<ClientMaterial> => {
   try {
     // Use apiClient and relative path
     const response = await apiClient.get(`/materials/${id}`);

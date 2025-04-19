@@ -21,6 +21,8 @@ The integration is structured around several key components:
 - **Agent Tools**: Functions that allow agents to interact with KAI systems
 - **Utilities**: Common functionality for logging, error handling, and data processing
 - **MCP Integration**: Adapters that enable agents to leverage the MCP server architecture
+- **Unified Type System**: Consolidated TypeScript definitions for consistent agent development
+- **Enhanced Material Experts**: Advanced material analysis capabilities with inheritance-based architecture
 
 ### Directory Structure
 

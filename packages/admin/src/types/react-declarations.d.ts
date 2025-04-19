@@ -1,79 +1,34 @@
 /**
- * React Type Declarations
- * 
- * This file provides TypeScript declarations for React-specific types
- * that are missing in the default TypeScript configuration.
+ * Consolidated React Type Declarations
+ *
+ * This file provides centralized TypeScript declarations for React,
+ * replacing the previously duplicated definitions across multiple files:
+ * - custom.d.ts
+ * - react.d.ts
+ * - @types/react/index.d.ts
  */
 
-// React module augmentation
+import 'react';
+
+// We reference the original React types to ensure compatibility
+/// <reference types="react" />
+
+// Only add custom extensions that aren't covered by @types/react
 declare module 'react' {
-  // FC (FunctionComponent) type
-  export interface FC<P = {}> {
-    (props: P & { children?: React.ReactNode }): React.ReactElement<any, any> | null;
-    displayName?: string;
-    defaultProps?: Partial<P>;
-    propTypes?: any;
-  }
+  // Add any custom React extensions here that aren't covered by @types/react
   
-  // FunctionComponent type (equivalent to FC)
-  export interface FunctionComponent<P = {}> {
-    (props: P & { children?: React.ReactNode }): React.ReactElement<any, any> | null;
-    displayName?: string;
-    defaultProps?: Partial<P>;
-    propTypes?: any;
-  }
-  
-  // Component element class augmentation
-  export interface ClassAttributes<T> extends Attributes {
-    ref?: LegacyRef<T> | undefined;
-  }
-  
-  // Type declarations for React elements
-  export namespace JSX {
-    interface Element extends React.ReactElement<any, any> {}
-    interface ElementClass extends React.Component<any> {
-      render(): React.ReactNode;
-    }
-    interface ElementAttributesProperty {
-      props: {};
-    }
-    interface ElementChildrenAttribute {
-      children: {};
-    }
-  }
+  // Example: If we needed to extend ComponentProps
+  // interface ComponentProps<T extends React.ElementType> {
+  //   customProp?: string;
+  // }
 }
 
-// React JSX Runtime
-declare module 'react/jsx-runtime' {
-  export namespace JSX {
-    interface Element extends React.ReactElement<any, any> {}
-  }
-  export function jsx(
-    type: React.ElementType,
-    props: Record<string, any>,
-    key?: string
-  ): React.ReactElement;
-  export function jsxs(
-    type: React.ElementType,
-    props: Record<string, any>,
-    key?: string
-  ): React.ReactElement;
+// Define custom interfaces or types specific to this project
+interface ServiceResponse {
+  status: 'up' | 'down' | 'degraded';
+  lastCheck: string;
+  [key: string]: any;
 }
 
-// Declare heroicons module
-declare module '@heroicons/react/outline' {
-  import { FC, SVGProps } from 'react';
-  
-  export const DatabaseIcon: FC<SVGProps<SVGSVGElement>>;
-  export const RefreshIcon: FC<SVGProps<SVGSVGElement>>;
-  export const CheckCircleIcon: FC<SVGProps<SVGSVGElement>>;
-  export const ExclamationCircleIcon: FC<SVGProps<SVGSVGElement>>;
-  export const ArrowCircleRightIcon: FC<SVGProps<SVGSVGElement>>;
-  export const CloudIcon: FC<SVGProps<SVGSVGElement>>;
-  export const MailIcon: FC<SVGProps<SVGSVGElement>>;
-  export const SaveIcon: FC<SVGProps<SVGSVGElement>>;
-  export const CogIcon: FC<SVGProps<SVGSVGElement>>;
-  export const LockClosedIcon: FC<SVGProps<SVGSVGElement>>;
-  export const ServerIcon: FC<SVGProps<SVGSVGElement>>;
-  export const ChipIcon: FC<SVGProps<SVGSVGElement>>;
-}
+// Export types to make them available
+export { ServiceResponse };

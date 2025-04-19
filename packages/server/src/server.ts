@@ -115,6 +115,7 @@ import { scheduleSessionCleanup } from './controllers/agents.controller';
 import authEnhancedRoutes from './routes/auth/index.routes';
 import subscriptionEnhancedRoutes from './routes/subscription/index.routes';
 import creditRoutes from './routes/credit/index.routes';
+import notificationRoutes from './routes/notification.routes';
 
 // Create Express app
 const app = express();
@@ -194,6 +195,7 @@ app.use('/api/scene-graph', sceneGraphRoutes);
 app.use('/api/auth', noCacheHeaders, authEnhancedRoutes); // Enhanced auth features
 app.use('/api/subscriptions', subscriptionEnhancedRoutes); // Enhanced subscription features
 app.use('/api/credits', noCacheHeaders, creditRoutes); // Credit system features
+app.use('/api/notifications', noCacheHeaders, notificationRoutes); // Notification system
 
 /**
  * @openapi

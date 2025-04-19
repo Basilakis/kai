@@ -1,0 +1,333 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-service
+  namespace: kai-ml
+  labels:
+    app: notification-service
+    component: messaging
+spec:
+  replicas: 3  # Multiple replicas for high availability
+  selector:
+    matchLabels:
+      app: notification-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: notification-service
+        component: messaging
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9100"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: notification-service
+        image: ${REGISTRY_URL}/kai/notification-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 3000
+          name: http
+        - containerPort: 9100
+          name: metrics
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+          limits:
+            cpu: "1"
+            memory: "2Gi"
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: notification-config
+              key: log_level
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: notification-config
+              key: redis_host
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: notification-config
+              key: redis_port
+        # Secrets as environment variables
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: notification-secrets
+              key: redis_password
+        - name: EMAIL_SERVICE
+          valueFrom:
+            configMapKeyRef:
+              name: notification-config
+              key: email_service
+        - name: EMAIL_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: notification-config
+              key: email_host
+        - name: EMAIL_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: notification-config
+              key: email_port
+        - name: EMAIL_SECURE
+          valueFrom:
+            configMapKeyRef:
+              name: notification-config
+              key: email_secure
+        - name: EMAIL_FROM
+          valueFrom:
+            configMapKeyRef:
+              name: notification-config
+              key: email_from
+        - name: EMAIL_USER
+          valueFrom:
+            secretKeyRef:
+              name: notification-secrets
+              key: email_user
+        - name: EMAIL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: notification-secrets
+              key: email_password
+        - name: SMS_PROVIDER
+          valueFrom:
+            configMapKeyRef:
+              name: notification-config
+              key: sms_provider
+        - name: SMS_FROM
+          valueFrom:
+            configMapKeyRef:
+              name: notification-config
+              key: sms_from
+        - name: SMS_ACCOUNT_SID
+          valueFrom:
+            secretKeyRef:
+              name: notification-secrets
+              key: sms_account_sid
+        - name: SMS_AUTH_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: notification-secrets
+              key: sms_auth_token
+        - name: WEBHOOK_TIMEOUT
+          valueFrom:
+            configMapKeyRef:
+              name: notification-config
+              key: webhook_timeout
+        - name: WEBHOOK_MAX_RETRIES
+          valueFrom:
+            configMapKeyRef:
+              name: notification-config
+              key: webhook_max_retries
+        - name: WEBHOOK_RETRY_DELAY
+          valueFrom:
+            configMapKeyRef:
+              name: notification-config
+              key: webhook_retry_delay
+        - name: SUPABASE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: notification-config
+              key: supabase_url
+        - name: SUPABASE_SERVICE_ROLE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: notification-secrets
+              key: supabase_service_role_key
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 2
+          failureThreshold: 3
+        volumeMounts:
+        - name: config-volume
+          mountPath: /app/config
+          readOnly: true
+        - name: templates-volume
+          mountPath: /app/templates
+          readOnly: true
+      volumes:
+      - name: config-volume
+        configMap:
+          name: notification-config
+      - name: templates-volume
+        configMap:
+          name: notification-templates
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-service
+  namespace: kai-ml
+  labels:
+    app: notification-service
+    component: messaging
+spec:
+  selector:
+    app: notification-service
+  ports:
+  - port: 80
+    targetPort: 3000
+    protocol: TCP
+    name: http
+  - port: 9100
+    targetPort: 9100
+    protocol: TCP
+    name: metrics
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: notification-config
+  namespace: kai-ml
+data:
+  log_level: "info"
+  redis_host: "redis-master.kai-ml.svc.cluster.local"
+  redis_port: "6379"
+  email_service: "smtp"
+  email_host: "smtp.example.com"
+  email_port: "587"
+  email_secure: "false"
+  email_from: "noreply@kai-platform.com"
+  sms_provider: "twilio"
+  sms_from: "+1234567890"
+  webhook_timeout: "5000"
+  webhook_max_retries: "3"
+  webhook_retry_delay: "1000"
+  supabase_url: "https://your-project.supabase.co"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: notification-templates
+  namespace: kai-ml
+data:
+  welcome.html: |
+    <mjml>
+      <mj-body>
+        <mj-section>
+          <mj-column>
+            <mj-text>
+              Hello {{user.firstName}},
+              
+              Welcome to the KAI platform! We're excited to have you join us.
+              
+              {{#if actionUrl}}
+              <mj-button href="{{actionUrl}}">{{actionLabel}}</mj-button>
+              {{/if}}
+            </mj-text>
+          </mj-column>
+        </mj-section>
+      </mj-body>
+    </mjml>
+  
+  subscription-renewal.html: |
+    <mjml>
+      <mj-body>
+        <mj-section>
+          <mj-column>
+            <mj-text>
+              Hello {{user.firstName}},
+              
+              Your subscription has been renewed successfully.
+              
+              Plan: {{subscription.plan}}
+              Amount: {{subscription.amount}}
+              Next Billing Date: {{subscription.nextBillingDate}}
+              
+              {{#if actionUrl}}
+              <mj-button href="{{actionUrl}}">{{actionLabel}}</mj-button>
+              {{/if}}
+            </mj-text>
+          </mj-column>
+        </mj-section>
+      </mj-body>
+    </mjml>
+  
+  material-recognition.html: |
+    <mjml>
+      <mj-body>
+        <mj-section>
+          <mj-column>
+            <mj-text>
+              Hello {{user.firstName}},
+              
+              Your material recognition task has been completed.
+              
+              Result: {{recognition.result}}
+              
+              {{#if actionUrl}}
+              <mj-button href="{{actionUrl}}">View Result</mj-button>
+              {{/if}}
+            </mj-text>
+          </mj-column>
+        </mj-section>
+      </mj-body>
+    </mjml>
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: notification-service-hpa
+  namespace: kai-ml
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: notification-service
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 30
+      - type: Pods
+        value: 5
+        periodSeconds: 60
+      selectPolicy: Max

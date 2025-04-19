@@ -588,18 +588,13 @@ export function safeJsonStringify(obj: any, fallback: string = '{}'): string {
 }
 
 /**
- * Format a date as an ISO string without milliseconds
- * 
- * @param date The date to format
- * @returns Formatted date string
+ * Import shared formatting utilities
  */
-export function formatDate(date: Date = new Date()): string {
-  return date.toISOString().replace(/\.\d{3}Z$/, 'Z');
-}
+import { formatDate } from '@kai/shared/src/utils/formatting';
 
 /**
  * Sleep for a specified number of milliseconds
- * 
+ *
  * @param ms Milliseconds to sleep
  * @returns Promise that resolves after the specified time
  */

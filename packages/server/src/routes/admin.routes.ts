@@ -16,6 +16,8 @@ import networkAccessRoutes from './admin/networkAccess.routes';
 import enhancedVectorRoutes from './admin/enhancedVector.routes';
 import subscriptionRoutes from './admin/subscription.admin.routes';
 import serviceCostRoutes from './admin/serviceCost.admin.routes';
+import notificationAdminRoutes from './admin/notification.admin.routes'; // Import new routes
+import webhookAdminRoutes from './admin/webhook.admin.routes'; // Import new routes
 
 // Import services for dashboard stats
 import analyticsService from '../services/analytics/analyticsService';
@@ -165,6 +167,8 @@ router.use('/network-access', networkAccessRoutes);
 router.use('/enhanced-vector', enhancedVectorRoutes);
 router.use('/subscriptions', subscriptionRoutes);
 router.use('/service-costs', serviceCostRoutes);
+router.use('/notifications', notificationAdminRoutes); // Mount new routes
+router.use('/webhooks', webhookAdminRoutes); // Mount new routes
 
 /**
  * @route   GET /api/admin/dashboard

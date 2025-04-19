@@ -5,7 +5,8 @@
     "rootDir": "./src",
     "module": "CommonJS",
     "moduleResolution": "node",
-    "types": ["node"],
+    "jsx": "react-jsx",
+    "types": ["node", "react", "react-dom"],
     "baseUrl": "./",
     "paths": {
       "@/*": ["src/*"]

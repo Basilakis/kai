@@ -1,6 +1,6 @@
 # Text-to-3D Generation System
 
-A comprehensive system for generating 3D house models from text descriptions, combining multiple AI models and techniques for realistic and physically accurate results.
+A comprehensive system for generating 3D house models from text descriptions, combining advanced AI models and techniques for realistic and physically accurate results.
 
 ## Core Components
 
@@ -10,14 +10,32 @@ A comprehensive system for generating 3D house models from text descriptions, co
 - Architectural feasibility validation
 - Sketch refinement with professional blueprint styling
 
-### 2. House Shell Generation (Shap-E)
-- Base structure generation from text descriptions
-- Feature-preserving mesh processing
-- Structure refinement with feedback integration
-- Normal computation and UV mapping
+### 2. Improved Text-to-3D Models
+We've replaced our previous stack (Stable Diffusion + Shap-E + GET3D) with newer, more advanced models:
 
-### 3. Object & Furniture Generation (GET3D)
-- Integration with NVIDIA's GET3D model
+#### Triposr
+- Single-view reconstruction with high fidelity and speed
+- Significantly improved geometric accuracy over Shap-E
+- Better texture detail preservation
+- Faster reconstruction times (minutes vs. hours)
+- Hardware requirements: 8GB+ VRAM, CUDA-compatible GPU
+
+#### Wonder3D
+- High-quality 3D assets from single images
+- Exceptional texture detail and consistency
+- Multi-view generation from single-view input
+- Specialized for detailed object reconstruction
+- Hardware requirements: 10GB+ VRAM, CUDA-compatible GPU
+
+#### Instant3D
+- Generates detailed 3D models directly from text
+- Higher geometric accuracy than previous text-to-3D pipelines
+- Improved surface details and material properties
+- Faster generation pipeline
+- Hardware requirements: 12GB+ VRAM, CUDA-compatible GPU
+
+### 3. Object & Furniture Integration
+- Integration with multiple generation models
 - 3D-FRONT dataset for reference and training
 - CLIP-based validation for style matching
 - Furniture optimization and placement
@@ -228,6 +246,7 @@ Features:
 - WebGL-based rendering pipeline
 - Custom shaders for material visualization
 - Progressive loading for large scenes
+- Gaussian Splatting rendering support for high-performance visualization
 
 ### User Interaction
 - Orbit controls for camera navigation
@@ -237,7 +256,8 @@ Features:
 
 ### Real-Time Preview System
 - Progressive refinement rendering
-- Material preview with PBR support
+- Enhanced MaterialX-based material preview
+- Procedural material generation capabilities
 - Lighting preview with real-time shadows
 - Interactive furniture placement
 

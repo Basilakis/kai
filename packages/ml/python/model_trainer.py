@@ -42,6 +42,8 @@ from pathlib import Path
 # Import progress reporter and parameter manager
 from progress_reporter import HybridProgressReporter, progress_reporter
 from parameter_manager import create_parameter_manager
+from advanced_losses import get_loss_function # Import the loss factory
+from vit_models import create_vit_classifier, create_hybrid_cnn_transformer # Import ViT models
 
 # Conditionally import TensorFlow or PyTorch based on availability
 try:
@@ -338,10 +340,12 @@ class FeatureBasedTrainer:
 class TensorFlowTrainer:
     """Trainer for TensorFlow-based material recognition"""
     
-    def __init__(self, dataset: MaterialDataset, epochs: int = 10, batch_size: int = 32, 
+    def __init__(self, dataset: MaterialDataset, epochs: int = 10, batch_size: int = 32,
                  learning_rate: float = 0.001, progress_reporter=None, enable_dynamic_params: bool = False,
                  parameter_storage: str = 'file', supabase_url: str = None, supabase_key: str = None,
-                 store_models_in_supabase: bool = False):
+                 store_models_in_supabase: bool = False, loss_function: str = 'crossentropy',
+                 focal_gamma: float = 2.0, focal_alpha: float = 0.25, use_augmentations: bool = False,
+                 architecture: str = 'mobilenet'):
         """
         Initialize the TensorFlow trainer
         
@@ -356,6 +360,11 @@ class TensorFlowTrainer:
             supabase_url: Supabase URL (required if parameter_storage is 'supabase')
             supabase_key: Supabase API key (required if parameter_storage is 'supabase')
             store_models_in_supabase: Whether to store models in Supabase Storage
+            loss_function: Name of the loss function ('crossentropy' or 'focal')
+            focal_gamma: Gamma parameter for Focal Loss
+            focal_alpha: Alpha parameter for Focal Loss
+            use_augmentations: Whether to apply data augmentations
+            architecture: Model architecture ('mobilenet', 'vit', or 'hybrid-cnn-vit')
         """
         if not TF_AVAILABLE:
             raise ImportError("TensorFlow is not available")
@@ -364,6 +373,11 @@ class TensorFlowTrainer:
         self.epochs = epochs
         self.batch_size = batch_size
         self.learning_rate = learning_rate
+        self.loss_function_name = loss_function
+        self.focal_gamma = focal_gamma
+        self.focal_alpha = focal_alpha
+        self.use_augmentations = use_augmentations # Store flag
+        self.architecture = architecture # Store architecture choice
         self.model = None
         self.train_dataset = None
         self.val_dataset = None
@@ -436,29 +450,86 @@ class TensorFlowTrainer:
         """
         num_classes = len(self.dataset.material_ids)
         
-        # Use MobileNetV2 as base model
-        base_model = applications.MobileNetV2(
-            input_shape=(224, 224, 3),
-            include_top=False,
-            weights='imagenet'
+        if self.architecture == 'mobilenet':
+            # Use MobileNetV2 as base model
+            base_model = applications.MobileNetV2(
+                input_shape=(224, 224, 3),
+                include_top=False,
+                weights='imagenet'
+            )
+            
+            # Freeze the base model
+            base_model.trainable = False
+            
+            # Create the model
+            model = models.Sequential([
+                base_model,
+                layers.GlobalAveragePooling2D(),
+                layers.Dense(256, activation='relu'),
+                layers.Dropout(0.5),
+                layers.Dense(num_classes, activation='softmax')
+            ])
+        elif self.architecture == 'vit':
+            # Use Vision Transformer model
+            img_size = 224
+            patch_size = 16
+            num_patches = (img_size // patch_size) ** 2
+            projection_dim = 128
+            transformer_layers = 4
+            
+            model = create_vit_classifier(
+                input_shape=(img_size, img_size, 3),
+                num_classes=num_classes,
+                patch_size=patch_size,
+                num_patches=num_patches,
+                projection_dim=projection_dim,
+                num_heads=8,
+                transformer_units=[projection_dim * 2, projection_dim],
+                mlp_head_units=[projection_dim * 2, projection_dim],
+                transformer_layers=transformer_layers
+            )
+        elif self.architecture == 'hybrid-cnn-vit':
+            # Use Hybrid CNN-Transformer model
+            model = create_hybrid_cnn_transformer(
+                input_shape=(224, 224, 3),
+                num_classes=num_classes,
+                cnn_backbone='MobileNetV2',
+                projection_dim=128,
+                num_heads=8,
+                transformer_layers=2,
+                mlp_head_units=[256]
+            )
+        else:
+            # Default to MobileNetV2 for unrecognized architecture
+            logger.warning(f"Unrecognized architecture '{self.architecture}', defaulting to MobileNetV2")
+            base_model = applications.MobileNetV2(
+                input_shape=(224, 224, 3),
+                include_top=False,
+                weights='imagenet'
+            )
+            
+            base_model.trainable = False
+            
+            model = models.Sequential([
+                base_model,
+                layers.GlobalAveragePooling2D(),
+                layers.Dense(256, activation='relu'),
+                layers.Dropout(0.5),
+                layers.Dense(num_classes, activation='softmax')
+            ])
+
+        # Get the selected loss function
+        loss_fn = get_loss_function(
+            loss_name=self.loss_function_name,
+            framework='tensorflow',
+            gamma=self.focal_gamma,
+            alpha=self.focal_alpha
         )
-        
-        # Freeze the base model
-        base_model.trainable = False
-        
-        # Create the model
-        model = models.Sequential([
-            base_model,
-            layers.GlobalAveragePooling2D(),
-            layers.Dense(256, activation='relu'),
-            layers.Dropout(0.5),
-            layers.Dense(num_classes, activation='softmax')
-        ])
-        
+
         # Compile the model
         model.compile(
-            optimizer=optimizers.Adam(learning_rate=self.learning_rate),
-            loss='sparse_categorical_crossentropy',
+            optimizer=optimizers.Adam(learning_rate=self.learning_rate), # AdamW might be better
+            loss=loss_fn, # Use selected loss function
             metrics=['accuracy']
         )
         
@@ -485,9 +556,11 @@ class TensorFlowTrainer:
             "epochs": self.epochs,
             "batch_size": self.batch_size,
             "learning_rate": self.learning_rate,
-            "enable_dynamic_params": self.enable_dynamic_params
+            "enable_dynamic_params": self.enable_dynamic_params,
+            "loss_function": self.loss_function_name,
+            "architecture": self.architecture
         }
-        
+
         try:
             # Report training start
             if self.progress_reporter:
@@ -613,13 +686,17 @@ class TensorFlowTrainer:
             val_loss = history.history['val_loss'][-1]
             val_accuracy = history.history['val_accuracy'][-1]
             
+            # Calculate per-class metrics on validation set
+            per_class_metrics = self._calculate_per_class_metrics(self.model, self.val_dataset, len(self.dataset.material_ids))
+            
             # Report completion
             final_metrics = {
                 "loss": float(final_loss),
                 "accuracy": float(final_accuracy),
                 "val_loss": float(val_loss),
                 "val_accuracy": float(val_accuracy),
-                "training_time": training_time
+                "training_time": training_time,
+                "per_class_metrics": per_class_metrics
             }
             
             if self.progress_reporter:
@@ -632,10 +709,13 @@ class TensorFlowTrainer:
                 "batch_size": self.batch_size,
                 "learning_rate": self.learning_rate,
                 "training_time": training_time,
+                "loss_function": self.loss_function_name,
+                "architecture": self.architecture,
                 "final_loss": float(final_loss),
                 "final_accuracy": float(final_accuracy),
                 "val_loss": float(val_loss),
-                "val_accuracy": float(val_accuracy)
+                "val_accuracy": float(val_accuracy),
+                "per_class_metrics": per_class_metrics
             }
             
         except Exception as e:
@@ -699,7 +779,130 @@ class TensorFlowTrainer:
                 print(f"Error saving model to Supabase: {e}")
         
         return model_path
-
+    def _calculate_per_class_metrics(self, model, val_dataset, num_classes):
+        """
+        Calculate precision, recall, F1 score per class and confusion matrix.
+        
+        Args:
+            model: The trained model
+            val_dataset: Validation dataset
+            num_classes: Number of classes
+            
+        Returns:
+            Dictionary with per-class metrics
+        """
+        # Initialize counters for true positives, false positives, false negatives
+        tp = np.zeros(num_classes)
+        fp = np.zeros(num_classes)
+        fn = np.zeros(num_classes)
+        
+        # Initialize confusion matrix
+        confusion_matrix = np.zeros((num_classes, num_classes), dtype=np.int32)
+        
+        # Process validation dataset
+        y_true_all = []
+        y_pred_all = []
+        
+        for images, labels in val_dataset:
+            predictions = model.predict(images, verbose=0)
+            pred_classes = np.argmax(predictions, axis=1)
+            
+            # Collect for overall metrics
+            y_true_all.extend(labels.numpy())
+            y_pred_all.extend(pred_classes)
+            
+            # Update per-class metrics
+            for i in range(len(labels)):
+                true_class = labels[i]
+                pred_class = pred_classes[i]
+                
+                # Update confusion matrix
+                confusion_matrix[true_class][pred_class] += 1
+                
+                # Update counters
+                if true_class == pred_class:
+                    tp[true_class] += 1
+                else:
+                    fp[pred_class] += 1
+                    fn[true_class] += 1
+        
+        # Calculate precision, recall, F1 score per class
+        precision = np.zeros(num_classes)
+        recall = np.zeros(num_classes)
+        f1_score = np.zeros(num_classes)
+        
+        for i in range(num_classes):
+            precision[i] = tp[i] / (tp[i] + fp[i]) if (tp[i] + fp[i]) > 0 else 0
+            recall[i] = tp[i] / (tp[i] + fn[i]) if (tp[i] + fn[i]) > 0 else 0
+            f1_score[i] = 2 * precision[i] * recall[i] / (precision[i] + recall[i]) if (precision[i] + recall[i]) > 0 else 0
+        
+        # Create mapping from class index to material ID
+        class_to_material = {idx: material_id for material_id, idx in self.dataset.class_to_idx.items()}
+        
+        # Format results
+        per_class_metrics = {}
+        for i in range(num_classes):
+            material_id = class_to_material.get(i, f"class_{i}")
+            per_class_metrics[material_id] = {
+                "precision": float(precision[i]),
+                "recall": float(recall[i]),
+                "f1_score": float(f1_score[i]),
+                "support": int(tp[i] + fn[i])
+            }
+        
+        # Add error patterns analysis
+        error_patterns = self._analyze_error_patterns(confusion_matrix, class_to_material, num_classes)
+        
+        # Add overall metrics
+        overall_metrics = {
+            "macro_precision": float(np.mean(precision)),
+            "macro_recall": float(np.mean(recall)),
+            "macro_f1": float(np.mean(f1_score)),
+            "confusion_matrix": confusion_matrix.tolist(),
+            "error_patterns": error_patterns
+        }
+        
+        return {
+            "per_class": per_class_metrics,
+            "overall": overall_metrics
+        }
+    
+    def _analyze_error_patterns(self, confusion_matrix, class_to_material, num_classes):
+        """
+        Analyze confusion matrix to identify error patterns.
+        
+        Args:
+            confusion_matrix: Confusion matrix
+            class_to_material: Mapping from class index to material ID
+            num_classes: Number of classes
+            
+        Returns:
+            Dictionary with error patterns
+        """
+        error_patterns = []
+        
+        # Find top confused pairs
+        for i in range(num_classes):
+            for j in range(num_classes):
+                if i == j:
+                    continue  # Skip correct classifications
+                    
+                if confusion_matrix[i][j] > 0:
+                    true_material = class_to_material.get(i, f"class_{i}")
+                    pred_material = class_to_material.get(j, f"class_{j}")
+                    
+                    error_patterns.append({
+                        "true_material": true_material,
+                        "predicted_material": pred_material,
+                        "count": int(confusion_matrix[i][j]),
+                        "error_rate": float(confusion_matrix[i][j] / np.sum(confusion_matrix[i]))
+                    })
+        
+        # Sort by count descending
+        error_patterns.sort(key=lambda x: x["count"], reverse=True)
+        
+        # Return top 10 error patterns
+        return error_patterns[:10]
 
 class PyTorchTrainer:
     """Trainer for PyTorch-based material recognition"""
@@ -724,10 +927,11 @@ class PyTorchTrainer:
             
             return image, label
     
-    def __init__(self, dataset: MaterialDataset, epochs: int = 10, batch_size: int = 32, 
+    def __init__(self, dataset: MaterialDataset, epochs: int = 10, batch_size: int = 32,
                  learning_rate: float = 0.001, progress_reporter=None, enable_dynamic_params: bool = False,
                  parameter_storage: str = 'file', supabase_url: str = None, supabase_key: str = None,
-                 store_models_in_supabase: bool = False):
+                 store_models_in_supabase: bool = False, loss_function: str = 'crossentropy',
+                 focal_gamma: float = 2.0, focal_alpha: float = 0.25, architecture: str = 'resnet'):
         """
         Initialize the PyTorch trainer
         
@@ -742,6 +946,10 @@ class PyTorchTrainer:
             supabase_url: Supabase URL (required if parameter_storage is 'supabase')
             supabase_key: Supabase API key (required if parameter_storage is 'supabase')
             store_models_in_supabase: Whether to store models in Supabase Storage
+            loss_function: Name of the loss function ('crossentropy' or 'focal')
+            focal_gamma: Gamma parameter for Focal Loss
+            focal_alpha: Alpha parameter for Focal Loss
+            architecture: Model architecture ('resnet', 'vit', or 'hybrid-cnn-vit')
         """
         if not TORCH_AVAILABLE:
             raise ImportError("PyTorch is not available")
@@ -750,6 +958,10 @@ class PyTorchTrainer:
         self.epochs = epochs
         self.batch_size = batch_size
         self.learning_rate = learning_rate
+        self.loss_function_name = loss_function
+        self.focal_gamma = focal_gamma
+        self.focal_alpha = focal_alpha
+        self.architecture = architecture
         self.model = None
         self.train_loader = None
         self.val_loader = None
@@ -829,6 +1041,10 @@ class PyTorchTrainer:
         """
         num_classes = len(self.dataset.material_ids)
         
+        # Check if requested architecture is supported
+        if self.architecture in ['vit', 'hybrid-cnn-vit']:
+            logger.warning(f"Architecture {self.architecture} not fully supported in PyTorch implementation. Using ResNet as fallback.")
+        
         # Use ResNet18 as base model
         model = torchvision.models.resnet18(pretrained=True)
         
@@ -866,9 +1082,11 @@ class PyTorchTrainer:
             "epochs": self.epochs,
             "batch_size": self.batch_size,
             "learning_rate": self.learning_rate,
-            "enable_dynamic_params": self.enable_dynamic_params
+            "enable_dynamic_params": self.enable_dynamic_params,
+            "loss_function": self.loss_function_name,
+            "architecture": self.architecture
         }
-        
+
         try:
             # Report training start if progress reporter is available
             if self.progress_reporter:
@@ -895,11 +1113,17 @@ class PyTorchTrainer:
             
             # Create model
             self.model = self._create_model()
-            
+
             # Define loss function and optimizer
-            criterion = nn.CrossEntropyLoss()
+            criterion = get_loss_function(
+                loss_name=self.loss_function_name,
+                framework='pytorch',
+                gamma=self.focal_gamma,
+                alpha=self.focal_alpha,
+                reduction='mean' # Default reduction for training
+            )
             optimizer = optim.Adam(self.model.fc.parameters(), lr=self.learning_rate)
-            
+
             # Training loop
             best_accuracy = 0.0
             training_losses = []
@@ -999,22 +1223,30 @@ class PyTorchTrainer:
                 
                 # Validation phase
                 self.model.eval()
-                val_running_loss = 0.0
-                val_correct = 0
-                val_total = 0
-                
-                with torch.no_grad():
-                    for inputs, labels in self.val_loader:
-                        inputs, labels = inputs.to(self.device), labels.to(self.device)
-                        
-                        outputs = self.model(inputs)
-                        loss = criterion(outputs, labels)
-                        
-                        val_running_loss += loss.item() * inputs.size(0)
-                        
-                        _, predicted = outputs.max(1)
-                        val_total += labels.size(0)
-                        val_correct += predicted.eq(labels).sum().item()
+            val_running_loss = 0.0
+            val_correct = 0
+            val_total = 0
+            
+            # For per-class metrics calculation
+            all_labels = []
+            all_predictions = []
+            
+            with torch.no_grad():
+                for inputs, labels in self.val_loader:
+                    inputs, labels = inputs.to(self.device), labels.to(self.device)
+                    
+                    outputs = self.model(inputs)
+                    loss = criterion(outputs, labels)
+                    
+                    val_running_loss += loss.item() * inputs.size(0)
+                    
+                    _, predicted = outputs.max(1)
+                    val_total += labels.size(0)
+                    val_correct += predicted.eq(labels).sum().item()
+                    
+                    # Collect labels and predictions for metrics
+                    all_labels.extend(labels.cpu().numpy())
+                    all_predictions.extend(predicted.cpu().numpy())
                 
                 val_epoch_loss = val_running_loss / len(self.val_loader.dataset)
                 val_epoch_accuracy = val_correct / val_total
@@ -1043,6 +1275,9 @@ class PyTorchTrainer:
                         val_accuracy=float(val_epoch_accuracy)
                     )
             
+            # Calculate per-class metrics
+            per_class_metrics = self._calculate_per_class_metrics(all_labels, all_predictions)
+            
             # Calculate training time
             training_time = time.time() - start_time
             
@@ -1053,7 +1288,8 @@ class PyTorchTrainer:
                     "accuracy": float(training_accuracies[-1]),
                     "val_loss": float(val_losses[-1]),
                     "val_accuracy": float(val_accuracies[-1]),
-                    "training_time": training_time
+                    "training_time": training_time,
+                    "per_class_metrics": per_class_metrics
                 }
                 self.progress_reporter.complete_job(self.job_id, final_metrics)
                 
@@ -1063,11 +1299,14 @@ class PyTorchTrainer:
                 "epochs": self.epochs,
                 "batch_size": self.batch_size,
                 "learning_rate": self.learning_rate,
+                "loss_function": self.loss_function_name,
+                "architecture": self.architecture,
                 "training_time": training_time,
                 "final_loss": float(training_losses[-1]),
                 "final_accuracy": float(training_accuracies[-1]),
                 "val_loss": float(val_losses[-1]),
-                "val_accuracy": float(val_accuracies[-1])
+                "val_accuracy": float(val_accuracies[-1]),
+                "per_class_metrics": per_class_metrics
             }
             
         except Exception as e:
@@ -1127,15 +1366,102 @@ class PyTorchTrainer:
                 print(f"Error saving model to Supabase: {e}")
         
         return model_path
-
+    def _calculate_per_class_metrics(self, all_labels, all_predictions):
+        """
+        Calculate precision, recall, F1 score per class and confusion matrix.
+        
+        Args:
+            all_labels: List of true labels
+            all_predictions: List of predicted labels
+            
+        Returns:
+            Dictionary with per-class metrics
+        """
+        # Convert lists to numpy arrays
+        y_true = np.array(all_labels)
+        y_pred = np.array(all_predictions)
+        
+        num_classes = len(self.dataset.material_ids)
+        
+        # Initialize confusion matrix
+        confusion_matrix = np.zeros((num_classes, num_classes), dtype=np.int32)
+        
+        # Fill confusion matrix
+        for i in range(len(y_true)):
+            confusion_matrix[y_true[i]][y_pred[i]] += 1
+        
+        # Calculate precision, recall, F1 score per class
+        per_class_metrics = {}
+        
+        # Create mapping from class index to material ID
+        class_to_material = {idx: material_id for material_id, idx in self.dataset.class_to_idx.items()}
+        
+        for i in range(num_classes):
+            # True positives: diagonal element
+            tp = confusion_matrix[i, i]
+            
+            # False positives: sum of column i excluding TP
+            fp = np.sum(confusion_matrix[:, i]) - tp
+            
+            # False negatives: sum of row i excluding TP
+            fn = np.sum(confusion_matrix[i, :]) - tp
+            
+            # Calculate metrics
+            precision = float(tp / (tp + fp)) if (tp + fp) > 0 else 0.0
+            recall = float(tp / (tp + fn)) if (tp + fn) > 0 else 0.0
+            f1 = float(2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0.0
+            
+            material_id = class_to_material.get(i, f"class_{i}")
+            per_class_metrics[material_id] = {
+                "precision": precision,
+                "recall": recall,
+                "f1_score": f1,
+                "support": int(tp + fn)
+            }
+        
+        # Analyze error patterns
+        error_patterns = []
+        for i in range(num_classes):
+            for j in range(num_classes):
+                if i == j:
+                    continue  # Skip correct classifications
+                
+                if confusion_matrix[i, j] > 0:
+                    true_material = class_to_material.get(i, f"class_{i}")
+                    pred_material = class_to_material.get(j, f"class_{j}")
+                    
+                    error_patterns.append({
+                        "true_material": true_material,
+                        "predicted_material": pred_material,
+                        "count": int(confusion_matrix[i, j]),
+                        "error_rate": float(confusion_matrix[i, j] / np.sum(confusion_matrix[i, :]))
+                    })
+        
+        # Sort by count descending
+        error_patterns.sort(key=lambda x: x["count"], reverse=True)
+        
+        # Calculate overall metrics
+        overall_metrics = {
+            "macro_precision": float(np.mean([m["precision"] for m in per_class_metrics.values()])),
+            "macro_recall": float(np.mean([m["recall"] for m in per_class_metrics.values()])),
+            "macro_f1": float(np.mean([m["f1_score"] for m in per_class_metrics.values()])),
+            "confusion_matrix": confusion_matrix.tolist(),
+            "error_patterns": error_patterns[:10]  # Top 10 error patterns
+        }
+        
+        return {
+            "per_class": per_class_metrics,
+            "overall": overall_metrics
+        }
 
 class HybridTrainer:
     """Trainer for hybrid material recognition (combines feature-based and ML-based)"""
     
-    def __init__(self, dataset: MaterialDataset, epochs: int = 10, batch_size: int = 32, 
+    def __init__(self, dataset: MaterialDataset, epochs: int = 10, batch_size: int = 32,
                  learning_rate: float = 0.001, progress_reporter=None, enable_dynamic_params: bool = False,
                  parameter_storage: str = 'file', supabase_url: str = None, supabase_key: str = None,
-                 store_models_in_supabase: bool = False):
+                 store_models_in_supabase: bool = False, loss_function: str = 'crossentropy',
+                 focal_gamma: float = 2.0, focal_alpha: float = 0.25, architecture: str = 'mobilenet'):
         """
         Initialize the hybrid trainer
         
@@ -1150,6 +1476,10 @@ class HybridTrainer:
             supabase_url: Supabase URL (required if parameter_storage is 'supabase')
             supabase_key: Supabase API key (required if parameter_storage is 'supabase')
             store_models_in_supabase: Whether to store models in Supabase Storage
+            loss_function: Name of the loss function ('crossentropy' or 'focal')
+            focal_gamma: Gamma parameter for Focal Loss
+            focal_alpha: Alpha parameter for Focal Loss
+            architecture: Model architecture to use ('mobilenet', 'vit', 'hybrid-cnn-vit')
         """
         self.dataset = dataset
         self.epochs = epochs
@@ -1160,6 +1490,10 @@ class HybridTrainer:
         self.parameter_storage = parameter_storage
         self.supabase_url = supabase_url
         self.supabase_key = supabase_key
+        self.loss_function_name = loss_function
+        self.focal_gamma = focal_gamma
+        self.focal_alpha = focal_alpha
+        self.architecture = architecture
         self.store_models_in_supabase = store_models_in_supabase
         self.job_id = None
         
@@ -1196,7 +1530,11 @@ class HybridTrainer:
                 parameter_storage=parameter_storage,
                 supabase_url=supabase_url,
                 supabase_key=supabase_key,
-                store_models_in_supabase=store_models_in_supabase
+                store_models_in_supabase=store_models_in_supabase,
+                loss_function=loss_function,
+                focal_gamma=focal_gamma,
+                focal_alpha=focal_alpha,
+                architecture=architecture
             )
         elif TORCH_AVAILABLE:
             self.ml_trainer = PyTorchTrainer(
@@ -1209,7 +1547,10 @@ class HybridTrainer:
                 parameter_storage=parameter_storage,
                 supabase_url=supabase_url,
                 supabase_key=supabase_key,
-                store_models_in_supabase=store_models_in_supabase
+                store_models_in_supabase=store_models_in_supabase,
+                loss_function=loss_function,
+                focal_gamma=focal_gamma,
+                focal_alpha=focal_alpha
             )
         else:
             self.ml_trainer = None
@@ -1236,9 +1577,11 @@ class HybridTrainer:
             "epochs": self.epochs,
             "batch_size": self.batch_size,
             "learning_rate": self.learning_rate,
-            "enable_dynamic_params": self.enable_dynamic_params
+            "enable_dynamic_params": self.enable_dynamic_params,
+            "loss_function": self.loss_function_name,
+            "architecture": self.architecture
         }
-        
+
         try:
             # Report training start
             if self.progress_reporter:
@@ -1293,6 +1636,7 @@ class HybridTrainer:
         return {
             "model_type": "hybrid",
             "feature_results": feature_results,
+            "loss_function": self.loss_function_name,
             "ml_results": ml_results,
             "training_time": training_time
         }
@@ -1379,6 +1723,12 @@ def main():
                         help="Batch size for ML training")
     parser.add_argument("--learning-rate", type=float, default=0.001,
                         help="Learning rate for ML training")
+    parser.add_argument("--loss-function", choices=["crossentropy", "focal"], default="crossentropy",
+                        help="Loss function to use for ML training")
+    parser.add_argument("--architecture", choices=["mobilenet", "resnet", "vit", "hybrid-cnn-vit"], default="mobilenet",
+                        help="ML model architecture to use (default: mobilenet for TF, resnet for PyTorch)")
+    parser.add_argument("--focal-gamma", type=float, default=2.0, help="Gamma for Focal Loss")
+    parser.add_argument("--focal-alpha", type=float, default=0.25, help="Alpha for Focal Loss")
     parser.add_argument("--enable-dynamic-params", action="store_true",
                         help="Enable dynamic parameter adjustment during training")
     parser.add_argument("--parameter-storage", choices=["file", "supabase"], default="file",
@@ -1434,7 +1784,11 @@ def main():
                     parameter_storage=args.parameter_storage,
                     supabase_url=args.supabase_url,
                     supabase_key=args.supabase_key,
-                    store_models_in_supabase=args.store_models_in_supabase
+                    store_models_in_supabase=args.store_models_in_supabase,
+                    loss_function=args.loss_function,
+                    focal_gamma=args.focal_gamma,
+                    focal_alpha=args.focal_alpha,
+                    architecture=args.architecture
                 )
             elif TORCH_AVAILABLE:
                 trainer = PyTorchTrainer(
@@ -1447,7 +1801,11 @@ def main():
                     parameter_storage=args.parameter_storage,
                     supabase_url=args.supabase_url,
                     supabase_key=args.supabase_key,
-                    store_models_in_supabase=args.store_models_in_supabase
+                    store_models_in_supabase=args.store_models_in_supabase,
+                    loss_function=args.loss_function,
+                    focal_gamma=args.focal_gamma,
+                    focal_alpha=args.focal_alpha,
+                    architecture=args.architecture
                 )
             else:
                 raise ImportError("ML-based training requested but no ML framework is available")
@@ -1462,9 +1820,13 @@ def main():
                 parameter_storage=args.parameter_storage,
                 supabase_url=args.supabase_url,
                 supabase_key=args.supabase_key,
-                store_models_in_supabase=args.store_models_in_supabase
+                store_models_in_supabase=args.store_models_in_supabase,
+                loss_function=args.loss_function,
+                focal_gamma=args.focal_gamma,
+                focal_alpha=args.focal_alpha,
+                architecture=args.architecture
             )
-        
+
         # Train model
         results = trainer.train()
         

@@ -6,6 +6,7 @@ This guide provides detailed instructions for deploying the Kai application to p
 
 - [Prerequisites](#prerequisites)
 - [Component Installation](#component-installation)
+- [Recently Added Features](#recently-added-features)
 - [Architecture Overview](#architecture-overview)
 - [Supabase Deployment](#supabase-deployment)
 - [Vercel Deployment](#vercel-deployment)
@@ -22,11 +23,67 @@ Before proceeding with deployment, ensure you have the following:
 - GitHub account with administrator access to the repository
 - Supabase account
 - Vercel account
-- Digital Ocean account
+- Digital Ocean account with Kubernetes support
 - Node.js (v16+) and Yarn (v1.22+) installed locally
 - Docker and kubectl installed locally for testing
 - Domain name(s) for your deployment
+- NVIDIA GPU operators installed (for ML features)
+- Nodes with NVIDIA L40S/H100 GPUs available for ML workloads
+- Persistent storage configured for parameter history and ML artifacts
+### Recently Added Features
 
+The Kai platform has been enhanced with four major new features that require specific deployment configurations:
+
+#### 1. Notification & Webhook System
+
+A comprehensive messaging framework supporting multiple notification channels:
+- In-app notifications (real-time & persistent)
+- Email notifications
+- SMS notifications (via third-party providers)
+- Webhook integrations for external systems
+
+**Deployment Components:**
+- Notification service deployment
+- Webhook service deployment
+- Database tables for notification configuration and history
+- External service integrations (email, SMS)
+
+#### 2. Parameter Registry System
+
+A hyperparameter management system for ML workloads:
+- Material-specific parameter storage
+- Similarity-based parameter suggestion
+- Automated hyperparameter optimization
+- Default configurations for common material types
+
+**Deployment Components:**
+- Parameter registry API deployment
+- Persistent storage for parameter history
+- Integration with ML training pipelines
+
+#### 3. MultiModal Pattern Recognition
+
+An advanced ML system for bridging visual patterns and textual specifications:
+- Transformer-based architecture with cross-modal attention
+- Pattern-to-text and text-to-pattern matching
+- Material pattern classification and specification extraction
+
+**Deployment Components:**
+- GPU-optimized deployment for inference
+- Workflow templates for pattern recognition tasks
+- Integration with existing material analysis pipeline
+
+#### 4. Domain-Specific Neural Networks
+
+Specialized neural architectures for material texture analysis:
+- Custom convolutional filters for different material classes
+- Multi-resolution material-aware attention mechanisms
+- Texture-specific feature extraction and classification
+
+**Deployment Components:**
+- GPU-optimized deployment for inference
+- Workflow templates for domain-specific processing
+- Texture analysis integration points
 ## Component Installation
 
 This section provides installation instructions for all Kai system components. Follow these steps to set up the required dependencies and services before deployment.
@@ -48,22 +105,200 @@ The Neural OCR integration requires additional dependencies beyond the standard 
 
 ### ML Package Installation
 
-The ML package provides machine learning functionality for material recognition, vector embeddings, and model training:
-
+The ML package provides machine learning functionality for material recognition, vector embeddings, model training, multimodal pattern recognition, and domain-specific networks:
+- CUDA 11.8+ for GPU support
+- NVIDIA drivers for L40S/H100 GPUs
 #### Prerequisites
+#### MultiModal Pattern Recognition Setup
 
+For the MultiModal Pattern Recognition system:
+
+1. Install additional dependencies:
+   ```bash
+   pip install transformers torch torchvision einops timm safetensors
+   ```
+
+2. Download model weights:
+   ```bash
+   python -c "from huggingface_hub import snapshot_download; snapshot_download('kai/multimodal-pattern-recognition-base')"
+   ```
+
+3. Verify installation:
+   ```bash
+   python -c "from multimodal_pattern_recognition import MultiModalPatternRecognizer; print('MultiModal Pattern Recognition available:', MultiModalPatternRecognizer.available())"
+   ```
+
+#### Domain-Specific Networks Setup
+
+For the Domain-Specific Networks system:
+
+1. Install additional dependencies:
+   ```bash
+   pip install torch torchvision einops timm ml_collections
+   ```
+
+2. Download model weights:
+   ```bash
+   python -c "from huggingface_hub import snapshot_download; snapshot_download('kai/domain-specific-networks')"
+   ```
+
+3. Verify installation:
+   ```bash
+   python -c "from domain_specific_networks import DomainSpecificNetworkManager; print('Domain-Specific Networks available:', DomainSpecificNetworkManager.list_available_domains())"
+   ```
 - Python 3.8+
 - Node.js 16+
 - Tesseract OCR (for text extraction)
+### Notification System Installation
 
+The Notification System provides multi-channel notification capabilities:
+
+#### Prerequisites
+- Node.js 16+
+- Redis for notification queueing
+- SMTP server (for email notifications)
+- Twilio or similar provider (for SMS notifications)
+
+#### Installation Steps
+
+1. Install dependencies:
+   ```bash
+   cd packages/server
+   yarn install
+   ```
+
+2. Run database migrations:
+   ```bash
+   cd packages/server/src/migrations
+   node ../../scripts/run-migrations.js notification-tables.sql
+   node ../../scripts/run-migrations.js push-notifications.sql
+   node ../../scripts/run-migrations.js webhooks.sql
+   ```
+
+3. Configure environment variables:
+   ```
+   # Notification Service
+   NOTIFICATION_SERVICE_ENABLED=true
+   DEFAULT_NOTIFICATION_CHANNEL=in-app
+   
+   # Email Provider
+   EMAIL_PROVIDER=sendgrid  # sendgrid, mailchimp, or ses
+   EMAIL_API_KEY=your_api_key
+   
+   # SMS Provider (optional)
+   SMS_PROVIDER=twilio  # twilio or nexmo
+   SMS_API_KEY=your_api_key
+   SMS_ACCOUNT_SID=your_sid  # twilio only
+   
+   # Webhook Configuration
+   WEBHOOK_RETRY_ATTEMPTS=3
+   WEBHOOK_TIMEOUT_MS=5000
+   ```
+
+### Parameter Registry Installation
+
+The Parameter Registry system manages hyperparameters for material analysis:
+
+#### Prerequisites
+- Node.js 16+
+- PostgreSQL or Supabase
+- Redis for caching
+
+#### Installation Steps
+
+1. Install dependencies:
+   ```bash
+   cd packages/server
+   yarn install
+   ```
+
+2. Run database migrations:
+   ```bash
+   cd packages/server/src/migrations
+   node ../../scripts/run-migrations.js parameter-registry.sql
+   ```
+
+3. Configure environment variables:
+   ```
+   # Parameter Registry
+   PARAM_REGISTRY_ENABLED=true
+   PARAM_STORAGE_TYPE=supabase  # supabase or postgres
+   PARAM_DB_CONNECTION=your_connection_string
+   PARAM_HISTORY_RETENTION_DAYS=90
+   DEFAULT_PARAMETER_SET=standard
+   SIMILARITY_THRESHOLD=0.75
+   ```
 #### Setup
+### New Feature Architecture
 
+With the recently added features, the architecture has been extended:
+
+```
+┌────────────────────────────────────────────────────────────────────────────────┐
+│                                                                                │
+│  Digital Ocean Kubernetes Cluster                                             │
+│  ─────────────────────────────────────────────────────────────────────────    │
+│                                                                                │
+│            ┌──────────────────┐                                               │
+│            │                  │                                               │
+│            │  Parameter       │◄────────────┐                                 │
+│            │  Registry        │             │                                 │
+│            │                  │             │                                 │
+│            └─────────┬────────┘             │                                 │
+│                      │                      │                                 │
+│                      ▼                      │                                 │
+│  ┌──────────────┐  ┌──────────────────┐   ┌─┴────────────┐   ┌───────────────┐│
+│  │              │  │                  │   │              │   │               ││
+│  │ Notification │  │  Coordinator    │   │ ML Workloads │   │  Webhook      ││
+│  │ Service      │◄─┤  Service        │◄──┤ Orchestrator │◄──┤  Service      ││
+│  │              │  │                  │   │              │   │               ││
+│  └──────┬───────┘  └──────────────────┘   └─────┬────────┘   └───────────────┘│
+│         │                   │                   │                             │
+│         │                   ▼                   ▼                             │
+│         │           ┌────────────────┐  ┌─────────────────┐                  │
+│         │           │                │  │                 │                  │
+│         │           │  Existing      │  │ New ML Workflows│                  │
+│         │           │  Workflows     │  │ ───────────────│                  │
+│         │           │                │  │ - MultiModal   │                  │
+│         │           └────────────────┘  │   Pattern      │                  │
+│         │                               │   Recognition  │                  │
+│         │                               │ - Domain-      │                  │
+│         │                               │   Specific     │                  │
+│         ▼                               │   Networks     │                  │
+│  ┌─────────────────┐                    │                 │                  │
+│  │ Email/SMS/Push  │                    └─────────────────┘                  │
+│  │ Delivery        │                                                         │
+│  │ Services        │                                                         │
+│  └─────────────────┘                                                         │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
 1. Install Node.js dependencies:
    ```bash
    cd packages/ml
    npm install
    ```
+### 3. Adding Tables for New Features
 
+For the notification and webhook system, run these additional migrations:
+
+```sql
+-- Run notification tables migration
+\i notification-tables.sql
+
+-- Run webhook tables migration
+\i webhooks.sql
+
+-- Run push notifications migration
+\i push-notifications.sql
+```
+
+For the parameter registry system:
+
+```sql
+-- Run parameter registry migration
+\i parameter-registry.sql
+```
 2. Install Python dependencies:
    ```bash
    npm run setup-python
@@ -465,9 +700,9 @@ The KAI ML Platform uses a job-based processing architecture with Argo Workflows
        - Node Count: 3
        - Labels: `node-type=cpu-optimized`
        
-     - **GPU-Optimized Pool** (if needed):
+     - **GPU-Optimized Pool**:
        - Machine Type: GPU-Optimized
-       - Node Plan: With NVIDIA GPUs
+       - Node Plan: With NVIDIA L40S/H100 GPUs
        - Node Count: 2
        - Labels: `node-type=gpu-optimized`
        
@@ -480,7 +715,76 @@ The KAI ML Platform uses a job-based processing architecture with Argo Workflows
 4. Enable the NVIDIA GPU Operator (if using GPU nodes)
 5. Name your cluster (e.g., `kai-ml-cluster`)
 6. Click "Create Cluster"
+### 2. Deployment Order
 
+For optimal deployment with minimal service disruption, follow this order:
+
+1. **Infrastructure Updates:**
+   - Apply GPU configuration updates
+   - Update node pools if necessary
+   - Configure persistent storage
+
+2. **Coordinator Updates:**
+   - Update coordinator configuration (config.yaml)
+   - Update coordinator deployment (deployment.yaml)
+   - Apply updated resource allocations
+   - Restart coordinator service
+
+3. **Core Services:**
+   - Deploy Parameter Registry service
+   - Deploy Notification System service
+
+4. **ML Components:**
+   - Deploy Domain-Specific Networks
+   - Deploy MultiModal Pattern Recognition service
+
+5. **Integration Components:**
+   - Deploy Webhook service
+   - Update workflow templates
+   - Configure integrations with existing systems
+
+### 3. Coordinator Service Updates
+
+The coordinator service has been updated to support the new features with the following changes:
+
+#### Configuration Updates (config.yaml)
+
+1. **Quality Tiers**
+   - Added new "premium" and "enterprise" tiers with higher resources
+   - Updated GPU class specifications for high-performance nodes
+
+2. **Notification System Integration**
+   - Added configuration for notification delivery
+   - Configured event types that trigger notifications
+   - Setup webhook integration points
+
+3. **Parameter Registry Integration**
+   - Added endpoint configuration
+   - Configured similarity threshold and retention policies
+   - Setup gRPC communication channel
+
+4. **ML Feature Management**
+   - Added configuration for multimodal pattern recognition
+   - Added configuration for domain-specific networks
+   - Setup workflow template references
+
+5. **GPU Resource Management**
+   - Added GPU class specifications
+   - Configured model-to-GPU mapping
+   - Setup autoscaling parameters
+
+#### Deployment Updates (deployment.yaml)
+
+1. **Resource Allocation Increases**
+   - CPU: 500m → 1 core (requests), 2 → 4 cores (limits)
+   - Memory: 512Mi → 1Gi (requests), 2Gi → 4Gi (limits)
+
+2. **Environment Variables**
+   - Added connectivity parameters for new services
+   - Configured feature flags for new components
+   - Setup workflow template paths
+   
+The coordinator serves as the central orchestration component that manages all the new features, distributing workloads, and ensuring proper integration between components.
 ### 2. Connecting to the Cluster
 
 1. Once the cluster is created, download the kubeconfig file
@@ -522,7 +826,12 @@ docker build -t registry.example.com/kai/mobile-optimization:latest -f packages/
 # WASM Compiler
 docker build -t registry.example.com/kai/wasm-compiler:latest -f packages/coordinator/Dockerfile.wasm .
 
-# MCP Server (if used)
+# New feature images
+docker build -t registry.example.com/kai/parameter-registry:latest -f packages/server/Dockerfile.parameter-registry .
+docker build -t registry.example.com/kai/notification-service:latest -f packages/server/Dockerfile.notification-service .
+docker build -t registry.example.com/kai/webhook-service:latest -f packages/server/Dockerfile.webhook-service .
+docker build -t registry.example.com/kai/multimodal-pattern-recognition:latest -f packages/ml/python/Dockerfile.multimodal-pattern-recognition .
+docker build -t registry.example.com/kai/domain-specific-networks:latest -f packages/ml/python/Dockerfile.domain-specific-networks .
 docker build -t registry.example.com/kai/mcp-server:latest -f packages/ml/Dockerfile.mcp .
 
 # Push all images to your registry
@@ -540,12 +849,59 @@ docker push registry.example.com/kai/workflow-finalizer:latest
 docker push registry.example.com/kai/mobile-optimization:latest
 docker push registry.example.com/kai/wasm-compiler:latest
 docker push registry.example.com/kai/mcp-server:latest
+docker push registry.example.com/kai/parameter-registry:latest
+docker push registry.example.com/kai/notification-service:latest
+docker push registry.example.com/kai/webhook-service:latest
+docker push registry.example.com/kai/multimodal-pattern-recognition:latest
+docker push registry.example.com/kai/domain-specific-networks:latest
 ```
+3. **New ML Components**:
+   - MultiModal Pattern Recognition (`kubernetes/ml-services/multimodal-pattern-recognition-deployment.yaml`)
+   - Domain-Specific Networks (`kubernetes/ml-services/domain-specific-networks-deployment.yaml`)
+   - Updated GPU configuration (`kubernetes/gpu-requirements.yaml`)
 
+4. **New Infrastructure Services**:
+   - Notification System (`kubernetes/notification-system/deployment.yaml`)
+   - Webhook Service (`kubernetes/notification-system/webhook-deployment.yaml`)
+   - Parameter Registry (`kubernetes/parameter-registry/deployment.yaml`)
+   - Parameter Registry Service (`kubernetes/parameter-registry/service.yaml`)
+
+5. **New Workflow Templates**:
+   - MultiModal Pattern Recognition (`kubernetes/workflows/multimodal-pattern-recognition-template.yaml`)
+   - Domain-Specific Networks (`kubernetes/workflows/domain-specific-networks-template.yaml`)
 Replace `registry.example.com` with your actual container registry URL.
-
+   - MultiModal Pattern Recognition template (`multimodal-pattern-recognition-template.yaml`)
+   - Domain-Specific Networks template (`domain-specific-networks-template.yaml`)
 ### 4. Installing Argo Workflows
+**New Features Environment Variables**:
 
+```
+# Notification System
+NOTIFICATION_SERVICE_ENABLED=true
+DEFAULT_NOTIFICATION_CHANNEL=in-app
+EMAIL_PROVIDER=sendgrid|mailchimp|ses
+EMAIL_API_KEY=${SECRET_REF}
+SMS_PROVIDER=twilio|nexmo
+SMS_API_KEY=${SECRET_REF}
+WEBHOOK_RETRY_ATTEMPTS=3
+WEBHOOK_TIMEOUT_MS=5000
+
+# Parameter Registry
+PARAM_REGISTRY_ENABLED=true
+PARAM_STORAGE_TYPE=supabase|postgres
+PARAM_DB_CONNECTION=${SECRET_REF}
+PARAM_HISTORY_RETENTION_DAYS=90
+DEFAULT_PARAMETER_SET=standard
+SIMILARITY_THRESHOLD=0.75
+
+# ML Features
+GPU_SCALING_ENABLED=true
+MIN_GPU_CLASS=L40S
+MULTIMODAL_MODEL_VERSION=v2.1
+DOMAIN_NETWORKS_ENABLED=true
+DEFAULT_QUALITY_TIER=standard
+BATCH_SIZE_LIMIT=8
+```
 Argo Workflows is required for pipeline orchestration:
 
 ```bash

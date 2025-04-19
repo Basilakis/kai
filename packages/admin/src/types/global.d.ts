@@ -105,6 +105,7 @@ declare namespace JSX {
     PhotographIcon: any;
     DatabaseIcon: any;
     ChartBarIcon: any;
+    BellIcon: any;
 
     // Next.js components
     Link: any;

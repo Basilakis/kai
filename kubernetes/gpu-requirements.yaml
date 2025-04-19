@@ -1,0 +1,298 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gpu-scaling-config
+  namespace: default
+data:
+  scaling-policy: |
+    {
+      "modelScaling": {
+        "gaussian-splatting": {
+          "training": {
+            "minGPU": "NVIDIA L40S",
+            "recommendedGPU": "NVIDIA H100",
+            "minVRAM": "48GB",
+            "recommendedVRAM": "80GB"
+          },
+          "inference": {
+            "minGPU": "NVIDIA L40S",
+            "recommendedGPU": "NVIDIA H100",
+            "minVRAM": "48GB",
+            "recommendedVRAM": "80GB"
+          }
+        },
+        "triposr": {
+          "training": {
+            "minGPU": "NVIDIA L40S",
+            "recommendedGPU": "NVIDIA H100",
+            "minVRAM": "48GB",
+            "recommendedVRAM": "80GB"
+          },
+          "inference": {
+            "minGPU": "NVIDIA L40S",
+            "recommendedGPU": "NVIDIA H100",
+            "minVRAM": "48GB",
+            "recommendedVRAM": "80GB"
+          }
+        },
+        "wonder3d": {
+          "training": {
+            "minGPU": "NVIDIA L40S",
+            "recommendedGPU": "NVIDIA H100",
+            "minVRAM": "48GB",
+            "recommendedVRAM": "80GB"
+          },
+          "inference": {
+            "minGPU": "NVIDIA L40S",
+            "recommendedGPU": "NVIDIA H100",
+            "minVRAM": "48GB",
+            "recommendedVRAM": "80GB"
+          }
+        },
+        "instant3d": {
+          "training": {
+            "minGPU": "NVIDIA H100",
+            "recommendedGPU": "NVIDIA H100x8",
+            "minVRAM": "80GB",
+            "recommendedVRAM": "640GB"
+          },
+          "inference": {
+            "minGPU": "NVIDIA L40S",
+            "recommendedGPU": "NVIDIA H100",
+            "minVRAM": "48GB",
+            "recommendedVRAM": "80GB"
+          }
+        },
+        "multimodal-pattern-recognition": {
+          "training": {
+            "minGPU": "NVIDIA L40S",
+            "recommendedGPU": "NVIDIA H100",
+            "minVRAM": "48GB",
+            "recommendedVRAM": "80GB"
+          },
+          "inference": {
+            "minGPU": "NVIDIA L40S",
+            "recommendedGPU": "NVIDIA H100",
+            "minVRAM": "48GB",
+            "recommendedVRAM": "80GB"
+          }
+        },
+        "domain-specific-networks": {
+          "training": {
+            "minGPU": "NVIDIA L40S",
+            "recommendedGPU": "NVIDIA H100",
+            "minVRAM": "48GB",
+            "recommendedVRAM": "80GB"
+          },
+          "inference": {
+            "minGPU": "NVIDIA L40S",
+            "recommendedGPU": "NVIDIA H100",
+            "minVRAM": "48GB",
+            "recommendedVRAM": "80GB"
+          }
+        }
+      },
+      "scalingMethods": {
+        "upscale": {
+          "esrgan": {
+            "supportedScales": [2, 4, 8],
+            "qualityLevels": ["fast", "balanced", "quality"],
+            "gpuRequirements": {
+              "minVRAM": "4GB",
+              "recommendedVRAM": "8GB"
+            }
+          },
+          "swinir": {
+            "supportedScales": [2, 4],
+            "qualityLevels": ["fast", "balanced", "quality"],
+            "gpuRequirements": {
+              "minVRAM": "6GB",
+              "recommendedVRAM": "10GB"
+            }
+          },
+          "ai": {
+            "supportedScales": [2, 4, 8, 16],
+            "qualityLevels": ["fast", "balanced", "quality"],
+            "gpuRequirements": {
+              "minVRAM": "8GB",
+              "recommendedVRAM": "16GB"
+            }
+          }
+        },
+        "downscale": {
+          "standard": {
+            "supportedScales": [0.25, 0.5, 0.75],
+            "methods": ["bicubic", "bilinear", "lanczos"],
+            "gpuRequirements": {
+              "minVRAM": "2GB"
+            }
+          },
+          "adaptive": {
+            "supportedScales": [0.1, 0.25, 0.5, 0.75],
+            "methods": ["content-aware", "perceptual"],
+            "gpuRequirements": {
+              "minVRAM": "4GB",
+              "recommendedVRAM": "8GB"
+            }
+          }
+        }
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: 3d-generator
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: 3d-generator
+  template:
+    metadata:
+      labels:
+        app: 3d-generator
+    spec:
+      nodeSelector:
+        cloud.digitalocean.com/gpu-type: "nvidia-h100"
+      containers:
+      - name: gaussian-splatting
+        image: ${REGISTRY}/gaussian-splatting:latest
+        resources:
+          limits:
+            nvidia.com/gpu: 1
+            memory: "16Gi"
+          requests:
+            nvidia.com/gpu: 1
+            memory: "12Gi"
+            cpu: "4"
+        volumeMounts:
+        - name: model-storage
+          mountPath: /app/models
+        - name: gpu-config
+          mountPath: /app/config
+        env:
+        - name: USE_CUDA
+          value: "true"
+        - name: MAX_BATCH_SIZE
+          value: "4"
+      - name: text-to-3d
+        image: ${REGISTRY}/text-to-3d:latest
+        resources:
+          limits:
+            nvidia.com/gpu: 1
+            memory: "16Gi"
+          requests:
+            nvidia.com/gpu: 1
+            memory: "12Gi"
+            cpu: "4"
+        volumeMounts:
+        - name: model-storage
+          mountPath: /app/models
+        - name: gpu-config
+          mountPath: /app/config
+        env:
+        - name: USE_CUDA
+          value: "true"
+        - name: TEXT_TO_3D_MODEL
+          value: "instant3d"  # Can be triposr, wonder3d, or instant3d
+        - name: MAX_BATCH_SIZE
+          value: "2"
+      - name: materialx-processor
+        image: ${REGISTRY}/materialx-processor:latest
+        resources:
+          limits:
+            nvidia.com/gpu: 1
+            memory: "8Gi"
+          requests:
+            nvidia.com/gpu: 1
+            memory: "6Gi"
+            cpu: "2"
+        volumeMounts:
+        - name: model-storage
+          mountPath: /app/models
+        - name: gpu-config
+          mountPath: /app/config
+        env:
+        - name: USE_CUDA
+          value: "true"
+        - name: UPSCALE_METHOD
+          value: "ai"  # Can be esrgan, swinir, or ai
+        - name: UPSCALE_QUALITY
+          value: "balanced"  # Can be fast, balanced, or quality
+        - name: MAX_BATCH_SIZE
+          value: "8"
+      volumes:
+      - name: model-storage
+        persistentVolumeClaim:
+          claimName: model-storage-pvc
+      - name: gpu-config
+        configMap:
+          name: gpu-scaling-config
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: 3d-generator-hpa
+  namespace: default
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: 3d-generator
+  minReplicas: 1
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 80
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Pods
+        value: 1
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Pods
+        value: 2
+        periodSeconds: 60
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: 3d-generator-service
+  namespace: default
+spec:
+  selector:
+    app: 3d-generator
+  ports:
+  - port: 8080
+    targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: nvidia-gpu
+handler: nvidia
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: gpu-priority
+value: 1000000
+globalDefault: false
+description: "Priority class for GPU workloads"

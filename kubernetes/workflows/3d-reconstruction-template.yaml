@@ -459,6 +459,8 @@ spec:
           cpu: 4
           memory: 8Gi
           nvidia.com/gpu: 1
+      nodeSelector:
+        cloud.digitalocean.com/gpu-type: "nvidia-l40s"
       volumeMounts:
       - name: workdir
         mountPath: /tmp/point-cloud
@@ -521,6 +523,8 @@ spec:
           cpu: 4
           memory: 8Gi
           nvidia.com/gpu: 1
+      nodeSelector:
+        cloud.digitalocean.com/gpu-type: "nvidia-l40s"
       volumeMounts:
       - name: workdir
         mountPath: /tmp/reconstruction
@@ -554,6 +558,8 @@ spec:
           cpu: 8
           memory: 32Gi
           nvidia.com/gpu: 2
+      nodeSelector:
+        cloud.digitalocean.com/gpu-type: "nvidia-h100"
       volumeMounts:
       - name: workdir
         mountPath: /tmp/nerf
@@ -585,6 +591,8 @@ spec:
           cpu: 4
           memory: 16Gi
           nvidia.com/gpu: 1
+      nodeSelector:
+        cloud.digitalocean.com/gpu-type: "nvidia-l40s"
       volumeMounts:
       - name: workdir
         mountPath: /tmp/reconstruction

@@ -12,12 +12,17 @@
  * - Feedback loop for improving recognition over time
  * - Performance optimization for faster recognition
  * - Crawler data integration for training
+ * - 3D reconstruction and visualization with Gaussian Splatting
+ * - Improved text-to-3D generation
  */
 
 import { spawn } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+import { GaussianSplattingBridge } from './gaussian-splatting-bridge';
+import { ImprovedTextTo3DBridge } from './improved-text-to-3d-bridge';
+import { MaterialXBridge } from './materialx-bridge';
 
 // Define the path to the Python scripts
 const PYTHON_SCRIPTS_DIR = path.join(__dirname, '../python');
@@ -1304,7 +1309,8 @@ export async function fuseConfidenceScores(
       try {
         // Read the output file
         const resultData = fs.readFileSync(outputPath, 'utf8');
-        const result = JSON.parse(resultData) as ConfidenceFusionResult;
+        // Ensure we have a string for JSON.parse
+        const result = JSON.parse(resultData.toString()) as ConfidenceFusionResult;
         
         // Clean up temporary files
         try {
@@ -1414,8 +1420,15 @@ export default {
   // Crawler data integration functions
   prepareCrawlerDataForTraining,
   validateCrawlerDataset,
-  trainModelWithCrawlerData
+  trainModelWithCrawlerData,
+  
+  // 3D reconstruction and visualization
+  GaussianSplattingBridge,
+  ImprovedTextTo3DBridge
 };
+
+// Export bridges for direct import
+export { GaussianSplattingBridge, ImprovedTextTo3DBridge };
 
 /**
  * Prepare crawler data for training

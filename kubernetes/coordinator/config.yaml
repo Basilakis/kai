@@ -79,9 +79,109 @@ data:
           "gpu": "1"
         },
         "timeout": "30m"
+      },
+      "premium": {
+        "resources": {
+          "cpu": "8",
+          "memory": "16Gi",
+          "gpu": "1"
+        },
+        "timeout": "60m",
+        "gpu_class": "nvidia-l40s"
+      },
+      "enterprise": {
+        "resources": {
+          "cpu": "16",
+          "memory": "32Gi",
+          "gpu": "1"
+        },
+        "timeout": "120m",
+        "gpu_class": "nvidia-h100"
       }
     }
   
+  # New Features Configuration
+  
+  # Notification System Configuration
+  notification_system: |
+    {
+      "enabled": true,
+      "endpoint": "http://notification-service:8080/api/v1",
+      "channels": ["in-app", "email", "sms", "webhook"],
+      "defaultChannel": "in-app",
+      "events": [
+        "task.queued",
+        "task.started",
+        "task.completed",
+        "task.failed",
+        "resource.quota.exceeded"
+      ],
+      "webhook": {
+        "endpoint": "http://webhook-service:8080/api/v1",
+        "retryAttempts": 3,
+        "timeoutMs": 5000
+      }
+    }
+  
+  # Parameter Registry Configuration
+  parameter_registry: |
+    {
+      "enabled": true,
+      "endpoint": "http://parameter-registry-service:8080/api/v1",
+      "grpcEndpoint": "parameter-registry-service:9090",
+      "similarityThreshold": 0.75,
+      "defaultParameterSet": "standard",
+      "historyRetentionDays": 90
+    }
+  
+  # ML Features Configuration
+  ml_features: |
+    {
+      "multimodalPatternRecognition": {
+        "enabled": true,
+        "workflowTemplate": "multimodal-pattern-recognition-template",
+        "minQualityTier": "medium",
+        "resourceQuotas": {
+          "cpu": 8,
+          "memory": "16Gi",
+          "gpu": 1
+        },
+        "maxConcurrent": 4
+      },
+      "domainSpecificNetworks": {
+        "enabled": true,
+        "workflowTemplate": "domain-specific-networks-template",
+        "minQualityTier": "medium",
+        "resourceQuotas": {
+          "cpu": 8,
+          "memory": "16Gi",
+          "gpu": 1
+        },
+        "maxConcurrent": 4,
+        "supportedDomains": ["wood", "metal", "fabric", "stone", "ceramic", "composite"]
+      }
+    }
+  
+  # GPU Resource Management
+  gpu_resources: |
+    {
+      "classes": {
+        "nvidia-l40s": {
+          "priority": 10,
+          "models": ["multimodal-pattern-recognition", "domain-specific-networks"]
+        },
+        "nvidia-h100": {
+          "priority": 20,
+          "models": ["gaussian-splatting", "triposr", "wonder3d", "instant3d"]
+        }
+      },
+      "scaling": {
+        "enabled": true,
+        "minNodes": 1,
+        "maxNodes": 10,
+        "scaleDownDelay": "10m"
+      }
+    }
   # Workflow templates path
   workflow_templates_path: "/etc/coordinator/config/workflow-templates"
   

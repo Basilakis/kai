@@ -1,66 +1,34 @@
 /**
- * Extended crewAI Type Definitions
+ * CrewAI Type Definitions Exports
  * 
- * This file provides extended type definitions for crewAI to make it
- * compatible with our implementation patterns.
+ * This file now imports and re-exports types from the unified CrewAI type definitions
+ * instead of duplicating definitions. It maintains backward compatibility for any
+ * code that imports from this file.
  */
 
-// Import the base types from crewAI
-import { Agent, AgentConfig, Task } from 'crewai';
+// Import types from the unified definition file
+import {
+  Agent,
+  AgentConfig,
+  Task,
+  ExtendedAgentConfig,
+  ExtendedTaskExecution
+} from '../types/crewai-unified';
+
+// Re-export all the types for backward compatibility
+export {
+  Agent,
+  AgentConfig,
+  Task
+};
+
+// Use 'export type' for type-only exports when isolatedModules is enabled
+export type { ExtendedAgentConfig, ExtendedTaskExecution };
 
 /**
- * Extended Agent Configuration
- * Adds additional properties supported by our implementation
+ * This file previously contained module augmentation for 'crewai'.
+ * That has been moved to the unified type definition file at:
+ * packages/agents/src/types/crewai-unified.d.ts
+ * 
+ * All extensions and additional properties are now defined there.
  */
-export interface ExtendedAgentConfig extends AgentConfig {
-  // Additional properties our implementation uses
-  role?: string;
-  id?: string;
-  model?: {
-    provider?: string;
-    name?: string;
-    temperature?: number;
-  };
-  llm?: any;
-  additionalTools?: any[];
-  verbose?: boolean;
-}
-
-/**
- * Extended Task Type
- * Used for task parameters that accept object contexts
- */
-export interface ExtendedTaskExecution {
-  task: string | Task;
-  context?: string | string[] | Record<string, any>;
-}
-
-/**
- * Patch the Agent's execute method to accept our extended parameters
- */
-declare module 'crewai' {
-  interface Agent {
-    execute(params: string | Task | ExtendedTaskExecution): Promise<string>;
-  }
-
-  // Add our extended properties to the constructor options
-  interface AgentConfig {
-    name: string; // Name is required by crewAI
-    role?: string;
-    goal?: string;
-    backstory?: string;
-    id?: string;
-    model?: {
-      provider?: string;
-      name?: string;
-      temperature?: number;
-    };
-    llm?: any;
-    additionalTools?: any[];
-    verbose?: boolean;
-    allowDelegation?: boolean;
-  }
-}
-
-// Export the base types along with our extended interfaces
-export { Agent, AgentConfig, Task };

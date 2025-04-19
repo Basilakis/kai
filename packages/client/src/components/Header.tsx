@@ -1,17 +1,55 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'gatsby';
+// Import shared interfaces to reduce duplication
+import { 
+  NavItem, 
+  HeaderBehavior, 
+  createNavigationHandler,
+  headerClassNames as cn
+} from '../../../shared/src/components/interfaces/HeaderInterfaces';
 import { useUser } from '../providers/UserProvider';
 
 /**
- * Header component for the application
+ * Navigation items for the client application
+ */
+const navItems: NavItem[] = [
+  { label: 'Materials', path: '/materials' },
+  { label: 'Recognition', path: '/recognition' },
+  { label: 'Catalogs', path: '/catalogs' },
+  { label: 'About', path: '/about' }
+];
+
+/**
+ * Header component for the client application
+ * Uses shared interfaces and utilities from the shared package
  */
 const Header: React.FC = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
   const { user, isLoading, logout } = useUser();
 
+  // Handle scroll events
+  useEffect(() => {
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 10);
+    };
+    
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // Menu toggle function
   const toggleMenu = () => {
     setIsMenuOpen(!isMenuOpen);
   };
+
+  // Close menu function
+  const closeMenu = () => {
+    setIsMenuOpen(false);
+  };
+
+  // Navigation handler
+  const handleNavItemClick = createNavigationHandler(closeMenu);
 
   return (
     <header className="header">

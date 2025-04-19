@@ -16,6 +16,7 @@
     "jsx": "react",
     "baseUrl": ".",
     "incremental": true,
+    "allowSyntheticDefaultImports": true,
     "paths": {
       "@kai/shared/*": ["../shared/*"]
     },
@@ -24,6 +25,6 @@
       "../../node_modules/@types"
     ]
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", "**/*.d.ts", "../shared/src/types/*.ts", "../shared/src/utils/*.ts", "src/types/**/*.d.ts", "src/custom.d.ts", "src/react-app-env.d.ts"],
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", "**/*.d.ts", "../shared/src/types/*.ts", "../shared/src/utils/*.ts", "../shared/src/components/**/*.ts", "../shared/src/components/**/*.tsx", "src/types/**/*.d.ts", "src/custom.d.ts", "src/react-app-env.d.ts"],
   "exclude": ["node_modules"]
 }

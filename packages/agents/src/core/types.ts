@@ -2,7 +2,8 @@
  * Core types for the KAI crewAI integration
  */
 
-import { Agent as CrewAIAgent } from 'crewai';
+// Import from our unified type definitions instead of directly from crewai
+import { Agent as CrewAIAgent } from '../types/crewai-unified';
 
 /**
  * Supported agent types

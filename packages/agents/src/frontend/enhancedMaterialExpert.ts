@@ -3,13 +3,15 @@
  * 
  * An improved version of the MaterialExpert that ensures comprehensive
  * material metadata is included in all responses.
+ * 
+ * This version extends the BaseMaterialExpert class while adding
+ * specialized metadata processing functionality.
  */
 
-import { Agent, Task } from 'crewai';
+import { Agent } from 'crewai';
 import { createLogger } from '../utils/logger';
-import { AgentConfig, AgentType, UserFacingAgent } from '../core/types';
-import { createMaterialSearchTool } from '../tools/materialSearch';
-import { createVectorSearchTool } from '../tools/vectorSearch';
+import { AgentConfig } from '../core/types';
+import { BaseMaterialExpert, createMaterialExpertAgentConfig } from './base/BaseMaterialExpert';
 import { 
   formatMaterialMetadata, 
   generateMaterialDescription,
@@ -23,74 +25,22 @@ const logger = createLogger('EnhancedMaterialExpert');
  * Enhanced Material Expert class that provides detailed information about materials
  * with comprehensive metadata formatting
  */
-export class EnhancedMaterialExpert implements UserFacingAgent {
-  // Required properties from UserFacingAgent interface
-  public id: string;
-  public type: AgentType;
-  public name: string;
-  public description: string;
-  
-  // Agent properties
-  public agent: Agent;
-  public config: AgentConfig;
-
+export class EnhancedMaterialExpert extends BaseMaterialExpert {
   /**
    * Create a new EnhancedMaterialExpert instance
    */
   constructor(config: AgentConfig, agent: Agent) {
-    this.id = config.id;
-    this.type = AgentType.MATERIAL_EXPERT;
-    this.name = config.name || 'Material Expert';
-    this.description = config.description || 'Expert in construction materials and their properties';
-    this.agent = agent;
-    this.config = config;
-    
-    logger.info(`EnhancedMaterialExpert agent created with ID: ${this.id}`);
-  }
-
-  /**
-   * Get the underlying crewAI agent
-   */
-  public getAgent(): Agent {
-    return this.agent;
-  }
-
-  /**
-   * Process a user input message and provide a response with comprehensive
-   * material metadata
-   */
-  public async processUserInput(message: string): Promise<string> {
-    logger.info(`Processing user input: ${message}`);
-    
-    try {
-      // Create a task for the agent to process
-      const task = new Task({
-        description: `Answer this question about materials: ${message}`,
-        expected_output: 'Detailed explanation of material properties, applications, or comparisons',
-        agent: this.agent
-      });
-      
-      // Execute the task
-      // Using any type assertion as executeTask might not be in Agent's TypeScript definition
-      const rawResult = await (this.agent as any).executeTask(task);
-      logger.info('Task executed successfully');
-      
-      // Process the result to ensure material metadata is properly formatted
-      const enhancedResult = this.enhanceResponseWithMetadata(rawResult, message);
-      return enhancedResult;
-    } catch (error) {
-      logger.error(`Error processing user input: ${error}`);
-      return "I'm sorry, I encountered an error while processing your question. Could you please try rephrasing it?";
-    }
+    super(config, agent);
+    logger.info(`EnhancedMaterialExpert instantiated with ID: ${this.id}`);
   }
   
   /**
-   * Enhance the agent's response with formatted material metadata
+   * Override processResult to enhance the response with metadata formatting
    * 
-   * This method processes the response to ensure that any mentioned materials
+   * This method processes the raw result to ensure that any mentioned materials
    * include comprehensive metadata information
    */
-  private enhanceResponseWithMetadata(response: string, originalQuery: string): string {
+  protected override processResult(response: string, originalQuery: string): string {
     try {
       logger.debug('Enhancing response with comprehensive material metadata');
       
@@ -148,18 +98,8 @@ export class EnhancedMaterialExpert implements UserFacingAgent {
 export async function createEnhancedMaterialExpert(
   config: AgentConfig,
   modelSettings: any
-): Promise<UserFacingAgent> {
+): Promise<EnhancedMaterialExpert> {
   logger.info('Creating EnhancedMaterialExpert agent');
-  
-  // Create tools for the agent
-  const tools = [
-    await createMaterialSearchTool(),
-    await createVectorSearchTool()
-  ];
-  
-  if (config.additionalTools) {
-    tools.push(...config.additionalTools);
-  }
   
   // Detailed instructions for how to present material information
   const materialMetadataInstructions = `
@@ -182,16 +122,24 @@ Always present material information in a clear, structured format that highlight
 the key metadata properties available in our database.
 `;
   
-  // Create the crewAI agent with enhanced role, goal and backstory
-  const agent = new Agent({
-    name: config.name || 'Material Expert',
+  // Create enhanced agent config with metadata instructions
+  const enhancedModelSettings = {
+    ...modelSettings,
+    // Add any enhanced model settings here
+  };
+  
+  // Create a customized agent config with enhanced role and instructions
+  const enhancedConfig = {
+    ...config,
+    name: config.name || 'Enhanced Material Expert',
+    description: config.description || 'Expert in construction materials with comprehensive metadata formatting',
     role: `Construction material specialist with deep knowledge of materials and their properties. ${materialMetadataInstructions}`,
     goal: 'Provide accurate and detailed information about construction materials to help users make informed decisions, always including comprehensive metadata for each material.',
-    backstory: 'With years of experience in material science and construction, I can identify materials, explain their properties, and recommend the best options for specific applications. I always provide comprehensive metadata for all materials I discuss.',
-    verbose: config.verbose || false,
-    llm: modelSettings,
-    tools
-  });
+    backstory: 'With years of experience in material science and construction, I can identify materials, explain their properties, and recommend the best options for specific applications. I always provide comprehensive metadata for all materials I discuss.'
+  };
+  
+  // Use the shared configuration function from the base class with enhanced config
+  const { agent } = createMaterialExpertAgentConfig(enhancedConfig, enhancedModelSettings);
   
   // Create and return the EnhancedMaterialExpert instance
   return new EnhancedMaterialExpert(config, agent);

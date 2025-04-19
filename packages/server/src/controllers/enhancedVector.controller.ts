@@ -9,18 +9,39 @@
  */
 
 import { Request, Response, NextFunction } from 'express';
-import { enhancedVectorService } from '../services/supabase/enhanced-vector-service';
+import { enhancedVectorService as enhancedVectorServiceBase } from '../services/supabase/enhanced-vector-service';
 import { logger } from '../utils/logger';
 import { knowledgeBaseService } from '../services/knowledgeBase/knowledgeBaseService';
-import mcpClientService, { MCPServiceKey } from '../services/mcp/mcpClientService';
-import { ApiError } from '../utils/apiError';
-import path from 'path';
-import fs from 'fs';
-import os from 'os';
-import { v4 as uuidv4 } from 'uuid';
+import mcpClientService from '../services/mcp/mcpClientService';
+import { EnhancedVectorService } from '../types/enhancedVector.types';
+
+// Import the service instance (assuming it now correctly matches the interface)
+const enhancedVectorService: EnhancedVectorService = enhancedVectorServiceBase;
+import {
+  validateGenerateEmbeddingsRequest,
+  validateStoreEmbeddingsRequest,
+  validateSearchMaterialsRequest,
+  validateFindSimilarMaterialsRequest,
+  validateSearchWithKnowledgeRequest,
+  validateFindSimilarWithKnowledgeRequest,
+  validateRouteQueryRequest,
+  validateGetMaterialKnowledgeRequest,
+  validateAssembleContextRequest,
+  validateCreateSemanticOrganizationRequest,
+  validateCompareSimilarityRequest,
+  validateUpdateSearchConfigRequest,
+  validateDeleteSearchConfigRequest
+} from '../utils/enhancedVectorValidation';
+import {
+  sendSuccessResponse,
+  sendErrorResponse,
+  sendInsufficientCreditsResponse,
+  ErrorCodes
+} from '../utils/responseFormatter';
 
 // Initialize knowledge base service in the enhanced vector service
 enhancedVectorService.setKnowledgeBaseService(knowledgeBaseService);
+
 /**
  * Get embeddings for text
  *
@@ -28,13 +49,9 @@ enhancedVectorService.setKnowledgeBaseService(knowledgeBaseService);
  */
 export const generateEmbeddings = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { text, method, materialCategory } = req.body;
+    // Validate request
+    const { text, options } = validateGenerateEmbeddingsRequest(req);
     const userId = req.user?.id;
-
-    if (!text) {
-      res.status(400).json({ error: 'Text is required' });
-      return;
-    }
 
     // Check if MCP is available and user ID is provided
     const mcpAvailable = await mcpClientService.isMCPAvailable();
@@ -48,41 +65,37 @@ export const generateEmbeddings = async (req: Request, res: Response, next: Next
           { model: 'text-embedding-3-small' }
         );
 
-        res.json({
+        sendSuccessResponse(res, {
           dense_vector: mcpResult.embedding,
           dense_dimensions: mcpResult.dimensions,
           method: 'dense',
-          material_category: materialCategory,
+          material_category: options.materialCategory,
           processing_time: 0 // MCP doesn't provide processing time yet
         });
         return;
-      } catch (mcpError: any) {
+      } catch (mcpError: unknown) {
+        const error = mcpError as Error;
         // If MCP fails with insufficient credits, return 402
-        if (mcpError.message === 'Insufficient credits') {
-          res.status(402).json({
-            error: 'Insufficient credits',
-            message: 'You do not have enough credits to perform this action. Please purchase more credits.'
-          });
+        if (error.message === 'Insufficient credits') {
+          sendInsufficientCreditsResponse(res);
           return;
         }
 
         // For other MCP errors, log and fall back to direct implementation
-        logger.warn(`MCP embedding generation failed, falling back to direct implementation: ${mcpError.message}`);
+        logger.warn(`MCP embedding generation failed, falling back to direct implementation: ${error.message}`);
       }
     }
 
     // Fall back to direct implementation if MCP is not available or failed
-    const result = await enhancedVectorService.generateEmbedding(text, {
-      method: method || 'hybrid',
-      materialCategory
-    });
+    const result = await enhancedVectorService.generateEmbedding(text, options);
 
-    res.json(result);
+    sendSuccessResponse(res, result);
   } catch (error) {
     logger.error(`Error generating embeddings: ${error}`);
     next(error);
   }
 };
+
 /**
  * Store embeddings for a material
  *
@@ -90,39 +103,31 @@ export const generateEmbeddings = async (req: Request, res: Response, next: Next
  */
 export const storeEmbeddings = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { id } = req.params;
-    const { text, embeddingResult } = req.body;
-
-    if (!id) {
-      res.status(400).json({ error: 'Material ID is required' });
-      return;
-    }
-
-    if (!text) {
-      res.status(400).json({ error: 'Text is required' });
-      return;
-    }
+    // Validate request
+    const { id, text } = validateStoreEmbeddingsRequest(req);
+    const { embeddingResult, materialCategory } = req.body;
 
     // If embedding result is provided, use it, otherwise generate it
     let embeddings = embeddingResult;
     if (!embeddings) {
       embeddings = await enhancedVectorService.generateEmbedding(text, {
-        materialCategory: req.body.materialCategory
+        materialCategory
       });
     }
 
     const success = await enhancedVectorService.storeEmbedding(id, embeddings, text);
 
     if (success) {
-      res.json({ success: true, materialId: id });
+      sendSuccessResponse(res, { success: true, materialId: id });
     } else {
-      res.status(500).json({ error: 'Failed to store embeddings' });
+      sendErrorResponse(res, 'Failed to store embeddings', 500, ErrorCodes.INTERNAL_ERROR);
     }
   } catch (error) {
     logger.error(`Error storing embeddings: ${error}`);
     next(error);
   }
 };
+
 /**
  * Search materials using text query
  *
@@ -130,13 +135,9 @@ export const storeEmbeddings = async (req: Request, res: Response, next: NextFun
  */
 export const searchMaterials = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { query, materialType, limit, threshold, denseWeight, useSpecializedIndex } = req.query;
+    // Validate request
+    const searchOptions = validateSearchMaterialsRequest(req);
     const userId = req.user?.id;
-
-    if (!query) {
-      res.status(400).json({ error: 'Query is required' });
-      return;
-    }
 
     // Check if MCP is available and user ID is provided
     const mcpAvailable = await mcpClientService.isMCPAvailable();
@@ -146,50 +147,41 @@ export const searchMaterials = async (req: Request, res: Response, next: NextFun
         // Search vector database using MCP
         const mcpResults = await mcpClientService.searchVectorDatabase(
           userId,
-          query as string,
+          searchOptions.query,
           {
             collection: 'materials',
-            limit: limit ? parseInt(limit as string, 10) : 10,
-            filter: materialType ? { material_type: materialType } : {}
+            limit: searchOptions.limit ?? 10,
+            filter: searchOptions.materialType ? { material_type: searchOptions.materialType } : {}
           }
         );
 
-        res.json({
+        sendSuccessResponse(res, {
           materials: mcpResults,
           count: mcpResults.length,
-          query: query as string,
-          materialType: materialType as string | undefined
+          query: searchOptions.query,
+          materialType: searchOptions.materialType
         });
         return;
-      } catch (mcpError: any) {
+      } catch (mcpError: unknown) {
+        const error = mcpError as Error;
         // If MCP fails with insufficient credits, return 402
-        if (mcpError.message === 'Insufficient credits') {
-          res.status(402).json({
-            error: 'Insufficient credits',
-            message: 'You do not have enough credits to perform this action. Please purchase more credits.'
-          });
+        if (error.message === 'Insufficient credits') {
+          sendInsufficientCreditsResponse(res);
           return;
         }
 
         // For other MCP errors, log and fall back to direct implementation
-        logger.warn(`MCP vector search failed, falling back to direct implementation: ${mcpError.message}`);
+        logger.warn(`MCP vector search failed, falling back to direct implementation: ${error.message}`);
       }
     }
 
     // Fall back to direct implementation if MCP is not available or failed
-    const results = await enhancedVectorService.searchMaterials({
-      query: query as string,
-      materialType: materialType as string | undefined,
-      limit: limit ? parseInt(limit as string, 10) : undefined,
-      threshold: threshold ? parseFloat(threshold as string) : undefined,
-      denseWeight: denseWeight ? parseFloat(denseWeight as string) : undefined,
-      useSpecializedIndex: useSpecializedIndex === 'true'
-    });
+    const results = await enhancedVectorService.searchMaterials(searchOptions);
 
-    res.json({
+    sendSuccessResponse(res, {
       results,
-      query,
-      materialType,
+      query: searchOptions.query,
+      materialType: searchOptions.materialType,
       count: results.length
     });
   } catch (error) {
@@ -197,6 +189,7 @@ export const searchMaterials = async (req: Request, res: Response, next: NextFun
     next(error);
   }
 };
+
 /**
  * Find similar materials
  *
@@ -204,22 +197,12 @@ export const searchMaterials = async (req: Request, res: Response, next: NextFun
  */
 export const findSimilarMaterials = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { id } = req.params;
-    const { limit, threshold, sameMaterialType, denseWeight } = req.query;
+    // Validate request
+    const { id, options } = validateFindSimilarMaterialsRequest(req);
 
-    if (!id) {
-      res.status(400).json({ error: 'Material ID is required' });
-      return;
-    }
+    const results = await enhancedVectorService.findSimilarMaterials(id, options);
 
-    const results = await enhancedVectorService.findSimilarMaterials(id, {
-      limit: limit ? parseInt(limit as string, 10) : undefined,
-      threshold: threshold ? parseFloat(threshold as string) : undefined,
-      sameMaterialType: sameMaterialType === 'true',
-      denseWeight: denseWeight ? parseFloat(denseWeight as string) : undefined
-    });
-
-    res.json({
+    sendSuccessResponse(res, {
       results,
       materialId: id,
       count: results.length
@@ -229,6 +212,7 @@ export const findSimilarMaterials = async (req: Request, res: Response, next: Ne
     next(error);
   }
 };
+
 /**
  * Search materials with knowledge base integration
  *
@@ -236,23 +220,19 @@ export const findSimilarMaterials = async (req: Request, res: Response, next: Ne
  */
 export const searchMaterialsWithKnowledge = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { query, materialType, limit, includeKnowledge, includeRelationships } = req.query;
-
-    if (!query) {
-      res.status(400).json({ error: 'Query is required' });
-      return;
-    }
+    // Validate request
+    const { query, materialType, limit, includeKnowledge, includeRelationships } = validateSearchWithKnowledgeRequest(req);
 
     const results = await enhancedVectorService.searchMaterialsWithKnowledge(
-      query as string,
-      materialType as string | undefined,
+      query,
+      materialType,
       undefined, // filters - could be added as needed
-      limit ? parseInt(limit as string, 10) : 10,
-      includeKnowledge === 'false' ? false : true,
-      includeRelationships === 'false' ? false : true
+      limit,
+      includeKnowledge,
+      includeRelationships
     );
 
-    res.json({
+    sendSuccessResponse(res, {
       ...results,
       query,
       materialType,
@@ -273,22 +253,17 @@ export const searchMaterialsWithKnowledge = async (req: Request, res: Response, 
  */
 export const findSimilarMaterialsWithKnowledge = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { id } = req.params;
-    const { materialType, limit, includeKnowledge } = req.query;
-
-    if (!id) {
-      res.status(400).json({ error: 'Material ID is required' });
-      return;
-    }
+    // Validate request
+    const { id, materialType, limit, includeKnowledge } = validateFindSimilarWithKnowledgeRequest(req);
 
     const results = await enhancedVectorService.findSimilarMaterialsWithKnowledge(
       id,
-      materialType as string | undefined,
-      limit ? parseInt(limit as string, 10) : 10,
-      includeKnowledge === 'false' ? false : true
+      materialType,
+      limit,
+      includeKnowledge
     );
 
-    res.json({
+    sendSuccessResponse(res, {
       ...results,
       materialId: id,
       count: results.materials.length,
@@ -308,24 +283,15 @@ export const findSimilarMaterialsWithKnowledge = async (req: Request, res: Respo
  */
 export const routeQuery = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { query, materialType, filters, strategy } = req.body;
+    // Validate request
+    const options = validateRouteQueryRequest(req);
 
-    if (!query) {
-      res.status(400).json({ error: 'Query is required' });
-      return;
-    }
+    const results = await enhancedVectorService.routeQuery(options);
 
-    const results = await enhancedVectorService.routeQuery({
-      query,
-      materialType,
-      filters,
-      strategy: strategy || 'hybrid'
-    });
-
-    res.json({
+    sendSuccessResponse(res, {
       ...results,
-      query,
-      materialType,
+      query: options.query,
+      materialType: options.materialType,
       count: results.materials.length,
       knowledgeCount: results.knowledgeEntries.length,
       routingStrategy: results.metadata?.searchStrategy || 'hybrid'
@@ -343,21 +309,16 @@ export const routeQuery = async (req: Request, res: Response, next: NextFunction
  */
 export const getMaterialKnowledge = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { id } = req.params;
-    const { query, limit } = req.query;
-
-    if (!id) {
-      res.status(400).json({ error: 'Material ID is required' });
-      return;
-    }
+    // Validate request
+    const { id, query, limit } = validateGetMaterialKnowledgeRequest(req);
 
     const result = await enhancedVectorService.getMaterialKnowledge(
       id,
-      query as string | undefined,
-      limit ? parseInt(limit as string, 10) : 5
+      query,
+      limit
     );
 
-    res.json({
+    sendSuccessResponse(res, {
       ...result,
       materialId: id,
       entriesCount: result.entries?.length || 0,
@@ -376,17 +337,8 @@ export const getMaterialKnowledge = async (req: Request, res: Response, next: Ne
  */
 export const assembleContext = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { materials, query, userContext } = req.body;
-
-    if (!materials || !Array.isArray(materials)) {
-      res.status(400).json({ error: 'Materials array is required' });
-      return;
-    }
-
-    if (!query) {
-      res.status(400).json({ error: 'Query is required' });
-      return;
-    }
+    // Validate request
+    const { materials, query, userContext } = validateAssembleContextRequest(req);
 
     const result = await enhancedVectorService.assembleContext(
       materials,
@@ -394,7 +346,7 @@ export const assembleContext = async (req: Request, res: Response, next: NextFun
       userContext
     );
 
-    res.json(result);
+    sendSuccessResponse(res, result);
   } catch (error) {
     logger.error(`Error assembling context: ${error}`);
     next(error);
@@ -408,24 +360,15 @@ export const assembleContext = async (req: Request, res: Response, next: NextFun
  */
 export const createSemanticOrganization = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { knowledgeEntries, query } = req.body;
-
-    if (!knowledgeEntries || !Array.isArray(knowledgeEntries)) {
-      res.status(400).json({ error: 'Knowledge entries array is required' });
-      return;
-    }
-
-    if (!query) {
-      res.status(400).json({ error: 'Query is required' });
-      return;
-    }
+    // Validate request
+    const { knowledgeEntries, query } = validateCreateSemanticOrganizationRequest(req);
 
     const result = await enhancedVectorService.createSemanticKnowledgeOrganization(
       knowledgeEntries,
       query
     );
 
-    res.json(result);
+    sendSuccessResponse(res, result);
   } catch (error) {
     logger.error(`Error creating semantic organization: ${error}`);
     next(error);
@@ -439,21 +382,18 @@ export const createSemanticOrganization = async (req: Request, res: Response, ne
  */
 export const compareSimilarity = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { text1, text2 } = req.body;
-
-    if (!text1 || !text2) {
-      res.status(400).json({ error: 'Both text1 and text2 are required' });
-      return;
-    }
+    // Validate request
+    const { text1, text2 } = validateCompareSimilarityRequest(req);
 
     const similarity = await enhancedVectorService.compareSimilarity(text1, text2);
 
-    res.json({ similarity });
+    sendSuccessResponse(res, { similarity });
   } catch (error) {
     logger.error(`Error comparing similarity: ${error}`);
     next(error);
   }
 };
+
 /**
  * Refresh vector materialized views
  *
@@ -464,15 +404,16 @@ export const refreshVectorViews = async (req: Request, res: Response, next: Next
     const success = await enhancedVectorService.refreshVectorViews();
 
     if (success) {
-      res.json({ success: true });
+      sendSuccessResponse(res, { success: true });
     } else {
-      res.status(500).json({ error: 'Failed to refresh vector views' });
+      sendErrorResponse(res, 'Failed to refresh vector views', 500, ErrorCodes.INTERNAL_ERROR);
     }
   } catch (error) {
     logger.error(`Error refreshing vector views: ${error}`);
     next(error);
   }
 };
+
 /**
  * Get vector search performance statistics
  *
@@ -482,12 +423,13 @@ export const getPerformanceStats = async (req: Request, res: Response, next: Nex
   try {
     const stats = await enhancedVectorService.getPerformanceStats();
 
-    res.json(stats);
+    sendSuccessResponse(res, stats);
   } catch (error) {
     logger.error(`Error getting performance stats: ${error}`);
     next(error);
   }
 };
+
 /**
  * Get vector search configurations
  *
@@ -497,12 +439,13 @@ export const getSearchConfigs = async (req: Request, res: Response, next: NextFu
   try {
     const configs = await enhancedVectorService.getSearchConfigs();
 
-    res.json(configs);
+    sendSuccessResponse(res, configs);
   } catch (error) {
     logger.error(`Error getting search configs: ${error}`);
     next(error);
   }
 };
+
 /**
  * Update vector search configuration
  *
@@ -510,13 +453,8 @@ export const getSearchConfigs = async (req: Request, res: Response, next: NextFu
  */
 export const updateSearchConfig = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { name } = req.params;
-    const configData = req.body;
-
-    if (!name) {
-      res.status(400).json({ error: 'Configuration name is required' });
-      return;
-    }
+    // Validate request
+    const { name, configData } = validateUpdateSearchConfigRequest(req);
 
     // Merge name from URL with config data
     const config = await enhancedVectorService.updateSearchConfig({
@@ -524,7 +462,7 @@ export const updateSearchConfig = async (req: Request, res: Response, next: Next
       name
     });
 
-    res.json(config);
+    sendSuccessResponse(res, config);
   } catch (error) {
     logger.error(`Error updating search config: ${error}`);
     next(error);
@@ -538,19 +476,15 @@ export const updateSearchConfig = async (req: Request, res: Response, next: Next
  */
 export const deleteSearchConfig = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { name } = req.params;
-
-    if (!name) {
-      res.status(400).json({ error: 'Configuration name is required' });
-      return;
-    }
+    // Validate request
+    const { name } = validateDeleteSearchConfigRequest(req);
 
     const success = await enhancedVectorService.deleteSearchConfig(name);
 
     if (success) {
-      res.json({ success: true });
+      sendSuccessResponse(res, { success: true });
     } else {
-      res.status(500).json({ error: 'Failed to delete configuration' });
+      sendErrorResponse(res, `Failed to delete configuration: ${name}`, 500, ErrorCodes.INTERNAL_ERROR);
     }
   } catch (error) {
     logger.error(`Error deleting search config: ${error}`);

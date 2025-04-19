@@ -17,7 +17,7 @@ interface WorkflowRequest {
   workflowId?: string; // Optional client-generated ID for tracking
 }
 
-interface WorkflowStatus {
+export interface WorkflowStatus { // Added export
   id: string;
   type: string;
   userId: string;

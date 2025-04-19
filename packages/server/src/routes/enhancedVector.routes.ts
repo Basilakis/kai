@@ -18,7 +18,7 @@ const router = express.Router();
 
 // Apply common middleware
 router.use(authMiddleware);
-router.use(analyticsMiddleware());
+// analyticsMiddleware is applied globally in server.ts
 router.use(mlProcessingLimiter);
 
 // Apply module access control - ensure users have vector search capability in their subscription
