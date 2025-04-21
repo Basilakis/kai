@@ -28,6 +28,7 @@ export enum MCPServiceKey {
   TEXT_EMBEDDING = 'openai.text-embedding',
   IMAGE_GENERATION = 'openai.image-generation',
   IMAGE_ANALYSIS = 'openai.image-analysis',
+  MODEL_TRAINING = 'openai.model-training',
 
   // 3D Model Generation
   MODEL_RECONSTRUCTION = '3d.model-reconstruction',
@@ -138,6 +139,7 @@ class MCPClientService {
    * @param endpoint MCP endpoint to call
    * @param data Data to send to the endpoint
    * @param estimatedUnits Estimated number of units to be used
+   * @param options Additional options for the call
    * @returns Response from the MCP endpoint
    */
   public async callEndpoint<T>(
@@ -145,8 +147,18 @@ class MCPClientService {
     serviceKey: MCPServiceKey,
     endpoint: string,
     data: any,
-    estimatedUnits: number = 1
+    estimatedUnits: number = 1,
+    options: {
+      maxRetries?: number;
+      retryDelay?: number;
+      timeout?: number;
+    } = {}
   ): Promise<T> {
+    // Set default options
+    const maxRetries = options.maxRetries ?? 3;
+    const retryDelay = options.retryDelay ?? 1000;
+    const timeout = options.timeout ?? MCP_TIMEOUT;
+
     // Check if MCP is available
     const mcpAvailable = await this.isMCPAvailable();
     if (!mcpAvailable) {
@@ -164,36 +176,98 @@ class MCPClientService {
       throw new Error('Insufficient credits');
     }
 
-    try {
-      // Call MCP endpoint
-      const client = this.getClient();
-      const startTime = Date.now();
-      const result = await client.callEndpoint<T>(endpoint, data);
-      const duration = Date.now() - startTime;
+    let lastError: Error | null = null;
+    let retryCount = 0;
 
-      // Calculate actual units used (this would be replaced with actual calculation)
-      // For now, we'll use the estimated units
-      const actualUnits = estimatedUnits;
+    while (retryCount <= maxRetries) {
+      try {
+        // Call MCP endpoint
+        const client = this.getClient();
+        const startTime = Date.now();
 
-      // Track credit usage
-      await creditService.useServiceCredits(
-        userId,
-        serviceKey,
-        actualUnits,
-        `${serviceKey} API usage`,
-        {
-          endpoint,
-          duration,
-          estimatedUnits,
-          actualUnits
+        // Set timeout for the request
+        const result = await Promise.race([
+          client.callEndpoint<T>(endpoint, data),
+          new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error(`Request to ${endpoint} timed out after ${timeout}ms`)), timeout);
+          })
+        ]);
+
+        const duration = Date.now() - startTime;
+
+        // Calculate actual units used (this would be replaced with actual calculation)
+        // For now, we'll use the estimated units
+        const actualUnits = estimatedUnits;
+
+        // Track credit usage
+        await creditService.useServiceCredits(
+          userId,
+          serviceKey,
+          actualUnits,
+          `${serviceKey} API usage`,
+          {
+            endpoint,
+            duration,
+            estimatedUnits,
+            actualUnits
+          }
+        );
+
+        return result;
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+
+        // Check if we should retry
+        const isRetryable = this.isRetryableError(lastError);
+
+        if (isRetryable && retryCount < maxRetries) {
+          // Exponential backoff with jitter
+          const delay = retryDelay * Math.pow(2, retryCount) + Math.random() * 100;
+          logger.warn(`Retrying MCP endpoint ${endpoint} after ${delay}ms (attempt ${retryCount + 1}/${maxRetries})`);
+
+          await new Promise(resolve => setTimeout(resolve, delay));
+          retryCount++;
+          continue;
         }
-      );
 
-      return result;
-    } catch (error) {
-      logger.error(`Error calling MCP endpoint ${endpoint}: ${error}`);
-      throw error;
+        // Log the error and throw
+        const errorMessage = lastError.message;
+        logger.error(`Error calling MCP endpoint ${endpoint}: ${errorMessage}`);
+        throw lastError;
+      }
     }
+
+    // This should never happen, but TypeScript needs it
+    throw lastError || new Error(`Failed to call MCP endpoint ${endpoint} after ${maxRetries} retries`);
+  }
+
+  /**
+   * Determine if an error is retryable
+   * @param error The error to check
+   * @returns True if the error is retryable
+   */
+  private isRetryableError(error: Error): boolean {
+    // Network errors are generally retryable
+    if (error.message.includes('ECONNREFUSED') ||
+        error.message.includes('ETIMEDOUT') ||
+        error.message.includes('ECONNRESET') ||
+        error.message.includes('ENOTFOUND') ||
+        error.message.includes('network error') ||
+        error.message.includes('timeout')) {
+      return true;
+    }
+
+    // Check for axios errors with status codes
+    if (axios.isAxiosError(error)) {
+      // 5xx errors are server errors and can be retried
+      // 429 is too many requests, can be retried after backoff
+      const status = error.response?.status;
+      if (status && (status >= 500 || status === 429)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   /**
@@ -476,24 +550,48 @@ class MCPClientService {
       model?: string;
       format?: string;
       quality?: string;
+      maxRetries?: number;
+      timeout?: number;
     } = {}
   ): Promise<{ modelUrl: string; thumbnailUrl: string }> {
+    if (!prompt || typeof prompt !== 'string' || prompt.trim() === '') {
+      throw new Error('A valid prompt is required for 3D model generation');
+    }
+
     // Convert options to MCP format
     const mcpData = {
-      prompt,
+      prompt: prompt.trim(),
       model: options.model || 'shapE',
       format: options.format || 'glb',
       quality: options.quality || 'medium'
     };
 
-    // Call MCP endpoint
-    return await this.callEndpoint<{ modelUrl: string; thumbnailUrl: string }>(
-      userId,
-      MCPServiceKey.TEXT_TO_3D,
-      '3d/text-to-3d',
-      mcpData,
-      5 // 5 credits per 3D model
-    );
+    // 3D generation can take longer, so we use a longer timeout
+    const callOptions = {
+      maxRetries: options.maxRetries ?? 2,
+      timeout: options.timeout ?? MCP_TIMEOUT * 2 // Double the default timeout
+    };
+
+    try {
+      // Call MCP endpoint with extended timeout
+      return await this.callEndpoint<{ modelUrl: string; thumbnailUrl: string }>(
+        userId,
+        MCPServiceKey.TEXT_TO_3D,
+        '3d/text-to-3d',
+        mcpData,
+        5, // 5 credits per 3D model
+        callOptions
+      );
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error(`Failed to generate 3D model from text: ${errorMessage}`, {
+        userId,
+        prompt: prompt.substring(0, 100) + (prompt.length > 100 ? '...' : ''),
+        model: mcpData.model,
+        error: errorMessage
+      });
+      throw new Error(`Failed to generate 3D model: ${errorMessage}`);
+    }
   }
 
   /**
@@ -544,8 +642,20 @@ class MCPClientService {
       model?: string;
       format?: string;
       quality?: string;
+      maxRetries?: number;
+      timeout?: number;
     } = {}
   ): Promise<{ modelUrl: string; thumbnailUrl: string }> {
+    // Validate input
+    if (!imagePath || typeof imagePath !== 'string') {
+      throw new Error('A valid image path is required for 3D model reconstruction');
+    }
+
+    // Check if the file exists
+    if (!fs.existsSync(imagePath)) {
+      throw new Error(`Image file not found at path: ${imagePath}`);
+    }
+
     // Check if MCP is available
     const mcpAvailable = await this.isMCPAvailable();
     if (!mcpAvailable) {
@@ -564,6 +674,10 @@ class MCPClientService {
     }
 
     try {
+      // 3D reconstruction can take longer, so we use a longer timeout
+      const timeout = options.timeout ?? MCP_TIMEOUT * 3; // Triple the default timeout
+      const maxRetries = options.maxRetries ?? 2;
+
       // Create form data with image
       const formData = new FormData();
       formData.append('image', fs.createReadStream(imagePath));
@@ -576,31 +690,75 @@ class MCPClientService {
       };
       formData.append('options', JSON.stringify(serverOptions));
 
-      // Send request to server
-      const startTime = Date.now();
-      const response = await axios.post(`${MCP_SERVER_URL}/api/v1/3d/reconstruct`, formData, {
-        headers: {
-          ...formData.getHeaders()
-        }
-      });
-      const duration = Date.now() - startTime;
+      // Send request to server with retry logic
+      let lastError: Error | null = null;
+      let retryCount = 0;
 
-      // Track credit usage
-      await creditService.useServiceCredits(
+      while (retryCount <= maxRetries) {
+        try {
+          // Need to recreate the form data and stream for each retry attempt
+          const retryFormData = new FormData();
+          retryFormData.append('image', fs.createReadStream(imagePath));
+          retryFormData.append('options', JSON.stringify(serverOptions));
+
+          const startTime = Date.now();
+          const response = await axios.post(`${MCP_SERVER_URL}/api/v1/3d/reconstruct`, retryFormData, {
+            headers: {
+              ...retryFormData.getHeaders(),
+              'X-User-ID': userId
+            },
+            timeout: timeout
+          });
+          const duration = Date.now() - startTime;
+
+          // Track credit usage
+          await creditService.useServiceCredits(
+            userId,
+            MCPServiceKey.MODEL_RECONSTRUCTION,
+            10,
+            `${MCPServiceKey.MODEL_RECONSTRUCTION} API usage`,
+            {
+              endpoint: '3d/reconstruct',
+              duration,
+              options: serverOptions
+            }
+          );
+
+          return response.data;
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error(String(error));
+
+          // Check if we should retry
+          const isRetryable = this.isRetryableError(lastError);
+
+          if (isRetryable && retryCount < maxRetries) {
+            // Exponential backoff with jitter
+            const retryDelay = 2000; // Base delay of 2 seconds
+            const delay = retryDelay * Math.pow(2, retryCount) + Math.random() * 500;
+            logger.warn(`Retrying 3D model reconstruction after ${delay}ms (attempt ${retryCount + 1}/${maxRetries})`);
+
+            await new Promise(resolve => setTimeout(resolve, delay));
+            retryCount++;
+            continue;
+          }
+
+          // If not retryable or max retries reached, break the loop
+          break;
+        }
+      }
+
+      // If we get here, all retries failed
+      const errorMessage = lastError?.message || 'Unknown error';
+      logger.error(`Error reconstructing 3D model from image: ${errorMessage}`, {
         userId,
-        MCPServiceKey.MODEL_RECONSTRUCTION,
-        10,
-        `${MCPServiceKey.MODEL_RECONSTRUCTION} API usage`,
-        {
-          endpoint: '3d/reconstruct',
-          duration,
-          options: serverOptions
-        }
-      );
-
-      return response.data;
+        imagePath,
+        model: options.model || 'nerfStudio',
+        retries: retryCount
+      });
+      throw new Error(`Failed to reconstruct 3D model: ${errorMessage}`);
     } catch (error) {
-      logger.error(`Error reconstructing 3D model: ${error}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error(`Error reconstructing 3D model: ${errorMessage}`);
       throw error;
     }
   }
@@ -1038,6 +1196,8 @@ class MCPClientService {
       includeKnowledge?: boolean;
       includeRelationships?: boolean;
       filters?: Record<string, any>;
+      maxRetries?: number;
+      timeout?: number;
     }
   ): Promise<{
     materials: any[];
@@ -1045,6 +1205,11 @@ class MCPClientService {
     relationships?: any[];
     enhancedTextQuery?: string;
   }> {
+    // Validate input
+    if (!options.textQuery && !options.imageData) {
+      throw new Error('Either textQuery or imageData must be provided for multi-modal search');
+    }
+
     // Check if MCP is available
     const mcpAvailable = await this.isMCPAvailable();
     if (!mcpAvailable) {
@@ -1079,40 +1244,82 @@ class MCPClientService {
         filters: options.filters || {}
       };
 
-      // Call MCP endpoint
-      const response = await axios.post(
-        `${MCP_SERVER_URL}/api/v1/search/multi-modal`,
-        requestData,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'X-User-ID': userId
-          },
-          timeout: MCP_TIMEOUT
-        }
-      );
+      // Set up retry logic
+      const maxRetries = options.maxRetries ?? 2;
+      const timeout = options.timeout ?? MCP_TIMEOUT;
+      let lastError: Error | null = null;
+      let retryCount = 0;
 
-      // Track credit usage
-      await creditService.useServiceCredits(
+      while (retryCount <= maxRetries) {
+        try {
+          // Call MCP endpoint
+          const response = await axios.post(
+            `${MCP_SERVER_URL}/api/v1/search/multi-modal`,
+            requestData,
+            {
+              headers: {
+                'Content-Type': 'application/json',
+                'X-User-ID': userId
+              },
+              timeout: timeout
+            }
+          );
+
+          // Track credit usage
+          await creditService.useServiceCredits(
+            userId,
+            MCPServiceKey.MULTI_MODAL_SEARCH,
+            2,
+            `${MCPServiceKey.MULTI_MODAL_SEARCH} API usage`,
+            {
+              hasText: !!options.textQuery,
+              hasImage: !!options.imageData,
+              materialType: options.materialType,
+              retryCount
+            }
+          );
+
+          return {
+            materials: response.data.materials || [],
+            knowledgeEntries: response.data.knowledge_entries || [],
+            relationships: response.data.relationships || [],
+            enhancedTextQuery: response.data.enhanced_text_query
+          };
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error(String(error));
+
+          // Check if we should retry
+          const isRetryable = this.isRetryableError(lastError);
+
+          if (isRetryable && retryCount < maxRetries) {
+            // Exponential backoff with jitter
+            const retryDelay = 1000; // Base delay of 1 second
+            const delay = retryDelay * Math.pow(2, retryCount) + Math.random() * 300;
+            logger.warn(`Retrying multi-modal search after ${delay}ms (attempt ${retryCount + 1}/${maxRetries})`);
+
+            await new Promise(resolve => setTimeout(resolve, delay));
+            retryCount++;
+            continue;
+          }
+
+          // If not retryable or max retries reached, break the loop
+          break;
+        }
+      }
+
+      // If we get here, all retries failed
+      const errorMessage = lastError?.message || 'Unknown error';
+      logger.error(`Error performing multi-modal search: ${errorMessage}`, {
         userId,
-        MCPServiceKey.MULTI_MODAL_SEARCH,
-        2,
-        `${MCPServiceKey.MULTI_MODAL_SEARCH} API usage`,
-        {
-          hasText: !!options.textQuery,
-          hasImage: !!options.imageData,
-          materialType: options.materialType
-        }
-      );
-
-      return {
-        materials: response.data.materials || [],
-        knowledgeEntries: response.data.knowledge_entries || [],
-        relationships: response.data.relationships || [],
-        enhancedTextQuery: response.data.enhanced_text_query
-      };
+        hasText: !!options.textQuery,
+        hasImage: !!options.imageData,
+        materialType: options.materialType,
+        retries: retryCount
+      });
+      throw new Error(`Failed to perform multi-modal search: ${errorMessage}`);
     } catch (error) {
-      logger.error(`Error performing multi-modal search: ${error}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error(`Error performing multi-modal search: ${errorMessage}`);
       throw error;
     }
   }
@@ -1142,6 +1349,8 @@ class MCPClientService {
       includeRelationships?: boolean;
       filters?: Record<string, any>;
       userPreferences?: Record<string, any>;
+      maxRetries?: number;
+      timeout?: number;
     }
   ): Promise<{
     materials: any[];
@@ -1171,9 +1380,22 @@ class MCPClientService {
     }
 
     try {
+      // Validate input
+      if (!options.query || typeof options.query !== 'string' || options.query.trim() === '') {
+        throw new Error('A valid query is required for conversational search');
+      }
+
+      if (!options.sessionId) {
+        throw new Error('A session ID is required for conversational search');
+      }
+
+      if (!Array.isArray(options.conversationHistory)) {
+        throw new Error('Conversation history must be an array');
+      }
+
       // Prepare request data
       const requestData: Record<string, any> = {
-        query: options.query,
+        query: options.query.trim(),
         session_id: options.sessionId,
         conversation_history: options.conversationHistory,
         material_type: options.materialType,
@@ -1185,43 +1407,84 @@ class MCPClientService {
         user_preferences: options.userPreferences || {}
       };
 
-      // Call MCP endpoint
-      const response = await axios.post(
-        `${MCP_SERVER_URL}/api/v1/search/conversational`,
-        requestData,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'X-User-ID': userId
-          },
-          timeout: MCP_TIMEOUT
-        }
-      );
+      // Set up retry logic
+      const maxRetries = options.maxRetries ?? 2;
+      const timeout = options.timeout ?? MCP_TIMEOUT;
+      let lastError: Error | null = null;
+      let retryCount = 0;
 
-      // Track credit usage
-      await creditService.useServiceCredits(
+      while (retryCount <= maxRetries) {
+        try {
+          // Call MCP endpoint
+          const response = await axios.post(
+            `${MCP_SERVER_URL}/api/v1/search/conversational`,
+            requestData,
+            {
+              headers: {
+                'Content-Type': 'application/json',
+                'X-User-ID': userId
+              },
+              timeout: timeout
+            }
+          );
+
+          // Track credit usage
+          await creditService.useServiceCredits(
+            userId,
+            MCPServiceKey.CONVERSATIONAL_SEARCH,
+            2,
+            `${MCPServiceKey.CONVERSATIONAL_SEARCH} API usage`,
+            {
+              sessionId: options.sessionId,
+              historyLength: options.conversationHistory.length,
+              retryCount
+            }
+          );
+
+          return {
+            materials: response.data.materials || [],
+            knowledgeEntries: response.data.knowledge_entries || [],
+            relationships: response.data.relationships || [],
+            enhancedQuery: response.data.enhanced_query || options.query,
+            interpretedQuery: response.data.interpreted_query || options.query,
+            contextUsed: response.data.context_used || false,
+            detectedEntities: response.data.detected_entities || {},
+            confidence: response.data.confidence || 0.5
+          };
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error(String(error));
+
+          // Check if we should retry
+          const isRetryable = this.isRetryableError(lastError);
+
+          if (isRetryable && retryCount < maxRetries) {
+            // Exponential backoff with jitter
+            const retryDelay = 1000; // Base delay of 1 second
+            const delay = retryDelay * Math.pow(2, retryCount) + Math.random() * 300;
+            logger.warn(`Retrying conversational search after ${delay}ms (attempt ${retryCount + 1}/${maxRetries})`);
+
+            await new Promise(resolve => setTimeout(resolve, delay));
+            retryCount++;
+            continue;
+          }
+
+          // If not retryable or max retries reached, break the loop
+          break;
+        }
+      }
+
+      // If we get here, all retries failed
+      const errorMessage = lastError?.message || 'Unknown error';
+      logger.error(`Error performing conversational search: ${errorMessage}`, {
         userId,
-        MCPServiceKey.CONVERSATIONAL_SEARCH,
-        2,
-        `${MCPServiceKey.CONVERSATIONAL_SEARCH} API usage`,
-        {
-          sessionId: options.sessionId,
-          historyLength: options.conversationHistory.length
-        }
-      );
-
-      return {
-        materials: response.data.materials || [],
-        knowledgeEntries: response.data.knowledge_entries || [],
-        relationships: response.data.relationships || [],
-        enhancedQuery: response.data.enhanced_query || options.query,
-        interpretedQuery: response.data.interpreted_query || options.query,
-        contextUsed: response.data.context_used || false,
-        detectedEntities: response.data.detected_entities || {},
-        confidence: response.data.confidence || 0.5
-      };
+        sessionId: options.sessionId,
+        historyLength: options.conversationHistory.length,
+        retries: retryCount
+      });
+      throw new Error(`Failed to perform conversational search: ${errorMessage}`);
     } catch (error) {
-      logger.error(`Error performing conversational search: ${error}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error(`Error performing conversational search: ${errorMessage}`);
       throw error;
     }
   }
@@ -1246,6 +1509,8 @@ class MCPClientService {
       sortBy?: string;
       sortDirection?: 'asc' | 'desc';
       userPreferences?: Record<string, any>;
+      maxRetries?: number;
+      timeout?: number;
     }
   ): Promise<{
     materials: any[];
@@ -1277,9 +1542,18 @@ class MCPClientService {
     }
 
     try {
+      // Validate input
+      if (!options.query || typeof options.query !== 'string' || options.query.trim() === '') {
+        throw new Error('A valid query is required for domain search');
+      }
+
+      if (!options.domain || typeof options.domain !== 'string') {
+        throw new Error('A valid domain is required for domain search');
+      }
+
       // Prepare request data
       const requestData: Record<string, any> = {
-        query: options.query,
+        query: options.query.trim(),
         domain: options.domain,
         material_type: options.materialType,
         limit: options.limit || 10,
@@ -1292,45 +1566,86 @@ class MCPClientService {
         user_preferences: options.userPreferences || {}
       };
 
-      // Call MCP endpoint
-      const response = await axios.post(
-        `${MCP_SERVER_URL}/api/v1/search/domain`,
-        requestData,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'X-User-ID': userId
-          },
-          timeout: MCP_TIMEOUT
-        }
-      );
+      // Set up retry logic
+      const maxRetries = options.maxRetries ?? 2;
+      const timeout = options.timeout ?? MCP_TIMEOUT;
+      let lastError: Error | null = null;
+      let retryCount = 0;
 
-      // Track credit usage
-      await creditService.useServiceCredits(
+      while (retryCount <= maxRetries) {
+        try {
+          // Call MCP endpoint
+          const response = await axios.post(
+            `${MCP_SERVER_URL}/api/v1/search/domain`,
+            requestData,
+            {
+              headers: {
+                'Content-Type': 'application/json',
+                'X-User-ID': userId
+              },
+              timeout: timeout
+            }
+          );
+
+          // Track credit usage
+          await creditService.useServiceCredits(
+            userId,
+            MCPServiceKey.DOMAIN_SEARCH,
+            2,
+            `${MCPServiceKey.DOMAIN_SEARCH} API usage`,
+            {
+              domain: options.domain,
+              query: options.query,
+              retryCount
+            }
+          );
+
+          return {
+            materials: response.data.materials || [],
+            knowledgeEntries: response.data.knowledge_entries || [],
+            relationships: response.data.relationships || [],
+            domainSpecificData: response.data.domain_specific_data || {},
+            enhancedQuery: response.data.enhanced_query || options.query,
+            metadata: {
+              appliedOntology: response.data.metadata?.applied_ontology || options.domain,
+              appliedRanking: response.data.metadata?.applied_ranking || 'domain-specific',
+              confidence: response.data.metadata?.confidence || 0.5
+            }
+          };
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error(String(error));
+
+          // Check if we should retry
+          const isRetryable = this.isRetryableError(lastError);
+
+          if (isRetryable && retryCount < maxRetries) {
+            // Exponential backoff with jitter
+            const retryDelay = 1000; // Base delay of 1 second
+            const delay = retryDelay * Math.pow(2, retryCount) + Math.random() * 300;
+            logger.warn(`Retrying domain search after ${delay}ms (attempt ${retryCount + 1}/${maxRetries})`);
+
+            await new Promise(resolve => setTimeout(resolve, delay));
+            retryCount++;
+            continue;
+          }
+
+          // If not retryable or max retries reached, break the loop
+          break;
+        }
+      }
+
+      // If we get here, all retries failed
+      const errorMessage = lastError?.message || 'Unknown error';
+      logger.error(`Error performing domain search: ${errorMessage}`, {
         userId,
-        MCPServiceKey.DOMAIN_SEARCH,
-        2,
-        `${MCPServiceKey.DOMAIN_SEARCH} API usage`,
-        {
-          domain: options.domain,
-          query: options.query
-        }
-      );
-
-      return {
-        materials: response.data.materials || [],
-        knowledgeEntries: response.data.knowledge_entries || [],
-        relationships: response.data.relationships || [],
-        domainSpecificData: response.data.domain_specific_data || {},
-        enhancedQuery: response.data.enhanced_query || options.query,
-        metadata: {
-          appliedOntology: response.data.metadata?.applied_ontology || options.domain,
-          appliedRanking: response.data.metadata?.applied_ranking || 'domain-specific',
-          confidence: response.data.metadata?.confidence || 0.5
-        }
-      };
+        domain: options.domain,
+        query: options.query.substring(0, 100) + (options.query.length > 100 ? '...' : ''),
+        retries: retryCount
+      });
+      throw new Error(`Failed to perform domain search: ${errorMessage}`);
     } catch (error) {
-      logger.error(`Error performing domain search: ${error}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error(`Error performing domain search: ${errorMessage}`);
       throw error;
     }
   }
@@ -1884,6 +2199,128 @@ class MCPClientService {
       options,
       1 // 1 credit per webhook
     );
+  }
+
+  /**
+   * Fine-tune a model based on feedback data
+   * @param options Fine-tuning options
+   * @returns Fine-tuning results
+   */
+  public async fineTuneModel(options: {
+    modelId: string;
+    datasetId: string;
+    jobId: string;
+    userId?: string; // Admin user ID for tracking purposes
+  }): Promise<any> {
+    // Check if MCP is available
+    const mcpAvailable = await this.isMCPAvailable();
+    if (!mcpAvailable) {
+      throw new Error('MCP server is not available');
+    }
+
+    try {
+      // Call MCP endpoint
+      const startTime = Date.now();
+      const response = await axios.post(
+        `${MCP_SERVER_URL}/api/v1/model/fine-tune`,
+        options,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            ...(options.userId && { 'X-User-ID': options.userId })
+          },
+          timeout: MCP_TIMEOUT
+        }
+      );
+      const duration = Date.now() - startTime;
+
+      // Log the fine-tuning operation for tracking purposes
+      logger.info(`Fine-tuning model completed`, {
+        modelId: options.modelId,
+        datasetId: options.datasetId,
+        jobId: options.jobId,
+        duration,
+        adminUserId: options.userId
+      });
+
+      return response.data;
+    } catch (error) {
+      logger.error(`Error fine-tuning model: ${error}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Cancel a fine-tuning job
+   * @param jobId Job ID
+   * @param userId Admin user ID for tracking purposes
+   * @returns Cancellation result
+   */
+  public async cancelFineTuningJob(jobId: string, userId?: string): Promise<any> {
+    // Check if MCP is available
+    const mcpAvailable = await this.isMCPAvailable();
+    if (!mcpAvailable) {
+      throw new Error('MCP server is not available');
+    }
+
+    try {
+      // Call MCP endpoint
+      const response = await axios.post(
+        `${MCP_SERVER_URL}/api/v1/model/fine-tune/${jobId}/cancel`,
+        {},
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            ...(userId && { 'X-User-ID': userId })
+          },
+          timeout: MCP_TIMEOUT
+        }
+      );
+
+      // Log the cancellation for tracking purposes
+      logger.info(`Fine-tuning job cancelled`, {
+        jobId,
+        adminUserId: userId
+      });
+
+      return response.data;
+    } catch (error) {
+      logger.error(`Error cancelling fine-tuning job: ${error}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Get fine-tuning job status
+   * @param jobId Job ID
+   * @param userId Admin user ID for tracking purposes
+   * @returns Job status
+   */
+  public async getFineTuningJobStatus(jobId: string, userId?: string): Promise<any> {
+    // Check if MCP is available
+    const mcpAvailable = await this.isMCPAvailable();
+    if (!mcpAvailable) {
+      throw new Error('MCP server is not available');
+    }
+
+    try {
+      // Call MCP endpoint
+      const response = await axios.get(
+        `${MCP_SERVER_URL}/api/v1/model/fine-tune/${jobId}`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            ...(userId && { 'X-User-ID': userId })
+          },
+          timeout: MCP_TIMEOUT
+        }
+      );
+
+      return response.data;
+    } catch (error) {
+      logger.error(`Error getting fine-tuning job status: ${error}`);
+      throw error;
+    }
   }
 }
 

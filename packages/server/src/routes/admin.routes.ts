@@ -18,6 +18,7 @@ import subscriptionRoutes from './admin/subscription.admin.routes';
 import serviceCostRoutes from './admin/serviceCost.admin.routes';
 import notificationAdminRoutes from './admin/notification.admin.routes'; // Import new routes
 import webhookAdminRoutes from './admin/webhook.admin.routes'; // Import new routes
+import kubernetesRoutes from './admin/kubernetes.admin.routes'; // Import Kubernetes routes
 
 // Import services for dashboard stats
 import analyticsService from '../services/analytics/analyticsService';
@@ -32,28 +33,28 @@ const getDashboardStats = async () => {
   try {
     // Get general analytics statistics
     const analyticsStats = await analyticsService.getStats();
-    
+
     // Get subscription analytics
     const subscriptionData = await subscriptionAnalytics.getSubscriptionAnalytics();
-    
+
     // Get top search queries
     const topSearchQueries = await analyticsService.getTopSearchQueries(5);
-    
+
     // Get top viewed materials
     const topMaterials = await analyticsService.getTopMaterials(5);
-    
+
     // Get top agent prompts
     const topAgentPrompts = await analyticsService.getTopAgentPrompts(5);
-    
+
     // Get analytics trends for the past week
     const pastWeekDate = new Date();
     pastWeekDate.setDate(pastWeekDate.getDate() - 7);
-    
+
     const trends = await analyticsService.getTrends({
       timeframe: 'day',
       startDate: pastWeekDate
     });
-    
+
     // Combine all data into comprehensive dashboard stats
     return {
       summary: {
@@ -94,7 +95,7 @@ const getDashboardStats = async () => {
     };
   } catch (error) {
     logger.error(`Error getting dashboard stats: ${error}`);
-    
+
     // Return empty stats object as fallback
     return {
       summary: {
@@ -150,9 +151,9 @@ const updateExtractedData = async () => ({});
 const router = express.Router();
 
 // All routes in this file require admin authentication and internal-only access
-router.use(authMiddleware, authorize({ 
-  roles: ['admin'], 
-  accessType: NetworkAccessType.INTERNAL_ONLY 
+router.use(authMiddleware, authorize({
+  roles: ['admin'],
+  accessType: NetworkAccessType.INTERNAL_ONLY
 }));
 
 // Mount the submodule routes
@@ -169,6 +170,7 @@ router.use('/subscriptions', subscriptionRoutes);
 router.use('/service-costs', serviceCostRoutes);
 router.use('/notifications', notificationAdminRoutes); // Mount new routes
 router.use('/webhooks', webhookAdminRoutes); // Mount new routes
+router.use('/kubernetes', kubernetesRoutes); // Mount Kubernetes routes
 
 /**
  * @route   GET /api/admin/dashboard

@@ -1,21 +1,30 @@
-# RAG System: Architecture and Customization Guide
+# RAG System: Architecture, Enhancements, and Integration Guide
 
 ## Overview
 
-The Retrieval-Augmented Generation (RAG) system enhances the platform's ability to provide accurate, contextually relevant information about materials by combining vector search with knowledge base integration and generative AI. This document provides a comprehensive guide to the system architecture, customization options, and optimization strategies.
+The Retrieval-Augmented Generation (RAG) system enhances the platform's ability to provide accurate, contextually relevant information about materials by combining vector search with knowledge base integration and generative AI. This document provides a comprehensive guide to the system architecture, enhancements, customization options, and integration steps.
 
 ## Table of Contents
 
 1. [System Architecture](#system-architecture)
-2. [Component Details](#component-details)
-3. [Customization Options](#customization-options)
-4. [Prompt Engineering](#prompt-engineering)
-5. [Fine-tuning Models](#fine-tuning-models)
-6. [Parameter Optimization](#parameter-optimization)
-7. [Performance Considerations](#performance-considerations)
-8. [Troubleshooting](#troubleshooting)
-9. [Integration with Existing Systems](#integration-with-existing-systems)
-10. [Extending the System](#extending-the-system)
+2. [Core Component Details](#core-component-details)
+3. [Key Enhancements](#key-enhancements)
+4. [Setup and Installation](#setup-and-installation)
+5. [Deployment](#deployment)
+6. [Integration Steps](#integration-steps)
+7. [API Endpoints and Admin Panel](#api-endpoints-and-admin-panel)
+8. [Customization Options](#customization-options)
+9. [Prompt Engineering](#prompt-engineering)
+10. [Fine-tuning Models](#fine-tuning-models)
+11. [Parameter Optimization](#parameter-optimization)
+12. [Performance Considerations](#performance-considerations)
+13. [Troubleshooting](#troubleshooting)
+14. [Integration with Existing Systems](#integration-with-existing-systems)
+15. [Extending the System](#extending-the-system)
+16. [MCP Server Integration](#mcp-server-integration)
+17. [Kubernetes Deployment](#kubernetes-deployment)
+18. [CI/CD Integration](#cicd-integration)
+19. [Implementation Checklist](#implementation-checklist)
 
 ## System Architecture
 
@@ -73,7 +82,7 @@ graph TD
 5. **Generative Enhancement**: An LLM enhances the results with explanations, citations, and recommendations.
 6. **Response Delivery**: Results are returned to the user, with optional streaming for large responses.
 
-## Component Details
+## Core Component Details
 
 ### 1. Enhanced Vector Storage System
 
@@ -214,11 +223,379 @@ graph TD
 - API integration with vector search configurations
 - Performance monitoring settings
 
-## Integration with EnhancedVector System
+## Key Enhancements
 
-The RAG system now fully integrates with the enhanced vector capabilities through the EnhancedVector API layer:
+The enhanced RAG system builds upon the core architecture with several significant improvements:
 
-### EnhancedVector TypeScript Integration
+### Material-Specific Models
+
+The system now uses specialized prompt templates and models optimized for different material types (wood, tile, stone, etc.), resulting in more accurate and domain-specific responses.
+
+**Key Features:**
+- Material-specific system prompts with domain expertise
+- Specialized instruction sets for different material types
+- Material-specific evaluation criteria
+- Custom citation formats for different material domains
+
+**Implementation:**
+- `material_specific_prompts.py`: Defines specialized prompt templates for different material types
+- Integration with the generative enhancer to use material-specific prompts for explanations, similarities, and applications
+
+**Benefits:**
+- More accurate and relevant responses for specific material types
+- Better understanding of domain-specific terminology and concepts
+- Improved user experience with material-specific expertise
+
+### Continuous Learning Pipeline
+
+The system now includes a continuous learning pipeline that automatically fine-tunes models based on user feedback and performance metrics.
+
+**Key Features:**
+- Automated fine-tuning triggers based on feedback metrics
+- A/B testing framework for model comparison
+- Performance tracking and analysis
+- Feedback-based training data generation
+
+**Implementation:**
+- `continuous_learning_pipeline.py`: Implements the continuous learning pipeline
+- `model_registry.py`: Manages models and A/B tests
+
+**Benefits:**
+- Continuously improving model performance
+- Data-driven model selection
+- Systematic evaluation of model performance
+- Adaptation to changing user needs and preferences
+
+### Advanced Retrieval Techniques
+
+The system now uses advanced retrieval techniques to handle complex queries more effectively.
+
+**Key Features:**
+- Query decomposition for complex queries
+- Hierarchical retrieval for multi-faceted queries
+- Result reranking based on query relevance
+- Support for both dense and sparse retrieval methods
+
+**Implementation:**
+- `hierarchical_retriever.py`: Implements hierarchical retrieval for complex queries
+
+**Benefits:**
+- Better handling of complex, multi-faceted queries
+- More comprehensive retrieval results
+- Improved relevance ranking
+- Better support for comparative queries
+
+### Enhanced Visual Recognition Integration
+
+The system now integrates visual information more effectively with textual queries.
+
+**Key Features:**
+- Visual context enrichment for text queries
+- Cross-modal attention for better integration of visual and textual information
+- Multi-modal embedding generation
+- Visual feature extraction and integration
+
+**Implementation:**
+- `cross_modal_attention.py`: Implements cross-modal attention mechanisms
+
+**Benefits:**
+- Better understanding of visual material characteristics
+- More accurate responses to queries with images
+- Enhanced ability to describe and compare materials visually
+- Improved multi-modal search capabilities
+
+### Performance Optimization
+
+The system now includes performance optimizations for large-scale deployments.
+
+**Key Features:**
+- Distributed retrieval across multiple vector stores
+- Caching strategies for frequently accessed materials
+- Load balancing for retrieval operations
+- Batched operations for improved throughput
+
+**Implementation:**
+- `distributed_retrieval.py`: Implements distributed retrieval and caching
+
+**Benefits:**
+- Improved scalability for large vector databases
+- Reduced latency for frequent queries
+- Better resource utilization
+- Higher throughput for concurrent requests
+
+## Setup and Installation
+
+### Prerequisites
+
+Before installing the Enhanced RAG system, ensure you have the following:
+
+1. **Python 3.8+** - The enhanced RAG system requires Python 3.8 or higher.
+2. **Node.js 16+** - Required for the TypeScript bridge components.
+3. **Docker** - Required for containerized deployment.
+4. **Kubernetes** - Required for production deployment.
+5. **Supabase Account** - Required for vector storage.
+6. **OpenAI API Key** - Or another LLM provider API key.
+
+### Installation Steps
+
+#### 1. Clone the Repository
+
+```bash
+git clone https://github.com/your-org/kai-platform.git
+cd kai-platform
+```
+
+#### 2. Install Python Dependencies
+
+```bash
+cd packages/ml
+pip install -r requirements.txt
+pip install -e .
+```
+
+#### 3. Install Node.js Dependencies
+
+```bash
+cd ../..
+npm install
+cd packages/ml
+npm install
+```
+
+#### 4. Configure Environment
+
+Create a `.env` file in the `packages/ml` directory with the following variables:
+
+```
+# LLM Configuration
+OPENAI_API_KEY=your_openai_api_key
+LLM_PROVIDER=openai
+LLM_MODEL=gpt-4
+
+# Vector DB Configuration
+SUPABASE_URL=your_supabase_url
+SUPABASE_KEY=your_supabase_key
+
+# Storage Paths
+RAG_DATA_DIR=/path/to/data
+MODEL_REGISTRY_DIR=/path/to/model-registry
+MODELS_DIR=/path/to/models
+
+# Performance Configuration
+ENABLE_CACHE=true
+CACHE_TTL=3600
+MAX_CONCURRENT_REQUESTS=10
+```
+
+#### 5. Create Necessary Directories
+
+```bash
+mkdir -p data/model-registry data/models data/state data/temp
+```
+
+#### 6. Initialize the Vector Database
+
+```bash
+cd packages/ml/python
+python initialize_vector_db.py
+```
+
+#### 7. Set Up Dependencies
+
+Set up the necessary dependencies for the enhanced RAG system:
+
+```bash
+# Set up dependencies
+python packages/ml/python/setup_dependencies.py --config path/to/config.json
+```
+
+This will create the required directories and initialize the vector stores.
+
+#### 8. Verify Installation
+
+Verify the installation by running the test script:
+
+```bash
+python test_integration.py --config path/to/config.json --setup
+```
+
+### Configuration
+
+The enhanced RAG system is configured using a JSON file. The default configuration is in `kubernetes/continuous-learning-deployment.yaml` under the `enhanced-rag-config` ConfigMap.
+
+You can customize the configuration by editing this file before deployment.
+
+Key configuration sections:
+
+- `model_registry_config`: Configuration for the model registry
+- `learning_pipeline_config`: Configuration for the continuous learning pipeline
+- `distributed_retrieval_config`: Configuration for distributed retrieval
+- `hierarchical_retriever_config`: Configuration for hierarchical retrieval
+- `cross_modal_attention_config`: Configuration for cross-modal attention
+
+### Docker Installation
+
+For containerized deployment, you can use the provided Dockerfile:
+
+```bash
+# Build the Docker image
+docker build -t enhanced-rag -f Dockerfile.rag .
+
+# Run the Docker container
+docker run -p 8000:8000 \
+  -e OPENAI_API_KEY=your_openai_api_key \
+  -e SUPABASE_URL=your_supabase_url \
+  -e SUPABASE_KEY=your_supabase_key \
+  -v /path/to/data:/data \
+  enhanced-rag
+```
+
+The enhanced RAG system is designed to integrate automatically with your existing MCP server and admin panel. No manual integration steps are required.
+
+## Deployment
+
+The enhanced RAG system includes automated deployment scripts that handle building, pushing, deploying, verifying, and monitoring the system.
+
+### Automated Deployment
+
+To deploy the enhanced RAG system using the automated pipeline:
+
+```bash
+# Make the script executable
+chmod +x rag-deployment-pipeline.sh
+
+# Run the deployment pipeline
+./rag-deployment-pipeline.sh
+```
+
+This script will:
+1. Build and push Docker images
+2. Deploy to Kubernetes
+3. Verify the deployment
+4. Monitor system performance
+5. Monitor API performance
+
+### Manual Deployment
+
+If you prefer to deploy manually, you can use the individual scripts:
+
+1. Build and push Docker images:
+
+```bash
+# Set Docker registry and tag (optional)
+export DOCKER_REGISTRY=your-registry
+export TAG=latest
+
+# Build and push images
+./build-push-rag.sh
+```
+
+2. Deploy to Kubernetes:
+
+```bash
+# Deploy
+./deploy-rag.sh
+```
+
+3. Verify the deployment:
+
+```bash
+# Verify
+./verify-rag-deployment.sh
+```
+
+4. Monitor system performance:
+
+```bash
+# Set monitoring duration (optional)
+export DURATION=10m
+
+# Monitor system performance
+./monitor-rag-performance.sh
+```
+
+5. Monitor API performance:
+
+```bash
+# Set API URL (optional)
+export API_URL=http://your-api-url/api/rag
+
+# Monitor API performance
+./monitor-rag-api.sh
+```
+
+## Integration Steps
+
+### 1. Initialize the Enhanced RAG System
+
+Once dependencies are set up, initialize the enhanced RAG system:
+
+```python
+from packages.ml.python.initialize_enhanced_rag import initialize_enhanced_rag
+
+# Create existing components dictionary
+existing_components = {
+    "base_retriever": your_base_retriever,
+    "embedding_model": your_embedding_model,
+    "vision_model": your_vision_model,
+    "text_model": your_text_model,
+    "llm_client": your_llm_client,
+    "feedback_db": your_feedback_db,
+    "vector_stores": your_vector_stores
+}
+
+# Initialize enhanced RAG
+enhanced_rag = await initialize_enhanced_rag(
+    config_path="path/to/config.json",
+    existing_components=existing_components
+)
+```
+
+### 2. Use the Enhanced RAG System
+
+Once initialized, you can use the enhanced RAG system:
+
+```python
+# Process a text query
+result = await enhanced_rag.process_query(
+    text_query="What are the best hardwood flooring options for high-traffic areas?",
+    options={"detail_level": "detailed"}
+)
+
+# Process an image query
+result = await enhanced_rag.process_query(
+    image_data=image_bytes,
+    options={"detail_level": "medium"}
+)
+
+# Process a multi-modal query
+result = await enhanced_rag.process_query(
+    text_query="What type of wood is this and how durable is it?",
+    image_data=image_bytes,
+    options={"detail_level": "detailed"}
+)
+
+# Submit feedback
+await enhanced_rag.submit_feedback(
+    query="What are the best hardwood flooring options for high-traffic areas?",
+    response=result,
+    feedback={
+        "rating": 4,
+        "feedback_text": "Good information but could include more about maintenance requirements."
+    }
+)
+
+# Get system stats
+stats = await enhanced_rag.get_system_stats()
+```
+
+## API Endpoints and Admin Panel
+
+### API Endpoints
+
+The enhanced RAG system adds the following API endpoints:
+
+#### EnhancedVector TypeScript Integration
 
 **Files:**
 - `packages/server/src/types/enhancedVector.types.ts` - Type definitions
@@ -239,7 +616,7 @@ The RAG system now fully integrates with the enhanced vector capabilities throug
 - Detailed query profiling and optimization suggestions
 - Result pagination and cursor-based navigation
 
-**API Endpoints:**
+**Vector API Endpoints:**
 - `POST /api/vector/enhanced/embeddings` - Generate embeddings for text
 - `GET /api/vector/enhanced/search` - Search materials using text query
 - `GET /api/vector/enhanced/materials/:id/similar` - Find similar materials
@@ -253,60 +630,25 @@ The RAG system now fully integrates with the enhanced vector capabilities throug
 - `GET /api/vector/enhanced/profile` - Profile a search query for optimization
 - `POST /api/vector/enhanced/bulk` - Batch processing for multiple queries
 
-### MCP (Material Computing Platform) Integration
+**RAG API Endpoints:**
+- `POST /api/rag/query` - Process a query with the enhanced RAG system
+- `POST /api/rag/feedback` - Submit feedback for a RAG response
+- `GET /api/rag/stats` - Get statistics for the enhanced RAG system
+- `POST /api/rag/admin/fine-tune` - Trigger fine-tuning for the enhanced RAG system
+- `GET /api/rag/admin/models` - Get models from the model registry
+- `GET /api/rag/admin/ab-tests` - Get A/B tests from the model registry
 
-The enhanced vector system includes integration with the MCP service for:
-- Embedding generation with model selection
-- Vector search with performance optimization
-- Fallback mechanisms when MCP is unavailable
-- Credit management for paid API usage
-- Distributed processing across multiple nodes
-- Batch operation for efficiency
-- Result caching with configurable TTL
-- Performance monitoring and reporting
+### Admin Panel
 
-### Integration with CrewAI Agents
+The enhanced RAG system adds a new page to the admin panel:
 
-The RAG system now integrates with the CrewAI agent architecture:
-
-**Files:**
-- `packages/agents/src/tools/vectorSearch.ts` - Vector search tool for agents
-- `packages/agents/src/services/adapters/vectorSearchMcpAdapter.ts` - MCP adapter for vector search
-
-**Key Features:**
-- Agent tools for semantic search operations
-- Knowledge base integration for enhanced agent capabilities
-- Unified type definitions for vector operations
-- AI-driven query refinement and expansion
-- Context-aware search customization
-- Material relationship exploration
-- AgentSystem integration for coordinated search
-
-**Usage Example:**
-```typescript
-// Create an agent with vector search capabilities
-const materialExpert = await createAgent({
-  id: 'material-expert-1',
-  type: AgentType.MATERIAL_EXPERT,
-  tools: [vectorSearchTool, knowledgeBaseTool]
-});
-
-// Use vector search with knowledge integration
-const searchResults = await materialExpert.invoke('vector_search', {
-  mode: 'text',
-  query: 'durable white marble for bathroom flooring',
-  limit: 5,
-  useKnowledgeBase: true,
-  includeRelationships: true
-});
-
-// Get detailed context for the materials
-const context = await materialExpert.invoke('get_material_context', {
-  materialIds: searchResults.map(r => r.id),
-  detailLevel: 'comprehensive',
-  includeApplications: true
-});
-```
+- **Enhanced RAG**: View system stats, model registry, and A/B tests
+  - System performance metrics
+  - Fine-tuning status and history
+  - A/B test results and comparisons
+  - Feedback analysis dashboard
+  - Model registry management
+  - Configuration editor
 
 ## Customization Options
 
@@ -342,19 +684,59 @@ await ragBridge.updateConfig({
 });
 ```
 
-Example of query-specific configuration:
+### Sample Configuration JSON
 
-```typescript
-// In TypeScript
-const response = await ragBridge.query(
-  "What are the best wood options for modern flooring?",
-  { material_type: "wood" },
-  {
-    enhancementTypes: ['explanation', 'application'],
-    includeRelationships: true,
-    limit: 5
+The enhanced RAG system can be configured through a JSON file. Here's an example configuration:
+
+```json
+{
+  "model_registry_config": {
+    "registry_dir": "/path/to/model-registry",
+    "models_dir": "/path/to/models"
+  },
+  "learning_pipeline_config": {
+    "min_feedback_samples": 100,
+    "feedback_threshold": 0.7,
+    "fine_tuning_interval_days": 7,
+    "test_size": 0.2,
+    "ab_test_duration_days": 3,
+    "models_to_compare": 2,
+    "state_dir": "/path/to/state",
+    "temp_dir": "/path/to/temp"
+  },
+  "distributed_retrieval_config": {
+    "cache_enabled": true,
+    "cache_ttl_seconds": 3600,
+    "batch_size": 100,
+    "timeout_seconds": 10,
+    "max_concurrent_requests": 5
+  },
+  "hierarchical_retriever_config": {
+    "max_sub_queries": 3,
+    "min_query_length": 15,
+    "reranking_enabled": true,
+    "combine_strategy": "weighted",
+    "query_decomposition_model": "gpt-3.5-turbo"
+  },
+  "cross_modal_attention_config": {
+    "visual_feature_dim": 512,
+    "text_feature_dim": 768,
+    "joint_feature_dim": 1024,
+    "attention_heads": 8,
+    "vision_model_name": "clip",
+    "text_model_name": "bert"
   }
-);
+}
+```
+
+You can also use environment variables to configure the system:
+
+```bash
+# Set environment variables
+export RAG_DATA_DIR="/path/to/data"
+export LLM_PROVIDER="openai"
+export LLM_MODEL="gpt-4"
+export OPENAI_API_KEY="your-api-key"
 ```
 
 ### Adding New Embedding Models
@@ -390,7 +772,7 @@ def _retrieve_with_custom_strategy(
     query_text: str,
     query_embedding: Dict[str, Any],
     filters: Optional[Dict[str, Any]] = None,
-    limit: int = 10
+    limit: int = a10
 ) -> List[Dict[str, Any]]:
     # Your custom retrieval logic here
     # ...
@@ -545,14 +927,6 @@ enhancer = GenerativeEnhancer(config={
 })
 ```
 
-### Updating Fine-tuned Models
-
-After fine-tuning, update the system configuration:
-
-1. For one-time updates, use the `updateConfig` method
-2. For permanent changes, modify the default configuration in the initialization file
-3. For staging changes, implement an A/B testing framework by adding a version parameter to queries
-
 ## Parameter Optimization
 
 ### HNSW Index Parameters
@@ -572,56 +946,9 @@ Parameter guidelines:
 - `ef_construction`: Size of the dynamic list for nearest neighbors (100-500, higher = better quality but slower indexing)
 - `ef_search`: Size of the dynamic list for searching (not set in index, set at query time)
 
-### Retrieval Parameters
-
-Optimize the retrieval parameters based on your use case:
-
-1. Edit the configuration in `packages/ml/python/material_rag_service.py`:
-
-```python
-self.config = {
-    # ...
-    "retrieval": {
-        "max_results": 10,         # Number of results to retrieve
-        "strategy": "hybrid",      # dense, sparse, hybrid, adaptive, or metadata
-        "threshold": 0.65,         # Minimum similarity score
-        "dense_weight": 0.7,       # Weight of dense embeddings in hybrid
-        "sparse_weight": 0.3,      # Weight of sparse embeddings in hybrid
-        "reranking_enabled": True, # Whether to re-rank results
-        "reranking_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
-        "adaptive_weighting": True # Dynamically adjust weights based on query
-    },
-    # ...
-}
-```
-
-### Generative Parameters
-
-Optimize the generative parameters for your quality-performance tradeoff:
-
-```python
-self.config = {
-    # ...
-    "generation": {
-        "model": "gpt-4",             # LLM model to use
-        "temperature": 0.7,           # Creativity vs determinism (0.0-1.0)
-        "max_tokens": 1000,           # Maximum tokens in response
-        "streaming_enabled": True,    # Whether to stream responses
-        "enhancement_types": [
-            "explanation",            # Include explanations
-            "similarity",             # Include similarity comparisons
-            "application"             # Include application recommendations
-        ],
-        "detail_level": "medium",     # brief, medium, or detailed
-        "formatting_style": "structured" # structured, conversational, technical
-    },
-    # ...
-}
-```
-
 ### Performance Profiles
 
-The system now includes pre-configured performance profiles:
+The system includes pre-configured performance profiles:
 
 ```python
 PERFORMANCE_PROFILES = {
@@ -669,19 +996,6 @@ PERFORMANCE_PROFILES = {
         "enable_cache": True,
         "cache_ttl": 7200  # 2 hours
     }
-}
-```
-
-### Caching Parameters
-
-Optimize caching based on your traffic patterns:
-
-```python
-self.config = {
-    "enable_cache": True,      # Enable/disable caching
-    "cache_ttl": 3600,         # Time-to-live in seconds
-    "max_cache_size": 1000,    # Maximum cache entries
-    # ...
 }
 ```
 
@@ -742,6 +1056,43 @@ Monitor these key metrics for performance optimization:
    - User satisfaction scores
 
 ## Troubleshooting
+
+If you encounter issues with the enhanced RAG system, check the following:
+
+### Diagnostic Steps
+
+1. **Logs**: Check the logs for the MCP server and continuous learning service:
+
+```bash
+kubectl logs deployment/mcp-server
+kubectl logs deployment/continuous-learning
+```
+
+2. **Deployment Verification**: Run the verification script to check for common issues:
+
+```bash
+./verify-rag-deployment.sh
+```
+
+3. **System Performance**: Monitor system performance to identify resource issues:
+
+```bash
+./monitor-rag-performance.sh
+```
+
+4. **API Performance**: Test the API endpoints to ensure they're working correctly:
+
+```bash
+./monitor-rag-api.sh
+```
+
+5. **Configuration**: Make sure the configuration is correct and all required directories exist.
+
+6. **Permissions**: Make sure the system has permission to access the required directories and files.
+
+7. **Dependencies**: Make sure all required dependencies are installed.
+
+8. **Memory**: Make sure the system has enough memory to load the models.
 
 ### Common Issues and Solutions
 
@@ -811,7 +1162,47 @@ Monitor these key metrics for performance optimization:
    - Implement chunking for large contexts
    - Use more efficient context compression techniques
 
-### Diagnostics
+#### Pod Crashes
+
+**Symptoms:**
+- Pods are crashing or restarting frequently
+- System is unstable
+
+**Potential Causes and Solutions:**
+1. **Resource limits**
+   - Check if pods have enough resources (CPU/memory)
+   - Increase resource limits if necessary
+   - Check for memory leaks
+
+2. **Configuration issues**
+   - Ensure ConfigMap is correctly configured
+   - Verify all required environment variables are set
+   - Check if volume mounts are correct
+
+To investigate pod crashes:
+```bash
+kubectl describe pod <pod-name>
+kubectl logs <pod-name> --previous
+```
+
+#### API Timeouts
+
+**Symptoms:**
+- API requests time out
+- System is unresponsive
+
+**Potential Causes and Solutions:**
+1. **Resource issues**
+   - Check if there are enough resources
+   - Increase timeouts if necessary
+   - Check for bottlenecks in the system
+
+2. **Network issues**
+   - Check if the network is stable
+   - Verify firewall settings
+   - Check if the service is accessible
+
+### Diagnostic Utilities
 
 The system provides several diagnostic utilities:
 
@@ -831,6 +1222,68 @@ The system provides several diagnostic utilities:
    const stats = await ragBridge.getUsageStatistics();
    console.log(stats);
    ```
+
+4. **Deployment Verification**:
+   ```bash
+   ./verify-rag-deployment.sh
+   ```
+
+5. **Performance Monitoring**:
+   ```bash
+   ./monitor-rag-performance.sh
+   ```
+
+## Integration with Existing Systems
+
+The RAG system integrates with and enhances several platform's existing capabilities:
+
+### RAG and Visual Recognition Integration
+
+The RAG system significantly enhances the platform's visual recognition capabilities:
+
+1. **Context-Enriched Recognition**: After visual recognition identifies a material (like a tile, wood, or stone), the RAG system automatically retrieves related knowledge, specifications, and similar materials from your database.
+
+2. **Multi-modal Understanding**: By connecting visual features with textual knowledge, the system provides a comprehensive understanding of materials. For example, if visual recognition identifies "white marble," the RAG system immediately provides information about its composition, durability, price range, and appropriate applications.
+
+3. **Improved Accuracy through Knowledge**: The RAG system can improve recognition accuracy by using domain knowledge to validate and refine visual recognition results.
+
+4. **Relationship Mapping**: Once a material is recognized, the RAG system maps it to your knowledge graph, exposing relationships with complementary materials, alternative options, and typical applications.
+
+### PDF Processing for Materials Training
+
+When processing PDFs with tile information to train the system:
+
+1. **Intelligent Extraction**: The RAG system works with your existing PDF processing to extract structured information about materials - specifications, properties, applications, and visual characteristics.
+
+2. **Automatic Knowledge Integration**: Extracted information is connected to the existing knowledge base:
+   - New material information is linked with existing knowledge
+   - Conflicts or updates needed in existing data are identified
+   - Embeddings are automatically generated for semantic search
+   - Material categorizations are suggested based on properties
+
+3. **Training Enhancement**: The extracted data improves system training:
+   - Embedding models can be fine-tuned with domain-specific data
+   - The recognition vocabulary for visual systems is expanded
+   - Training pairs for similarity and relationship models are created
+
+### Database Integration and Material Imports
+
+When importing materials to the database, the RAG system enhances the process:
+
+1. **Enriched Indexing**: New materials are automatically:
+   - Embedded using both dense (transformer-based) and sparse (BM25/TF-IDF) vectors
+   - Indexed using HNSW for extremely fast retrieval at scale
+   - Categorized with specialized indexes based on material type
+
+2. **Knowledge Graph Integration**: Each new material is:
+   - Connected to related materials (similar appearance, properties, applications)
+   - Linked to appropriate knowledge base entries
+   - Positioned within the overall materials hierarchy
+
+3. **Enhanced Search and Discovery**: The RAG system transforms how users find materials:
+   - Multi-stage retrieval combines vector, text, and metadata search
+   - Contextualized re-ranking improves result relevance
+   - Ensemble approaches blend multiple search strategies
 
 ## Extending the System
 
@@ -864,25 +1317,6 @@ To add a new enhancement type:
 5. Add the new enhancement type to the configuration options
 6. Update the `enhance` method to include the new enhancement type
 
-### Integration with External Systems
-
-The RAG system can be integrated with external systems:
-
-1. **Document Management Systems**:
-   - Implement a document processor in the Context Assembly System
-   - Add document fetching logic to the Retrieval System
-   - Use document metadata as filters in queries
-
-2. **CRM Systems**:
-   - Map user profiles to query preferences
-   - Personalize RAG responses based on user history
-   - Track user feedback for continuous improvement
-
-3. **E-commerce Platforms**:
-   - Connect product catalogs to the material database
-   - Add pricing and availability information to RAG responses
-   - Implement recommendation features that leverage RAG results
-
 ### Continuous Improvement
 
 Implement a feedback loop for continuous improvement:
@@ -909,130 +1343,333 @@ Implement a feedback loop for continuous improvement:
 
 This cycle ensures the RAG system continuously adapts to user needs and improves over time.
 
-## Integration with Existing Systems
+## MCP Server Integration
 
-This section explains how the RAG system integrates with and enhances the platform's existing capabilities, particularly visual recognition, PDF processing, and material database operations.
+To integrate the enhanced RAG system with your MCP server, you can use the provided MCP RAG bridge:
 
-### RAG and Visual Recognition Integration
+```python
+from packages.ml.python.mcp_rag_bridge import create_mcp_rag_bridge
 
-The RAG system significantly enhances the platform's visual recognition capabilities:
+# Create MCP RAG bridge
+mcp_bridge = create_mcp_rag_bridge(config_path="path/to/config.json")
 
-1. **Context-Enriched Recognition**: After visual recognition identifies a material (like a tile, wood, or stone), the RAG system automatically retrieves related knowledge, specifications, and similar materials from your database.
+# Initialize MCP RAG bridge
+await mcp_bridge.initialize(existing_components=existing_components)
 
-2. **Multi-modal Understanding**: By connecting visual features with textual knowledge, the system provides a comprehensive understanding of materials. For example, if visual recognition identifies "white marble," the RAG system immediately provides information about its composition, durability, price range, and appropriate applications.
+# Handle requests
+query_response = await mcp_bridge.handle_request("query", query_request)
+feedback_response = await mcp_bridge.handle_request("feedback", feedback_request)
+stats_response = await mcp_bridge.handle_request("stats", stats_request)
+```
 
-3. **Improved Accuracy through Knowledge**: The RAG system can improve recognition accuracy by using domain knowledge to validate and refine visual recognition results. For instance, if the visual system identifies a material with 70% confidence, but certain visual properties contradict known facts about that material, the RAG system can suggest alternatives.
-
-4. **Relationship Mapping**: Once a material is recognized, the RAG system maps it to your knowledge graph, exposing relationships with complementary materials, alternative options, and typical applications.
-
-**Implementation Details:**
-- The visual recognition system communicates with the RAG system through the TypeScript bridge
-- Material identifications are passed as queries to the RAG system
-- Vector embeddings from images can be combined with text embeddings for multi-modal search
-- Configuration options in the RAG service allow for adjusting the balance between visual and textual features
-
-### PDF Processing for Materials Training
-
-When processing PDFs with tile information to train the system:
-
-1. **Intelligent Extraction**: The RAG system works with your existing PDF processing to extract structured information about materials - specifications, properties, applications, and visual characteristics.
-
-2. **Automatic Knowledge Integration**: Extracted information is connected to the existing knowledge base:
-   - New material information is linked with existing knowledge
-   - Conflicts or updates needed in existing data are identified
-   - Embeddings are automatically generated for semantic search
-   - Material categorizations are suggested based on properties
-
-3. **Training Enhancement**: The extracted data improves system training:
-   - Embedding models can be fine-tuned with domain-specific data
-   - The recognition vocabulary for visual systems is expanded
-   - Training pairs for similarity and relationship models are created
-
-4. **Quality Assurance**: The RAG system provides verification by cross-referencing new material data against existing knowledge, flagging potential errors or inconsistencies in imported specifications.
-
-**Implementation Details:**
-- PDF processing connects with the RAG system through the `context_assembler.py` module
-- Extracted text is processed through the enhanced text embeddings component
-- The RAG system can be configured to align with specific PDF structures through custom extractors
-- Configuration options in `material_rag_service.py` control how PDF content is processed and stored
-
-### Database Integration and Material Imports
-
-When importing materials to the database, the RAG system enhances the process:
-
-1. **Enriched Indexing**: New materials are automatically:
-   - Embedded using both dense (transformer-based) and sparse (BM25/TF-IDF) vectors
-   - Indexed using HNSW for extremely fast retrieval at scale
-   - Categorized with specialized indexes based on material type
-
-2. **Knowledge Graph Integration**: Each new material is:
-   - Connected to related materials (similar appearance, properties, applications)
-   - Linked to appropriate knowledge base entries
-   - Positioned within the overall materials hierarchy
-
-3. **Enhanced Search and Discovery**: The RAG system transforms how users find materials:
-   - Multi-stage retrieval combines vector, text, and metadata search
-   - Contextualized re-ranking improves result relevance
-   - Ensemble approaches blend multiple search strategies
-
-4. **Generative Enhancements**: For discovered materials, the system automatically generates:
-   - Detailed explanations tailored to user queries
-   - Comparative analyses with similar materials
-   - Application recommendations with reasoning
-   - Citations to knowledge sources for verification
-
-**Implementation Details:**
-- Database operations interact with the RAG system through the enhanced vector service
-- The migration file (`006_enhanced_vector_storage.sql`) defines the database structure
-- New materials trigger automatic embedding generation through configured hooks
-- The TypeScript bridge exposes methods for manual and automatic indexing
-
-### Practical Use Case Example
-
-Here's how these integrations come together in a real-world scenario:
-
-1. A designer uploads a photo of a tile they saw in a showroom
-2. The visual recognition system identifies it as "travertine limestone"
-3. The RAG system immediately:
-   - Retrieves detailed specifications from the database
-   - Finds visually similar materials that might be alternatives
-   - Provides typical applications for this material type
-   - Suggests complementary materials for design harmony
-   - Generates an explanation of its properties and maintenance needs
-
-4. If the designer then uploads a PDF catalog with more travertine options:
-   - The system extracts and structures all material information
-   - New variants are automatically indexed and related to existing ones
-   - The knowledge base expands with new specifications
-   - All content becomes immediately searchable and retrievable
-
-5. When clients search later, whether by text ("durable kitchen flooring") or by uploading similar images, the system provides comprehensive, knowledge-grounded responses that combine visual, factual, and relational information.
-
-**Configuration for This Scenario:**
+You can then add endpoints to your MCP server to handle these requests:
 
 ```typescript
-// Configure the RAG system for optimal visual-textual integration
-await ragBridge.updateConfig({
-  integration: {
-    visualRecognition: {
-      enabled: true,
-      confidenceThreshold: 0.65,
-      enhanceResults: true,
-      multiModalSearch: true
-    },
-    pdfProcessing: {
-      extractionDetail: "high",
-      autoIndex: true,
-      validateAgainstKnowledge: true
-    },
-    materialImport: {
-      generateEmbeddingsOnImport: true,
-      buildRelationships: true,
-      indexStrategy: "hybrid_hnsw"
-    }
-  }
+// Add endpoints to your MCP server
+app.post('/rag/enhanced-query', async (req, res) => {
+  const response = await mcpBridge.handleRequest('query', req.body);
+  res.json(response);
+});
+
+app.post('/rag/feedback', async (req, res) => {
+  const response = await mcpBridge.handleRequest('feedback', req.body);
+  res.json(response);
+});
+
+app.get('/rag/stats', async (req, res) => {
+  const response = await mcpBridge.handleRequest('stats', {});
+  res.json(response);
 });
 ```
+
+## Kubernetes Deployment
+
+To deploy the enhanced RAG system on Kubernetes, you'll need to:
+
+1. Create a ConfigMap for the configuration:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: enhanced-rag-config
+data:
+  config.json: |
+    {
+      "model_registry_config": {
+        "registry_dir": "/data/model-registry",
+        "models_dir": "/data/models"
+      },
+      "learning_pipeline_config": {
+        "min_feedback_samples": 100,
+        "feedback_threshold": 0.7,
+        "fine_tuning_interval_days": 7,
+        "test_size": 0.2,
+        "ab_test_duration_days": 3,
+        "models_to_compare": 2,
+        "state_dir": "/data/state",
+        "temp_dir": "/data/temp"
+      },
+      "distributed_retrieval_config": {
+        "cache_enabled": true,
+        "cache_ttl_seconds": 3600,
+        "batch_size": 100,
+        "timeout_seconds": 10,
+        "max_concurrent_requests": 5
+      }
+    }
+```
+
+2. Create PersistentVolumeClaims for the data:
+
+```yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: model-registry-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: models-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+```
+
+3. Update your Deployment to use the enhanced RAG system:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mcp-server
+  template:
+    metadata:
+      labels:
+        app: mcp-server
+    spec:
+      containers:
+        - name: mcp-server
+          image: your-registry/mcp-server:latest
+          env:
+            - name: RAG_DATA_DIR
+              value: "/data"
+            - name: LLM_PROVIDER
+              value: "openai"
+            - name: LLM_MODEL
+              value: "gpt-4"
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: openai-secret
+                  key: api-key
+          volumeMounts:
+            - name: model-registry
+              mountPath: /data/model-registry
+            - name: models
+              mountPath: /data/models
+            - name: enhanced-rag-config
+              mountPath: /app/config/enhanced-rag-config.json
+              subPath: config.json
+      volumes:
+        - name: model-registry
+          persistentVolumeClaim:
+            claimName: model-registry-pvc
+        - name: models
+          persistentVolumeClaim:
+            claimName: models-pvc
+        - name: enhanced-rag-config
+          configMap:
+            name: enhanced-rag-config
+```
+
+4. Create a separate Deployment for the continuous learning pipeline:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: continuous-learning
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: continuous-learning
+  template:
+    metadata:
+      labels:
+        app: continuous-learning
+    spec:
+      containers:
+        - name: continuous-learning
+          image: your-registry/continuous-learning:latest
+          env:
+            - name: RAG_DATA_DIR
+              value: "/data"
+            - name: LLM_PROVIDER
+              value: "openai"
+            - name: LLM_MODEL
+              value: "gpt-4"
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: openai-secret
+                  key: api-key
+          volumeMounts:
+            - name: model-registry
+              mountPath: /data/model-registry
+            - name: models
+              mountPath: /data/models
+            - name: enhanced-rag-config
+              mountPath: /app/config/enhanced-rag-config.json
+              subPath: config.json
+      volumes:
+        - name: model-registry
+          persistentVolumeClaim:
+            claimName: model-registry-pvc
+        - name: models
+          persistentVolumeClaim:
+            claimName: models-pvc
+        - name: enhanced-rag-config
+          configMap:
+            name: enhanced-rag-config
+```
+
+## CI/CD Integration
+
+To integrate the enhanced RAG system with your CI/CD pipeline, you'll need to:
+
+1. Add tests for the enhanced RAG system:
+
+```yaml
+# In your CI pipeline configuration
+steps:
+  - name: Test Enhanced RAG
+    run: |
+      cd packages/ml/python
+      python test_integration.py --config path/to/config.json
+```
+
+2. Add a step to sync the model registry:
+
+```yaml
+# In your CI pipeline configuration
+steps:
+  - name: Sync Model Registry
+    run: |
+      # Script to sync model registry with persistent storage
+      python scripts/sync_model_registry.py
+```
+
+3. Add a step to build and push the Docker images:
+
+```yaml
+# In your CI pipeline configuration
+steps:
+  - name: Build and Push Docker Images
+    run: |
+      docker build -t your-registry/mcp-server:latest -f Dockerfile.mcp-server .
+      docker build -t your-registry/continuous-learning:latest -f Dockerfile.continuous-learning .
+      docker push your-registry/mcp-server:latest
+      docker push your-registry/continuous-learning:latest
+```
+
+## Testing
+
+You can test the enhanced RAG system using the provided test script:
+
+```bash
+# Test the enhanced RAG system
+python packages/ml/python/test_integration.py --config path/to/config.json --setup
+```
+
+This will set up the dependencies and run tests for both direct integration and MCP bridge integration.
+
+## Implementation Checklist
+
+Use this checklist to track the implementation of the enhanced RAG system:
+
+### Core Implementation
+
+- [x] Create material-specific prompts module
+- [x] Create continuous learning pipeline module
+- [x] Create model registry module
+- [x] Create hierarchical retriever module
+- [x] Create cross-modal attention module
+- [x] Create distributed retrieval module
+- [x] Create enhanced RAG system module
+- [x] Create RAG integration module
+- [x] Create MCP RAG bridge module
+- [x] Create configuration module
+
+### Integration with MCP Server
+
+- [x] Create enhanced RAG service
+- [x] Create enhanced RAG controller
+- [x] Create enhanced RAG module
+- [x] Create script to update app module
+- [x] Create script to update MCP Dockerfile
+
+### Admin Panel Integration
+
+- [x] Create enhanced RAG stats component
+- [x] Create model registry component
+- [x] Create enhanced RAG page
+- [x] Create script to update admin routes
+- [x] Create script to update admin sidebar
+
+### Continuous Learning Service
+
+- [x] Create continuous learning service script
+- [x] Create Dockerfile for continuous learning service
+- [x] Create Kubernetes deployment for continuous learning service
+
+### CI/CD Integration
+
+- [x] Create GitHub workflow for enhanced RAG system
+- [x] Create script to build and push Docker images
+- [x] Create script to deploy to Kubernetes
+
+### Documentation
+
+- [x] Create enhanced RAG system documentation
+- [x] Create enhanced RAG setup guide
+- [x] Create enhanced RAG checklist
+
+### Testing
+
+- [ ] Test material-specific prompts
+- [ ] Test continuous learning pipeline
+- [ ] Test model registry
+- [ ] Test hierarchical retriever
+- [ ] Test cross-modal attention
+- [ ] Test distributed retrieval
+- [ ] Test enhanced RAG system
+- [ ] Test RAG integration
+- [ ] Test MCP RAG bridge
+- [ ] Test admin panel integration
+
+### Deployment
+
+- [ ] Build and push Docker images
+- [ ] Deploy to Kubernetes
+- [ ] Verify deployment
+- [ ] Monitor system performance
 
 ---
 

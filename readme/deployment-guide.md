@@ -1,20 +1,141 @@
-# Kai Deployment Guide
+# Kai Platform Deployment and Development Guide
 
-This guide provides detailed instructions for deploying the Kai application to production environments using Supabase, Vercel, and Digital Ocean Kubernetes. It includes setup procedures, environment configuration, and CI/CD pipeline instructions.
+This comprehensive guide covers all aspects of deploying and developing with the Kai platform, including production deployment configurations, development environment setup, Docker optimization strategies, and advanced deployment techniques like canary deployments.
 
 ## Table of Contents
 
+- [Overview](#overview)
+- [Architecture](#architecture)
 - [Prerequisites](#prerequisites)
 - [Component Installation](#component-installation)
-- [Recently Added Features](#recently-added-features)
-- [Architecture Overview](#architecture-overview)
-- [Supabase Deployment](#supabase-deployment)
-- [Vercel Deployment](#vercel-deployment)
-- [Digital Ocean Kubernetes Deployment](#digital-ocean-kubernetes-deployment)
-- [Environment Variables](#environment-variables)
-- [CI/CD Pipeline Setup](#cicd-pipeline-setup)
-- [Deployment Verification](#deployment-verification)
+- [Deployment Options](#deployment-options)
+  - [Cloud Provider Deployment](#cloud-provider-deployment)
+  - [Self-Hosted Deployment](#self-hosted-deployment)
+  - [Kubernetes Deployment](#kubernetes-deployment)
+  - [Docker Configuration and Optimization](#docker-configuration-and-optimization)
+- [Deployment Process](#deployment-process)
+  - [Environment Configuration](#environment-configuration)
+  - [Database Setup and Migration](#database-setup-and-migration)
+  - [Build Process](#build-process)
+  - [Containerization](#containerization)
+  - [Kubernetes Deployment](#kubernetes-deployment-1)
+  - [Canary Deployments](#canary-deployments)
+  - [Vercel Deployment](#vercel-deployment)
+  - [Supabase Deployment](#supabase-deployment)
+- [CI/CD Pipeline](#cicd-pipeline)
+- [Development Environment](#development-environment)
+  - [Local Setup](#local-setup)
+  - [Development Workflow](#development-workflow)
+  - [Debugging](#debugging)
+  - [Common Development Tasks](#common-development-tasks)
+- [Maintenance and Updates](#maintenance-and-updates)
+  - [Updating the Application](#updating-the-application)
+  - [Scaling the Application](#scaling-the-application)
+  - [Backup and Disaster Recovery](#backup-and-disaster-recovery)
 - [Troubleshooting](#troubleshooting)
+  - [Supabase Issues](#supabase-issues)
+  - [Vercel Deployment Issues](#vercel-deployment-issues)
+  - [Kubernetes Issues](#kubernetes-issues)
+  - [Docker Issues](#docker-issues)
+- [Performance Optimization](#performance-optimization)
+
+## Overview
+
+The Kai Platform is a comprehensive system for material management, recognition, and 3D visualization. This guide provides detailed instructions for deploying the platform to production environments and setting up development environments.
+
+## Architecture
+
+The Kai application consists of several components deployed across different platforms:
+
+```
+                             ┌────────────────────────────────────┐
+                             │                                    │
+                             │  Digital Ocean Kubernetes Cluster  │
+                             │  ─────────────────────────────────┤
+                             │                                    │
+┌────────────────────────┐   │  ┌────────────────┐  ┌───────────┐│
+│                        │   │  │                │  │           ││
+│  Vercel                │   │  │  API Server    │  │ Redis     ││
+│  ───────────────────   │   │  │                │  │           ││
+│  - Admin Panel (Next)  │───┼─▶│                │  │           ││
+│  - Client App (Gatsby) │   │  └────────┬───────┘  └───────────┘│
+│                        │   │           │                       │
+└────────────────────────┘   │           ▼                       │
+          │                  │  ┌────────────────┐               │
+          │                  │  │                │               │
+          │                  │  │  Coordinator   │◄──┐           │
+          │                  │  │  Service       │   │           │
+          ▼                  │  │                │   │           │
+┌────────────────────────┐   │  └────────┬───────┘   │           │
+│                        │   │           │           │           │
+│  Supabase              │   │           ▼           │           │
+│  ───────────────────   │   │  ┌────────────────┐   │           │
+│  - Authentication      │◀──┼─▶│                │   │           │
+│  - Realtime Features   │   │  │  Argo          │───┘           │
+│  - Queue Management    │   │  │  Workflows     │               │
+│  - Vector Database     │   │  │                │               │
+│                        │   │  └────────────────┘               │
+└────────────┬───────────┘   │           │                       │
+             │               │           ▼                       │
+             │               │  ┌────────────────┐               │
+             │               │  │  Worker Pods   │               │
+             │               │  │  ─────────────┤               │
+             └──────────────┼─▶│  - Quality     │               │
+                            │  │    Assessment  │               │
+┌────────────────────────┐  │  │  - Preprocessing │             │
+│                        │  │  │  - COLMAP SfM   │               │
+│  External Services     │  │  │  - Point Cloud  │               │
+│  ───────────────────   │  │  │  - Model Gen   │               │
+│  - MongoDB Atlas       │◀─┼─▶│  - NeRF        │               │
+│  - AWS S3              │  │  │  - Format Conv │               │
+│                        │  │  │                │               │
+└────────────────────────┘  │  └────────────────┘               │
+                            │                                    │
+                            └────────────────────────────────────┘
+```
+
+With the recently added features, the architecture has been extended:
+
+```
+┌────────────────────────────────────────────────────────────────────────────────┐
+│                                                                                │
+│  Digital Ocean Kubernetes Cluster                                             │
+│  ─────────────────────────────────────────────────────────────────────────    │
+│                                                                                │
+│            ┌──────────────────┐                                               │
+│            │                  │                                               │
+│            │  Parameter       │◄────────────┐                                 │
+│            │  Registry        │             │                                 │
+│            │                  │             │                                 │
+│            └─────────┬────────┘             │                                 │
+│                      │                      │                                 │
+│                      ▼                      │                                 │
+│  ┌──────────────┐  ┌──────────────────┐   ┌─┴────────────┐   ┌───────────────┐│
+│  │              │  │                  │   │              │   │               ││
+│  │ Notification │  │  Coordinator    │   │ ML Workloads │   │  Webhook      ││
+│  │ Service      │◄─┤  Service        │◄──┤ Orchestrator │◄──┤  Service      ││
+│  │              │  │                  │   │              │   │               ││
+│  └──────┬───────┘  └──────────────────┘   └─────┬────────┘   └───────────────┘│
+│         │                   │                   │                             │
+│         │                   ▼                   ▼                             │
+│         │           ┌────────────────┐  ┌─────────────────┐                  │
+│         │           │                │  │                 │                  │
+│         │           │  Existing      │  │ New ML Workflows│                  │
+│         │           │  Workflows     │  │ ───────────────│                  │
+│         │           │                │  │ - MultiModal   │                  │
+│         │           └────────────────┘  │   Pattern      │                  │
+│         │                               │   Recognition  │                  │
+│         │                               │ - Domain-      │                  │
+│         │                               │   Specific     │                  │
+│         ▼                               │   Networks     │                  │
+│  ┌─────────────────┐                    │                 │                  │
+│  │ Email/SMS/Push  │                    └─────────────────┘                  │
+│  │ Delivery        │                                                         │
+│  │ Services        │                                                         │
+│  └─────────────────┘                                                         │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
 
 ## Prerequisites
 
@@ -30,60 +151,7 @@ Before proceeding with deployment, ensure you have the following:
 - NVIDIA GPU operators installed (for ML features)
 - Nodes with NVIDIA L40S/H100 GPUs available for ML workloads
 - Persistent storage configured for parameter history and ML artifacts
-### Recently Added Features
 
-The Kai platform has been enhanced with four major new features that require specific deployment configurations:
-
-#### 1. Notification & Webhook System
-
-A comprehensive messaging framework supporting multiple notification channels:
-- In-app notifications (real-time & persistent)
-- Email notifications
-- SMS notifications (via third-party providers)
-- Webhook integrations for external systems
-
-**Deployment Components:**
-- Notification service deployment
-- Webhook service deployment
-- Database tables for notification configuration and history
-- External service integrations (email, SMS)
-
-#### 2. Parameter Registry System
-
-A hyperparameter management system for ML workloads:
-- Material-specific parameter storage
-- Similarity-based parameter suggestion
-- Automated hyperparameter optimization
-- Default configurations for common material types
-
-**Deployment Components:**
-- Parameter registry API deployment
-- Persistent storage for parameter history
-- Integration with ML training pipelines
-
-#### 3. MultiModal Pattern Recognition
-
-An advanced ML system for bridging visual patterns and textual specifications:
-- Transformer-based architecture with cross-modal attention
-- Pattern-to-text and text-to-pattern matching
-- Material pattern classification and specification extraction
-
-**Deployment Components:**
-- GPU-optimized deployment for inference
-- Workflow templates for pattern recognition tasks
-- Integration with existing material analysis pipeline
-
-#### 4. Domain-Specific Neural Networks
-
-Specialized neural architectures for material texture analysis:
-- Custom convolutional filters for different material classes
-- Multi-resolution material-aware attention mechanisms
-- Texture-specific feature extraction and classification
-
-**Deployment Components:**
-- GPU-optimized deployment for inference
-- Workflow templates for domain-specific processing
-- Texture analysis integration points
 ## Component Installation
 
 This section provides installation instructions for all Kai system components. Follow these steps to set up the required dependencies and services before deployment.
@@ -106,9 +174,26 @@ The Neural OCR integration requires additional dependencies beyond the standard 
 ### ML Package Installation
 
 The ML package provides machine learning functionality for material recognition, vector embeddings, model training, multimodal pattern recognition, and domain-specific networks:
+
+#### Prerequisites
 - CUDA 11.8+ for GPU support
 - NVIDIA drivers for L40S/H100 GPUs
-#### Prerequisites
+- Python 3.8+
+- Node.js 16+
+- Tesseract OCR (for text extraction)
+
+#### Setup
+1. Install Node.js dependencies:
+   ```bash
+   cd packages/ml
+   npm install
+   ```
+
+2. Install Python dependencies:
+   ```bash
+   npm run setup-python
+   ```
+
 #### MultiModal Pattern Recognition Setup
 
 For the MultiModal Pattern Recognition system:
@@ -146,9 +231,7 @@ For the Domain-Specific Networks system:
    ```bash
    python -c "from domain_specific_networks import DomainSpecificNetworkManager; print('Domain-Specific Networks available:', DomainSpecificNetworkManager.list_available_domains())"
    ```
-- Python 3.8+
-- Node.js 16+
-- Tesseract OCR (for text extraction)
+
 ### Notification System Installation
 
 The Notification System provides multi-channel notification capabilities:
@@ -227,81 +310,6 @@ The Parameter Registry system manages hyperparameters for material analysis:
    PARAM_HISTORY_RETENTION_DAYS=90
    DEFAULT_PARAMETER_SET=standard
    SIMILARITY_THRESHOLD=0.75
-   ```
-#### Setup
-### New Feature Architecture
-
-With the recently added features, the architecture has been extended:
-
-```
-┌────────────────────────────────────────────────────────────────────────────────┐
-│                                                                                │
-│  Digital Ocean Kubernetes Cluster                                             │
-│  ─────────────────────────────────────────────────────────────────────────    │
-│                                                                                │
-│            ┌──────────────────┐                                               │
-│            │                  │                                               │
-│            │  Parameter       │◄────────────┐                                 │
-│            │  Registry        │             │                                 │
-│            │                  │             │                                 │
-│            └─────────┬────────┘             │                                 │
-│                      │                      │                                 │
-│                      ▼                      │                                 │
-│  ┌──────────────┐  ┌──────────────────┐   ┌─┴────────────┐   ┌───────────────┐│
-│  │              │  │                  │   │              │   │               ││
-│  │ Notification │  │  Coordinator    │   │ ML Workloads │   │  Webhook      ││
-│  │ Service      │◄─┤  Service        │◄──┤ Orchestrator │◄──┤  Service      ││
-│  │              │  │                  │   │              │   │               ││
-│  └──────┬───────┘  └──────────────────┘   └─────┬────────┘   └───────────────┘│
-│         │                   │                   │                             │
-│         │                   ▼                   ▼                             │
-│         │           ┌────────────────┐  ┌─────────────────┐                  │
-│         │           │                │  │                 │                  │
-│         │           │  Existing      │  │ New ML Workflows│                  │
-│         │           │  Workflows     │  │ ───────────────│                  │
-│         │           │                │  │ - MultiModal   │                  │
-│         │           └────────────────┘  │   Pattern      │                  │
-│         │                               │   Recognition  │                  │
-│         │                               │ - Domain-      │                  │
-│         │                               │   Specific     │                  │
-│         ▼                               │   Networks     │                  │
-│  ┌─────────────────┐                    │                 │                  │
-│  │ Email/SMS/Push  │                    └─────────────────┘                  │
-│  │ Delivery        │                                                         │
-│  │ Services        │                                                         │
-│  └─────────────────┘                                                         │
-│                                                                              │
-└──────────────────────────────────────────────────────────────────────────────┘
-```
-1. Install Node.js dependencies:
-   ```bash
-   cd packages/ml
-   npm install
-   ```
-### 3. Adding Tables for New Features
-
-For the notification and webhook system, run these additional migrations:
-
-```sql
--- Run notification tables migration
-\i notification-tables.sql
-
--- Run webhook tables migration
-\i webhooks.sql
-
--- Run push notifications migration
-\i push-notifications.sql
-```
-
-For the parameter registry system:
-
-```sql
--- Run parameter registry migration
-\i parameter-registry.sql
-```
-2. Install Python dependencies:
-   ```bash
-   npm run setup-python
    ```
 
 ### MCP Server Installation
@@ -486,62 +494,1036 @@ The Hugging Face integration with adaptive model selection provides enhanced AI 
      -d '{"prompt": "Explain the properties of porcelain tiles"}'
    ```
 
-## Architecture Overview
+## Deployment Options
 
-The Kai application consists of several components deployed across different platforms:
+### Option 1: Cloud Provider Deployment (Recommended)
+
+1. **AWS Deployment**
+   - API Server: ECS Fargate or Elastic Beanstalk
+   - Database: MongoDB Atlas or DocumentDB
+   - File Storage: S3
+   - ML Services: EC2 with GPU or SageMaker
+   - CDN: CloudFront
+   - Queue: Supabase hosted on EC2 or ECS
+
+2. **Azure Deployment**
+   - API Server: Azure App Service or AKS
+   - Database: Cosmos DB with MongoDB API
+   - File Storage: Azure Blob Storage
+   - ML Services: Azure VMs with GPU or Azure ML
+   - CDN: Azure CDN
+   - Queue: Supabase hosted on Azure VMs
+
+3. **Google Cloud Deployment**
+   - API Server: Google Cloud Run or GKE
+   - Database: MongoDB Atlas
+   - File Storage: Google Cloud Storage
+   - ML Services: Google Compute with GPUs
+   - CDN: Cloud CDN
+   - Queue: Supabase hosted on GCE
+
+### Option 2: Self-Hosted Deployment
+
+Requirements:
+- Kubernetes cluster or Docker Swarm
+- Load balancer (NGINX, HAProxy)
+- MongoDB (replica set recommended)
+- S3-compatible storage (MinIO, Ceph)
+- GPU servers for ML services
+
+Steps:
+1. Set up MongoDB replica set
+2. Deploy S3-compatible storage
+3. Configure container orchestration platform
+4. Deploy API server containers
+5. Deploy ML service containers
+6. Set up load balancer and routing
+7. Configure Supabase for queue system
+8. Set up monitoring and logging
+
+### Kubernetes Deployment
+
+The KAI ML Platform uses a job-based processing architecture with Argo Workflows for orchestration. This section provides detailed steps for deploying to Digital Ocean Kubernetes (DOKS).
+
+#### Setting up a Kubernetes Cluster
+
+1. Log in to [Digital Ocean](https://cloud.digitalocean.com/)
+2. Navigate to Kubernetes → Create → Kubernetes
+3. Configure the cluster:
+   - Kubernetes Version: Latest stable version
+   - Datacenter Region: Choose the region closest to your users
+   - Node Pools:
+     - **Orchestration Pool**:
+       - Machine Type: Standard
+       - Node Plan: 4 GB / 2 vCPU or higher
+       - Node Count: 3 (for high availability)
+       - Labels: `node-type=orchestration`
+       
+     - **CPU-Optimized Pool**:
+       - Machine Type: CPU-Optimized
+       - Node Plan: 8 GB / 4 vCPU or higher
+       - Node Count: 3
+       - Labels: `node-type=cpu-optimized`
+       
+     - **GPU-Optimized Pool**:
+       - Machine Type: GPU-Optimized
+       - Node Plan: With NVIDIA L40S/H100 GPUs
+       - Node Count: 2
+       - Labels: `node-type=gpu-optimized`
+       
+     - **Memory-Optimized Pool**:
+       - Machine Type: Memory-Optimized
+       - Node Plan: 16 GB RAM or higher
+       - Node Count: 2
+       - Labels: `node-type=memory-optimized`
+       
+4. Enable the NVIDIA GPU Operator (if using GPU nodes)
+5. Name your cluster (e.g., `kai-ml-cluster`)
+6. Click "Create Cluster"
+
+#### Connecting to the Cluster
+
+1. Once the cluster is created, download the kubeconfig file
+2. Set up kubectl to use this config:
+   ```bash
+   export KUBECONFIG=~/Downloads/kai-ml-cluster-kubeconfig.yaml
+   ```
+3. Verify connection:
+   ```bash
+   kubectl get nodes
+   kubectl get nodes --show-labels
+   ```
+
+#### Installing Argo Workflows
+
+Argo Workflows is required for pipeline orchestration:
+
+```bash
+# Install Argo Workflows controller and UI
+kubectl create namespace argo
+kubectl apply -n argo -f https://github.com/argoproj/argo-workflows/releases/download/v3.4.5/install.yaml
+
+# Configure Argo to work with the kai-ml namespace
+kubectl apply -f kubernetes/argo-rbac.yaml
+```
+
+#### Deploying with the Deployment Script
+
+The KAI ML Platform includes a dedicated deployment script that handles all aspects of the deployment process:
+
+```bash
+# Basic deployment
+./kubernetes/deploy.sh
+
+# With custom parameters
+./kubernetes/deploy.sh --context=kai-ml-cluster --registry=your-registry.example.com --tag=v1.2.3
+```
+
+The script supports several options:
+- `--context=<context>`: Kubernetes context to use
+- `--registry=<url>`: Container registry URL
+- `--tag=<tag>`: Image tag for all components
+- `--dry-run`: Validate configurations without applying changes
+- `--skip-infrastructure`: Skip infrastructure components
+- `--skip-coordinator`: Skip coordinator service components
+- `--skip-workflows`: Skip workflow templates
+
+#### Deployment Components
+
+The deployment includes the following main components:
+
+1. **Infrastructure**:
+   - Namespace and resource quotas (`kubernetes/infrastructure/namespace.yaml`)
+   - Priority classes (`kubernetes/infrastructure/priority-classes.yaml`)
+   - Node pools (`kubernetes/infrastructure/node-pools.yaml`)
+   - Monitoring (`kubernetes/infrastructure/monitoring.yaml`)
+   - Caching (`kubernetes/infrastructure/caching.yaml`)
+
+2. **Coordinator Service** (`kubernetes/coordinator/`):
+   - Central orchestration component
+   - Manages task queues and workflow scheduling
+   - Interfaces with Argo Workflows
+   - Exposed via service and potentially ingress
+
+3. **Distributed Processing** (`kubernetes/distributed-processing/`):
+   - Handles distributed workloads
+   - Optional component for high-throughput processing
+
+4. **Mobile Optimization** (`kubernetes/mobile-optimization/`):
+   - Optional component for mobile optimization
+   - Includes LOD generation and Draco compression
+
+5. **WASM Compiler** (`kubernetes/wasm-compiler/`):
+   - Optional component for WebAssembly compilation
+
+6. **Workflow Templates** (`kubernetes/workflows/`):
+   - Argo workflow templates for ML pipelines
+   - 3D reconstruction template (`3d-reconstruction-template.yaml`)
+   - MultiModal Pattern Recognition template (`multimodal-pattern-recognition-template.yaml`)
+   - Domain-Specific Networks template (`domain-specific-networks-template.yaml`)
+
+#### Enhanced Deployment Script
+
+The `kubernetes/deploy.sh` script has been refactored to provide better environment support, backup capabilities, and rollback features:
+
+```bash
+# Deploy to staging environment
+./kubernetes/deploy.sh --context=kai-staging-cluster --registry=your-registry.example.com --tag=v1.2.3 --env=staging
+
+# Deploy to production environment
+./kubernetes/deploy.sh --context=kai-production-cluster --registry=your-registry.example.com --tag=v1.2.3 --env=production
+
+# Rollback to a previous deployment (e.g., after a failed deployment)
+./kubernetes/deploy.sh --context=kai-production-cluster --env=production --rollback=20250412153022
+```
+
+The enhanced script includes:
+
+1. **Environment-Specific Configuration**:
+   - Uses the `--env` parameter to specify target environment
+   - Applies environment-specific variables (replicas, resources, etc.)
+   - Supports different namespace per environment (e.g., `kai-system-staging` vs `kai-system`)
+
+2. **Automatic Backup**:
+   - Creates timestamped backups of all resources before applying changes
+   - Stores backups in `./kubernetes/backups/<environment>/<timestamp>/`
+   - Maintains the 5 most recent backups for each environment
+
+3. **Rollback Capability**:
+   - Provides the `--rollback` parameter to restore to a previous state
+   - Applies backed-up manifests in the correct order
+   - Provides confirmation and verification of rollback success
+
+4. **Environment-Specific Directories**:
+   - Checks for environment-specific configuration files first:
+   ```
+   kubernetes/
+   ├── coordinator/
+   │   ├── staging/        # Staging-specific configs
+   │   ├── production/     # Production-specific configs
+   │   └── *.yaml          # Default configs used if env-specific not found
+   ├── infrastructure/
+   │   ├── staging/
+   │   └── production/
+   └── workflows/
+       ├── staging/
+       └── production/
+   ```
+   - Falls back to default configurations when environment-specific ones don't exist
+
+5. **Deployment Health Verification**:
+   - Verifies that pods reach Running state
+   - Checks service availability
+   - Provides detailed deployment status information
+
+#### Helm-Based Deployment
+
+In addition to the script-based deployment, the KAI Platform now supports Helm charts for more maintainable and consistent Kubernetes deployments. This approach provides significant advantages in configuration management, environment isolation, and deployment reliability.
+
+##### Helm Chart Structure
+
+The platform uses a modular Helm chart structure with parent-child relationships:
 
 ```
-                             ┌────────────────────────────────────┐
-                             │                                    │
-                             │  Digital Ocean Kubernetes Cluster  │
-                             │  ─────────────────────────────────┤
-                             │                                    │
-┌────────────────────────┐   │  ┌────────────────┐  ┌───────────┐│
-│                        │   │  │                │  │           ││
-│  Vercel                │   │  │  API Server    │  │ Redis     ││
-│  ───────────────────   │   │  │                │  │           ││
-│  - Admin Panel (Next)  │───┼─▶│                │  │           ││
-│  - Client App (Gatsby) │   │  └────────┬───────┘  └───────────┘│
-│                        │   │           │                       │
-└────────────────────────┘   │           ▼                       │
-          │                  │  ┌────────────────┐               │
-          │                  │  │                │               │
-          │                  │  │  Coordinator   │◄──┐           │
-          │                  │  │  Service       │   │           │
-          ▼                  │  │                │   │           │
-┌────────────────────────┐   │  └────────┬───────┘   │           │
-│                        │   │           │           │           │
-│  Supabase              │   │           ▼           │           │
-│  ───────────────────   │   │  ┌────────────────┐   │           │
-│  - Authentication      │◀──┼─▶│                │   │           │
-│  - Realtime Features   │   │  │  Argo          │───┘           │
-│  - Queue Management    │   │  │  Workflows     │               │
-│  - Vector Database     │   │  │                │               │
-│                        │   │  └────────────────┘               │
-└────────────┬───────────┘   │           │                       │
-             │               │           ▼                       │
-             │               │  ┌────────────────┐               │
-             │               │  │  Worker Pods   │               │
-             │               │  │  ─────────────┤               │
-             └──────────────┼─▶│  - Quality     │               │
-                            │  │    Assessment  │               │
-┌────────────────────────┐  │  │  - Preprocessing │             │
-│                        │  │  │  - COLMAP SfM   │               │
-│  External Services     │  │  │  - Point Cloud  │               │
-│  ───────────────────   │  │  │  - Model Gen   │               │
-│  - MongoDB Atlas       │◀─┼─▶│  - NeRF        │               │
-│  - AWS S3              │  │  │  - Format Conv │               │
-│                        │  │  │                │               │
-└────────────────────────┘  │  └────────────────┘               │
-                            │                                    │
-                            └────────────────────────────────────┘
+helm-charts/
+├── kai/                    # Main parent chart
+│   ├── Chart.yaml          # Chart metadata with dependencies
+│   ├── values.yaml         # Default values
+│   ├── values-staging.yaml # Staging environment values
+│   └── values-production.yaml # Production environment values
+└── coordinator/            # Sample subchart
+    ├── Chart.yaml
+    ├── values.yaml
+    └── templates/          # Resource templates
+        ├── _helpers.tpl    # Reusable template snippets
+        ├── deployment.yaml # Deployment template
+        ├── service.yaml    # Service template
+        ├── hpa.yaml        # Autoscaling template
+        ├── pdb.yaml        # Pod Disruption Budget template
+        ├── rbac.yaml       # RBAC resources template
+        └── configmap.yaml  # ConfigMap template
 ```
 
-## Supabase Deployment
+##### Deploying with Helm Charts
+
+A Helm-based deployment script `helm-charts/helm-deploy.sh` provides a user-friendly interface:
+
+```bash
+# Deploy to staging environment
+./helm-charts/helm-deploy.sh --context=kai-staging-cluster --registry=your-registry.example.com --tag=v1.2.3 --env=staging --release=kai-staging
+
+# Deploy to production environment
+./helm-charts/helm-deploy.sh --context=kai-production-cluster --registry=your-registry.example.com --tag=v1.2.3 --env=production --release=kai-production
+
+# View release history
+./helm-charts/helm-deploy.sh --list-versions --release=kai-production
+
+# Rollback to a previous release version
+./helm-charts/helm-deploy.sh --context=kai-production-cluster --env=production --release=kai-production --rollback=3
+```
+
+##### Resource Allocation by Environment
+
+Resource allocation is automatically adjusted based on the target environment, whether using the script-based deployment or Helm charts:
+
+| Resource | Staging | Production |
+|----------|---------|------------|
+| API Server Replicas | 1 | 3 |
+| Coordinator Replicas | 1 | 3 |
+| Min HPA Replicas | 1 | 2 |
+| Max HPA Replicas | 5 | 10 |
+| PDB Min Available | "1" | "2" |
+| Resource Multiplier | 1x | 2x |
+| Namespace | kai-system-staging | kai-system |
+
+#### Flux GitOps-Based Deployment
+
+The KAI Platform now supports a GitOps approach to deployment using Flux CD, which provides a fully automated, declarative way to manage Kubernetes resources.
+
+##### Installing Flux on the Cluster
+
+1. **Install the Flux CLI**:
+   ```bash
+   # On macOS with Homebrew
+   brew install fluxcd/tap/flux
+
+   # On Linux
+   curl -s https://fluxcd.io/install.sh | sudo bash
+   ```
+
+2. **Check Kubernetes cluster compatibility**:
+   ```bash
+   flux check --pre
+   ```
+
+3. **Bootstrap Flux on your cluster**:
+   ```bash
+   # Generate a GitHub personal access token with 'repo' permissions
+   export GITHUB_TOKEN=<your-github-token>
+
+   # Bootstrap Flux on the staging cluster
+   flux bootstrap github \
+     --owner=kai-platform \
+     --repository=kai-gitops \
+     --branch=main \
+     --path=clusters/staging \
+     --personal \
+     --kubeconfig=$HOME/.kube/kai-staging-config
+
+   # Bootstrap Flux on the production cluster
+   flux bootstrap github \
+     --owner=kai-platform \
+     --repository=kai-gitops \
+     --branch=main \
+     --path=clusters/production \
+     --personal \
+     --kubeconfig=$HOME/.kube/kai-production-config
+   ```
+
+##### GitOps Repository Structure
+
+The KAI Platform uses a structured GitOps repository with separate configurations for staging and production environments:
+
+```
+flux/
+├── clusters/
+│   ├── staging/            # Staging environment
+│   │   ├── flux-system/    # Flux core components
+│   │   ├── sources/        # Source definitions (Helm repos, Git repos)
+│   │   ├── releases/       # Application deployments
+│   │   └── kustomization.yaml
+│   └── production/         # Production environment (similar structure)
+```
+
+##### Creating HelmRelease Resources
+
+Example HelmRelease resource:
+
+```yaml
+# Example: releases/coordinator.yaml
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: coordinator
+  namespace: flux-system
+spec:
+  interval: 5m
+  chart:
+    spec:
+      chart: coordinator
+      version: ">=1.0.0"
+      sourceRef:
+        kind: HelmRepository
+        name: kai-charts
+        namespace: flux-system
+      interval: 1m
+  values:
+    replicaCount: 3
+    image:
+      repository: "registry.example.com/coordinator"
+      tag: "v1.2.3"
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      remediateLastFailure: true
+    cleanupOnFail: true
+  rollback:
+    timeout: 5m
+    cleanupOnFail: true
+  targetNamespace: kai-system
+  releaseName: coordinator
+```
+
+##### CI/CD Integration with Flux
+
+The CI/CD pipeline integrates with Flux through a dedicated job that updates the GitOps repository with new image versions after building and testing.
+
+### Docker Configuration and Optimization
+
+The Kai platform uses optimized Docker configurations to improve build speed, reduce image size, and enhance security.
+
+#### Optimized Dockerfiles
+
+##### API Server (Dockerfile.api)
+
+Key optimizations:
+- Updated from Node.js 16 to Node.js 20 (Alpine variant)
+- Multi-stage build to reduce final image size
+- Dependency caching for faster builds
+- BuildKit features for optimal caching
+- Non-root user execution for security
+- Health checks and proper signal handling
+
+##### Centralized Base Images
+
+The platform uses centralized base images to ensure consistency:
+
+1. **ML Base Image (Dockerfile.ml-base)**
+   - TensorFlow GPU-enabled base image
+   - Common ML dependencies
+   - Standard user setup and permissions
+
+2. **Node.js Base Image (Dockerfile.node-base)**
+   - Alpine-based Node.js image
+   - Common Node.js dependencies
+   - Standard security configuration
+
+3. **Python Base Image (Dockerfile.python-base)**
+   - Python slim image for non-GPU services
+   - Common Python dependencies
+   - Consistent environment setup
+
+#### Build Context Optimization
+
+For optimal Docker build performance, the `.dockerignore` file excludes:
+- Version control directories
+- Development and build files (node_modules, __pycache__)
+- Test and documentation directories
+- Editor/IDE configuration files
+
+#### Best Practices Implemented
+
+1. **Layer Efficiency**
+   - Fewer, more purposeful layers
+   - Logical grouping of commands to optimize caching
+   - RUN commands combined with `&&` where appropriate
+
+2. **Cache Utilization**
+   - Dependencies installed separately from application code
+   - Package files copied first to leverage cache for dependencies
+   - BuildKit cache mounts used for node_modules and pip caches
+
+3. **Image Size Reduction**
+   - Multi-stage builds
+   - Alpine-based images where appropriate
+   - Cleanup of temporary files and package caches
+   - Only production dependencies in final image
+
+4. **Security**
+   - Non-root user execution
+   - Explicit EXPOSE statements for ports
+   - Fixed dependency versions
+   - Regular base image updates
+
+5. **Process Supervision**
+   - Proper signal handling
+   - Health checks integrated
+   - Explicit entrypoints and commands
+
+## Deployment Process
+
+### Environment Configuration
+
+Create a single `.env` file in the root directory for production:
+
+**Root .env file (.env.production)**
+```
+# Node Environment
+NODE_ENV=production
+
+# Server Configuration
+PORT=3000
+API_BASE_URL=https://api.yourdomain.com
+CORS_ORIGIN=https://yourdomain.com
+LOG_LEVEL=info
+
+# Database Configuration
+MONGODB_URI=mongodb+srv://user:password@cluster.mongodb.net/kai
+
+# Authentication
+JWT_SECRET=your-very-secure-jwt-secret
+
+# Storage Configuration
+S3_BUCKET=kai-production
+S3_REGION=us-east-1
+S3_ACCESS_KEY=your-access-key
+S3_SECRET_KEY=your-secret-key
+
+# Supabase Configuration
+SUPABASE_URL=https://your-supabase-project.supabase.co
+SUPABASE_KEY=your-supabase-key
+SUPABASE_STORAGE_BUCKET=materials
+
+# ML Configuration
+MODEL_PATH=/opt/kai/models
+TENSORFLOW_SERVING_URL=http://tensorflow-serving:8501
+VECTOR_INDEX_PATH=/opt/kai/indexes
+GPU_ENABLED=true
+BATCH_SIZE=8
+
+# MCP Server Configuration
+MCP_SERVER_URL=http://mcp-server:8000
+USE_MCP_SERVER=true
+MODEL_CACHE_SIZE=5
+AGENT_INTEGRATION_ENABLED=true
+MAX_BATCH_SIZE=16
+
+# Rate Limiting Configuration
+DEFAULT_RATE_LIMIT=100
+DEFAULT_RATE_WINDOW_MS=60000
+AUTH_RATE_LIMIT=20
+AUTH_RATE_WINDOW_MS=60000
+ML_RATE_LIMIT=10
+ML_RATE_WINDOW_MS=60000
+AGENT_RATE_LIMIT=30
+AGENT_RATE_WINDOW_MS=60000
+PDF_RATE_LIMIT=5
+PDF_RATE_WINDOW_MS=600000
+
+# Frontend Configuration
+GATSBY_API_URL=https://api.yourdomain.com
+GATSBY_SUPABASE_URL=https://your-supabase-project.supabase.co
+GATSBY_SUPABASE_ANON_KEY=your-supabase-anon-key
+GATSBY_STORAGE_URL=https://your-cdn.com
+GATSBY_DEFAULT_LOCALE=en
+GATSBY_GOOGLE_ANALYTICS_ID=your-ga-id
+```
+
+**New Features Environment Variables**:
+
+```
+# Notification System
+NOTIFICATION_SERVICE_ENABLED=true
+DEFAULT_NOTIFICATION_CHANNEL=in-app
+EMAIL_PROVIDER=sendgrid|mailchimp|ses
+EMAIL_API_KEY=${SECRET_REF}
+SMS_PROVIDER=twilio|nexmo
+SMS_API_KEY=${SECRET_REF}
+WEBHOOK_RETRY_ATTEMPTS=3
+WEBHOOK_TIMEOUT_MS=5000
+
+# Parameter Registry
+PARAM_REGISTRY_ENABLED=true
+PARAM_STORAGE_TYPE=supabase|postgres
+PARAM_DB_CONNECTION=${SECRET_REF}
+PARAM_HISTORY_RETENTION_DAYS=90
+DEFAULT_PARAMETER_SET=standard
+SIMILARITY_THRESHOLD=0.75
+
+# ML Features
+GPU_SCALING_ENABLED=true
+MIN_GPU_CLASS=L40S
+MULTIMODAL_MODEL_VERSION=v2.1
+DOMAIN_NETWORKS_ENABLED=true
+DEFAULT_QUALITY_TIER=standard
+BATCH_SIZE_LIMIT=8
+```
+
+For monitoring in production, add:
+
+```
+# Logging Configuration
+LOG_LEVEL=info
+LOG_FORMAT=json
+LOG_TO_FILE=true
+LOG_FILE_PATH=/var/log/kai/server.log
+LOG_ROTATION_INTERVAL=1d
+LOG_MAX_FILES=30
+
+# Monitoring Configuration
+ENABLE_DETAILED_METRICS=true
+METRICS_REPORTING_INTERVAL=60000
+ENABLE_PERFORMANCE_MONITORING=true
+
+# Health Check Configuration
+HEALTH_CHECK_INTERVAL=30000
+COMPONENT_TIMEOUT_MS=5000
+```
+
+### Database Setup and Migration
+
+#### Database Setup
+
+1. Create MongoDB database with collections:
+   ```
+   materials
+   collections
+   versions
+   relationships
+   search_indexes
+   pdf_jobs
+   crawler_jobs
+   users
+   ```
+
+2. Create indexes for performance:
+   ```javascript
+   // Materials Collection Indexes
+   db.materials.createIndex({ "id": 1 }, { unique: true })
+   db.materials.createIndex({ "name": 1 })
+   db.materials.createIndex({ "materialType": 1 })
+   db.materials.createIndex({ "collectionId": 1 })
+   db.materials.createIndex({ "tags": 1 })
+   db.materials.createIndex({ "$**": "text" })
+   
+   // Versions Collection Indexes
+   db.versions.createIndex({ "entityId": 1, "entityType": 1 })
+   db.versions.createIndex({ "createdAt": -1 })
+   
+   // Queue Collections Indexes
+   db.pdf_jobs.createIndex({ "status": 1, "priority": -1, "createdAt": 1 })
+   db.crawler_jobs.createIndex({ "status": 1, "priority": -1, "createdAt": 1 })
+   ```
+
+#### Database Migration System
+
+Kai uses a robust database migration system to manage schema changes across environments:
+
+##### Migration Architecture
+
+```
+┌─────────────────────┐     ┌─────────────────────┐     ┌─────────────────────┐
+│                     │     │                     │     │                     │
+│  CI/CD Pipeline     │────▶│  Migration Script   │────▶│  Supabase Database  │
+│                     │     │                     │     │                     │
+└─────────────────────┘     └─────────────────────┘     └─────────────────────┘
+         │                          │                          │
+         │                          │                          │
+         ▼                          ▼                          ▼
+┌─────────────────────┐     ┌─────────────────────┐     ┌─────────────────────┐
+│                     │     │                     │     │                     │
+│  Runs before        │     │  Reads SQL files    │     │  schema_migrations  │
+│  Application Deploy │     │  from migrations/   │     │  tracking table     │
+│                     │     │                     │     │                     │
+└─────────────────────┘     └─────────────────────┘     └─────────────────────┘
+```
+
+##### Migration Files
+
+Migration files are SQL scripts stored in `packages/server/src/services/supabase/migrations/` and follow a sequential naming convention:
+
+```
+001_initial_schema.sql
+002_hybrid_search.sql
+003_dataset_upload.sql
+004_material_metadata_fields.sql
+004_message_broker.sql
+...
+```
+
+##### Migration Tracking
+
+Migrations are tracked in a `schema_migrations` table in the Supabase database:
+
+```sql
+CREATE TABLE schema_migrations (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  applied_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+```
+
+This table records which migrations have already been applied to prevent duplicate execution.
+
+##### Migration Script
+
+The system uses a TypeScript migration script (`packages/server/scripts/run-migrations.ts`) that:
+
+1. Connects to the Supabase database using environment credentials
+2. Creates the `schema_migrations` table if it doesn't exist
+3. Retrieves already applied migrations from the table
+4. Compares available migrations with applied ones to identify pending migrations
+5. Applies pending migrations in sequential order
+6. Records successful migrations in the tracking table
+
+##### Integration with CI/CD Pipeline
+
+Database migrations are integrated into the CI/CD pipeline to ensure they run automatically before deploying application changes:
+
+1. In the GitHub Actions workflow (`.github/workflows/deploy.yml`), a dedicated step runs migrations before the Kubernetes deployment:
+
+```yaml
+# Run database migrations before deployment
+- name: Setup Node.js for migrations
+  uses: actions/setup-node@v3
+  with:
+    node-version: ${{ env.NODE_VERSION }}
+    
+- name: Install dependencies
+  run: yarn install --frozen-lockfile
+  
+- name: Run database migrations (Staging)
+  run: |
+    echo "Running database migrations for staging environment..."
+    yarn tsc -p packages/server/tsconfig.json
+    cd packages/server
+    node dist/scripts/run-migrations.js
+  env:
+    SUPABASE_URL: ${{ secrets.SUPABASE_URL_STAGING }}
+    SUPABASE_KEY: ${{ secrets.SUPABASE_KEY_STAGING }}
+    NODE_ENV: staging
+```
+
+### Adding Tables for New Features
+
+For the notification and webhook system, run these additional migrations:
+
+```sql
+-- Run notification tables migration
+\i notification-tables.sql
+
+-- Run webhook tables migration
+\i webhooks.sql
+
+-- Run push notifications migration
+\i push-notifications.sql
+```
+
+For the parameter registry system:
+
+```sql
+-- Run parameter registry migration
+\i parameter-registry.sql
+```
+
+### Build Process
+
+**Backend Services**
+```bash
+# Build API server
+cd packages/server
+yarn build
+
+# Build ML services TypeScript wrapper
+cd packages/ml
+yarn build
+```
+
+**Frontend Applications**
+```bash
+# Build client app
+cd packages/client
+yarn build
+
+# Build admin app
+cd packages/admin
+yarn build
+```
+
+### Containerization
+
+**Dockerfile for API Server**
+```dockerfile
+FROM node:16-alpine
+
+WORKDIR /app
+
+COPY packages/shared/dist ./packages/shared/dist
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/server/dist ./packages/server/dist
+COPY packages/server/package.json ./packages/server/
+COPY package.json yarn.lock ./
+
+ENV NODE_ENV=production
+
+RUN yarn install --production --frozen-lockfile
+
+EXPOSE 3000
+
+CMD ["node", "packages/server/dist/server.js"]
+```
+
+**Dockerfile for ML Services**
+```dockerfile
+FROM tensorflow/tensorflow:2.9.1-gpu
+
+WORKDIR /app
+
+COPY packages/ml/python /app/python
+COPY packages/ml/dist /app/dist
+COPY packages/ml/package.json /app/
+
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    python3-pip \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip3 install --no-cache-dir -r /app/python/requirements.txt
+
+EXPOSE 5000
+
+CMD ["python3", "/app/python/server.py"]
+```
+
+**Dockerfile for MCP Server**
+```dockerfile
+FROM tensorflow/tensorflow:2.9.1-gpu
+
+WORKDIR /app
+
+COPY packages/ml/python/mcp_server.py /app/
+COPY packages/ml/python/requirements.txt /app/
+
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    python3-pip \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip3 install --no-cache-dir -r /app/requirements.txt
+RUN pip3 install --no-cache-dir fastapi uvicorn python-multipart
+
+EXPOSE 8000
+
+CMD ["uvicorn", "mcp_server:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+Build and push to container registry:
+```bash
+# Build the base images first
+docker build -t registry.example.com/kai/node-base:latest -f Dockerfile.node-base .
+docker build -t registry.example.com/kai/python-base:latest -f Dockerfile.python-base .
+docker build -t registry.example.com/kai/ml-base:latest -f Dockerfile.ml-base .
+
+# Build service images
+docker build -t registry.example.com/kai/api-server:latest -f Dockerfile.api .
+docker build -t registry.example.com/kai/coordinator-service:latest -f packages/coordinator/Dockerfile.coordinator .
+docker build -t registry.example.com/kai/mcp-server:latest -f packages/ml/Dockerfile.mcp .
+
+# Build ML worker images
+docker build -t registry.example.com/kai/quality-assessment:latest -f packages/ml/python/Dockerfile.quality-assessment .
+docker build -t registry.example.com/kai/image-preprocessing:latest -f packages/ml/python/Dockerfile.image-preprocessing .
+docker build -t registry.example.com/kai/colmap-sfm:latest -f packages/ml/python/Dockerfile.colmap-sfm .
+docker build -t registry.example.com/kai/point-cloud:latest -f packages/ml/python/Dockerfile.point-cloud .
+docker build -t registry.example.com/kai/model-generator:latest -f packages/ml/python/Dockerfile.model-generator .
+docker build -t registry.example.com/kai/diffusion-nerf:latest -f packages/ml/python/Dockerfile.diffusion-nerf .
+docker build -t registry.example.com/kai/nerf-mesh-extractor:latest -f packages/ml/python/Dockerfile.nerf-mesh-extractor .
+docker build -t registry.example.com/kai/format-converter:latest -f packages/ml/python/Dockerfile.format-converter .
+docker build -t registry.example.com/kai/workflow-finalizer:latest -f packages/ml/python/Dockerfile.workflow-finalizer .
+
+# Build new feature images
+docker build -t registry.example.com/kai/parameter-registry:latest -f packages/server/Dockerfile.parameter-registry .
+docker build -t registry.example.com/kai/notification-service:latest -f packages/server/Dockerfile.notification-service .
+docker build -t registry.example.com/kai/webhook-service:latest -f packages/server/Dockerfile.webhook-service .
+docker build -t registry.example.com/kai/multimodal-pattern-recognition:latest -f packages/ml/python/Dockerfile.multimodal-pattern-recognition .
+docker build -t registry.example.com/kai/domain-specific-networks:latest -f packages/ml/python/Dockerfile.domain-specific-networks .
+
+# Push all images to registry
+docker push registry.example.com/kai/api-server:latest
+docker push registry.example.com/kai/coordinator-service:latest
+docker push registry.example.com/kai/quality-assessment:latest
+# ... and so on for all images
+```
+
+### Kubernetes Deployment
+
+#### Deployment Order
+
+For optimal deployment with minimal service disruption, follow this order:
+
+1. **Infrastructure Updates:**
+   - Apply GPU configuration updates
+   - Update node pools if necessary
+   - Configure persistent storage
+
+2. **Coordinator Updates:**
+   - Update coordinator configuration (config.yaml)
+   - Update coordinator deployment (deployment.yaml)
+   - Apply updated resource allocations
+   - Restart coordinator service
+
+3. **Core Services:**
+   - Deploy Parameter Registry service
+   - Deploy Notification System service
+
+4. **ML Components:**
+   - Deploy Domain-Specific Networks
+   - Deploy MultiModal Pattern Recognition service
+
+5. **Integration Components:**
+   - Deploy Webhook service
+   - Update workflow templates
+   - Configure integrations with existing systems
+
+#### Coordinator Service Updates
+
+The coordinator service has been updated to support the new features with the following changes:
+
+##### Configuration Updates (config.yaml)
+
+1. **Quality Tiers**
+   - Added new "premium" and "enterprise" tiers with higher resources
+   - Updated GPU class specifications for high-performance nodes
+
+2. **Notification System Integration**
+   - Added configuration for notification delivery
+   - Configured event types that trigger notifications
+   - Setup webhook integration points
+
+3. **Parameter Registry Integration**
+   - Added endpoint configuration
+   - Configured similarity threshold and retention policies
+   - Setup gRPC communication channel
+
+4. **ML Feature Management**
+   - Added configuration for multimodal pattern recognition
+   - Added configuration for domain-specific networks
+   - Setup workflow template references
+
+5. **GPU Resource Management**
+   - Added GPU class specifications
+   - Configured model-to-GPU mapping
+   - Setup autoscaling parameters
+
+##### Deployment Updates (deployment.yaml)
+
+1. **Resource Allocation Increases**
+   - CPU: 500m → 1 core (requests), 2 → 4 cores (limits)
+   - Memory: 512Mi → 1Gi (requests), 2Gi → 4Gi (limits)
+
+2. **Environment Variables**
+   - Added connectivity parameters for new services
+   - Configured feature flags for new components
+   - Setup workflow template paths
+
+### Canary Deployments
+
+The KAI Platform supports automated canary deployments with health monitoring and automatic promotion or rollback based on metrics. This provides a safer way to roll out changes by testing them on a small subset of traffic before full deployment.
+
+#### Using Canary Deployments
+
+To deploy using the canary approach:
+
+```bash
+# Basic canary deployment (10% traffic)
+./helm-charts/helm-deploy.sh --context=kai-production-cluster --env=production --canary --tag=v1.2.3
+
+# Advanced canary configuration
+./helm-charts/helm-deploy.sh \
+  --context=kai-production-cluster \
+  --env=production \
+  --canary \
+  --canary-weight=20 \
+  --canary-time=15 \
+  --health-threshold=98 \
+  --critical-services=api-server,coordinator-service,mobile-optimization \
+  --tag=v1.2.3
+```
+
+The canary deployment will:
+1. Deploy the new version alongside the existing version
+2. Route a percentage of traffic to the new version (10% by default)
+3. Monitor health metrics for the specified period (10 minutes by default)
+4. Automatically promote the canary to production if health checks pass
+5. Automatically roll back if health checks fail
+
+#### Configuration Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--canary` | Enable canary deployment | - |
+| `--canary-weight=<pct>` | Percentage of traffic to route to canary | 10% |
+| `--canary-time=<min>` | Minutes to analyze canary before promotion | 10 minutes |
+| `--health-threshold=<pct>` | Success rate threshold for promotion | 95% |
+| `--critical-services=<svc>` | Comma-separated list of services to monitor | api-server,coordinator-service |
+
+#### Health Monitoring
+
+The system monitors several health metrics during the canary period:
+- Success rate (percentage of non-5xx responses)
+- Latency metrics
+- Resource utilization
+
+### Vercel Deployment
+
+Vercel is used to deploy the Next.js admin panel and the Gatsby client frontend.
+
+#### Admin Panel Deployment (Next.js)
+
+1. Log in to [Vercel](https://vercel.com/)
+2. Click "Add New" → "Project"
+3. Import your GitHub repository
+4. Configure the project:
+   - Framework Preset: Next.js
+   - Root Directory: `packages/admin`
+   - Build Command: `yarn build`
+   - Output Directory: `out` (default)
+   - Install Command: `yarn install`
+5. Set up environment variables (see [Environment Configuration](#environment-configuration) section)
+6. Click "Deploy"
+
+#### Client App Deployment (Gatsby)
+
+1. Log in to [Vercel](https://vercel.com/)
+2. Click "Add New" → "Project"
+3. Import your GitHub repository (if not already imported)
+4. Configure the project:
+   - Framework Preset: Gatsby
+   - Root Directory: `packages/client`
+   - Build Command: `yarn build`
+   - Output Directory: `public` (default)
+   - Install Command: `yarn install`
+5. Set up environment variables (see [Environment Configuration](#environment-configuration) section)
+6. Click "Deploy"
+
+#### Custom Domain Configuration
+
+1. In the Vercel project settings, go to Domains
+2. Add your custom domain(s):
+   - Admin Panel: `admin.kai.yourdomain.com`
+   - Client App: `kai.yourdomain.com`
+3. Configure DNS settings as instructed by Vercel
+
+#### Vercel Project Settings
+
+For both projects, configure these additional settings:
+
+1. **Build & Development Settings**:
+   - Node.js Version: 16.x (or higher if required)
+   - Include source files outside of the Root Directory: Yes
+   - Install Command: `cd ../.. && yarn install`
+
+2. **Environment Variables**:
+   - Add all required environment variables (see [Environment Configuration](#environment-configuration) section)
+
+### Supabase Deployment
 
 Supabase is used for authentication, realtime features, and queue management.
 
-### 1. Creating a Supabase Project
+#### Creating a Supabase Project
 
 1. Sign in to [Supabase](https://app.supabase.io/)
 2. Click "New Project"
@@ -551,7 +1533,7 @@ Supabase is used for authentication, realtime features, and queue management.
    - Region: Choose the region closest to your users
 4. Click "Create new project"
 
-### 2. Setting up Database Schema
+#### Setting up Database Schema
 
 After your project is created, you'll need to set up the database schema. You can do this using the SQL editor in the Supabase dashboard.
 
@@ -601,7 +1583,7 @@ CREATE POLICY "Service role can perform all operations"
   USING (true);
 ```
 
-### 3. Configuring Authentication
+#### Configuring Authentication
 
 1. In the Supabase dashboard, go to Authentication → Settings
 2. Configure the following settings:
@@ -610,7 +1592,7 @@ CREATE POLICY "Service role can perform all operations"
    - Enable Phone Auth: Optional
    - Enable OAuth Providers: As needed (Google, GitHub, etc.)
 
-### 4. Creating Service Role API Keys
+#### Creating Service Role API Keys
 
 1. In the Supabase dashboard, go to Settings → API
 2. Copy the following values:
@@ -618,655 +1600,13 @@ CREATE POLICY "Service role can perform all operations"
    - `anon` public key: For client-side authentication
    - `service_role` key: For server-side operations (**keep this secure**)
 
-### 5. Enabling Realtime
+#### Enabling Realtime
 
 1. In the Supabase dashboard, go to Database → Replication
 2. Ensure the `supabase_realtime` publication is configured properly
 3. Go to Settings → API → Realtime and enable it
 
-## Vercel Deployment
-
-Vercel is used to deploy the Next.js admin panel and the Gatsby client frontend.
-
-### 1. Admin Panel Deployment (Next.js)
-
-1. Log in to [Vercel](https://vercel.com/)
-2. Click "Add New" → "Project"
-3. Import your GitHub repository
-4. Configure the project:
-   - Framework Preset: Next.js
-   - Root Directory: `packages/admin`
-   - Build Command: `yarn build`
-   - Output Directory: `out` (default)
-   - Install Command: `yarn install`
-5. Set up environment variables (see [Environment Variables](#environment-variables) section)
-6. Click "Deploy"
-
-### 2. Client App Deployment (Gatsby)
-
-1. Log in to [Vercel](https://vercel.com/)
-2. Click "Add New" → "Project"
-3. Import your GitHub repository (if not already imported)
-4. Configure the project:
-   - Framework Preset: Gatsby
-   - Root Directory: `packages/client`
-   - Build Command: `yarn build`
-   - Output Directory: `public` (default)
-   - Install Command: `yarn install`
-5. Set up environment variables (see [Environment Variables](#environment-variables) section)
-6. Click "Deploy"
-
-### 3. Custom Domain Configuration
-
-1. In the Vercel project settings, go to Domains
-2. Add your custom domain(s):
-   - Admin Panel: `admin.kai.yourdomain.com`
-   - Client App: `kai.yourdomain.com`
-3. Configure DNS settings as instructed by Vercel
-
-### 4. Vercel Project Settings
-
-For both projects, configure these additional settings:
-
-1. **Build & Development Settings**:
-   - Node.js Version: 16.x (or higher if required)
-   - Include source files outside of the Root Directory: Yes
-   - Install Command: `cd ../.. && yarn install`
-
-2. **Environment Variables**:
-   - Add all required environment variables (see [Environment Variables](#environment-variables) section)
-
-## Digital Ocean Kubernetes Deployment
-
-The KAI ML Platform uses a job-based processing architecture with Argo Workflows for orchestration. This section provides detailed steps for deploying to Digital Ocean Kubernetes (DOKS). For detailed configuration information, refer to the [Kubernetes Architecture](./kubernetes-architecture.md) documentation.
-
-### 1. Setting up a Kubernetes Cluster
-
-1. Log in to [Digital Ocean](https://cloud.digitalocean.com/)
-2. Navigate to Kubernetes → Create → Kubernetes
-3. Configure the cluster:
-   - Kubernetes Version: Latest stable version
-   - Datacenter Region: Choose the region closest to your users
-   - Node Pools:
-     - **Orchestration Pool**:
-       - Machine Type: Standard
-       - Node Plan: 4 GB / 2 vCPU or higher
-       - Node Count: 3 (for high availability)
-       - Labels: `node-type=orchestration`
-       
-     - **CPU-Optimized Pool**:
-       - Machine Type: CPU-Optimized
-       - Node Plan: 8 GB / 4 vCPU or higher
-       - Node Count: 3
-       - Labels: `node-type=cpu-optimized`
-       
-     - **GPU-Optimized Pool**:
-       - Machine Type: GPU-Optimized
-       - Node Plan: With NVIDIA L40S/H100 GPUs
-       - Node Count: 2
-       - Labels: `node-type=gpu-optimized`
-       
-     - **Memory-Optimized Pool**:
-       - Machine Type: Memory-Optimized
-       - Node Plan: 16 GB RAM or higher
-       - Node Count: 2
-       - Labels: `node-type=memory-optimized`
-       
-4. Enable the NVIDIA GPU Operator (if using GPU nodes)
-5. Name your cluster (e.g., `kai-ml-cluster`)
-6. Click "Create Cluster"
-### 2. Deployment Order
-
-For optimal deployment with minimal service disruption, follow this order:
-
-1. **Infrastructure Updates:**
-   - Apply GPU configuration updates
-   - Update node pools if necessary
-   - Configure persistent storage
-
-2. **Coordinator Updates:**
-   - Update coordinator configuration (config.yaml)
-   - Update coordinator deployment (deployment.yaml)
-   - Apply updated resource allocations
-   - Restart coordinator service
-
-3. **Core Services:**
-   - Deploy Parameter Registry service
-   - Deploy Notification System service
-
-4. **ML Components:**
-   - Deploy Domain-Specific Networks
-   - Deploy MultiModal Pattern Recognition service
-
-5. **Integration Components:**
-   - Deploy Webhook service
-   - Update workflow templates
-   - Configure integrations with existing systems
-
-### 3. Coordinator Service Updates
-
-The coordinator service has been updated to support the new features with the following changes:
-
-#### Configuration Updates (config.yaml)
-
-1. **Quality Tiers**
-   - Added new "premium" and "enterprise" tiers with higher resources
-   - Updated GPU class specifications for high-performance nodes
-
-2. **Notification System Integration**
-   - Added configuration for notification delivery
-   - Configured event types that trigger notifications
-   - Setup webhook integration points
-
-3. **Parameter Registry Integration**
-   - Added endpoint configuration
-   - Configured similarity threshold and retention policies
-   - Setup gRPC communication channel
-
-4. **ML Feature Management**
-   - Added configuration for multimodal pattern recognition
-   - Added configuration for domain-specific networks
-   - Setup workflow template references
-
-5. **GPU Resource Management**
-   - Added GPU class specifications
-   - Configured model-to-GPU mapping
-   - Setup autoscaling parameters
-
-#### Deployment Updates (deployment.yaml)
-
-1. **Resource Allocation Increases**
-   - CPU: 500m → 1 core (requests), 2 → 4 cores (limits)
-   - Memory: 512Mi → 1Gi (requests), 2Gi → 4Gi (limits)
-
-2. **Environment Variables**
-   - Added connectivity parameters for new services
-   - Configured feature flags for new components
-   - Setup workflow template paths
-   
-The coordinator serves as the central orchestration component that manages all the new features, distributing workloads, and ensuring proper integration between components.
-### 2. Connecting to the Cluster
-
-1. Once the cluster is created, download the kubeconfig file
-2. Set up kubectl to use this config:
-   ```bash
-   export KUBECONFIG=~/Downloads/kai-ml-cluster-kubeconfig.yaml
-   ```
-3. Verify connection:
-   ```bash
-   kubectl get nodes
-   kubectl get nodes --show-labels
-   ```
-
-### 3. Building and Pushing Docker Images
-
-The deployment requires several container images for different components:
-
-```bash
-# API Server
-docker build -t registry.example.com/kai/api-server:latest -f Dockerfile.api .
-
-# Coordinator Service
-docker build -t registry.example.com/kai/coordinator-service:latest -f packages/coordinator/Dockerfile.coordinator .
-
-# Worker Images for Argo Workflows
-docker build -t registry.example.com/kai/quality-assessment:latest -f packages/ml/python/Dockerfile.quality-assessment .
-docker build -t registry.example.com/kai/image-preprocessing:latest -f packages/ml/python/Dockerfile.image-preprocessing .
-docker build -t registry.example.com/kai/colmap-sfm:latest -f packages/ml/python/Dockerfile.colmap-sfm .
-docker build -t registry.example.com/kai/point-cloud:latest -f packages/ml/python/Dockerfile.point-cloud .
-docker build -t registry.example.com/kai/model-generator:latest -f packages/ml/python/Dockerfile.model-generator .
-docker build -t registry.example.com/kai/diffusion-nerf:latest -f packages/ml/python/Dockerfile.diffusion-nerf .
-docker build -t registry.example.com/kai/nerf-mesh-extractor:latest -f packages/ml/python/Dockerfile.nerf-mesh-extractor .
-docker build -t registry.example.com/kai/format-converter:latest -f packages/ml/python/Dockerfile.format-converter .
-docker build -t registry.example.com/kai/workflow-finalizer:latest -f packages/ml/python/Dockerfile.workflow-finalizer .
-
-# Mobile Optimization Services
-docker build -t registry.example.com/kai/mobile-optimization:latest -f packages/coordinator/Dockerfile.mobile .
-
-# WASM Compiler
-docker build -t registry.example.com/kai/wasm-compiler:latest -f packages/coordinator/Dockerfile.wasm .
-
-# New feature images
-docker build -t registry.example.com/kai/parameter-registry:latest -f packages/server/Dockerfile.parameter-registry .
-docker build -t registry.example.com/kai/notification-service:latest -f packages/server/Dockerfile.notification-service .
-docker build -t registry.example.com/kai/webhook-service:latest -f packages/server/Dockerfile.webhook-service .
-docker build -t registry.example.com/kai/multimodal-pattern-recognition:latest -f packages/ml/python/Dockerfile.multimodal-pattern-recognition .
-docker build -t registry.example.com/kai/domain-specific-networks:latest -f packages/ml/python/Dockerfile.domain-specific-networks .
-docker build -t registry.example.com/kai/mcp-server:latest -f packages/ml/Dockerfile.mcp .
-
-# Push all images to your registry
-docker push registry.example.com/kai/api-server:latest
-docker push registry.example.com/kai/coordinator-service:latest
-docker push registry.example.com/kai/quality-assessment:latest
-docker push registry.example.com/kai/image-preprocessing:latest
-docker push registry.example.com/kai/colmap-sfm:latest
-docker push registry.example.com/kai/point-cloud:latest
-docker push registry.example.com/kai/model-generator:latest
-docker push registry.example.com/kai/diffusion-nerf:latest
-docker push registry.example.com/kai/nerf-mesh-extractor:latest
-docker push registry.example.com/kai/format-converter:latest
-docker push registry.example.com/kai/workflow-finalizer:latest
-docker push registry.example.com/kai/mobile-optimization:latest
-docker push registry.example.com/kai/wasm-compiler:latest
-docker push registry.example.com/kai/mcp-server:latest
-docker push registry.example.com/kai/parameter-registry:latest
-docker push registry.example.com/kai/notification-service:latest
-docker push registry.example.com/kai/webhook-service:latest
-docker push registry.example.com/kai/multimodal-pattern-recognition:latest
-docker push registry.example.com/kai/domain-specific-networks:latest
-```
-3. **New ML Components**:
-   - MultiModal Pattern Recognition (`kubernetes/ml-services/multimodal-pattern-recognition-deployment.yaml`)
-   - Domain-Specific Networks (`kubernetes/ml-services/domain-specific-networks-deployment.yaml`)
-   - Updated GPU configuration (`kubernetes/gpu-requirements.yaml`)
-
-4. **New Infrastructure Services**:
-   - Notification System (`kubernetes/notification-system/deployment.yaml`)
-   - Webhook Service (`kubernetes/notification-system/webhook-deployment.yaml`)
-   - Parameter Registry (`kubernetes/parameter-registry/deployment.yaml`)
-   - Parameter Registry Service (`kubernetes/parameter-registry/service.yaml`)
-
-5. **New Workflow Templates**:
-   - MultiModal Pattern Recognition (`kubernetes/workflows/multimodal-pattern-recognition-template.yaml`)
-   - Domain-Specific Networks (`kubernetes/workflows/domain-specific-networks-template.yaml`)
-Replace `registry.example.com` with your actual container registry URL.
-   - MultiModal Pattern Recognition template (`multimodal-pattern-recognition-template.yaml`)
-   - Domain-Specific Networks template (`domain-specific-networks-template.yaml`)
-### 4. Installing Argo Workflows
-**New Features Environment Variables**:
-
-```
-# Notification System
-NOTIFICATION_SERVICE_ENABLED=true
-DEFAULT_NOTIFICATION_CHANNEL=in-app
-EMAIL_PROVIDER=sendgrid|mailchimp|ses
-EMAIL_API_KEY=${SECRET_REF}
-SMS_PROVIDER=twilio|nexmo
-SMS_API_KEY=${SECRET_REF}
-WEBHOOK_RETRY_ATTEMPTS=3
-WEBHOOK_TIMEOUT_MS=5000
-
-# Parameter Registry
-PARAM_REGISTRY_ENABLED=true
-PARAM_STORAGE_TYPE=supabase|postgres
-PARAM_DB_CONNECTION=${SECRET_REF}
-PARAM_HISTORY_RETENTION_DAYS=90
-DEFAULT_PARAMETER_SET=standard
-SIMILARITY_THRESHOLD=0.75
-
-# ML Features
-GPU_SCALING_ENABLED=true
-MIN_GPU_CLASS=L40S
-MULTIMODAL_MODEL_VERSION=v2.1
-DOMAIN_NETWORKS_ENABLED=true
-DEFAULT_QUALITY_TIER=standard
-BATCH_SIZE_LIMIT=8
-```
-Argo Workflows is required for pipeline orchestration:
-
-```bash
-# Install Argo Workflows controller and UI
-kubectl create namespace argo
-kubectl apply -n argo -f https://github.com/argoproj/argo-workflows/releases/download/v3.4.5/install.yaml
-
-# Configure Argo to work with the kai-ml namespace
-kubectl apply -f kubernetes/argo-rbac.yaml
-```
-
-### 5. Deploying with the Deployment Script
-
-The KAI ML Platform includes a dedicated deployment script that handles all aspects of the deployment process:
-
-```bash
-# Basic deployment
-./kubernetes/deploy.sh
-
-# With custom parameters
-./kubernetes/deploy.sh --context=kai-ml-cluster --registry=your-registry.example.com --tag=v1.2.3
-```
-
-The script supports several options:
-- `--context=<context>`: Kubernetes context to use
-- `--registry=<url>`: Container registry URL
-- `--tag=<tag>`: Image tag for all components
-- `--dry-run`: Validate configurations without applying changes
-- `--skip-infrastructure`: Skip infrastructure components
-- `--skip-coordinator`: Skip coordinator service components
-- `--skip-workflows`: Skip workflow templates
-
-### 6. Deployment Components
-
-The deployment includes the following main components:
-
-1. **Infrastructure**:
-   - Namespace and resource quotas (`kubernetes/infrastructure/namespace.yaml`)
-   - Priority classes (`kubernetes/infrastructure/priority-classes.yaml`)
-   - Node pools (`kubernetes/infrastructure/node-pools.yaml`)
-   - Monitoring (`kubernetes/infrastructure/monitoring.yaml`)
-   - Caching (`kubernetes/infrastructure/caching.yaml`)
-
-2. **Coordinator Service** (`kubernetes/coordinator/`):
-   - Central orchestration component
-   - Manages task queues and workflow scheduling
-   - Interfaces with Argo Workflows
-   - Exposed via service and potentially ingress
-
-### Horizontal Pod Autoscaling (HPA)
-
-The KAI Platform uses Kubernetes Horizontal Pod Autoscaling (HPA) to automatically adjust the number of running pod replicas based on observed metrics. This section explains how HPA operates in our architecture, the communication flow, and the benefits it provides.
-
-#### HPA Operation and Configuration
-
-```yaml
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: coordinator-service-hpa
-  namespace: kai-ml
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: coordinator-service
-  minReplicas: 2 # Ensure at least 2 replicas are running
-  maxReplicas: 5 # Scale up to 5 replicas
-  metrics:
-  - type: Resource
-    resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: 75 # Target 75% CPU utilization
-  # Optionally add memory-based scaling
-  # - type: Resource
-  #   resource:
-  #     name: memory
-  #     target:
-  #       type: Utilization
-  #       averageUtilization: 75
-```
-
-1. **How HPA Works in Our Platform**:
-   - The Kubernetes HPA controller continuously monitors metrics from the Coordinator service and other configured components
-   - The standard metrics-server component collects CPU and memory metrics from pods
-   - The controller compares current CPU utilization (75% target) against the specified threshold
-   - When utilization exceeds the threshold, the controller calculates the desired number of replicas to maintain the target utilization
-   - Replicas are added or removed accordingly, while always maintaining between 2 and 5 replicas
-
-2. **Metrics Collection Flow**:
-   - **Pod Instrumentation**: Our pods expose metrics via Prometheus annotations:
-     ```yaml
-     annotations:
-       prometheus.io/scrape: "true"
-       prometheus.io/port: "8081"
-       prometheus.io/path: "/metrics"
-     ```
-   - **metrics-server**: Collects CPU/memory usage from kubelet on each node
-   - **Prometheus Adapter**: Converts Prometheus metrics into custom metrics API format (for custom metrics)
-   - **HPA Controller**: Queries metrics API for data at regular intervals (15 seconds by default)
-
-3. **Communication Between Components**:
-   - **Coordinator Service → metrics-server**: Coordinator pods expose basic CPU/memory metrics via kubelet
-   - **Coordinator Service → Prometheus**: Coordinator exposes detailed metrics on the `/metrics` endpoint (port 8081)
-   - **Prometheus → Prometheus Adapter**: Converts detailed metrics to HPA-compatible format
-   - **HPA Controller → APIs**: Queries metrics APIs to obtain current utilization
-   - **HPA Controller → kube-apiserver**: Updates replica count on the target deployment when needed
-
-#### Multi-layer Scaling Architecture
-
-Our platform implements scaling at multiple layers:
-
-1. **Pod-level Scaling (HPA)**:
-   - Coordinator Service: 2-5 replicas based on CPU utilization
-   - Mobile Optimization Service: 1-3 replicas based on CPU utilization
-   - WASM Compiler: 1-3 replicas based on CPU utilization
-   - This handles fluctuations in API request volume and control plane activities
-
-2. **Workflow-level Concurrency**:
-   - The Coordinator Service implements task queue management with priority-based concurrency limits
-   - Configured through the `task_queue_config` setting:
-     ```
-     task_queue_config={"interactive":{"concurrency":5,"weight":10},"batch":{"concurrency":10,"weight":5},"maintenance":{"concurrency":2,"weight":1}}
-     ```
-   - Ensures high-priority workflows get resources first, while maintaining system stability
-
-3. **Cluster Autoscaling**:
-   - Node pools automatically scale when pods can't be scheduled due to resource constraints
-   - Different node pools (CPU-Optimized, GPU-Optimized, etc.) scale independently based on specific workload needs
-
-4. **Resource Allocation Adjustment**:
-   - The ResourceManager service dynamically adjusts resource requests for workflows based on:
-     - Subscription tier limitations
-     - Current cluster utilization
-     - Quality level requirements
-   - This ensures optimal resource distribution during high-load periods
-
-#### Results and Benefits
-
-The HPA configuration delivers these benefits:
-
-1. **Cost Efficiency**:
-   - During low-traffic periods, components scale down to minimum replicas
-   - CPU/memory resources are freed for other workloads or to allow node removal via cluster autoscaling
-   - This optimizes resource usage and reduces operational costs
-
-2. **Responsive Scaling**:
-   - As user traffic increases, the system proactively adds replicas before performance degrades
-   - The 75% target utilization provides a buffer to handle traffic spikes during scaling events
-   - Maintaining minimum 2 replicas ensures high availability even during scaling
-
-3. **Improved Reliability**:
-   - The system can automatically recover from pod failures or node issues by creating new replicas
-   - Multiple layers of scaling provide defense-in-depth against resource exhaustion
-   - Priority-based queuing ensures critical workflows continue during high demand
-
-4. **Scaling Metrics**:
-   Our Grafana dashboards include panels to monitor scaling behavior:
-   - Current/target replica counts
-   - CPU/memory utilization across replicas
-   - Scaling events timeline
-   - Queue depths by priority level
-
-To view these metrics, access the Grafana dashboard at: http://<cluster-ip>/grafana (after setting up port forwarding or ingress)
-
-3. **Distributed Processing** (`kubernetes/distributed-processing/`):
-   - Handles distributed workloads
-   - Optional component for high-throughput processing
-
-4. **Mobile Optimization** (`kubernetes/mobile-optimization/`):
-   - Optional component for mobile optimization
-   - Includes LOD generation and Draco compression
-
-5. **WASM Compiler** (`kubernetes/wasm-compiler/`):
-   - Optional component for WebAssembly compilation
-
-6. **Workflow Templates** (`kubernetes/workflows/`):
-   - Argo workflow templates for ML pipelines
-   - 3D reconstruction template (`3d-reconstruction-template.yaml`)
-
-### 7. Verification and Post-Installation
-
-After deployment, verify that all components are running correctly:
-
-```bash
-# Check namespace
-kubectl get namespace kai-ml
-
-# Check coordinator service
-kubectl get deployments -n kai-ml coordinator-service
-
-# Check pods
-kubectl get pods -n kai-ml
-
-# Check services
-kubectl get services -n kai-ml
-
-# Check Argo Workflows
-kubectl get workflowtemplates -n kai-ml
-```
-
-Access the monitoring dashboards:
-- Grafana: http://<cluster-ip>:80 (via ingress)
-- Jaeger: http://<cluster-ip>:16686
-- Argo Workflows UI: http://localhost:2746 (after port-forwarding)
-
-```bash
-# Port forward to access Argo UI
-kubectl -n argo port-forward deployment/argo-server 2746:2746
-```
-
-### 8. Setting Up External Access
-
-1. Install the NGINX Ingress Controller if not already installed:
-   ```bash
-   kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.7.0/deploy/static/provider/cloud/deploy.yaml
-   ```
-
-2. Create an ingress for the coordinator and other services:
-   ```yaml
-   apiVersion: networking.k8s.io/v1
-   kind: Ingress
-   metadata:
-     name: kai-ml-ingress
-     namespace: kai-ml
-     annotations:
-       kubernetes.io/ingress.class: "nginx"
-       cert-manager.io/cluster-issuer: "letsencrypt-prod"
-   spec:
-     tls:
-     - hosts:
-       - api.yourdomain.com
-       secretName: kai-ml-tls-secret
-     rules:
-     - host: api.yourdomain.com
-       http:
-         paths:
-         - path: /api/workflows
-           pathType: Prefix
-           backend:
-             service:
-               name: coordinator-service
-               port:
-                 number: 80
-         - path: /
-           pathType: Prefix
-           backend:
-             service:
-               name: api-server-service
-               port:
-                 number: 80
-   ```
-
-3. Install cert-manager for TLS:
-   ```bash
-   kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.11.0/cert-manager.yaml
-   ```
-
-4. Create a ClusterIssuer for Let's Encrypt:
-   ```yaml
-   apiVersion: cert-manager.io/v1
-   kind: ClusterIssuer
-   metadata:
-     name: letsencrypt-prod
-   spec:
-     acme:
-       server: https://acme-v02.api.letsencrypt.org/directory
-       email: your-email@example.com
-       privateKeySecretRef:
-         name: letsencrypt-prod
-       solvers:
-       - http01:
-           ingress:
-             class: nginx
-   ```
-
-5. Configure DNS records to point to the Load Balancer IP:
-   ```bash
-   kubectl get service ingress-nginx-controller -n ingress-nginx
-   ```
-   Create an A record for `api.yourdomain.com` pointing to the IP address.
-
-For more detailed information about the Kubernetes architecture, node pools, resource management, security, and operational considerations, refer to the [Kubernetes Architecture](./kubernetes-architecture.md) documentation.
-
-## Environment Variables
-
-Here are the required environment variables for each component:
-
-### Supabase Environment Variables
-
-These will be automatically provided by Supabase dashboard.
-
-### Vercel Environment Variables
-
-**Admin Panel (Next.js)**:
-```
-NEXT_PUBLIC_API_URL=https://api.kai.yourdomain.com
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
-```
-
-**Client App (Gatsby)**:
-```
-GATSBY_API_URL=https://api.kai.yourdomain.com
-GATSBY_SUPABASE_URL=https://your-project.supabase.co
-GATSBY_SUPABASE_ANON_KEY=your-supabase-anon-key
-GATSBY_STORAGE_URL=https://your-s3-bucket.s3.amazonaws.com
-```
-
-### Digital Ocean Kubernetes Environment Variables
-
-**API Server**:
-```
-NODE_ENV=production
-PORT=3000
-API_BASE_URL=https://api.kai.yourdomain.com
-MONGODB_URI=mongodb+srv://user:password@cluster.mongodb.net/kai
-JWT_SECRET=your-very-secure-jwt-secret
-S3_BUCKET=kai-production
-S3_REGION=us-east-1
-S3_ACCESS_KEY=your-access-key
-S3_SECRET_KEY=your-secret-key
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_KEY=your-supabase-service-role-key
-CORS_ORIGIN=https://kai.yourdomain.com,https://admin.kai.yourdomain.com
-LOG_LEVEL=info
-COORDINATOR_URL=http://coordinator-service.kai-ml.svc.cluster.local
-```
-
-**Coordinator Service**:
-```
-NODE_ENV=production
-PORT=8080
-METRICS_PORT=8081
-REDIS_HOST=redis-master.kai-ml.svc.cluster.local
-REDIS_PORT=6379
-REDIS_PASSWORD=your-redis-password
-WORKFLOW_NAMESPACE=kai-ml
-WORKFLOW_TEMPLATES_PATH=/app/templates
-WORKFLOW_ARCHIVE_TTL=7d
-LOG_LEVEL=info
-RESOURCE_QUOTA_MODE=namespace
-ENABLE_PREEMPTION=true
-DEFAULT_PRIORITY=medium
-ENABLE_CACHING=true
-CACHE_TTL=86400
-ENABLE_AUTOSCALING=true
-SCALE_DOWN_DELAY=300
-PROMETHEUS_ENABLED=true
-```
-
-**ML Workers**:
-Environment variables for worker containers are typically injected by the Argo workflow template based on the specific requirements of each worker. Common variables include:
-```
-S3_BUCKET=kai-production
-S3_REGION=us-east-1
-S3_ACCESS_KEY=your-access-key
-S3_SECRET_KEY=your-secret-key
-MODEL_PATH=/app/models
-LOG_LEVEL=info
-```
-
-## CI/CD Pipeline Setup
+## CI/CD Pipeline
 
 The KAI Platform uses GitHub Actions for continuous integration and deployment. The enhanced CI/CD pipeline reduces code duplication, improves efficiency, and adds automatic rollback capabilities.
 
@@ -1445,7 +1785,7 @@ jobs:
             echo "TEST_SCRIPT=test:integration" >> $GITHUB_ENV
           fi
 
-      # Checkout, artifacts download, and Vercel deployment steps...
+      # ... more deployment steps ...
       
       # Run database migrations before deployment
       - name: Setup Node.js for migrations
@@ -1518,13 +1858,54 @@ jobs:
           kubectl --context=${{ env.KUBE_CONTEXT }} apply -f deployments-backup.yaml
 ```
 
-### Benefits of the Enhanced CI/CD Pipeline
+### CI/CD Integration with Flux
 
-1. **Reduced Duplication**: Eliminates nearly identical code between staging and production deployments
-2. **Faster Builds**: Parallel Docker image building with the matrix strategy
-3. **Consistent Configuration**: One source of truth for environment-specific settings
-4. **Enhanced Reliability**: Automatic health checks and rollback capabilities
-5. **Simplified Maintenance**: Adding new images or environments requires minimal changes
+For Flux GitOps deployments, the CI/CD pipeline includes a job to update the GitOps repository with new image versions:
+
+```yaml
+update-gitops:
+  name: Update GitOps Repository
+  needs: build-docker-images
+  runs-on: ubuntu-latest
+  steps:
+    - name: Determine environment
+      id: env
+      run: |
+        if [[ "${{ github.ref }}" == "refs/heads/main" || "${{ github.event.inputs.environment }}" == "production" ]]; then
+          echo "DEPLOY_ENV=production" >> $GITHUB_ENV
+          echo "TARGET_BRANCH=main" >> $GITHUB_ENV
+        else
+          echo "DEPLOY_ENV=staging" >> $GITHUB_ENV
+          echo "TARGET_BRANCH=staging" >> $GITHUB_ENV
+        fi
+
+    - name: Checkout GitOps repository
+      uses: actions/checkout@v3
+      with:
+        repository: kai-platform/kai-gitops
+        path: gitops
+        token: ${{ secrets.GITOPS_PAT }}
+        ref: ${{ env.TARGET_BRANCH }}
+        
+    - name: Update image tags in HelmReleases
+      run: |
+        echo "Updating image tags for ${{ env.DEPLOY_ENV }} environment..."
+        
+        # Update coordinator release
+        cd gitops/clusters/${{ env.DEPLOY_ENV }}/releases
+        
+        # Use yq to update the image tag in the HelmRelease
+        yq e '.spec.values.image.tag = "${{ github.sha }}"' -i coordinator.yaml
+        
+        # Additional services can be updated similarly
+        
+        git config --global user.name "Kai CI Bot"
+        git config --global user.email "ci-bot@kai-platform.com"
+        
+        git add .
+        git commit -m "ci: update image tags to ${{ github.sha }} for ${{ env.DEPLOY_ENV }}" || echo "No changes to commit"
+        git push
+```
 
 ### GitHub Secrets and Environments
 
@@ -1542,623 +1923,546 @@ The pipeline uses the following secrets, which should be set in your GitHub repo
 - `SUPABASE_KEY_STAGING`: Supabase service role key for staging
 - `SUPABASE_URL_PRODUCTION`: Supabase URL for production
 - `SUPABASE_KEY_PRODUCTION`: Supabase service role key for production
+- `GITOPS_PAT`: GitHub Personal Access Token with repo scope (for Flux GitOps)
 - `SLACK_WEBHOOK`: Slack webhook URL for notifications (optional)
 
-For more details on the CI/CD pipeline, see the [CI/CD Pipeline Documentation](./cicd-pipeline.md).
+## Development Environment
 
-## Digital Ocean Kubernetes Deployment
+### Local Setup
 
-The KAI ML Platform uses a job-based processing architecture with Argo Workflows for orchestration, now enhanced with improved environment support and automatic rollback capabilities.
+#### Prerequisites
 
-### Enhanced Deployment Script
+- Node.js (v16 or higher)
+- Yarn (v1.22 or higher)
+- MongoDB (v4.4 or higher)
+- Python 3.8+ (for ML components)
+- Docker and Docker Compose
+- Git
 
-The `kubernetes/deploy.sh` script has been refactored to provide better environment support, backup capabilities, and rollback features:
+#### Setup Steps
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/your-org/kai.git
+   cd kai
+   ```
+
+2. **Install dependencies**
+   ```bash
+   yarn install
+   ```
+
+3. **Set up environment variables**
+   ```bash
+   # Use the centralized .env file in the root directory
+   cp .env.example .env
+   
+   # Configure all necessary environment variables in the .env file
+   # including database connections, API keys, services URLs, etc.
+   ```
+
+4. **Set up MongoDB**
+   ```bash
+   # Option 1: Using Docker
+   docker run -d -p 27017:27017 --name kai-mongodb mongo:5
+   
+   # Option 2: Using MongoDB Atlas
+   # Configure your MongoDB Atlas connection string in the root .env file
+   ```
+
+5. **Set up ML environment**
+   ```bash
+   cd packages/ml
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   pip install -r requirements.txt
+   ```
+
+6. **Set up Supabase for the queue system**
+   ```bash
+   # Option 1: Using Supabase cloud
+   # Create a project at https://supabase.com and configure in the root .env file
+   
+   # Option 2: Using Supabase local development
+   npx supabase start
+   ```
+
+7. **Initialize database**
+   ```bash
+   yarn workspace @kai/server db:init
+   ```
+
+### Running the Development Environment
+
+#### Starting the Backend
 
 ```bash
-# Deploy to staging environment
-./kubernetes/deploy.sh --context=kai-staging-cluster --registry=your-registry.example.com --tag=v1.2.3 --env=staging
+# Start the API server
+yarn workspace @kai/server dev
 
-# Deploy to production environment
-./kubernetes/deploy.sh --context=kai-production-cluster --registry=your-registry.example.com --tag=v1.2.3 --env=production
-
-# Rollback to a previous deployment (e.g., after a failed deployment)
-./kubernetes/deploy.sh --context=kai-production-cluster --env=production --rollback=20250412153022
+# In another terminal, start the ML services
+cd packages/ml
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+python python/server.py
 ```
 
-The enhanced script includes:
-
-1. **Environment-Specific Configuration**:
-   - Uses the `--env` parameter to specify target environment
-   - Applies environment-specific variables (replicas, resources, etc.)
-   - Supports different namespace per environment (e.g., `kai-system-staging` vs `kai-system`)
-
-2. **Automatic Backup**:
-   - Creates timestamped backups of all resources before applying changes
-   - Stores backups in `./kubernetes/backups/<environment>/<timestamp>/`
-   - Maintains the 5 most recent backups for each environment
-
-3. **Rollback Capability**:
-   - Provides the `--rollback` parameter to restore to a previous state
-   - Applies backed-up manifests in the correct order
-   - Provides confirmation and verification of rollback success
-
-4. **Environment-Specific Directories**:
-   - Checks for environment-specific configuration files first:
-   ```
-   kubernetes/
-   ├── coordinator/
-   │   ├── staging/        # Staging-specific configs
-   │   ├── production/     # Production-specific configs
-   │   └── *.yaml          # Default configs used if env-specific not found
-   ├── infrastructure/
-   │   ├── staging/
-   │   └── production/
-   └── workflows/
-       ├── staging/
-       └── production/
-   ```
-   - Falls back to default configurations when environment-specific ones don't exist
-
-5. **Deployment Health Verification**:
-   - Verifies that pods reach Running state
-   - Checks service availability
-   - Provides detailed deployment status information
-
-### Helm-Based Deployment
-
-In addition to the script-based deployment, the KAI Platform now supports Helm charts for more maintainable and consistent Kubernetes deployments. This approach provides significant advantages in configuration management, environment isolation, and deployment reliability.
-
-#### Helm Chart Structure
-
-The platform uses a modular Helm chart structure with parent-child relationships:
-
-```
-helm-charts/
-├── kai/                    # Main parent chart
-│   ├── Chart.yaml          # Chart metadata with dependencies
-│   ├── values.yaml         # Default values
-│   ├── values-staging.yaml # Staging environment values
-│   └── values-production.yaml # Production environment values
-└── coordinator/            # Sample subchart
-    ├── Chart.yaml
-    ├── values.yaml
-    └── templates/          # Resource templates
-        ├── _helpers.tpl    # Reusable template snippets
-        ├── deployment.yaml # Deployment template
-        ├── service.yaml    # Service template
-        ├── hpa.yaml        # Autoscaling template
-        ├── pdb.yaml        # Pod Disruption Budget template
-        ├── rbac.yaml       # RBAC resources template
-        └── configmap.yaml  # ConfigMap template
-```
-
-#### Deploying with Helm Charts
-
-A Helm-based deployment script `helm-charts/helm-deploy.sh` provides a user-friendly interface:
+#### Starting the Frontend
 
 ```bash
-# Deploy to staging environment
-./helm-charts/helm-deploy.sh --context=kai-staging-cluster --registry=your-registry.example.com --tag=v1.2.3 --env=staging --release=kai-staging
+# Start the client app
+yarn workspace @kai/client dev
 
-# Deploy to production environment
-./helm-charts/helm-deploy.sh --context=kai-production-cluster --registry=your-registry.example.com --tag=v1.2.3 --env=production --release=kai-production
-
-# View release history
-./helm-charts/helm-deploy.sh --list-versions --release=kai-production
-
-# Rollback to a previous release version
-./helm-charts/helm-deploy.sh --context=kai-production-cluster --env=production --release=kai-production --rollback=3
+# In another terminal, start the admin app
+yarn workspace @kai/admin dev
 ```
 
-#### Key Advantages of Helm Charts
+#### Using Docker Compose for Development
 
-1. **Templated Resources**:
-   - All Kubernetes manifests are generated from templates
-   - Environment-specific values are injected automatically
-   - Consistent structure across environments
-
-2. **Environment-Specific Values Files**:
-   - Uses dedicated values files for staging and production
-   - All environment differences are centralized in values files
-   - Simplified configuration management
-
-3. **Versioned Releases**:
-   - Each deployment creates a versioned Helm release
-   - Full history of all deployments is maintained
-   - Selective rollback to any previous version
-   
-   ```bash
-   # List all release versions
-   helm history kai-production
-   
-   # View details of a specific release
-   helm get all kai-production --revision=2
-   ```
-
-4. **Dependency Management**:
-   - Proper ordering of resource creation
-   - Handles dependencies between components
-   - Less risk of partial deployments
-
-5. **Built-in Rollback**:
-   - Native Helm rollback capabilities
-   - Comprehensive rollback including all resources
-   - Simplified recovery from failed deployments
-
-### Canary Deployments with Automated Health Monitoring
-
-The KAI Platform now supports automated canary deployments with health monitoring and automatic promotion or rollback based on metrics. This provides a safer way to roll out changes by testing them on a small subset of traffic before full deployment.
-
-#### Canary Deployment Benefits
-
-1. **Reduced Risk**: Only a small percentage of traffic is initially exposed to the new version
-2. **Automated Verification**: The system monitors health metrics and automatically makes promotion/rollback decisions
-3. **Critical Service Focus**: Health checks focus on the most important services in your platform
-4. **Progressive Rollout**: The system can be configured to gradually increase traffic to the canary if metrics remain healthy
-
-#### Using Canary Deployments
-
-To deploy using the canary approach:
-
-```bash
-# Basic canary deployment (10% traffic)
-./helm-charts/helm-deploy.sh --context=kai-production-cluster --env=production --canary --tag=v1.2.3
-
-# Advanced canary configuration
-./helm-charts/helm-deploy.sh \
-  --context=kai-production-cluster \
-  --env=production \
-  --canary \
-  --canary-weight=20 \
-  --canary-time=15 \
-  --health-threshold=98 \
-  --critical-services=api-server,coordinator-service,mobile-optimization \
-  --tag=v1.2.3
-```
-
-The canary deployment will:
-1. Deploy the new version alongside the existing version
-2. Route a percentage of traffic to the new version (10% by default)
-3. Monitor health metrics for the specified period (10 minutes by default)
-4. Automatically promote the canary to production if health checks pass
-5. Automatically roll back if health checks fail
-
-#### Configuration Options
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--canary` | Enable canary deployment | - |
-| `--canary-weight=<pct>` | Percentage of traffic to route to canary | 10% |
-| `--canary-time=<min>` | Minutes to analyze canary before promotion | 10 minutes |
-| `--health-threshold=<pct>` | Success rate threshold for promotion | 95% |
-| `--critical-services=<svc>` | Comma-separated list of services to monitor | api-server,coordinator-service |
-
-#### Health Monitoring
-
-The system monitors several health metrics during the canary period:
-- Success rate (percentage of non-5xx responses)
-- Latency metrics
-- Resource utilization
-
-These metrics are collected from Prometheus and compared against thresholds to determine if the canary is healthy.
-
-For more detailed information about canary deployments, including health metrics, monitoring details, best practices, and troubleshooting, refer to the [Canary Deployment Documentation](./canary-deployment.md).
-
-#### Deployment Workflow
-
-1. **Install Helm** (if not already installed):
-   ```bash
-   curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-   ```
-
-2. **Configure Helm Values**:
-   Review and adjust values files as needed:
-   
-   ```yaml
-   # Example of values-production.yaml
-   global:
-     environment: "production"
-     namespace: "kai-system"
-     resourceMultiplier: 2
-   
-   coordinator:
-     replicaCount: 3
-     minReplicas: 2
-     maxReplicas: 10
-     resources:
-       requests:
-         cpu: "500m"
-         memory: "1Gi"
-       limits:
-         cpu: "2000m"
-         memory: "4Gi"
-   ```
-
-3. **Deploy with the Script**:
-   ```bash
-   ./helm-charts/helm-deploy.sh \
-     --context=your-kubernetes-context \
-     --registry=your-registry.example.com \
-     --tag=your-image-tag \
-     --env=production \
-     --release=kai-production
-   ```
-
-4. **Verify Deployment**:
-   ```bash
-   helm status kai-production
-   kubectl get pods -n kai-system
-   ```
-
-### Resource Allocation by Environment
-
-Resource allocation is automatically adjusted based on the target environment, whether using the script-based deployment or Helm charts:
-
-| Resource | Staging | Production |
-|----------|---------|------------|
-| API Server Replicas | 1 | 3 |
-| Coordinator Replicas | 1 | 3 |
-| Min HPA Replicas | 1 | 2 |
-| Max HPA Replicas | 5 | 10 |
-| PDB Min Available | "1" | "2" |
-| Resource Multiplier | 1x | 2x |
-| Namespace | kai-system-staging | kai-system |
-
-This ensures appropriate resource use in each environment, with production getting more resources for reliability and performance while staging uses fewer resources to reduce costs.
-
-For more detailed information about the Kubernetes architecture, including Helm implementation details, node pools, resource management, security, and operational considerations, refer to the [Kubernetes Architecture](./kubernetes-architecture.md) documentation.
-
-### Flux GitOps-Based Deployment
-
-The KAI Platform now supports a GitOps approach to deployment using Flux CD, which provides a fully automated, declarative way to manage Kubernetes resources. This approach offers significant advantages in terms of security, reliability, and operational efficiency.
-
-#### Installing Flux on the Cluster
-
-1. **Install the Flux CLI** (if not already installed):
-   ```bash
-   # On macOS with Homebrew
-   brew install fluxcd/tap/flux
-
-   # On Linux
-   curl -s https://fluxcd.io/install.sh | sudo bash
-   ```
-
-2. **Check Kubernetes cluster compatibility**:
-   ```bash
-   flux check --pre
-   ```
-
-3. **Bootstrap Flux on your cluster**:
-   ```bash
-   # Generate a GitHub personal access token with 'repo' permissions
-   # and export it as an environment variable
-   export GITHUB_TOKEN=<your-github-token>
-
-   # Bootstrap Flux on the staging cluster
-   flux bootstrap github \
-     --owner=kai-platform \
-     --repository=kai-gitops \
-     --branch=main \
-     --path=clusters/staging \
-     --personal \
-     --kubeconfig=$HOME/.kube/kai-staging-config
-
-   # Bootstrap Flux on the production cluster
-   flux bootstrap github \
-     --owner=kai-platform \
-     --repository=kai-gitops \
-     --branch=main \
-     --path=clusters/production \
-     --personal \
-     --kubeconfig=$HOME/.kube/kai-production-config
-   ```
-
-   This command will:
-   - Create a new repository if it doesn't exist
-   - Add Flux components to your cluster
-   - Configure Flux to synchronize with the specified path in the repository
-
-#### GitOps Repository Structure
-
-The KAI Platform uses a structured GitOps repository with separate configurations for staging and production environments:
-
-```
-flux/
-├── clusters/
-│   ├── staging/            # Staging environment
-│   │   ├── flux-system/    # Flux core components
-│   │   │   ├── gotk-sync.yaml       # Git repository sync configuration
-│   │   │   └── kustomization.yaml   # Flux system components
-│   │   ├── sources/        # Source definitions (Helm repos, Git repos)
-│   │   │   ├── helm-repository.yaml # Helm repository source
-│   │   │   └── kustomization.yaml   # Sources kustomization
-│   │   ├── releases/       # Application deployments
-│   │   │   ├── coordinator.yaml     # Coordinator HelmRelease
-│   │   │   └── kustomization.yaml   # Releases kustomization
-│   │   └── kustomization.yaml       # Main kustomization file
-│   └── production/         # Production environment (similar structure)
-│       ├── flux-system/
-│       ├── sources/
-│       ├── releases/
-│       └── kustomization.yaml
-```
-
-#### Creating HelmRelease Resources
-
-HelmRelease resources define how Flux should deploy applications using Helm charts:
+Create a `docker-compose.dev.yml` file:
 
 ```yaml
-# Example: releases/coordinator.yaml
-apiVersion: helm.toolkit.fluxcd.io/v2beta1
-kind: HelmRelease
-metadata:
-  name: coordinator
-  namespace: flux-system
-spec:
-  interval: 5m
-  chart:
-    spec:
-      chart: coordinator
-      version: ">=1.0.0"
-      sourceRef:
-        kind: HelmRepository
-        name: kai-charts
-        namespace: flux-system
-      interval: 1m
-  values:
-    replicaCount: 3
-    image:
-      repository: "registry.example.com/coordinator"
-      tag: "v1.2.3"
-    resources:
-      limits:
-        cpu: 2000m
-        memory: 2048Mi
-      requests:
-        cpu: 1000m
-        memory: 1024Mi
-    autoscaling:
-      enabled: true
-      minReplicas: 3
-      maxReplicas: 10
-      targetCPUUtilizationPercentage: 70
-  install:
-    remediation:
-      retries: 3
-  upgrade:
-    remediation:
-      remediateLastFailure: true
-    cleanupOnFail: true
-  rollback:
-    timeout: 5m
-    cleanupOnFail: true
-  targetNamespace: kai-system
-  releaseName: coordinator
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:5
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb-data:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: kai
+      MONGO_INITDB_ROOT_PASSWORD: password
+
+  supabase:
+    image: supabase/supabase-local
+    ports:
+      - "8000:8000"
+    volumes:
+      - supabase-data:/var/lib/postgresql/data
+
+volumes:
+  mongodb-data:
+  supabase-data:
 ```
 
-#### CI/CD Integration with Flux
+Start the development dependencies:
 
-The CI/CD pipeline integrates with Flux through a dedicated job that updates the GitOps repository:
+```bash
+docker-compose -f docker-compose.dev.yml up -d
+```
 
-1. **Add required secret**:
-   Add a Personal Access Token with repo scope to your GitHub repository secrets as `GITOPS_PAT`.
+### Development Workflow
 
-2. **Configure workflow job**:
-   The GitHub Actions workflow includes a job to update the GitOps repository with new image versions:
+#### Using the MCP Server in Development
 
-   ```yaml
-   update-gitops:
-     name: Update GitOps Repository
-     needs: build-docker-images
-     runs-on: ubuntu-latest
-     steps:
-       - name: Determine environment
-         id: env
-         run: |
-           if [[ "${{ github.ref }}" == "refs/heads/main" || "${{ github.event.inputs.environment }}" == "production" ]]; then
-             echo "DEPLOY_ENV=production" >> $GITHUB_ENV
-             echo "TARGET_BRANCH=main" >> $GITHUB_ENV
-           else
-             echo "DEPLOY_ENV=staging" >> $GITHUB_ENV
-             echo "TARGET_BRANCH=staging" >> $GITHUB_ENV
-           fi
+```bash
+# Start the MCP server
+cd packages/ml
+source mcp-venv/bin/activate  # On Windows: mcp-venv\Scripts\activate
+python python/mcp_server.py
 
-       - name: Checkout GitOps repository
-         uses: actions/checkout@v3
-         with:
-           repository: kai-platform/kai-gitops
-           path: gitops
-           token: ${{ secrets.GITOPS_PAT }}
-           ref: ${{ env.TARGET_BRANCH }}
-           
-       - name: Update image tags in HelmReleases
-         run: |
-           echo "Updating image tags for ${{ env.DEPLOY_ENV }} environment..."
-           
-           # Update coordinator release
-           cd gitops/clusters/${{ env.DEPLOY_ENV }}/releases
-           
-           # Use yq to update the image tag in the HelmRelease
-           yq e '.spec.values.image.tag = "${{ github.sha }}"' -i coordinator.yaml
-           
-           # Additional services can be updated similarly
-           
-           git config --global user.name "Kai CI Bot"
-           git config --global user.email "ci-bot@kai-platform.com"
-           
-           git add .
-           git commit -m "ci: update image tags to ${{ github.sha }} for ${{ env.DEPLOY_ENV }}" || echo "No changes to commit"
-           git push
-   ```
+# In your application code, enable MCP integration
+# Set environment variables:
+# - MCP_SERVER_URL=http://localhost:8000
+# - USE_MCP_SERVER=true
+```
 
-3. **Flux reconciliation**:
-   After the CI/CD workflow updates the image tags in the GitOps repository, Flux automatically:
-   - Detects the changes in the repository
-   - Updates the HelmReleases with the new image tags
-   - Triggers Helm upgrades for the affected releases
-   - Reports the status of the reconciliation
+#### Code Organization
 
-#### Monitoring Flux and Deployments
+```
+packages/
+├── admin/             # Admin Panel (Next.js)
+├── client/            # Client App (Gatsby)
+├── ml/                # Machine Learning
+│   ├── python/        # Python ML code
+│   └── src/           # TypeScript interfaces
+├── server/            # API Server
+│   ├── src/           # Source code
+│   │   ├── controllers/   # API controllers
+│   │   ├── middleware/    # Middleware
+│   │   ├── models/        # Data models
+│   │   ├── routes/        # API routes
+│   │   ├── services/      # Business logic
+│   │   └── utils/         # Utilities
+│   └── tests/         # Tests
+└── shared/            # Shared code and types
+```
 
-1. **Check Flux status**:
+#### Git Workflow
+
+1. **Branch naming convention**
+   - Feature branches: `feature/feature-name`
+   - Bug fix branches: `fix/bug-name`
+   - Refactoring branches: `refactor/refactor-name`
+   - Documentation branches: `docs/doc-name`
+
+2. **Commit message convention**
+   - Use conventional commits format: `type(scope): message`
+   - Example: `feat(material-recognition): add confidence fusion algorithm`
+
+3. **Pull Request workflow**
+   - Create PR against `main` branch
+   - Require at least one review
+   - Pass all automated checks
+   - Maintain clean commit history (rebase preferred over merge)
+
+### Debugging
+
+#### Backend Debugging
+
+1. **Using Node.js Inspector**
    ```bash
-   # Get all Flux custom resources
-   flux get all
+   # Start API server in debug mode
+   yarn workspace @kai/server dev:debug
    
-   # Check specific HelmReleases
-   flux get helmreleases
+   # Then connect using Chrome DevTools or VS Code
+   ```
+
+2. **Using VS Code**
+   Create a `.vscode/launch.json` file:
+   ```json
+   {
+     "version": "0.2.0",
+     "configurations": [
+       {
+         "type": "node",
+         "request": "launch",
+         "name": "Debug API Server",
+         "runtimeExecutable": "yarn",
+         "runtimeArgs": ["workspace", "@kai/server", "dev:debug"],
+         "port": 9229,
+         "sourceMaps": true,
+         "smartStep": true,
+         "outFiles": ["${workspaceFolder}/packages/server/dist/**/*.js"]
+       }
+     ]
+   }
+   ```
+
+#### Frontend Debugging
+
+1. **React Developer Tools**
+   - Install the browser extension
+   - Use React DevTools Profiler for performance analysis
+
+2. **Redux DevTools** (if using Redux)
+   - Install the browser extension
+   - Monitor state changes and actions
+
+#### Python ML Debugging
+
+1. **Using VS Code**
+   Configure `.vscode/launch.json`:
+   ```json
+   {
+     "version": "0.2.0",
+     "configurations": [
+       {
+         "name": "Python: ML Server",
+         "type": "python",
+         "request": "launch",
+         "program": "${workspaceFolder}/packages/ml/python/server.py",
+         "console": "integratedTerminal",
+         "env": {
+           "PYTHONPATH": "${workspaceFolder}/packages/ml"
+         }
+       }
+     ]
+   }
+   ```
+
+2. **Using Python Debugger**
+   ```python
+   import pdb; pdb.set_trace()
+   ```
+
+### Common Development Tasks
+
+#### Adding a New Feature
+
+1. **Plan the feature**
+   - Define requirements and acceptance criteria
+   - Identify affected packages and components
+   - Create design document if needed
+
+2. **Implement the feature**
+   - Create a feature branch
+   - Implement code changes
+   - Write tests
+   - Document the feature
+
+3. **Review and testing**
+   - Create a pull request
+   - Address code review feedback
+   - Verify all tests pass
+   - Perform manual testing
+
+4. **Merge and deploy**
+   - Merge to main branch
+   - Deploy to staging environment
+   - Verify in staging
+   - Deploy to production
+
+#### Adding a New API Endpoint
+
+1. **Define the endpoint**
+   - Determine HTTP method and path
+   - Define request parameters and body schema
+   - Define response schema and status codes
+
+2. **Implement the endpoint**
+   ```typescript
+   // In packages/server/src/routes/material.routes.ts
+   router.post('/materials/search', validateSearchRequest, materialController.searchMaterials);
    
-   # Get HelmRelease details
-   flux get helmrelease coordinator -n flux-system
+   // In packages/server/src/controllers/material.controller.ts
+   export const searchMaterials = async (req: Request, res: Response, next: NextFunction) => {
+     try {
+       const searchOptions = req.body;
+       const results = await knowledgeBaseService.searchMaterials(searchOptions);
+       res.json(results);
+     } catch (error) {
+       next(error);
+     }
+   };
    ```
 
-2. **View Flux logs**:
-   ```bash
-   # View controller logs
-   flux logs --all-namespaces
+3. **Test the endpoint**
+   ```typescript
+   // In packages/server/tests/routes/material.routes.test.ts
+   describe('POST /materials/search', () => {
+     it('should return search results for valid query', async () => {
+       const response = await request(app)
+         .post('/materials/search')
+         .send({ query: 'ceramic', materialType: 'tile' })
+         .set('Authorization', `Bearer ${testToken}`);
+       
+       expect(response.status).toBe(200);
+       expect(response.body.materials).toBeInstanceOf(Array);
+     });
+   });
+   ```
+
+#### Creating a New React Component
+
+1. **Create the component file**
+   ```tsx
+   // In packages/client/src/components/MaterialCard.tsx
+   import React from 'react';
    
-   # View logs for a specific HelmRelease
-   flux logs --kind=helmrelease --name=coordinator
-   ```
-
-3. **Check Kubernetes resources**:
-   ```bash
-   # Get all pods
-   kubectl get pods -n kai-system
+   interface MaterialCardProps {
+     id: string;
+     name: string;
+     thumbnailUrl: string;
+     manufacturer: string;
+     onClick?: () => void;
+   }
    
-   # Check deployment status
-   kubectl get deployments -n kai-system
+   export const MaterialCard: React.FC<MaterialCardProps> = ({
+     id,
+     name,
+     thumbnailUrl,
+     manufacturer,
+     onClick
+   }) => {
+     return (
+       <div className="material-card" onClick={onClick}>
+         <img src={thumbnailUrl} alt={name} className="material-thumbnail" />
+         <div className="material-info">
+           <h3>{name}</h3>
+           <p>{manufacturer}</p>
+         </div>
+       </div>
+     );
+   };
    ```
 
-#### Rollback with Flux
-
-If you need to roll back a deployment:
-
-1. **Revert the commit in the GitOps repository**:
-   ```bash
-   # Get the previous commit hash
-   git log --oneline
-
-   # Create a revert commit
-   git revert <commit-hash>
-   git push
-   ```
-
-2. **Force Flux reconciliation** (optional, Flux will reconcile automatically within the configured interval):
-   ```bash
-   flux reconcile kustomization flux-system --with-source
-   ```
-
-3. **Monitor the rollback**:
-   ```bash
-   flux get helmrelease coordinator -n flux-system
-   kubectl get pods -n kai-system -w
-   ```
-
-#### Benefits of Flux GitOps
-
-The Flux GitOps approach provides several key benefits for KAI Platform deployments:
-
-1. **Declarative Configuration**: All Kubernetes resources are defined declaratively in Git
-2. **Automated Reconciliation**: Flux ensures the cluster state always matches the desired state in Git
-3. **Self-Healing**: Automatic recovery from drift or failed deployments
-4. **Enhanced Security**: No direct access to the Kubernetes cluster is needed for deployments
-5. **Complete Audit Trail**: All changes are tracked in Git with full history
-6. **Progressive Delivery**: Support for canary deployments and A/B testing
-7. **Multi-Cluster Management**: The same GitOps repository can manage multiple clusters
-
-For more detailed information about the Flux GitOps architecture, controllers, and workflow, refer to the [Kubernetes Architecture](./kubernetes-architecture.md) documentation.
-
-## Deployment Verification
-
-After deployment, verify that all components are working properly:
-
-### Vercel Deployment Verification
-
-1. Visit the client app: `https://kai.yourdomain.com`
-2. Visit the admin panel: `https://admin.kai.yourdomain.com`
-3. Verify that authentication with Supabase works
-4. Verify that API calls to the backend are successful
-
-### Digital Ocean Kubernetes Verification
-
-1. Check the status of all pods:
-   ```bash
-   kubectl get pods -n kai-ml
-   ```
-2. Check the logs of the API server:
-   ```bash
-   kubectl logs -n kai-ml deployment/api-server
-   ```
-3. Check the logs of the Coordinator service:
-   ```bash
-   kubectl logs -n kai-ml deployment/coordinator-service
-   ```
-4. Check Argo workflow templates:
-   ```bash
-   kubectl get workflowtemplates -n kai-ml
-   ```
-5. Submit a test workflow and check its status:
-   ```bash
-   # Test API endpoint that triggers a workflow
-   curl -X POST https://api.yourdomain.com/api/workflows \
-     -H "Content-Type: application/json" \
-     -d '{"type":"3d-reconstruction","userId":"test","parameters":{"input-images":"[\"s3://test-bucket/test-image.jpg\"]"}}'
+2. **Create component tests**
+   ```tsx
+   // In packages/client/src/components/__tests__/MaterialCard.test.tsx
+   import React from 'react';
+   import { render, screen, fireEvent } from '@testing-library/react';
+   import { MaterialCard } from '../MaterialCard';
    
-   # Get workflow status
-   WORKFLOW_ID="from-previous-response"
-   curl https://api.yourdomain.com/api/workflows/$WORKFLOW_ID/status
+   describe('MaterialCard', () => {
+     it('renders material information correctly', () => {
+       render(
+         <MaterialCard
+           id="material-123"
+           name="Ceramic Tile"
+           thumbnailUrl="/example.jpg"
+           manufacturer="Example Tiles Inc."
+         />
+       );
+       
+       expect(screen.getByText('Ceramic Tile')).toBeInTheDocument();
+       expect(screen.getByText('Example Tiles Inc.')).toBeInTheDocument();
+       expect(screen.getByAltText('Ceramic Tile')).toHaveAttribute('src', '/example.jpg');
+     });
+     
+     it('calls onClick when clicked', () => {
+       const handleClick = jest.fn();
+       render(
+         <MaterialCard
+           id="material-123"
+           name="Ceramic Tile"
+           thumbnailUrl="/example.jpg"
+           manufacturer="Example Tiles Inc."
+           onClick={handleClick}
+         />
+       );
+       
+       fireEvent.click(screen.getByText('Ceramic Tile'));
+       expect(handleClick).toHaveBeenCalledTimes(1);
+     });
+   });
    ```
-6. Check Argo UI for workflow visualization
 
-## Troubleshooting
+#### Adding a New ML Model
 
-### Supabase Issues
+1. **Prepare the model code**
+   ```python
+   # In packages/ml/python/models/texture_classifier.py
+   import tensorflow as tf
+   from tensorflow.keras import layers, models
+   
+   def create_texture_classifier(input_shape=(224, 224, 3), num_classes=10):
+       """Create a CNN model for texture classification."""
+       model = models.Sequential([
+           layers.Conv2D(32, (3, 3), activation='relu', input_shape=input_shape),
+           layers.MaxPooling2D((2, 2)),
+           layers.Conv2D(64, (3, 3), activation='relu'),
+           layers.MaxPooling2D((2, 2)),
+           layers.Conv2D(128, (3, 3), activation='relu'),
+           layers.MaxPooling2D((2, 2)),
+           layers.Conv2D(128, (3, 3), activation='relu'),
+           layers.MaxPooling2D((2, 2)),
+           layers.Flatten(),
+           layers.Dense(512, activation='relu'),
+           layers.Dropout(0.5),
+           layers.Dense(num_classes, activation='softmax')
+       ])
+       
+       model.compile(
+           optimizer='adam',
+           loss='categorical_crossentropy',
+           metrics=['accuracy']
+       )
+       
+       return model
+   ```
 
-1. **Authentication Problems**:
-   - Check the Site URL in Supabase authentication settings
-   - Verify the anon key is correctly set in frontend apps
-   - Check CORS configurations
+2. **Create a model trainer**
+   ```python
+   # In packages/ml/python/trainers/texture_trainer.py
+   import os
+   import numpy as np
+   import tensorflow as tf
+   from models.texture_classifier import create_texture_classifier
+   
+   def train_texture_classifier(dataset_path, output_dir, epochs=10, batch_size=32):
+       """Train the texture classifier on a dataset."""
+       # Load and preprocess data
+       # ...
+       
+       # Create model
+       model = create_texture_classifier(num_classes=len(class_names))
+       
+       # Train the model
+       history = model.fit(
+           train_dataset,
+           validation_data=validation_dataset,
+           epochs=epochs,
+           callbacks=[
+               tf.keras.callbacks.ModelCheckpoint(
+                   filepath=os.path.join(output_dir, 'checkpoints'),
+                   save_best_only=True
+               ),
+               tf.keras.callbacks.TensorBoard(
+                   log_dir=os.path.join(output_dir, 'logs')
+               )
+           ]
+       )
+       
+       # Save the model
+       model.save(os.path.join(output_dir, 'texture_classifier.h5'))
+       
+       # Save class names
+       with open(os.path.join(output_dir, 'class_names.txt'), 'w') as f:
+           f.write('\n'.join(class_names))
+       
+       return {
+           'model_path': os.path.join(output_dir, 'texture_classifier.h5'),
+           'class_names': class_names,
+           'accuracy': float(history.history['val_accuracy'][-1]),
+           'loss': float(history.history['val_loss'][-1])
+       }
+   ```
 
-2. **Realtime Connection Issues**:
-   - Ensure the publication is properly configured
-   - Check that the realtime service is enabled
-   - Verify WebSocket connections in the browser console
+3. **Create a model serving endpoint**
+   ```python
+   # In packages/ml/python/server.py (add route)
+   @app.route('/api/classify-texture', methods=['POST'])
+   def classify_texture():
+       if 'image' not in request.files:
+           return jsonify({'error': 'No image provided'}), 400
+       
+       image_file = request.files['image']
+       img = load_and_preprocess_image(image_file)
+       
+       # Load the model (cached)
+       model = get_texture_classifier()
+       
+       # Make prediction
+       predictions = model.predict(np.expand_dims(img, axis=0))[0]
+       class_names = get_texture_class_names()
+       
+       # Format results
+       results = [
+           {'class': class_name, 'confidence': float(confidence)}
+           for class_name, confidence in zip(class_names, predictions)
+       ]
+       
+       # Sort by confidence
+       results.sort(key=lambda x: x['confidence'], reverse=True)
+       
+       return jsonify({
+           'results': results[:5],  # Top 5 predictions
+           'processingTimeMs': int((time.time() - start_time) * 1000)
+       })
+   ```
 
-### Vercel Deployment Issues
-
-1. **Build Failures**:
-   - Check the build logs for errors
-   - Verify that all dependencies are properly installed
-   - Ensure environment variables are correctly set
-
-2. **Runtime Errors**:
-   - Check the browser console for errors
-   - Verify that API calls are properly configured with the correct URL
-   - Check CORS configurations on the backend
-
-### Digital Ocean Kubernetes Issues
-
-1. **Pod Startup Failures**:
-   - Check pod logs: `kubectl logs -n kai-ml <pod-name>`
-   - Describe the pod for events: `kubectl describe pod -n kai-ml <pod-name>`
-   - Verify that secrets and config maps are correctly mounted
-
-2. **Connection Issues**:
-   - Check if services are properly configured: `kubectl get svc -n kai-ml`
-   - Verify ingress configuration: `kubectl describe ingress -n kai-ml kai-ingress`
-   - Check if TLS certificates are properly issued: `kubectl get certificates -n kai-ml`
-
-3. **Resource Constraints**:
-   - Check pod resource usage: `kubectl top pods -n kai-ml`
-   - Increase resource limits if necessary in the deployment YAML files
-
-4. **Argo Workflow Issues**:
-   - Check workflow status: `kubectl get workflows -n kai-ml`
-   - Get workflow details: `kubectl get workflow -n kai-ml <workflow-name> -o yaml`
-   - Check pod logs for workflow step: `kubectl logs -n kai-ml <workflow-pod-name>`
-   - Check if ServiceAccount has appropriate permissions
-   - Verify PVC creation and access
+4. **Create TypeScript interface**
+   ```typescript
+   // In packages/ml/src/index.ts (add interface)
+   export interface TextureClassificationResult {
+     results: Array<{
+       class: string;
+       confidence: number;
+     }>;
+     processingTimeMs: number;
+   }
+   
+   export async function classifyTexture(
+     imagePath: string
+   ): Promise<TextureClassificationResult> {
+     const formData = new FormData();
+     formData.append('image', fs.createReadStream(imagePath));
+     
+     const response = await axios.post<TextureClassificationResult>(
+       `${ML_API_URL}/api/classify-texture`,
+       formData,
+       {
+         headers: {
+           'Content-Type': 'multipart/form-data'
+         }
+       }
+     );
+     
+     return response.data;
+   }
+   ```
 
 ## Maintenance and Updates
 
@@ -2197,6 +2501,112 @@ After deployment, verify that all components are working properly:
    - Enable automatic backups in the Supabase dashboard
    - Schedule regular database exports
 
----
+## Troubleshooting
 
-This deployment guide provides comprehensive instructions for deploying the Kai application to Supabase, Vercel, and Digital Ocean Kubernetes. Follow these steps carefully to ensure a successful production deployment.
+### Supabase Issues
+
+1. **Authentication Problems**:
+   - Check the Site URL in Supabase authentication settings
+   - Verify the anon key is correctly set in frontend apps
+   - Check CORS configurations
+
+2. **Realtime Connection Issues**:
+   - Ensure the publication is properly configured
+   - Check that the realtime service is enabled
+   - Verify WebSocket connections in the browser console
+
+### Vercel Deployment Issues
+
+1. **Build Failures**:
+   - Check the build logs for errors
+   - Verify that all dependencies are properly installed
+   - Ensure environment variables are correctly set
+
+2. **Runtime Errors**:
+   - Check the browser console for errors
+   - Verify that API calls are properly configured with the correct URL
+   - Check CORS configurations on the backend
+
+### Kubernetes Issues
+
+1. **Pod Startup Failures**:
+   - Check pod logs: `kubectl logs -n kai-ml <pod-name>`
+   - Describe the pod for events: `kubectl describe pod -n kai-ml <pod-name>`
+   - Verify that secrets and config maps are correctly mounted
+
+2. **Connection Issues**:
+   - Check if services are properly configured: `kubectl get svc -n kai-ml`
+   - Verify ingress configuration: `kubectl describe ingress -n kai-ml kai-ingress`
+   - Check if TLS certificates are properly issued: `kubectl get certificates -n kai-ml`
+
+3. **Resource Constraints**:
+   - Check pod resource usage: `kubectl top pods -n kai-ml`
+   - Increase resource limits if necessary in the deployment YAML files
+
+4. **Argo Workflow Issues**:
+   - Check workflow status: `kubectl get workflows -n kai-ml`
+   - Get workflow details: `kubectl get workflow -n kai-ml <workflow-name> -o yaml`
+   - Check pod logs for workflow step: `kubectl logs -n kai-ml <workflow-pod-name>`
+   - Check if ServiceAccount has appropriate permissions
+   - Verify PVC creation and access
+
+### Docker Issues
+
+1. **Build Failures**:
+   - Check for syntax errors in Dockerfiles
+   - Verify that the build context doesn't include large or unnecessary files
+   - Check for connection issues to registries
+
+2. **Container Startup Issues**:
+   - Check container logs: `docker logs <container-id>`
+   - Verify that environment variables are correctly set
+   - Check for permission issues on mounted volumes
+
+3. **Image Size Issues**:
+   - Use multi-stage builds to reduce final image size
+   - Minimize the number of RUN instructions
+   - Clean up package caches in the same layer they're created
+
+## Performance Optimization
+
+### Backend Optimization
+
+1. **Database Optimization**:
+   - Create appropriate indexes for common queries
+   - Use projection to return only needed fields
+   - Implement caching for frequent queries
+   - Use aggregation pipeline for complex queries
+
+2. **API Server Optimization**:
+   - Implement response compression
+   - Use efficient JSON serialization
+   - Implement request throttling for high-traffic endpoints
+   - Use connection pooling for database connections
+
+### Frontend Optimization
+
+1. **React Performance**:
+   - Use React.memo for pure components
+   - Implement useMemo and useCallback hooks appropriately
+   - Use virtualization for long lists (react-window)
+   - Implement code splitting for large components
+
+2. **Asset Optimization**:
+   - Optimize images (compression, WebP format)
+   - Implement lazy loading for images
+   - Use CSS minification
+   - Implement critical CSS loading
+
+### ML Service Optimization
+
+1. **Model Optimization**:
+   - Use model quantization to reduce size
+   - Implement batching for multiple requests
+   - Use TensorRT for GPU acceleration
+   - Optimize preprocessing pipeline
+
+2. **Deployment Optimization**:
+   - Use TensorFlow Serving for model serving
+   - Implement model caching in memory
+   - Use GPU instances for inference
+   - Implement input/output pipelines

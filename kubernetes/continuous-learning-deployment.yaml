@@ -1,0 +1,176 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: continuous-learning
+  labels:
+    app: continuous-learning
+    component: rag
+  annotations:
+    description: "Continuous learning service for the enhanced RAG system"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: continuous-learning
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: continuous-learning
+        component: rag
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+    spec:
+      containers:
+        - name: continuous-learning
+          image: ${DOCKER_REGISTRY}/continuous-learning:${IMAGE_TAG}
+          imagePullPolicy: Always
+          resources:
+            requests:
+              memory: "2Gi"
+              cpu: "500m"
+            limits:
+              memory: "4Gi"
+              cpu: "2"
+          env:
+            - name: RAG_DATA_DIR
+              value: "/data"
+            - name: RAG_CONFIG_PATH
+              value: "/app/config/enhanced-rag-config.json"
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: openai-secret
+                  key: api-key
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          ports:
+            - containerPort: 8000
+              name: metrics
+          readinessProbe:
+            exec:
+              command:
+                - python3
+                - -c
+                - "import os; exit(0 if os.path.exists('/data/state/continuous_learning_state.json') else 1)"
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          livenessProbe:
+            exec:
+              command:
+                - python3
+                - -c
+                - "import os, time; exit(0 if time.time() - os.path.getmtime('/tmp/heartbeat') < 300 else 1)"
+            initialDelaySeconds: 60
+            periodSeconds: 60
+          volumeMounts:
+            - name: model-registry
+              mountPath: /data/model-registry
+            - name: models
+              mountPath: /data/models
+            - name: state
+              mountPath: /data/state
+            - name: temp
+              mountPath: /data/temp
+            - name: enhanced-rag-config
+              mountPath: /app/config/enhanced-rag-config.json
+              subPath: enhanced-rag-config.json
+      volumes:
+        - name: model-registry
+          persistentVolumeClaim:
+            claimName: model-registry-pvc
+        - name: models
+          persistentVolumeClaim:
+            claimName: models-pvc
+        - name: state
+          persistentVolumeClaim:
+            claimName: state-pvc
+        - name: temp
+          emptyDir: {}
+        - name: enhanced-rag-config
+          configMap:
+            name: enhanced-rag-config
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: model-registry-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: models-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: state-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: enhanced-rag-config
+data:
+  enhanced-rag-config.json: |
+    {
+      "model_registry_config": {
+        "registry_dir": "/data/model-registry",
+        "models_dir": "/data/models"
+      },
+      "learning_pipeline_config": {
+        "min_feedback_samples": 100,
+        "feedback_threshold": 0.7,
+        "fine_tuning_interval_days": 7,
+        "check_interval_minutes": 60,
+        "test_size": 0.2,
+        "ab_test_duration_days": 3,
+        "models_to_compare": 2,
+        "state_dir": "/data/state",
+        "temp_dir": "/data/temp"
+      },
+      "distributed_retrieval_config": {
+        "cache_enabled": true,
+        "cache_ttl_seconds": 3600,
+        "batch_size": 100,
+        "timeout_seconds": 10,
+        "max_concurrent_requests": 5
+      },
+      "hierarchical_retriever_config": {
+        "max_sub_queries": 3,
+        "min_query_length": 15,
+        "reranking_enabled": true,
+        "combine_strategy": "weighted",
+        "query_decomposition_model": "gpt-3.5-turbo"
+      },
+      "cross_modal_attention_config": {
+        "visual_feature_dim": 512,
+        "text_feature_dim": 768,
+        "joint_feature_dim": 1024,
+        "attention_heads": 8,
+        "vision_model_name": "clip",
+        "text_model_name": "bert"
+      }
+    }

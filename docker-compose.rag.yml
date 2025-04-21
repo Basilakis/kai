@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  continuous-learning:
+    build:
+      context: .
+      dockerfile: Dockerfile.continuous-learning
+    image: ${DOCKER_REGISTRY:-localhost:5000}/continuous-learning:${TAG:-latest}
+    environment:
+      - RAG_DATA_DIR=/data
+      - RAG_CONFIG_PATH=/app/config/enhanced-rag-config.json
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - rag-model-registry:/data/model-registry
+      - rag-models:/data/models
+      - rag-state:/data/state
+      - rag-temp:/data/temp
+
+volumes:
+  rag-model-registry:
+  rag-models:
+  rag-state:
+  rag-temp:

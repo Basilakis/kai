@@ -12,7 +12,10 @@
     "test:unit": "jest --testPathIgnorePatterns=/node_modules/,/integration/,/contract/ --testRegex=\"\\\\.(test|spec)\\\\.[tj]sx?$\"",
     "test:integration": "jest --testPathIgnorePatterns=/node_modules/ --testPathPattern=src/tests/integration",
     "test:contract": "jest --testPathIgnorePatterns=/node_modules/ --testPathPattern=src/tests/contract",
-    "lint": "eslint . --ext .js,.ts"
+    "lint": "eslint . --ext .js,.ts",
+    "check-api-endpoints": "ts-node src/scripts/check-unregistered-endpoints.ts",
+    "register-api-endpoints": "ts-node src/scripts/register-api-endpoints.ts",
+    "setup-api-access": "ts-node src/scripts/setup-api-access-control.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.374.0",

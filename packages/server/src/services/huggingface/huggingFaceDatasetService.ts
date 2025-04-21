@@ -1,13 +1,13 @@
 /**
  * Hugging Face Dataset Service
- * 
+ *
  * This service provides dataset management functionality using Hugging Face as the storage backend.
  * It follows a similar interface to the Supabase dataset service for compatibility.
  */
 
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../../utils/logger';
-import { huggingFaceClient } from './huggingFaceClient';
+import { huggingFaceClient, HuggingFaceClientCore } from './huggingFaceClient';
 import * as path from 'path';
 
 // Application model types (mirroring Supabase dataset service)
@@ -115,7 +115,7 @@ export class HuggingFaceDatasetService {
   private datasetCache: Map<string, Dataset> = new Map();
   private classCache: Map<string, Map<string, DatasetClass>> = new Map();
   // Use the unified huggingFaceClient
-  private client = huggingFaceClient as any;
+  private client: HuggingFaceClientCore = huggingFaceClient;
 
   private constructor() {
     logger.info('Hugging Face Dataset Service initialized');
@@ -207,8 +207,9 @@ export class HuggingFaceDatasetService {
 
       return dataset;
     } catch (err) {
-      logger.error(`Failed to create dataset: ${err}`);
-      throw new Error(`Failed to create dataset: ${err instanceof Error ? err.message : String(err)}`);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.error(`Failed to create dataset: ${errorMessage}`);
+      throw new Error(`Failed to create dataset: ${errorMessage}`);
     }
   }
 
@@ -227,7 +228,7 @@ export class HuggingFaceDatasetService {
       // Find dataset by looking up repositories on Hugging Face
       const datasets = await this.searchDatasets({ limit: 100 });
       const dataset = datasets.datasets.find(d => d.id === id);
-      
+
       if (dataset) {
         // Cache and return dataset
         this.datasetCache.set(id, dataset);
@@ -236,8 +237,9 @@ export class HuggingFaceDatasetService {
 
       return null;
     } catch (err) {
-      logger.error(`Failed to get dataset: ${err}`);
-      throw new Error(`Failed to get dataset: ${err instanceof Error ? err.message : String(err)}`);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.error(`Failed to get dataset: ${errorMessage}`);
+      throw new Error(`Failed to get dataset: ${errorMessage}`);
     }
   }
 
@@ -261,7 +263,8 @@ export class HuggingFaceDatasetService {
       const metadata = JSON.parse(metadataBuffer.toString('utf-8')) as HFDatasetMetadata;
       return metadata;
     } catch (err) {
-      logger.error(`Failed to get dataset metadata: ${err}`);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.error(`Failed to get dataset metadata: ${errorMessage}`);
       return null;
     }
   }
@@ -283,7 +286,8 @@ export class HuggingFaceDatasetService {
 
       return success;
     } catch (err) {
-      logger.error(`Failed to update dataset metadata: ${err}`);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.error(`Failed to update dataset metadata: ${errorMessage}`);
       return false;
     }
   }
@@ -322,7 +326,7 @@ export class HuggingFaceDatasetService {
           ...updateData.metadata
         };
       }
-      
+
       // Always update updatedAt
       dataset.updatedAt = new Date();
 
@@ -347,8 +351,9 @@ export class HuggingFaceDatasetService {
 
       return dataset;
     } catch (err) {
-      logger.error(`Failed to update dataset: ${err}`);
-      throw new Error(`Failed to update dataset: ${err instanceof Error ? err.message : String(err)}`);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.error(`Failed to update dataset: ${errorMessage}`);
+      throw new Error(`Failed to update dataset: ${errorMessage}`);
     }
   }
 
@@ -400,11 +405,12 @@ export class HuggingFaceDatasetService {
       // Update cache and return
       this.datasetCache.delete(id);
       this.classCache.delete(id);
-      
+
       return dataset;
     } catch (err) {
-      logger.error(`Failed to delete dataset: ${err}`);
-      throw new Error(`Failed to delete dataset: ${err instanceof Error ? err.message : String(err)}`);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.error(`Failed to delete dataset: ${errorMessage}`);
+      throw new Error(`Failed to delete dataset: ${errorMessage}`);
     }
   }
 
@@ -428,7 +434,7 @@ export class HuggingFaceDatasetService {
 
       // Get user to find their datasets
       const user = await this.client.getCurrentUser();
-      
+
       // Get datasets from Hugging Face
       const hfResults = await this.client.searchDatasets({
         query: query || '',
@@ -444,7 +450,7 @@ export class HuggingFaceDatasetService {
         try {
           // Check if this is one of our datasets by trying to get metadata
           const metadata = await this.getDatasetMetadata(hfDataset.id);
-          
+
           if (metadata && metadata.dataset && metadata.dataset.id) {
             // This is one of our datasets, use metadata
             const dataset: Dataset = {
@@ -486,36 +492,37 @@ export class HuggingFaceDatasetService {
       datasets.sort((a, b) => {
         const fieldA = a[sort.field as keyof Dataset];
         const fieldB = b[sort.field as keyof Dataset];
-        
+
         if (fieldA instanceof Date && fieldB instanceof Date) {
-          return sort.direction === 'desc' 
-            ? fieldB.getTime() - fieldA.getTime() 
+          return sort.direction === 'desc'
+            ? fieldB.getTime() - fieldA.getTime()
             : fieldA.getTime() - fieldB.getTime();
         }
-        
+
         if (typeof fieldA === 'string' && typeof fieldB === 'string') {
           return sort.direction === 'desc'
             ? fieldB.localeCompare(fieldA)
             : fieldA.localeCompare(fieldB);
         }
-        
+
         if (typeof fieldA === 'number' && typeof fieldB === 'number') {
           return sort.direction === 'desc' ? fieldB - fieldA : fieldA - fieldB;
         }
-        
+
         return 0;
       });
 
       // Apply pagination
       const paginatedDatasets = datasets.slice(skip, skip + limit);
-      
+
       return {
         datasets: paginatedDatasets,
         total: datasets.length
       };
     } catch (err) {
-      logger.error(`Failed to search datasets: ${err}`);
-      throw new Error(`Failed to search datasets: ${err instanceof Error ? err.message : String(err)}`);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.error(`Failed to search datasets: ${errorMessage}`);
+      throw new Error(`Failed to search datasets: ${errorMessage}`);
     }
   }
 
@@ -604,8 +611,9 @@ export class HuggingFaceDatasetService {
 
       return newClass;
     } catch (err) {
-      logger.error(`Failed to create dataset class: ${err}`);
-      throw new Error(`Failed to create dataset class: ${err instanceof Error ? err.message : String(err)}`);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.error(`Failed to create dataset class: ${errorMessage}`);
+      throw new Error(`Failed to create dataset class: ${errorMessage}`);
     }
   }
 
@@ -634,7 +642,7 @@ export class HuggingFaceDatasetService {
 
       // Transform metadata classes to class objects
       const classes: DatasetClass[] = [];
-      
+
       for (const [id, classData] of Object.entries(metadata.classes)) {
         const cls: DatasetClass = {
           id,
@@ -646,9 +654,9 @@ export class HuggingFaceDatasetService {
           createdAt: new Date(classData.createdAt),
           updatedAt: new Date(classData.updatedAt)
         };
-        
+
         classes.push(cls);
-        
+
         // Update cache
         if (!this.classCache.has(datasetId)) {
           this.classCache.set(datasetId, new Map());
@@ -658,8 +666,9 @@ export class HuggingFaceDatasetService {
 
       return classes;
     } catch (err) {
-      logger.error(`Failed to get dataset classes: ${err}`);
-      throw new Error(`Failed to get dataset classes: ${err instanceof Error ? err.message : String(err)}`);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.error(`Failed to get dataset classes: ${errorMessage}`);
+      throw new Error(`Failed to get dataset classes: ${errorMessage}`);
     }
   }
 
@@ -682,11 +691,11 @@ export class HuggingFaceDatasetService {
 
       // If not in cache, search through datasets
       const datasets = await this.searchDatasets({ limit: 100 });
-      
+
       for (const dataset of datasets.datasets) {
         const classes = await this.getDatasetClasses(dataset.id);
         const cls = classes.find(c => c.id === classId);
-        
+
         if (cls) {
           return this.deleteDatasetClassById(dataset.id, classId);
         }
@@ -694,8 +703,9 @@ export class HuggingFaceDatasetService {
 
       return null;
     } catch (err) {
-      logger.error(`Failed to delete dataset class: ${err}`);
-      throw new Error(`Failed to delete dataset class: ${err instanceof Error ? err.message : String(err)}`);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.error(`Failed to delete dataset class: ${errorMessage}`);
+      throw new Error(`Failed to delete dataset class: ${errorMessage}`);
     }
   }
 
@@ -763,8 +773,9 @@ export class HuggingFaceDatasetService {
 
       return cls;
     } catch (err) {
-      logger.error(`Failed to delete dataset class: ${err}`);
-      throw new Error(`Failed to delete dataset class: ${err instanceof Error ? err.message : String(err)}`);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.error(`Failed to delete dataset class: ${errorMessage}`);
+      throw new Error(`Failed to delete dataset class: ${errorMessage}`);
     }
   }
 
@@ -820,13 +831,13 @@ export class HuggingFaceDatasetService {
 
       // Use filename or extract from storage path
       const filename = imageData.filename || path.basename(imageData.storagePath);
-      
+
       // Target path in Hugging Face
       const hfImagePath = `${imageData.classId}/${filename}`;
 
       // Here, we would need to download the file from storagePath source
       // and upload it to Hugging Face, but for this example, we'll just create a record
-      
+
       // Create image object
       const newImage: DatasetImage = {
         id,
@@ -911,8 +922,9 @@ export class HuggingFaceDatasetService {
 
       return newImage;
     } catch (err) {
-      logger.error(`Failed to create dataset image: ${err}`);
-      throw new Error(`Failed to create dataset image: ${err instanceof Error ? err.message : String(err)}`);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.error(`Failed to create dataset image: ${errorMessage}`);
+      throw new Error(`Failed to create dataset image: ${errorMessage}`);
     }
   }
 
@@ -928,7 +940,7 @@ export class HuggingFaceDatasetService {
       // Find the class in cache
       let datasetId: string | undefined;
       let classObj: DatasetClass | undefined;
-      
+
       for (const [dsId, classMap] of this.classCache.entries()) {
         if (classMap.has(classId)) {
           datasetId = dsId;
@@ -940,11 +952,11 @@ export class HuggingFaceDatasetService {
       if (!datasetId || !classObj) {
         // Search through datasets
         const datasets = await this.searchDatasets({ limit: 100 });
-        
+
         for (const dataset of datasets.datasets) {
           const classes = await this.getDatasetClasses(dataset.id);
           const cls = classes.find(c => c.id === classId);
-          
+
           if (cls) {
             datasetId = dataset.id;
             classObj = cls;
@@ -974,15 +986,15 @@ export class HuggingFaceDatasetService {
       }
 
       // Filter to only JSON metadata files
-      const jsonFiles = files.filter((file: { path?: string; size?: number }) => 
-        typeof file.path === 'string' && 
-        file.path.endsWith('.json') && 
+      const jsonFiles = files.filter((file: { path?: string; size?: number }) =>
+        typeof file.path === 'string' &&
+        file.path.endsWith('.json') &&
         !file.path.endsWith(this.metadataFileName)
       );
 
       // Load image metadata
       const images: DatasetImage[] = [];
-      
+
       for (const file of jsonFiles.slice(offset, offset + limit)) {
         try {
           const metadataBuffer = await this.client.downloadFile(
@@ -992,7 +1004,7 @@ export class HuggingFaceDatasetService {
 
           if (metadataBuffer) {
             const imageMetadata = JSON.parse(metadataBuffer.toString('utf-8'));
-            
+
             // Create image object
             const image: DatasetImage = {
               id: imageMetadata.id,
@@ -1019,8 +1031,9 @@ export class HuggingFaceDatasetService {
 
       return images;
     } catch (err) {
-      logger.error(`Failed to get dataset class images: ${err}`);
-      throw new Error(`Failed to get dataset class images: ${err instanceof Error ? err.message : String(err)}`);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.error(`Failed to get dataset class images: ${errorMessage}`);
+      throw new Error(`Failed to get dataset class images: ${errorMessage}`);
     }
   }
 
@@ -1033,29 +1046,29 @@ export class HuggingFaceDatasetService {
     try {
       // We need to search through all classes to find the image
       // In a production implementation, we would have a more efficient lookup mechanism
-      
+
       // Search through datasets
       const datasets = await this.searchDatasets({ limit: 100 });
-      
+
       for (const dataset of datasets.datasets) {
         if (!dataset.hfRepositoryId) continue;
-        
+
         const classes = await this.getDatasetClasses(dataset.id);
-        
+
         for (const cls of classes) {
           const images = await this.getDatasetClassImages(cls.id);
           const image = images.find(img => img.id === imageId);
-          
+
           if (image) {
             // Found the image, now delete it
-            
+
             // Delete image file
             // Note: HF doesn't provide a direct API to delete files
             // We'd need to implement this differently in a real application
-            
+
             // Delete metadata file
             const jsonPath = `${cls.id}/${imageId}.json`;
-            
+
             // Here we could use a "dummy" file to mark it as deleted
             await this.client.uploadFile(
               dataset.hfRepositoryId,
@@ -1063,7 +1076,7 @@ export class HuggingFaceDatasetService {
               { deleted: true, deletedAt: new Date().toISOString() },
               `Mark image ${imageId} as deleted`
             );
-            
+
             // Update metadata counts
             const metadata = await this.getDatasetMetadata(dataset.hfRepositoryId);
             if (metadata) {
@@ -1075,14 +1088,14 @@ export class HuggingFaceDatasetService {
                   classData.updatedAt = new Date().toISOString();
                 }
               }
-              
+
               // Update dataset image count
               metadata.dataset.imageCount = Math.max(0, metadata.dataset.imageCount - 1);
               metadata.dataset.updatedAt = new Date().toISOString();
-              
+
               // Save metadata
               await this.updateDatasetMetadata(dataset.hfRepositoryId, metadata);
-              
+
               // Update caches
               if (this.classCache.has(dataset.id) && this.classCache.get(dataset.id)?.has(cls.id)) {
                 const cachedClass = this.classCache.get(dataset.id)?.get(cls.id);
@@ -1091,7 +1104,7 @@ export class HuggingFaceDatasetService {
                   cachedClass.updatedAt = new Date();
                 }
               }
-              
+
               if (this.datasetCache.has(dataset.id)) {
                 const cachedDataset = this.datasetCache.get(dataset.id);
                 if (cachedDataset) {
@@ -1100,16 +1113,17 @@ export class HuggingFaceDatasetService {
                 }
               }
             }
-            
+
             return image;
           }
         }
       }
-      
+
       return null;
     } catch (err) {
-      logger.error(`Failed to delete dataset image: ${err}`);
-      throw new Error(`Failed to delete dataset image: ${err instanceof Error ? err.message : String(err)}`);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.error(`Failed to delete dataset image: ${errorMessage}`);
+      throw new Error(`Failed to delete dataset image: ${errorMessage}`);
     }
   }
 
@@ -1129,7 +1143,7 @@ export class HuggingFaceDatasetService {
 
       // Search for dataset with matching repository ID
       const datasets = await this.searchDatasets({ limit: 100 });
-      
+
       for (const dataset of datasets.datasets) {
         if (dataset.hfRepositoryId) {
           // Check if file exists in this repository
@@ -1137,7 +1151,7 @@ export class HuggingFaceDatasetService {
             dataset.hfRepositoryId,
             storagePath
           );
-          
+
           if (fileExists) {
             // Build URL for the file
             // Note: Hugging Face doesn't provide signed URLs directly
@@ -1149,8 +1163,9 @@ export class HuggingFaceDatasetService {
 
       throw new Error(`File not found: ${storagePath}`);
     } catch (err) {
-      logger.error(`Failed to get signed image URL: ${err}`);
-      throw new Error(`Failed to get signed image URL: ${err instanceof Error ? err.message : String(err)}`);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.error(`Failed to get signed image URL: ${errorMessage}`);
+      throw new Error(`Failed to get signed image URL: ${errorMessage}`);
     }
   }
 
@@ -1193,23 +1208,23 @@ export class HuggingFaceDatasetService {
         await this.updateDataset(dataset.id, {
           status: 'processing'
         });
-        
+
         // Retrieve dataset structure
         logger.info(`Retrieving structure of dataset ${hfDatasetId}`);
         const structure = await this.client.getDatasetStructure(hfDatasetId);
-        
+
         if (!structure) {
           throw new Error(`Failed to retrieve structure for dataset ${hfDatasetId}`);
         }
-        
+
         // Process the dataset structure to identify classes
         // Class structure could be based on directories, metadata, or dataset splits
         const classes = await this.extractClassesFromStructure(structure, hfDatasetId);
-        
+
         // Create classes in our dataset
         const createdClasses = new Map<string, DatasetClass>();
         let importedImageCount = 0;
-        
+
         for (const cls of classes) {
           logger.info(`Creating class ${cls.name} in dataset ${dataset.id}`);
           const createdClass = await this.createDatasetClass({
@@ -1221,18 +1236,18 @@ export class HuggingFaceDatasetService {
               importedFrom: 'huggingface'
             }
           });
-          
+
           createdClasses.set(cls.sourceClass, createdClass);
         }
-        
+
         // Import images for each class
         for (const [sourceClass, createdClass] of createdClasses.entries()) {
           // Get images for this class from Hugging Face
           logger.info(`Importing images for class ${createdClass.name} from ${sourceClass}`);
-          
+
           const classImages = await this.getImagesForClass(hfDatasetId, sourceClass);
           logger.info(`Found ${classImages.length} images for class ${createdClass.name}`);
-          
+
           // Process each image
           for (const img of classImages) {
             try {
@@ -1241,12 +1256,12 @@ export class HuggingFaceDatasetService {
                 hfDatasetId,
                 img.path
               );
-              
+
               if (!imageBuffer) {
                 logger.warn(`Failed to download image: ${img.path}`);
                 continue;
               }
-              
+
               // Upload image to our dataset
               await this.createDatasetImage({
                 datasetId: dataset.id,
@@ -1260,9 +1275,9 @@ export class HuggingFaceDatasetService {
                   importedFrom: 'huggingface'
                 }
               });
-              
+
               importedImageCount++;
-              
+
               // Update progress periodically
               if (importedImageCount % 10 === 0) {
                 await this.updateDataset(dataset.id, {
@@ -1282,7 +1297,7 @@ export class HuggingFaceDatasetService {
             }
           }
         }
-        
+
         // Update dataset with final stats
         logger.info(`Import completed with ${createdClasses.size} classes and ${importedImageCount} images`);
         await this.updateDataset(dataset.id, {
@@ -1298,7 +1313,7 @@ export class HuggingFaceDatasetService {
         });
       } catch (importErr) {
         logger.error(`Error during import process: ${importErr}`);
-        
+
         // Mark dataset as error state
         await this.updateDataset(dataset.id, {
           status: 'error',
@@ -1307,14 +1322,15 @@ export class HuggingFaceDatasetService {
             importError: importErr instanceof Error ? importErr.message : String(importErr)
           }
         });
-        
+
         throw importErr;
       }
 
       return dataset;
     } catch (err) {
-      logger.error(`Failed to import dataset from Hugging Face: ${err}`);
-      throw new Error(`Failed to import dataset from Hugging Face: ${err instanceof Error ? err.message : String(err)}`);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.error(`Failed to import dataset from Hugging Face: ${errorMessage}`);
+      throw new Error(`Failed to import dataset from Hugging Face: ${errorMessage}`);
     }
   }
 
@@ -1325,14 +1341,18 @@ export class HuggingFaceDatasetService {
    * @returns Array of dataset classes
    */
   private async extractClassesFromStructure(
-    structure: any,
+    structure: {
+      splits?: Record<string, any>;
+      files?: Array<{ type?: string; path: string }>;
+      metadata?: { labels?: string[] | Record<string, any> };
+    },
     hfDatasetId: string
   ): Promise<HFDatasetClass[]> {
     try {
       logger.info(`Extracting classes from dataset structure for ${hfDatasetId}`);
-      
+
       const classes: HFDatasetClass[] = [];
-      
+
       // Check if structure has splits (common in HF datasets)
       if (structure.splits && Object.keys(structure.splits).length > 0) {
         // Use splits as classes (e.g., train, test, validation)
@@ -1343,11 +1363,11 @@ export class HuggingFaceDatasetService {
             sourceClass: splitName
           });
         }
-        
+
         logger.info(`Found ${classes.length} classes based on splits`);
         return classes;
       }
-      
+
       // Check if structure has a directory-based organization
       if (structure.files && Array.isArray(structure.files)) {
         // Look for directories that might represent classes
@@ -1355,7 +1375,7 @@ export class HuggingFaceDatasetService {
           .filter((file: any) => file.type === 'directory')
           .map((dir: any) => dir.path)
           .filter((path: string) => !path.startsWith('.') && path !== '__pycache__');
-        
+
         if (directories.length > 0) {
           // Use directories as classes
           for (const dirPath of directories) {
@@ -1366,19 +1386,19 @@ export class HuggingFaceDatasetService {
               sourceClass: dirPath
             });
           }
-          
+
           logger.info(`Found ${classes.length} classes based on directory structure`);
           return classes;
         }
       }
-      
+
       // Check if structure has metadata with labels
       if (structure.metadata && structure.metadata.labels) {
         // Use labels as classes
-        const labels = Array.isArray(structure.metadata.labels) 
-          ? structure.metadata.labels 
+        const labels = Array.isArray(structure.metadata.labels)
+          ? structure.metadata.labels
           : Object.keys(structure.metadata.labels);
-        
+
         for (const label of labels) {
           classes.push({
             name: label,
@@ -1386,11 +1406,11 @@ export class HuggingFaceDatasetService {
             sourceClass: label
           });
         }
-        
+
         logger.info(`Found ${classes.length} classes based on metadata labels`);
         return classes;
       }
-      
+
       // Fallback: If no class structure is detected, create a single default class
       if (classes.length === 0) {
         classes.push({
@@ -1398,10 +1418,10 @@ export class HuggingFaceDatasetService {
           description: 'Default class for imported Hugging Face dataset',
           sourceClass: 'default'
         });
-        
+
         logger.info('No class structure detected, using default class');
       }
-      
+
       return classes;
     } catch (err) {
       logger.error(`Error extracting classes from structure: ${err}`);
@@ -1426,14 +1446,14 @@ export class HuggingFaceDatasetService {
   ): Promise<HFDatasetImage[]> {
     try {
       logger.info(`Getting images for class ${sourceClass} in dataset ${hfDatasetId}`);
-      
+
       const images: HFDatasetImage[] = [];
-      
+
       // Different strategies based on sourceClass format
       if (sourceClass === 'default') {
         // For default class, get all images in the dataset
         const files = await this.client.listFiles(hfDatasetId, '');
-        
+
         if (files && Array.isArray(files)) {
           // Filter for image files
           const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff'];
@@ -1442,7 +1462,7 @@ export class HuggingFaceDatasetService {
             const extension = file.path.toLowerCase().substring(file.path.lastIndexOf('.'));
             return imageExtensions.includes(extension);
           });
-          
+
           for (const file of imageFiles) {
             images.push({
               path: file.path,
@@ -1453,7 +1473,7 @@ export class HuggingFaceDatasetService {
       } else if (sourceClass.includes('/')) {
         // If sourceClass is a directory path
         const files = await this.client.listFiles(hfDatasetId, sourceClass);
-        
+
         if (files && Array.isArray(files)) {
           // Filter for image files
           const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff'];
@@ -1462,7 +1482,7 @@ export class HuggingFaceDatasetService {
             const extension = file.path.toLowerCase().substring(file.path.lastIndexOf('.'));
             return imageExtensions.includes(extension);
           });
-          
+
           for (const file of imageFiles) {
             images.push({
               path: file.path,
@@ -1475,27 +1495,27 @@ export class HuggingFaceDatasetService {
         try {
           // For datasets with splits structure
           const splitData = await this.client.getDatasetSplit(hfDatasetId, sourceClass);
-          
+
           if (splitData && splitData.features && splitData.features.image) {
             // Dataset has image column in its features
             const sampleCount = Math.min(splitData.num_rows || 0, 100); // Limit to 100 samples
-            
+
             for (let i = 0; i < sampleCount; i++) {
               try {
                 const sample = await this.client.getDatasetRow(hfDatasetId, sourceClass, i);
-                
+
                 if (sample && sample.image) {
                   // Create a virtual path for this image
                   const path = `${sourceClass}/image_${i}.jpg`;
-                  
+
                   // Download the image to get its size
                   const imageBuffer = await this.client.downloadRow(
-                    hfDatasetId, 
-                    sourceClass, 
-                    i, 
+                    hfDatasetId,
+                    sourceClass,
+                    i,
                     'image'
                   );
-                  
+
                   images.push({
                     path,
                     size: imageBuffer ? imageBuffer.length : undefined
@@ -1512,11 +1532,12 @@ export class HuggingFaceDatasetService {
           // Try alternative approach for label-based datasets
         }
       }
-      
+
       logger.info(`Found ${images.length} images for class ${sourceClass}`);
       return images;
     } catch (err) {
-      logger.error(`Error getting images for class ${sourceClass}: ${err}`);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.error(`Error getting images for class ${sourceClass}: ${errorMessage}`);
       return [];
     }
   }
@@ -1529,7 +1550,7 @@ export class HuggingFaceDatasetService {
   private getImageFormat(filePath: string): string {
     try {
       const extension = filePath.toLowerCase().substring(filePath.lastIndexOf('.') + 1);
-      
+
       switch (extension) {
         case 'jpg':
         case 'jpeg':
@@ -1549,7 +1570,8 @@ export class HuggingFaceDatasetService {
           return extension || 'unknown';
       }
     } catch (err) {
-      logger.warn(`Could not determine image format for ${filePath}: ${err}`);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.warn(`Could not determine image format for ${filePath}: ${errorMessage}`);
       return 'unknown';
     }
   }

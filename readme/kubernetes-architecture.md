@@ -1,42 +1,34 @@
-# Kubernetes Architecture for KAI ML Platform
+# Kubernetes Architecture and Implementation Guide
 
-This document provides detailed information about the Kubernetes architecture used for deploying the KAI ML Platform. It covers the structure, components, workflows, and operational considerations for running the platform on Kubernetes.
+This comprehensive document details the Kubernetes architecture, implementation, and operational aspects of the KAI ML Platform. It covers the system design, component architecture, deployment processes, administration dashboard, and operational considerations.
+
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Core Architecture Components](#core-architecture-components)
+3. [Namespace and Organization](#namespace-and-organization)
+4. [Node Pools and Resource Management](#node-pools-and-resource-management)
+5. [Workflow Orchestration](#workflow-orchestration)
+6. [TypeScript Services Implementation](#typescript-services-implementation)
+7. [Deployment Architecture](#deployment-architecture)
+8. [GitOps Integration](#gitops-integration)
+9. [Kubernetes Deployment Dashboard](#kubernetes-deployment-dashboard)
+10. [Security](#security)
+11. [Performance Tuning](#performance-tuning)
+12. [Scaling Strategies](#scaling-strategies)
+13. [High Availability and Disaster Recovery](#high-availability-and-disaster-recovery)
+14. [Monitoring and Observability](#monitoring-and-observability)
+15. [Troubleshooting](#troubleshooting)
+16. [API Reference](#api-reference)
+17. [Conclusion](#conclusion)
 
 ## Overview
 
-The KAI ML Platform uses a dedicated Kubernetes architecture optimized for machine learning workloads, with specialized components for orchestration, processing, and resource management. The deployment is managed through a structured script that applies configurations in the correct order and handles environment-specific settings.
+The KAI ML Platform uses a dedicated Kubernetes architecture optimized for machine learning workloads, with specialized components for orchestration, processing, and resource management. The deployment is managed through a structured approach using Helm charts and Flux GitOps, which applies configurations in the correct order and handles environment-specific settings.
 
-## Namespace and Organization
+This implementation fulfills key requirements for a scalable, resilient, and cost-effective architecture for ML processing pipelines. The system intelligently adapts to workload characteristics, resource availability, and user requirements, ensuring optimal performance while maintaining efficiency.
 
-All KAI components are deployed within a dedicated `kai-ml` namespace to isolate resources and permissions. The namespace includes:
-
-- **Resource Quotas**: Limiting total CPU, memory, GPU, and storage resources
-- **Default Limits**: Setting default resource constraints for containers
-- **Labels**: Identifying components as part of the KAI ML platform
-
-```yaml
-# Resource quotas for the kai-ml namespace
-apiVersion: v1
-kind: ResourceQuota
-metadata:
-  name: kai-ml-quota
-  namespace: kai-ml
-spec:
-  hard:
-    # Pod limits
-    pods: "100"
-    # CPU limits
-    requests.cpu: "100"
-    limits.cpu: "200"
-    # Memory limits
-    requests.memory: 200Gi
-    limits.memory: 400Gi
-    # GPU limits
-    requests.nvidia.com/gpu: "16"
-    limits.nvidia.com/gpu: "16"
-```
-
-## Component Architecture
+## Core Architecture Components
 
 The KAI ML Platform architecture in Kubernetes consists of these major components:
 
@@ -97,7 +89,19 @@ Deployment manifests:
 - `kubernetes/distributed-processing/pdb.yaml`: Pod Disruption Budget
 - `kubernetes/distributed-processing/secret.yaml`: Processing secrets
 
-### 3. Mobile Optimization
+### 3. ML Services (GPU)
+
+Specialized GPU-accelerated services for ML model training and inference:
+
+- Domain-specific network services
+- Multimodal pattern recognition
+- Real-time inference endpoints
+
+Deployment manifests:
+- `kubernetes/ml-services/domain-specific-networks-deployment.yaml`: Domain-specific ML network services
+- `kubernetes/ml-services/multimodal-pattern-recognition-deployment.yaml`: Pattern recognition services
+
+### 4. Mobile Optimization
 
 Specialized services for optimizing ML models for mobile deployment:
 
@@ -110,7 +114,7 @@ Deployment manifests:
 - `kubernetes/mobile-optimization/hpa.yaml`: Horizontal Pod Autoscaler
 - `kubernetes/mobile-optimization/pdb.yaml`: Pod Disruption Budget
 
-### 4. WASM Compiler
+### 5. WASM Compiler
 
 WebAssembly compilation service for client-side ML models:
 
@@ -123,7 +127,7 @@ Deployment manifests:
 - `kubernetes/wasm-compiler/hpa.yaml`: Horizontal Pod Autoscaler
 - `kubernetes/wasm-compiler/pdb.yaml`: Pod Disruption Budget
 
-### 5. Workflows
+### 6. Workflow Templates
 
 Argo Workflow templates for standard ML pipelines:
 
@@ -134,6 +138,38 @@ Argo Workflow templates for standard ML pipelines:
 
 Deployment manifests:
 - `kubernetes/workflows/3d-reconstruction-template.yaml`: 3D reconstruction workflow
+- `kubernetes/workflows/domain-specific-networks-template.yaml`: Training workflow for domain-specific networks
+- `kubernetes/workflows/multimodal-pattern-recognition-template.yaml`: Processing workflow for pattern recognition
+
+## Namespace and Organization
+
+All KAI components are deployed within a dedicated `kai-ml` namespace to isolate resources and permissions. The namespace includes:
+
+- **Resource Quotas**: Limiting total CPU, memory, GPU, and storage resources
+- **Default Limits**: Setting default resource constraints for containers
+- **Labels**: Identifying components as part of the KAI ML platform
+
+```yaml
+# Resource quotas for the kai-ml namespace
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: kai-ml-quota
+  namespace: kai-ml
+spec:
+  hard:
+    # Pod limits
+    pods: "100"
+    # CPU limits
+    requests.cpu: "100"
+    limits.cpu: "200"
+    # Memory limits
+    requests.memory: 200Gi
+    limits.memory: 400Gi
+    # GPU limits
+    requests.nvidia.com/gpu: "16"
+    limits.nvidia.com/gpu: "16"
+```
 
 ## Node Pools and Resource Management
 
@@ -211,35 +247,47 @@ globalDefault: false
 description: "This priority class is used for interactive user requests that require low latency."
 ```
 
-## Monitoring and Observability
+### Key Requirement Mappings
 
-The platform includes a comprehensive monitoring stack:
+#### Intelligent Resource Allocation
+- **Requirement**: ML-aware pod placement and dynamic resource requests
+- **Implementation**:
+  - ResourceManager service for intelligent allocation
+  - Node affinity rules in workflow templates
+  - GPU memory optimization with custom scheduling
+  - Specialized node pools for different ML tasks
 
-### Prometheus and Grafana
+#### Smart Job Prioritization
+- **Requirement**: Priority classes and fair-sharing for multi-tenant workloads
+- **Implementation**:
+  - Priority classes defined in infrastructure
+  - Subscription tier-based priority assignment
+  - Preemptive scheduling for interactive requests
+  - Queue-based throttling in Coordinator Service
 
-- **Prometheus**: Collects metrics from all components
-- **Grafana**: Provides dashboards for visualizing metrics
-- **Custom Dashboards**: ML-specific dashboards for processing metrics
+#### Cost Optimization Strategies
+- **Requirement**: Spot instances, multi-cloud, predictive scaling
+- **Implementation**:
+  - Node pool configurations for preemptible instances
+  - Resource allocation based on workload characteristics
+  - Dynamic scaling based on queue depth
+  - Workload consolidation mechanisms
 
-Prometheus is configured to auto-discover and scrape metrics from pods with the appropriate annotations:
+## Workflow Orchestration
 
-```yaml
-prometheus.io/scrape: "true"
-prometheus.io/port: "8080"
-prometheus.io/path: "/metrics"
-```
+### Advanced Workflow Orchestration
+- **Requirement**: Replace sequential job creation with declarative workflow definitions
+- **Implementation**: 
+  - Argo Workflows integration in Coordinator Service
+  - Conditional paths based on QualityManager assessments
+  - Parallel processing steps in workflow templates
+  - DAG-based workflow definitions
 
-### Jaeger Distributed Tracing
-
-- Traces requests across components
-- Measures processing time for each stage
-- Helps identify bottlenecks in ML pipelines
-
-## Argo Workflows Integration
+### Argo Workflows Integration
 
 Argo Workflows is used for orchestrating complex ML pipelines:
 
-### Workflow Example: 3D Reconstruction
+#### Workflow Example: 3D Reconstruction
 
 The 3D reconstruction workflow demonstrates how Argo Workflows manages complex ML pipelines:
 
@@ -281,7 +329,72 @@ The 3D reconstruction workflow demonstrates how Argo Workflows manages complex M
                              └───────────────┘
 ```
 
-## Deployment and Operation
+### Progressive Enhancement Architecture
+
+- **Implementation**: QualityManager for determining appropriate quality levels
+- **Quality Tiers**: 
+  - Low: Basic processing, minimal resources
+  - Medium: Standard quality, balanced resources
+  - High: Premium quality, intensive resources
+- **Graceful Degradation**: Automatic quality reduction under resource constraints
+
+### Distributed Processing Framework
+
+- **Implementation**: TaskQueueManager within Coordinator Service
+- **Workflow Management**: Argo Workflows for complex orchestration
+- **Task Prioritization**: Priority classes and subscription tier-based allocation
+- **Error Recovery**: Monitoring and automatic retries
+
+### Resilience and Fault Tolerance
+- **Requirement**: Automatic retry, checkpointing, and circuit breakers
+- **Implementation**:
+  - Retry mechanisms in workflow templates
+  - Redis-based checkpoint/resume capability
+  - Circuit breakers for external dependencies
+  - Persistent storage for intermediate results
+
+## TypeScript Services Implementation
+
+### 1. CoordinatorService (`packages/coordinator/src/services/coordinator.service.ts`)
+- Handles creation and management of workflow instances
+- Interfaces with Kubernetes API to create Argo Workflows
+- Implements caching, monitoring, and resource management integration
+
+### 2. QualityManager (`packages/coordinator/src/services/quality-manager.service.ts`)
+- Evaluates appropriate quality level for processing based on:
+  - Input characteristics (size, complexity)
+  - Available resources in the cluster
+  - User's subscription tier
+  - Historical processing performance
+
+### 3. ResourceManager (`packages/coordinator/src/services/resource-manager.service.ts`)
+- Allocates appropriate resources (CPU, memory, GPU) based on:
+  - Quality level determined by QualityManager
+  - Priority of the request
+  - Current cluster resource availability
+  - Specialized node requirements
+
+### 4. CacheManager (`packages/coordinator/src/services/cache-manager.service.ts`)
+- Implements Redis-based caching of workflow results
+- Provides content-addressable storage via hash-based keys
+- Supports invalidation by type and TTL-based expiration
+- Implements efficient batch operations for large-scale invalidation
+
+### 5. MonitoringService (`packages/coordinator/src/services/monitoring.service.ts`)
+- Records metrics about workflow creation, completion, and errors
+- Tracks quality levels, resource allocation, and cache hit rates
+- Integrates with Prometheus for metrics collection
+- Provides detailed performance analysis for workflows
+
+### Smart Caching Infrastructure
+- **Requirement**: Intermediate result caching, content-addressable storage
+- **Implementation**:
+  - CacheManager service for result caching
+  - Redis-based caching layer
+  - Content-addressable storage via hash-based keys
+  - Tiered caching strategy
+
+## Deployment Architecture
 
 ### Helm-Based Deployment Architecture
 
@@ -459,9 +572,11 @@ This integration provides:
 - **Health Monitoring**: Automatic verification of deployment success
 - **Reduced Drift**: Configuration is version-controlled and applied consistently
 
+## GitOps Integration
+
 ### Flux GitOps Architecture
 
-The KAI Platform now implements a GitOps approach using Flux CD, providing a declarative and automated way to manage Kubernetes resources.
+The KAI Platform implements a GitOps approach using Flux CD, providing a declarative and automated way to manage Kubernetes resources.
 
 #### Flux Controllers and Architecture
 
@@ -657,127 +772,113 @@ Flux continuously reconciles the desired state (from Git) with the actual state 
 
 This self-healing capability ensures that the cluster always reflects the desired configuration, even if manual changes are made or if resources are accidentally deleted.
 
-### Operational Considerations
+## Kubernetes Deployment Dashboard
 
-#### Scaling Strategies
+### Overview
 
-The KAI Platform implements a sophisticated multi-layer scaling architecture to efficiently manage resources:
+The Kubernetes Deployment Dashboard is an admin panel feature that provides real-time visibility into the Kubernetes cluster, deployments, pods, and related infrastructure. It enables administrators to monitor the health of the system, troubleshoot issues, and manage deployments efficiently.
 
-1. **Horizontal Pod Autoscaling (HPA)**
+### Features
 
-   The platform uses HPA to automatically adjust replica counts for stateless components based on observed metrics:
+#### Cluster Overview
 
-   ```yaml
-   apiVersion: autoscaling/v2
-   kind: HorizontalPodAutoscaler
-   metadata:
-     name: coordinator-service
-   spec:
-     scaleTargetRef:
-       apiVersion: apps/v1
-       kind: Deployment
-       name: coordinator-service
-     minReplicas: 3
-     maxReplicas: 10
-     metrics:
-     - type: Resource
-       resource:
-         name: cpu
-         target:
-           type: Utilization
-           averageUtilization: 80
-   ```
+- **Cluster Statistics**: Real-time metrics showing total nodes, pods, deployments, and services
+- **Health Status**: Visual indicators for cluster health (healthy, degraded, unhealthy)
+- **Resource Utilization**: CPU, memory, and storage usage across the cluster
 
-   **Platform Communication with HPA:**
-   
-   Our system interacts with the HPA controller through a metrics pipeline:
-   
-   - **Metrics Exposition**: All components expose metrics via Prometheus annotations:
-     ```yaml
-     prometheus.io/scrape: "true"
-     prometheus.io/port: "8081"
-     prometheus.io/path: "/metrics"
-     ```
-   - **Collection Flow**:
-     1. `metrics-server` collects CPU/memory metrics from kubelet on each node
-     2. Prometheus scrapes detailed custom metrics from component endpoints
-     3. Prometheus Adapter converts Prometheus metrics to the custom metrics API format
-     4. HPA controller queries these APIs every 15 seconds to make scaling decisions
-   
-   - **Coordinator Service Role**: The Coordinator actively participates in the scaling architecture by:
-     - Exposing workload metrics (queue depths, processing times) via its `/metrics` endpoint
-     - Tracking processing load across different quality tiers
-     - Adjusting its internal task concurrency limits based on observed cluster capacity
-     - Implementing back-pressure mechanisms when resources are constrained
+#### Pod Management
 
-2. **Workflow-level Concurrency Management**
+- **Pod List**: Comprehensive list of all pods with filtering by namespace
+- **Pod Details**: Detailed information about each pod including:
+  - Status and phase
+  - Container details (image, ready status, restart count)
+  - Conditions and events
+  - Resource usage
+  - Age and lifetime
+- **Pod Logs**: Real-time access to container logs with container selection
+- **Pod Actions**: Ability to restart or terminate problematic pods
 
-   The Coordinator Service implements sophisticated task queue management with:
-   
-   - Priority-based queueing with weighted fair scheduling
-   - Dynamic concurrency limits based on resource availability
-   - Task classification (interactive, batch, maintenance) with appropriate scheduling policies
-   - Resource reservation for high-priority workflows
+#### CI/CD Pipeline Monitoring
 
-3. **Cluster Autoscaling**
+- **Pipeline Status**: Overview of recent CI/CD pipeline runs
+- **Stage Details**: Breakdown of pipeline stages with status and duration
+- **Error Analysis**: Detailed error information for failed pipelines
+- **Troubleshooting**: Intelligent suggestions for resolving pipeline issues
 
-   Node pools automatically scale based on pending pods, which happens when:
-   
-   - HPAs increase replica counts, creating new pods
-   - Argo workflows spawn pods that can't be scheduled on existing nodes
-   - Quality tier requirements demand specialized resources
-   
-   Each node pool (CPU-optimized, GPU-optimized, etc.) scales independently based on the specific workload needs.
+#### Flux GitOps Deployments
 
-4. **Quality Tier Scaling**
+- **Deployment List**: Overview of all Flux-managed deployments
+- **Reconciliation Status**: Current state of GitOps reconciliation
+- **Error Detection**: Identification of failed deployments with detailed error information
+- **Troubleshooting**: Context-aware suggestions for resolving deployment issues
 
-   The ResourceManager component dynamically adjusts resource requests for workflows based on:
-   
-   - Subscription tier limitations (enforcing fair resource allocation)
-   - Current cluster utilization (applying backpressure when needed)
-   - Quality level requirements (allocating appropriate GPU resources)
-   
-   This ensures optimal resource distribution during high-load periods while maintaining quality of service guarantees.
-   
-**Results and Benefits:**
+#### Kubernetes Events
 
-This multi-layered scaling approach provides:
+- **Event Monitoring**: Comprehensive list of cluster events with filtering
+- **Event Details**: Information about event source, reason, and impact
+- **Event Categorization**: Visual indicators for different event types (normal, warning, error)
 
-- **Cost Efficiency**: Scaling components down during low-traffic periods
-- **Responsive Scaling**: Proactively adding replicas before performance degrades
-- **Reliability**: Automatic recovery from failures through replica recreation
-- **Resource Optimization**: Efficient allocation based on actual usage patterns
-- **Quality of Service**: Maintaining performance guarantees for different subscription tiers
+### Architecture
 
-The system's scaling behavior can be monitored through dedicated Grafana dashboards that display:
-- Current/target replica counts
-- CPU/memory utilization across replicas
-- Scaling events timeline
-- Queue depths by priority level
+The Kubernetes Deployment Dashboard consists of the following components:
 
-#### High Availability
+#### Frontend Components
 
-1. **Pod Disruption Budgets**: Ensure minimum availability during updates
-   ```yaml
-   apiVersion: policy/v1
-   kind: PodDisruptionBudget
-   metadata:
-     name: coordinator-pdb
-   spec:
-     minAvailable: 2
-     selector:
-       matchLabels:
-         app: coordinator-service
-   ```
+- **Dashboard Page**: Main entry point at `/deployment` in the admin panel
+- **Overview Cards**: Display of key metrics and health indicators
+- **Pod Management**: Components for listing, viewing, and managing pods
+- **Pipeline Monitoring**: Components for tracking CI/CD pipelines
+- **Flux Deployments**: Components for monitoring GitOps deployments
+- **Event Viewer**: Components for viewing and filtering Kubernetes events
 
-2. **Anti-Affinity Rules**: Distribute pods across nodes
-3. **Multi-Zone Deployment**: Spread workloads across availability zones
+#### Backend Services
 
-#### Disaster Recovery
+- **Kubernetes Service**: Core service for interacting with the Kubernetes API
+- **API Routes**: Secure endpoints for exposing Kubernetes data to the frontend
+- **Authentication**: Integration with the platform's authentication system
+- **Logging**: Comprehensive logging of all Kubernetes-related operations
 
-1. **Regular Backups**: PVC snapshots, database backups
-2. **Stateless Design**: Most components can be recreated from configuration
-3. **GitOps Approach**: Infrastructure-as-Code for quick recovery
+### Usage
+
+#### Accessing the Dashboard
+
+1. Log in to the admin panel with administrator credentials
+2. Navigate to the "Deployment" section in the sidebar
+
+#### Monitoring Cluster Health
+
+1. View the Cluster Overview section for high-level health metrics
+2. Check the health status indicator for the overall cluster state
+3. Review any warning or error indicators
+
+#### Managing Pods
+
+1. Navigate to the Pods section
+2. Use the namespace filter to focus on specific namespaces
+3. Click on a pod to view detailed information
+4. Select the Logs tab to view container logs
+5. Use the Events tab to see pod-specific events
+6. For problematic pods, use the available actions to restart or terminate
+
+#### Monitoring CI/CD Pipelines
+
+1. Navigate to the CI/CD Pipelines section
+2. Review the status of recent pipeline runs
+3. Click on a pipeline to view detailed stage information
+4. For failed pipelines, review the error information and troubleshooting suggestions
+
+#### Tracking Flux Deployments
+
+1. Navigate to the Flux Deployments section
+2. Review the status of GitOps deployments
+3. Click on a deployment to view detailed information
+4. For failed deployments, review the error information and troubleshooting suggestions
+
+#### Viewing Kubernetes Events
+
+1. Navigate to the Cluster Events section
+2. Use the filters to focus on specific event types or namespaces
+3. Review event details to understand system behavior
 
 ## Security
 
@@ -803,6 +904,15 @@ rules:
 2. **Read-only Root Filesystem**: Where applicable
 3. **Pod Security Standards**: Enforced at namespace level
 
+### Dashboard Security
+
+The Kubernetes Deployment Dashboard implements several security measures:
+
+- **Role-Based Access Control**: Only administrators can access the dashboard
+- **Network Restrictions**: API endpoints are only accessible from internal networks
+- **Audit Logging**: All actions are logged for security and compliance purposes
+- **Limited Permissions**: The dashboard uses a service account with limited permissions
+
 ## Performance Tuning
 
 ### GPU Acceleration
@@ -817,13 +927,187 @@ rules:
 2. **Memory Limits**: Preventing OOM situations
 3. **Pod Quality of Service**: Based on resource requests and limits
 
+### Enhanced Observability
+
+- **Requirement**: Custom metrics, distributed tracing, ML-specific logging
+- **Implementation**:
+  - Prometheus integration for metrics
+  - Jaeger for distributed tracing
+  - MonitoringService for ML-specific metrics
+  - Grafana dashboards for visualization
+
+## Scaling Strategies
+
+The KAI Platform implements a sophisticated multi-layer scaling architecture to efficiently manage resources:
+
+### Horizontal Pod Autoscaling (HPA)
+
+The platform uses HPA to automatically adjust replica counts for stateless components based on observed metrics:
+
+```yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: coordinator-service
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: coordinator-service
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 80
+```
+
+#### Platform Communication with HPA:
+
+Our system interacts with the HPA controller through a metrics pipeline:
+
+- **Metrics Exposition**: All components expose metrics via Prometheus annotations:
+  ```yaml
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8081"
+  prometheus.io/path: "/metrics"
+  ```
+- **Collection Flow**:
+  1. `metrics-server` collects CPU/memory metrics from kubelet on each node
+  2. Prometheus scrapes detailed custom metrics from component endpoints
+  3. Prometheus Adapter converts Prometheus metrics to the custom metrics API format
+  4. HPA controller queries these APIs every 15 seconds to make scaling decisions
+
+- **Coordinator Service Role**: The Coordinator actively participates in the scaling architecture by:
+  - Exposing workload metrics (queue depths, processing times) via its `/metrics` endpoint
+  - Tracking processing load across different quality tiers
+  - Adjusting its internal task concurrency limits based on observed cluster capacity
+  - Implementing back-pressure mechanisms when resources are constrained
+
+### Workflow-level Concurrency Management
+
+The Coordinator Service implements sophisticated task queue management with:
+
+- Priority-based queueing with weighted fair scheduling
+- Dynamic concurrency limits based on resource availability
+- Task classification (interactive, batch, maintenance) with appropriate scheduling policies
+- Resource reservation for high-priority workflows
+
+### Cluster Autoscaling
+
+Node pools automatically scale based on pending pods, which happens when:
+
+- HPAs increase replica counts, creating new pods
+- Argo workflows spawn pods that can't be scheduled on existing nodes
+- Quality tier requirements demand specialized resources
+
+Each node pool (CPU-optimized, GPU-optimized, etc.) scales independently based on the specific workload needs.
+
+### Quality Tier Scaling
+
+The ResourceManager component dynamically adjusts resource requests for workflows based on:
+
+- Subscription tier limitations (enforcing fair resource allocation)
+- Current cluster utilization (applying backpressure when needed)
+- Quality level requirements (allocating appropriate GPU resources)
+
+This ensures optimal resource distribution during high-load periods while maintaining quality of service guarantees.
+
+**Results and Benefits:**
+
+This multi-layered scaling approach provides:
+
+- **Cost Efficiency**: Scaling components down during low-traffic periods
+- **Responsive Scaling**: Proactively adding replicas before performance degrades
+- **Reliability**: Automatic recovery from failures through replica recreation
+- **Resource Optimization**: Efficient allocation based on actual usage patterns
+- **Quality of Service**: Maintaining performance guarantees for different subscription tiers
+
+The system's scaling behavior can be monitored through dedicated Grafana dashboards that display:
+- Current/target replica counts
+- CPU/memory utilization across replicas
+- Scaling events timeline
+- Queue depths by priority level
+
+## High Availability and Disaster Recovery
+
+### High Availability
+
+1. **Pod Disruption Budgets**: Ensure minimum availability during updates
+   ```yaml
+   apiVersion: policy/v1
+   kind: PodDisruptionBudget
+   metadata:
+     name: coordinator-pdb
+   spec:
+     minAvailable: 2
+     selector:
+       matchLabels:
+         app: coordinator-service
+   ```
+
+2. **Anti-Affinity Rules**: Distribute pods across nodes
+3. **Multi-Zone Deployment**: Spread workloads across availability zones
+
+### Disaster Recovery
+
+1. **Regular Backups**: PVC snapshots, database backups
+2. **Stateless Design**: Most components can be recreated from configuration
+3. **GitOps Approach**: Infrastructure-as-Code for quick recovery
+
+## Monitoring and Observability
+
+### Prometheus and Grafana
+
+- **Prometheus**: Collects metrics from all components
+- **Grafana**: Provides dashboards for visualizing metrics
+- **Custom Dashboards**: ML-specific dashboards for processing metrics
+
+Prometheus is configured to auto-discover and scrape metrics from pods with the appropriate annotations:
+
+```yaml
+prometheus.io/scrape: "true"
+prometheus.io/port: "8080"
+prometheus.io/path: "/metrics"
+```
+
+### Jaeger Distributed Tracing
+
+- Traces requests across components
+- Measures processing time for each stage
+- Helps identify bottlenecks in ML pipelines
+
 ## Troubleshooting
 
-### Common Issues
+### Common Issues and Solutions
 
-1. **Pod Scheduling Failures**: Check node selectors, taints, resource availability
-2. **Workflow Failures**: Examine Argo Workflow logs, check for resource constraints
-3. **Performance Issues**: Check for node resource saturation, check affinity rules
+#### Pod Stuck in Pending State
+
+- **Possible Causes**: Insufficient resources, volume mount issues, node selector constraints
+- **Resolution**: Check node resources, verify PVC status, review pod specifications
+
+#### Failed CI/CD Pipeline
+
+- **Possible Causes**: Test failures, build errors, deployment issues
+- **Resolution**: Review pipeline logs, check test results, verify deployment configurations
+
+#### Failed Flux Deployment
+
+- **Possible Causes**: Chart not found, invalid values, dependency issues
+- **Resolution**: Verify chart existence, check values.yaml, ensure dependencies are available
+
+#### Slow Query Performance
+
+- **Possible Causes**: Resource constraints, inefficient queries, high volume
+- **Resolution**: Scale up pods, optimize queries, review caching strategies
+
+#### Pod Crashes
+
+- **Possible Causes**: OOM errors, application bugs, configuration issues
+- **Resolution**: Check logs, increase memory limits, debug application code
 
 ### Debugging Commands
 
@@ -839,8 +1123,42 @@ kubectl top pods -n kai-ml
 kubectl top nodes
 ```
 
+### Dashboard Troubleshooting
+
+#### Pod Stuck in Pending State
+
+- **Possible Causes**: Insufficient resources, volume mount issues, node selector constraints
+- **Resolution**: Check node resources, verify PVC status, review pod specifications
+
+#### Failed CI/CD Pipeline
+
+- **Possible Causes**: Test failures, build errors, deployment issues
+- **Resolution**: Review pipeline logs, check test results, verify deployment configurations
+
+#### Failed Flux Deployment
+
+- **Possible Causes**: Chart not found, invalid values, dependency issues
+- **Resolution**: Verify chart existence, check values.yaml, ensure dependencies are available
+
+## API Reference
+
+The Kubernetes Deployment Dashboard uses the following API endpoints:
+
+- `GET /api/admin/kubernetes/stats`: Get cluster statistics
+- `GET /api/admin/kubernetes/pods`: Get pod details
+- `GET /api/admin/kubernetes/nodes`: Get node details
+- `GET /api/admin/kubernetes/deployments`: Get deployment details
+- `GET /api/admin/kubernetes/events`: Get Kubernetes events
+- `GET /api/admin/kubernetes/logs/:podName`: Get pod logs
+
+All endpoints require administrator authentication and are only accessible from internal networks.
+
 ## Conclusion
 
 The Kubernetes architecture for the KAI ML Platform provides a robust, scalable foundation for machine learning workloads. By leveraging specialized node pools, priority classes, and custom resource scheduling, the platform efficiently manages compute-intensive ML tasks while maintaining high availability and performance.
 
-For deployment instructions, refer to the [Deployment Guide](./deployment-guide.md) and [Deployment and Development Guide](./deployment-and-development.md).
+The combination of Helm-based deployment and Flux GitOps provides a powerful, declarative approach to managing the Kubernetes infrastructure, while the Kubernetes Deployment Dashboard offers comprehensive visibility and management capabilities for administrators.
+
+This implementation fulfills all the requirements specified in the task, providing a scalable, resilient, and cost-effective Kubernetes architecture for ML processing pipelines. The system intelligently adapts to workload characteristics, resource availability, and user requirements, ensuring optimal performance while maintaining efficiency.
+
+For specific deployment instructions, refer to the [Digital Ocean Kubernetes Setup](./digital-ocean-kubernetes-setup.md) and [Deployment Guide](./deployment-guide.md).

@@ -15,7 +15,9 @@ import {
   XIcon,
   PhotographIcon,
   DatabaseIcon,
-  ChartBarIcon
+  ChartBarIcon,
+  ServerIcon,
+  BellIcon
 } from '@heroicons/react/outline';
 
 interface SidebarProps {
@@ -42,7 +44,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, closeSidebar }) => {
     { name: 'Material Management', href: '/materials', icon: CubeIcon },
     { name: 'Models', href: '/models', icon: DatabaseIcon },
     { name: 'Training Monitor', href: '/training', icon: ChartBarIcon },
+    { name: 'Training Status', href: '/training-status', icon: ChartBarIcon },
     { name: 'Datasets', href: '/datasets', icon: DatabaseIcon },
+    { name: 'Deployment', href: '/deployment', icon: ServerIcon },
     { name: 'Notifications', href: '/notifications', icon: BellIcon },
     { name: 'Webhooks', href: '/webhooks', icon: GlobeAltIcon },
     { name: 'Reports', href: '/reports', icon: ChartBarIcon },

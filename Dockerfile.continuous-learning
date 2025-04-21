@@ -1,0 +1,27 @@
+FROM python:3.9-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libffi-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements
+COPY requirements-rag.txt .
+RUN pip install --no-cache-dir -r requirements-rag.txt
+
+# Copy application code
+COPY packages/ml /app/packages/ml
+COPY readme /app/readme
+
+# Create necessary directories
+RUN mkdir -p /data/model-registry /data/models /data/state /data/temp
+
+# Set environment variables
+ENV RAG_DATA_DIR=/data
+ENV PYTHONPATH=/app
+
+# Run the continuous learning service
+CMD ["python3", "packages/ml/python/continuous_learning_service.py"]

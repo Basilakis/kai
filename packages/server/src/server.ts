@@ -25,6 +25,8 @@ import supabaseClient from './services/supabase/supabaseClient';
 import { initializeStorage } from './services/storage/storageInitializer';
 import { logger } from './utils/logger';
 import healthCheckService from './services/monitoring/healthCheck.service';
+import DatabaseMigration from './utils/db-migration';
+import { initializeModelImprovementJobs } from './jobs/model-improvement.job';
 
 // Type declarations moved to types/global.d.ts
 
@@ -116,6 +118,7 @@ import authEnhancedRoutes from './routes/auth/index.routes';
 import subscriptionEnhancedRoutes from './routes/subscription/index.routes';
 import creditRoutes from './routes/credit/index.routes';
 import notificationRoutes from './routes/notification.routes';
+import analyticsEnhancedRoutes from './routes/analytics/index.routes';
 
 // Create Express app
 const app = express();
@@ -196,6 +199,7 @@ app.use('/api/auth', noCacheHeaders, authEnhancedRoutes); // Enhanced auth featu
 app.use('/api/subscriptions', subscriptionEnhancedRoutes); // Enhanced subscription features
 app.use('/api/credits', noCacheHeaders, creditRoutes); // Credit system features
 app.use('/api/notifications', noCacheHeaders, notificationRoutes); // Notification system
+app.use('/api/analytics', analyticsEnhancedRoutes); // Enhanced analytics features
 
 /**
  * @openapi
@@ -365,6 +369,25 @@ const startServer = async (): Promise<void> => {
     const dbService = getDatabaseService();
     await dbService.initialize();
     logger.info('Database service initialized successfully');
+
+    // Apply database migrations
+    try {
+      // First apply the execute_sql function migration
+      const executeSqlMigration = 'create_execute_sql_function.sql';
+      await DatabaseMigration.applyMigration(executeSqlMigration);
+
+      // Then apply all other pending migrations
+      const appliedMigrations = await DatabaseMigration.applyPendingMigrations();
+      if (appliedMigrations.length > 0) {
+        logger.info(`Applied ${appliedMigrations.length} database migrations:`, { migrations: appliedMigrations });
+      } else {
+        logger.info('No pending database migrations to apply');
+      }
+    } catch (migrationError) {
+      logger.error('Failed to apply database migrations:', migrationError);
+      // Don't throw here - we can still start the server even if migrations fail
+      // Some features may be degraded but system can still function
+    }
   } catch (error) {
     logger.error('Failed to initialize database service:', error);
     // Don't throw here - we can still start the server without DB
@@ -396,6 +419,10 @@ const startServer = async (): Promise<void> => {
   // Initialize agent session cleanup job
   scheduleSessionCleanup();
   logger.info('Agent session cleanup job scheduled');
+
+  // Initialize model improvement jobs
+  initializeModelImprovementJobs();
+  logger.info('Model improvement jobs initialized');
 
   return new Promise<void>((resolve) => {
     httpServer.listen(PORT, () => {
