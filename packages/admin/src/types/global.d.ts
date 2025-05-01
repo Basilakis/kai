@@ -114,4 +114,40 @@ declare namespace JSX {
   }
 }
 
+// React event types
+import React from 'react';
+
+// Global React event types
+declare global {
+  // Event types
+  type ChangeEvent<T = Element> = React.ChangeEvent<T>;
+  type KeyboardEvent<T = Element> = React.KeyboardEvent<T>;
+  type MouseEvent<T = Element> = React.MouseEvent<T>;
+  type FocusEvent<T = Element> = React.FocusEvent<T>;
+  type FormEvent<T = Element> = React.FormEvent<T>;
+  type DragEvent<T = Element> = React.DragEvent<T>;
+  type ClipboardEvent<T = Element> = React.ClipboardEvent<T>;
+  type TouchEvent<T = Element> = React.TouchEvent<T>;
+  type WheelEvent<T = Element> = React.WheelEvent<T>;
+  type AnimationEvent<T = Element> = React.AnimationEvent<T>;
+  type TransitionEvent<T = Element> = React.TransitionEvent<T>;
+  type PointerEvent<T = Element> = React.PointerEvent<T>;
+
+  // Event handler types
+  type EventHandler<E> = React.EventHandler<E>;
+  type ReactEventHandler<T = Element> = React.ReactEventHandler<T>;
+  type ChangeEventHandler<T = Element> = React.ChangeEventHandler<T>;
+  type KeyboardEventHandler<T = Element> = React.KeyboardEventHandler<T>;
+  type MouseEventHandler<T = Element> = React.MouseEventHandler<T>;
+  type FocusEventHandler<T = Element> = React.FocusEventHandler<T>;
+  type FormEventHandler<T = Element> = React.FormEventHandler<T>;
+  type DragEventHandler<T = Element> = React.DragEventHandler<T>;
+  type ClipboardEventHandler<T = Element> = React.ClipboardEventHandler<T>;
+  type TouchEventHandler<T = Element> = React.TouchEventHandler<T>;
+  type WheelEventHandler<T = Element> = React.WheelEventHandler<T>;
+  type AnimationEventHandler<T = Element> = React.AnimationEventHandler<T>;
+  type TransitionEventHandler<T = Element> = React.TransitionEventHandler<T>;
+  type PointerEventHandler<T = Element> = React.PointerEventHandler<T>;
+}
+
 // Add any other global declarations here

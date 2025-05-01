@@ -1,0 +1,192 @@
+name: Setup Kubernetes Infrastructure
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Environment to setup (production or staging)'
+        required: true
+        type: string
+      domain:
+        description: 'Domain name for the environment'
+        required: true
+        type: string
+    secrets:
+      admin_email:
+        required: true
+      mongodb_uri:
+        required: true
+      jwt_secret:
+        required: true
+      openai_api_key:
+        required: false
+      supabase_url:
+        required: true
+      supabase_key:
+        required: true
+      supabase_anon_key:
+        required: true
+      redis_password:
+        required: true
+      stripe_secret_key:
+        required: false
+      stripe_publishable_key:
+        required: false
+
+jobs:
+  setup-kubernetes:
+    name: Setup Kubernetes Infrastructure
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+      
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'v3.10.0'
+      
+      - name: Create environment files
+        run: |
+          # Create .env file for the environment
+          cat > .env.${{ inputs.environment }} << EOF
+          # OpenAI API
+          OPENAI_API_KEY=${{ secrets.openai_api_key }}
+          
+          # Database
+          MONGODB_URI=${{ secrets.mongodb_uri }}
+          
+          # Authentication
+          JWT_SECRET=${{ secrets.jwt_secret }}
+          
+          # Supabase
+          SUPABASE_URL=${{ secrets.supabase_url }}
+          SUPABASE_KEY=${{ secrets.supabase_key }}
+          
+          # Frontend URLs
+          GATSBY_API_URL=https://api.${{ inputs.domain }}
+          GATSBY_SUPABASE_URL=${{ secrets.supabase_url }}
+          GATSBY_SUPABASE_ANON_KEY=${{ secrets.supabase_anon_key }}
+          
+          # Stripe (if using payments)
+          STRIPE_SECRET_KEY=${{ secrets.stripe_secret_key }}
+          GATSBY_STRIPE_PUBLISHABLE_KEY=${{ secrets.stripe_publishable_key }}
+          EOF
+      
+      - name: Create Kubernetes namespace
+        run: |
+          kubectl create namespace kai-system --dry-run=client -o yaml | kubectl apply -f -
+      
+      - name: Create Kubernetes secrets
+        run: |
+          # Create main secrets
+          kubectl create secret generic kai-secrets \
+            --namespace kai-system \
+            --from-literal=mongodb-uri='${{ secrets.mongodb_uri }}' \
+            --from-literal=jwt-secret='${{ secrets.jwt_secret }}' \
+            --from-literal=openai-api-key='${{ secrets.openai_api_key }}' \
+            --from-literal=supabase-url='${{ secrets.supabase_url }}' \
+            --from-literal=supabase-key='${{ secrets.supabase_key }}' \
+            --from-literal=stripe-secret-key='${{ secrets.stripe_secret_key }}' \
+            --dry-run=client -o yaml | kubectl apply -f -
+          
+          # Create Redis password secret
+          kubectl create secret generic redis-password \
+            --namespace kai-system \
+            --from-literal=redis-password='${{ secrets.redis_password }}' \
+            --dry-run=client -o yaml | kubectl apply -f -
+      
+      - name: Check and Install cert-manager
+        run: |
+          # Check if cert-manager is already installed
+          if kubectl get namespace cert-manager &>/dev/null && kubectl get deployment -n cert-manager cert-manager &>/dev/null; then
+            echo "cert-manager is already installed, skipping installation"
+          else
+            echo "Installing cert-manager..."
+            # Add Jetstack Helm repo
+            helm repo add jetstack https://charts.jetstack.io
+            
+            # Install cert-manager
+            helm upgrade --install cert-manager jetstack/cert-manager \
+              --namespace cert-manager \
+              --create-namespace \
+              --version v1.11.0 \
+              --set installCRDs=true
+            
+            # Wait for cert-manager to be ready
+            kubectl -n cert-manager rollout status deployment/cert-manager
+            kubectl -n cert-manager rollout status deployment/cert-manager-webhook
+          fi
+          
+          # Check if ClusterIssuer exists
+          if kubectl get clusterissuer letsencrypt-prod &>/dev/null; then
+            echo "ClusterIssuer already exists, skipping creation"
+          else
+            echo "Creating ClusterIssuer for Let's Encrypt..."
+            # Create ClusterIssuer for Let's Encrypt
+            cat > cluster-issuer.yaml << EOF
+            apiVersion: cert-manager.io/v1
+            kind: ClusterIssuer
+            metadata:
+              name: letsencrypt-prod
+            spec:
+              acme:
+                server: https://acme-v02.api.letsencrypt.org/directory
+                email: ${{ secrets.admin_email }}
+                privateKeySecretRef:
+                  name: letsencrypt-prod
+                solvers:
+                - http01:
+                    ingress:
+                      class: nginx
+            EOF
+            
+            kubectl apply -f cluster-issuer.yaml
+          fi
+      
+      - name: Check and Install NGINX Ingress Controller
+        run: |
+          # Check if NGINX Ingress is already installed
+          if kubectl get deployment -n kai-system nginx-ingress-ingress-nginx-controller &>/dev/null; then
+            echo "NGINX Ingress Controller is already installed, skipping installation"
+          else
+            echo "Installing NGINX Ingress Controller..."
+            # Add NGINX Ingress Helm repo
+            helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+            
+            # Install NGINX Ingress
+            helm upgrade --install nginx-ingress ingress-nginx/ingress-nginx \
+              --namespace kai-system \
+              --set controller.publishService.enabled=true
+            
+            # Wait for NGINX Ingress to be ready
+            kubectl -n kai-system rollout status deployment/nginx-ingress-ingress-nginx-controller
+          fi
+      
+      - name: Check and Install Argo Workflows
+        run: |
+          # Check if Argo Workflows is already installed
+          if kubectl get namespace argo &>/dev/null && kubectl get deployment -n argo argo-server &>/dev/null; then
+            echo "Argo Workflows is already installed, skipping installation"
+          else
+            echo "Installing Argo Workflows..."
+            # Create namespace
+            kubectl create namespace argo --dry-run=client -o yaml | kubectl apply -f -
+            
+            # Install Argo Workflows
+            kubectl apply -n argo -f https://github.com/argoproj/argo-workflows/releases/download/v3.4.5/install.yaml
+            
+            # Wait for Argo to be ready
+            kubectl -n argo rollout status deployment/argo-server
+          fi
+          
+          # Check and update Argo configuration
+          echo "Configuring Argo to work with the kai-system namespace..."
+          kubectl patch configmap/workflow-controller-configmap \
+            -n argo \
+            --type merge \
+            -p '{"data":{"workflowNamespaces":"kai-system,argo"}}' \
+            --dry-run=client -o yaml | kubectl apply -f -

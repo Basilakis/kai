@@ -59,20 +59,20 @@ async function uploadZipDatasetWithEmbeddings(zipFile, options) {
     formData.append('name', options.name);
     formData.append('description', options.description);
     formData.append('generateEmbeddings', 'true'); // Enable embedding generation
-    
+
     const response = await fetch('/api/admin/datasets/upload/zip', {
       method: 'POST',
       body: formData,
     });
-    
+
     if (!response.ok) {
       throw new Error('Failed to upload dataset');
     }
-    
+
     const result = await response.json();
     console.log(`Successfully processed ${result.imageCount} images across ${result.classCount} classes`);
     console.log(`Generated ${result.embeddingsGenerated} vector embeddings`);
-    
+
     return result;
   } catch (error) {
     console.error('Error uploading ZIP dataset:', error);
@@ -161,11 +161,11 @@ async function importPremadeDataset(datasetId, options) {
         description: options.description
       }),
     });
-    
+
     if (!response.ok) {
       throw new Error('Failed to import dataset');
     }
-    
+
     const result = await response.json();
     return result;
   } catch (error) {
@@ -196,7 +196,7 @@ import { datasetManagementService } from '@kai/server/services/datasets/dataset-
 async function verifyImportedDataset(datasetId: string) {
   // Analyze dataset quality
   const qualityMetrics = await datasetManagementService.analyzeDatasetQuality(datasetId);
-  
+
   // If quality issues are detected, provide recommendations
   if (qualityMetrics.overallQualityScore < 70) {
     return {
@@ -205,7 +205,7 @@ async function verifyImportedDataset(datasetId: string) {
       metrics: qualityMetrics
     };
   }
-  
+
   return {
     needsImprovement: false,
     metrics: qualityMetrics
@@ -215,89 +215,233 @@ async function verifyImportedDataset(datasetId: string) {
 
 ## AI Models Integration
 
-The system supports importing and using pre-trained AI models from various sources.
+The KAI platform integrates a comprehensive suite of AI models for various tasks, from material recognition to 3D visualization. This section details the models used and their specific purposes.
 
 ![Model Integration](https://storage.googleapis.com/kai-docs-assets/model-integration-flow.png)
 
-### Supported Model Frameworks
+### AI Model Registry
 
-The system supports models from multiple frameworks:
+The platform includes a sophisticated model registry that manages model selection, performance tracking, and evaluation across different providers (OpenAI, Anthropic, HuggingFace, and local models). The system automatically selects the best model for each task based on performance metrics including accuracy, latency, and cost.
 
-| Framework | File Formats | Model Types |
-|-----------|--------------|-------------|
-| TensorFlow | .pb, .h5, .tflite, .savedmodel | Classification, detection, 3D reconstruction |
-| PyTorch | .pt, .pth | Classification, segmentation, text-to-3D |
-| ONNX | .onnx | Cross-platform models |
-| Custom | .bin, .model | Project-specific formats |
-| NeRF | .ngp, .nerf | Neural radiance fields |
+### Text and Language Models
 
-### 3D Visualization Models
+#### OpenAI Models
+- **GPT-4** (`gpt-4`)
+  * **Purpose**: Primary text generation model
+  * **Used for**: General text generation, complex reasoning, and high-quality responses
+  * **Default for**: Text generation tasks
 
-The system includes specialized models for 3D visualization:
+- **GPT-4 Turbo** (`gpt-4-turbo`)
+  * **Purpose**: Faster version of GPT-4
+  * **Used for**: Agent-based interactions requiring quick responses
+  * **Default for**: Chat completions in agent system
+
+- **GPT-4 Vision** (`gpt-4-vision`)
+  * **Purpose**: Multimodal model that can process both text and images
+  * **Used for**: Material recognition from images
+  * **Default for**: Material recognition tasks
+
+- **GPT-3.5 Turbo** (`gpt-3.5-turbo`)
+  * **Purpose**: Faster, more cost-effective model for simpler tasks
+  * **Used for**: Classification, summarization, and translation tasks
+  * **Default for**: Classification, summarization, and translation
+
+#### Anthropic Models
+- **Claude 2** (`claude-2`)
+  * **Purpose**: Alternative text generation model
+  * **Used for**: Text generation, classification, summarization, and translation
+  * **Default for**: Anthropic text tasks
+
+- **Claude 3 Opus** (`claude-3-opus-20240229`)
+  * **Purpose**: High-quality text generation with multimodal capabilities
+  * **Used for**: 3D designer agent
+
+#### Hugging Face Text Models
+- **Google/Flan-T5-XXL** (`google/flan-t5-xxl`)
+  * **Purpose**: Text generation alternative to GPT models
+  * **Used for**: Text generation when OpenAI is unavailable
+
+- **Facebook/BART-Large-MNLI** (`facebook/bart-large-mnli`)
+  * **Purpose**: Zero-shot text classification
+  * **Used for**: Classifying text without specific training
+
+- **Facebook/BART-Large-CNN** (`facebook/bart-large-cnn`)
+  * **Purpose**: Text summarization
+  * **Used for**: Creating concise summaries of longer text
+
+- **Facebook/MBART-Large-50-Many-to-Many-MMT** (`facebook/mbart-large-50-many-to-many-mmt`)
+  * **Purpose**: Multilingual translation
+  * **Used for**: Translating text between languages
+
+### Embedding Models
+
+- **Text Embedding Ada 002** (`text-embedding-ada-002`)
+  * **Purpose**: Generate text embeddings for vector search
+  * **Used for**: Creating searchable vector representations of text
+  * **Default for**: Embedding generation in OpenAI
+
+- **Text Embedding 3 Small** (`text-embedding-3-small`)
+  * **Purpose**: Newer, more efficient embedding model
+  * **Used for**: Default embedding model in agent system
+
+- **Sentence-Transformers/All-MiniLM-L6-v2** (`sentence-transformers/all-MiniLM-L6-v2`)
+  * **Purpose**: Generate text embeddings
+  * **Used for**: Creating vector representations for similarity search
+  * **Default for**: Hugging Face embedding tasks
+
+### Computer Vision Models
+
+#### Material Recognition
+- **Google/ViT-Base-Patch16-224** (`google/vit-base-patch16-224`)
+  * **Purpose**: Vision Transformer for image analysis
+  * **Used for**: Material recognition from images
+
+- **EfficientNet** (B0-B5 variants)
+  * **Purpose**: Image classification
+  * **Used for**: Material classification
+
+- **ResNet** (18, 34, 50, 101, 152 variants)
+  * **Purpose**: Image classification with residual connections
+  * **Used for**: Material classification
+
+- **MobileNet** (V2, V3Small, V3Large variants)
+  * **Purpose**: Lightweight image classification
+  * **Used for**: Mobile/edge device material classification
+
+#### Object Detection and Segmentation
+- **YOLO v8** (`yolov8`)
+  * **Purpose**: Object detection
+  * **Used for**: Detecting objects in images
+  * **Default for**: Local object detection
+
+- **Segment Anything Model (SAM)**
+  * **Purpose**: Image segmentation
+  * **Used for**: Segmenting images into regions
+
+- **MiDaS**
+  * **Purpose**: Depth estimation
+  * **Used for**: Estimating depth from single images
+
+- **CLIP**
+  * **Purpose**: Connecting text and images
+  * **Used for**: Cross-modal understanding and validation
+
+### 3D Reconstruction and Visualization Models
 
 #### NeRF-based Reconstruction
-- **NerfStudio**
-  * Format: Custom NeRF format
-  * Use: Room reconstruction from images
-  * Features: Lighting estimation, material properties
-  * Integration: Via Python API
+- **NeRF Studio**
+  * **Format**: Custom NeRF format
+  * **Purpose**: Neural Radiance Field implementation
+  * **Used for**: 3D reconstruction from images
+  * **Integration**: Via Python API
 
 - **Instant-NGP**
-  * Format: .ngp
-  * Use: Fast scene reconstruction
-  * Features: Real-time preview, optimization
-  * Integration: CUDA-accelerated backend
+  * **Format**: .ngp
+  * **Purpose**: Fast Neural Graphics Primitives
+  * **Used for**: Accelerated 3D reconstruction
+  * **Integration**: CUDA-accelerated backend
+
+- **COLMAP**
+  * **Purpose**: Structure-from-Motion
+  * **Used for**: Camera pose estimation and 3D reconstruction
 
 #### Text-to-3D Generation
 - **Shap-E**
-  * Format: PyTorch (.pth)
-  * Use: Base structure generation
-  * Features: Text-guided shape synthesis
-  * Integration: REST API
+  * **Format**: PyTorch (.pth)
+  * **Purpose**: Text-to-3D base structure generation
+  * **Used for**: Creating basic 3D shapes from text descriptions
+  * **Integration**: REST API
 
 - **GET3D**
-  * Format: PyTorch (.pth)
-  * Use: Detailed scene generation
-  * Features: Furniture placement, texturing
-  * Integration: Python API
+  * **Format**: PyTorch (.pth)
+  * **Purpose**: Text-to-3D detailed scene generation
+  * **Used for**: Creating detailed 3D scenes from text
+  * **Integration**: Python API
 
-- **Hunyuan3D-2**
-  * Format: Custom (.h3d)
-  * Use: Alternative generation
-  * Features: Style transfer, scene variation
-  * Integration: REST API
+- **Hunyuan3D**
+  * **Format**: Custom (.h3d)
+  * **Purpose**: Alternative text-to-3D model
+  * **Used for**: Creating 3D models from text descriptions
+  * **Integration**: REST API
 
-#### Scene Understanding
-- **YOLO v8**
-  * Format: PyTorch (.pt)
-  * Use: Object detection
-  * Features: Real-time detection, classification
-  * Integration: Python API
+### Material and Style Models
 
-- **MiDaS**
-  * Format: PyTorch (.pt)
-  * Use: Depth estimation
-  * Features: Single-image depth
-  * Integration: ONNX Runtime
+- **ControlNet**
+  * **Purpose**: Controlled image generation
+  * **Used for**: House outline generation
 
-- **SAM**
-  * Format: PyTorch (.pth)
-  * Use: Scene segmentation
-  * Features: Zero-shot segmentation
-  * Integration: REST API
+- **Text2Material**
+  * **Purpose**: Generate material textures from text
+  * **Used for**: Creating material textures based on descriptions
 
-#### Model Configuration
+- **HDRNet**
+  * **Purpose**: Lighting estimation and HDR environment maps
+  * **Used for**: Creating realistic lighting for 3D scenes
 
-Example configuration for 3D visualization models:
+### Interior Design Models
+
+- **SpaceFormer**
+  * **Purpose**: Room layout and furniture placement
+  * **Used for**: Automated interior design
+
+- **Architectural Recognition**
+  * **Purpose**: Process architectural drawings
+  * **Used for**: Understanding floor plans and architectural designs
+
+- **Room Layout Generator**
+  * **Purpose**: Generate room layouts
+  * **Used for**: Creating new room designs
+
+### Local Models
+
+- **Llama-2-13B-Chat** (`llama-2-13b-chat`)
+  * **Purpose**: Local text generation
+  * **Used for**: Text generation when cloud services are unavailable
+
+- **DistilBART-MNLI** (`distilbart-mnli`)
+  * **Purpose**: Lightweight text classification
+  * **Used for**: Local text classification
+
+- **DistilBART-CNN** (`distilbart-cnn`)
+  * **Purpose**: Lightweight text summarization
+  * **Used for**: Local text summarization
+
+### Model Configuration
+
+Example configuration for model endpoints:
 
 ```typescript
 interface ModelEndpoints {
+  // Image-based reconstruction
   nerfStudio: string;
   instantNgp: string;
+  blenderProc: string;
+
+  // Text-based generation
   shapE: string;
   get3d: string;
   hunyuan3d: string;
-  blenderProc: string;
+
+  // Scene understanding
+  yolo: string;  // Object detection
+  sam: string;   // Segmentation
+  midas: string; // Depth estimation
+
+  // Architectural
+  architecturalRecognition: string;
+  roomLayoutGenerator: string;
+
+  // Material and style
+  controlNet: string;
+  text2material: string;
+  clip: string;
+  hdrnet: string;   // For lighting estimation and HDR environment maps
+
+  // Camera pose estimation and multi-view consistency
+  colmap: string;   // For Structure-from-Motion processing
+
+  // Interior design automation
+  spaceFormer: string; // For room layout and furniture placement
 }
 
 const modelConfig: ModelEndpoints = {
@@ -306,7 +450,8 @@ const modelConfig: ModelEndpoints = {
   shapE: process.env.SHAPE_E_ENDPOINT,
   get3d: process.env.GET3D_ENDPOINT,
   hunyuan3d: process.env.HUNYUAN3D_ENDPOINT,
-  blenderProc: process.env.BLENDER_PROC_ENDPOINT
+  blenderProc: process.env.BLENDER_PROC_ENDPOINT,
+  // ... additional endpoints
 };
 ```
 
@@ -342,16 +487,16 @@ async function importModelFromRepository(repository, modelId, options) {
     formData.append('name', options.name);
     formData.append('description', options.description);
     formData.append('framework', options.framework);
-    
+
     const response = await fetch('/api/admin/models/import/repository', {
       method: 'POST',
       body: formData,
     });
-    
+
     if (!response.ok) {
       throw new Error('Failed to import model');
     }
-    
+
     return await response.json();
   } catch (error) {
     console.error('Error importing model:', error);
@@ -397,11 +542,11 @@ async function splitDataset(datasetId, splitConfig) {
         stratified: splitConfig.stratified // Maintain class distribution if true
       }),
     });
-    
+
     if (!response.ok) {
       throw new Error(`Failed to split dataset: ${await response.text()}`);
     }
-    
+
     return await response.json();
   } catch (error) {
     console.error('Error splitting dataset:', error);
@@ -465,11 +610,11 @@ async function startModelTraining(config) {
         enableHyperparameterTuning: config.enableHyperparameterTuning
       }),
     });
-    
+
     if (!response.ok) {
       throw new Error('Failed to start training');
     }
-    
+
     return await response.json();
   } catch (error) {
     console.error('Error starting training:', error);
@@ -499,11 +644,11 @@ async function startDatasetTraining(datasetId, trainingConfig) {
         }
       }),
     });
-    
+
     if (!response.ok) {
       throw new Error(`Server responded with ${response.status}: ${await response.text()}`);
     }
-    
+
     const data = await response.json();
     return data;
   } catch (error) {
@@ -523,22 +668,22 @@ function subscribeToTrainingProgress(datasetId, callbacks) {
   // Create WebSocket connection to the training progress server
   const WS_URL = process.env.REACT_APP_WS_URL || window.location.origin.replace(/^http/, 'ws');
   const socket = new WebSocket(`${WS_URL}/ws/training-progress`);
-  
+
   socket.onopen = () => {
     // Subscribe to updates for the specific dataset
     socket.send(JSON.stringify({
       type: 'subscribe',
       datasetId: datasetId
     }));
-    
+
     if (callbacks.onConnected) {
       callbacks.onConnected();
     }
   };
-  
+
   socket.onmessage = (event) => {
     const data = JSON.parse(event.data);
-    
+
     switch (data.type) {
       case 'progress':
         callbacks.onProgress(data.progress, data.currentEpoch, data.totalEpochs);
@@ -554,20 +699,20 @@ function subscribeToTrainingProgress(datasetId, callbacks) {
         break;
     }
   };
-  
+
   socket.onerror = (error) => {
     console.error('WebSocket error:', error);
     if (callbacks.onError) {
       callbacks.onError('WebSocket connection error');
     }
   };
-  
+
   socket.onclose = () => {
     if (callbacks.onDisconnected) {
       callbacks.onDisconnected();
     }
   };
-  
+
   // Return a cleanup function
   return () => {
     if (socket.readyState === WebSocket.OPEN) {
@@ -586,22 +731,22 @@ The system allows stopping a training job that is in progress:
 async function stopTrainingJob(jobId) {
   try {
     const API_URL = process.env.REACT_APP_API_URL || window.location.origin;
-    
+
     const response = await fetch(`${API_URL}/api/admin/training/${jobId}/stop`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         // Add authorization headers if required
-        ...(localStorage.getItem('auth_token') 
-          ? { 'Authorization': `Bearer ${localStorage.getItem('auth_token')}` } 
+        ...(localStorage.getItem('auth_token')
+          ? { 'Authorization': `Bearer ${localStorage.getItem('auth_token')}` }
           : {})
       }
     });
-    
+
     if (!response.ok) {
       throw new Error(`Server responded with ${response.status}: ${await response.text()}`);
     }
-    
+
     return await response.json();
   } catch (error) {
     console.error('Failed to stop training job:', error);
@@ -634,36 +779,36 @@ The system provides several configuration options:
 # Python code example for transfer learning configuration
 def configure_transfer_learning(base_model, num_classes, freeze_layers=True, trainable_layers=3):
     """Configure a model for transfer learning
-    
+
     Args:
         base_model: The pre-trained model to use as a base
         num_classes: Number of classes in the new dataset
         freeze_layers: Whether to freeze base model layers
         trainable_layers: Number of top layers to make trainable if freezing
-        
+
     Returns:
         Configured model ready for training
     """
     # Create a model with the pre-trained base and new classification head
     model = create_transfer_model(base_model, num_classes)
-    
+
     if freeze_layers:
         # Freeze all base model layers
         for layer in base_model.layers:
             layer.trainable = False
-        
+
         # Make the last few layers trainable if specified
         if trainable_layers > 0:
             for layer in base_model.layers[-trainable_layers:]:
                 layer.trainable = True
-    
+
     # Compile with appropriate parameters for fine-tuning
     model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001),
         loss='categorical_crossentropy',
         metrics=['accuracy']
     )
-    
+
     return model
 ```
 
@@ -676,24 +821,24 @@ def configure_transfer_learning(base_model, num_classes, freeze_layers=True, tra
 async function createMaterialDatasetWithEmbeddings() {
   // Upload ZIP file with vector embedding generation
   const zipFile = document.getElementById('dataset-file').files[0];
-  
+
   const uploadResult = await uploadZipDatasetWithEmbeddings(zipFile, {
     name: 'Material Surfaces Dataset',
     description: 'Dataset of various material surfaces with vector embeddings',
   });
-  
+
   console.log(`Created dataset with ${uploadResult.imageCount} images`);
   console.log(`Generated ${uploadResult.embeddingsGenerated} vector embeddings`);
-  
+
   // Now the dataset is ready for both knowledge base and training use
-  
+
   // Optional: Start training a model using this dataset
   const trainingJob = await startModelTraining({
     datasetId: uploadResult.dataset.id,
     modelId: 'pretrained-material-classifier',
     // Other training parameters...
   });
-  
+
   return {
     datasetId: uploadResult.dataset.id,
     trainingJobId: trainingJob.id
@@ -716,7 +861,7 @@ async function setupCeramicTileClassifier() {
       framework: 'tensorflow'
     }
   );
-  
+
   // Import Ceramic Tile dataset from Kaggle
   const dataset = await importPremadeDataset(
     'materials-dataset',
@@ -726,7 +871,7 @@ async function setupCeramicTileClassifier() {
       selectedClasses: ['ceramic-tile', 'porcelain-tile', 'natural-stone-tile']
     }
   );
-  
+
   // Start training with transfer learning
   const trainingJob = await startModelTraining({
     modelId: model.id,
@@ -741,7 +886,7 @@ async function setupCeramicTileClassifier() {
     enableDataAugmentation: true,
     validationSplit: 0.2
   });
-  
+
   return trainingJob;
 }
 ```
@@ -755,13 +900,13 @@ async function createMaterialEnsemble() {
   const textureModel = await importModelFromRepository('pytorch_hub', 'resnet18');
   const colorModel = await importModelFromRepository('huggingface', 'microsoft/resnet-50');
   const patternModel = await importModelFromRepository('tfhub', 'efficientnet/b0');
-  
+
   // Import and prepare the combined dataset
   const materialDataset = await importPremadeDataset('dtd', {
     name: 'Material Textures Combined',
     includeMetadata: true
   });
-  
+
   // Train each model on the dataset with different focuses
   const textureTraining = await startModelTraining({
     modelId: textureModel.id,
@@ -769,21 +914,21 @@ async function createMaterialEnsemble() {
     useTranferLearning: true,
     // Additional parameters for texture focus
   });
-  
+
   const colorTraining = await startModelTraining({
     modelId: colorModel.id,
     datasetId: materialDataset.id,
     useTranferLearning: true,
     // Additional parameters for color focus
   });
-  
+
   const patternTraining = await startModelTraining({
     modelId: patternModel.id,
     datasetId: materialDataset.id,
     useTranferLearning: true,
     // Additional parameters for pattern focus
   });
-  
+
   // Create ensemble configuration after all training jobs complete
   // ...
 }
@@ -818,7 +963,7 @@ async function createMaterialEnsemble() {
 
 ### Common Dataset Issues
 
-1. **Import Failures**: 
+1. **Import Failures**:
    - Verify network connection to the repository
    - Check if the dataset ID is correct
    - Ensure sufficient storage space

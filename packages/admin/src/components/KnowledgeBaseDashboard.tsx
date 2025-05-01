@@ -1,16 +1,10 @@
 /// <reference path="../types/global.d.ts" />
 /// <reference path="../types/jsx.d.ts" />
 /// <reference path="../types/mui-icons.d.ts" />
+/// <reference path="../types/mui.d.ts" />
+/// <reference path="./mui.d.ts" />
 
-// Note: There are some remaining TypeScript errors related to JSX elements
-// These are expected and can be safely ignored as they're related to the JSX namespace
-// and how TypeScript handles HTML elements in React components
-//
-// The errors like "JSX element implicitly has type 'any' because no interface 'JSX.IntrinsicElements' exists"
-// are a known issue with TypeScript and React when using certain HTML elements.
-// We have type declarations in the referenced files above, but TypeScript sometimes still reports these errors.
-// This is a tooling issue and does not affect the functionality of the code.
-import React, { useState, useEffect, useRef, useCallback, ChangeEvent, KeyboardEvent } from 'react';
+import React from 'react';
 import {
   Box,
   Button,
@@ -46,31 +40,32 @@ import {
 } from './mui';
 // SxProps is now imported from mui.ts
 import {
-  Add as AddIcon,
-  Delete as DeleteIcon,
-  Edit as EditIcon,
-  Refresh as RefreshIcon,
-  Search as SearchIcon,
-  Bookmark as BookmarkIcon,
-  CollectionsBookmark as CollectionIcon,
-  History as HistoryIcon,
-  Storage as StorageIcon,
-  CloudUpload as CloudUploadIcon,
-  Assessment as AssessmentIcon,
-  Loop as LoopIcon,
-  PictureAsPdf as PdfIcon,
-  Language as LanguageIcon,
-  Psychology as PsychologyIcon,
-  InfoOutlined as HelpIcon,
-  ErrorOutline as BugReportIcon,
-  Done as CheckCircleIcon,
-  Forward as SendIcon,
-  Laptop as DeveloperModeIcon,
-  Insights as InsightsIcon,
-  DataUsage as DataUsageIcon,
-  PlayArrow as PlayArrowIcon,
-  Stop as StopIcon
-} from '@mui/icons-material';
+  AddIcon,
+  DeleteIcon,
+  EditIcon,
+  RefreshIcon,
+  SearchIcon,
+  BookmarkIcon,
+  CollectionsBookmarkIcon as CollectionIcon,
+  HistoryIcon,
+  StorageIcon,
+  CloudUploadIcon,
+  AssessmentIcon,
+  LoopIcon,
+  PictureAsPdfIcon as PdfIcon,
+  LanguageIcon,
+  PsychologyIcon,
+  InfoOutlinedIcon as HelpIcon,
+  BugReportIcon,
+  DoneIcon as CheckCircleIcon,
+  ForwardIcon as SendIcon,
+  LaptopIcon as DeveloperModeIcon,
+  InsightsIcon,
+  DataUsageIcon,
+  PlayArrowIcon,
+  StopIcon,
+  CategoryIcon
+} from './mui-icons';
 // Define the interface for our components
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -407,54 +402,54 @@ const _FormDialog = ({ open, onClose, title, children, onSubmit, submitLabel = '
 // Main Knowledge Base Dashboard Component
 const KnowledgeBaseDashboard = () => {
   // State variables
-  const [activeTab, setActiveTab] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [materials, setMaterials] = useState<Material[]>([]);
-  const [collections, setCollections] = useState<Collection[]>([]);
-  const [versions, setVersions] = useState<Version[]>([]);
-  const [searchResults, setSearchResults] = useState<Material[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showDialog, setShowDialog] = useState(false);
-  const [dialogType, setDialogType] = useState('');
-  const [selectedItem, setSelectedItem] = useState<Material | Collection | null>(null);
+  const [activeTab, setActiveTab] = React.useState(0);
+  const [loading, setLoading] = React.useState(true);
+  const [materials, setMaterials] = React.useState<Material[]>([]);
+  const [collections, setCollections] = React.useState<Collection[]>([]);
+  const [versions, setVersions] = React.useState<Version[]>([]);
+  const [searchResults, setSearchResults] = React.useState<Material[]>([]);
+  const [searchQuery, setSearchQuery] = React.useState('');
+  const [showDialog, setShowDialog] = React.useState(false);
+  const [dialogType, setDialogType] = React.useState('');
+  const [selectedItem, setSelectedItem] = React.useState<Material | Collection | null>(null);
 
   // ML Integration States
-  const [mlModels, setMlModels] = useState<MLModel[]>([]);
-  const [pdfDocuments, setPdfDocuments] = useState<PdfDocument[]>([]);
+  const [mlModels, setMlModels] = React.useState<MLModel[]>([]);
+  const [pdfDocuments, setPdfDocuments] = React.useState<PdfDocument[]>([]);
   // These state variables are declared but not used in this component
   // They are kept for future implementation
-  const [_webSources] = useState<WebSource[]>([]);
-  const [_trainingMetrics] = useState<TrainingMetric[]>([]);
-  const [showMlDialog, setShowMlDialog] = useState(false);
-  const [mlDialogType, setMlDialogType] = useState('');
-  const [mlIntegrationEnabled, setMlIntegrationEnabled] = useState(true);
-  const [autoMetadataExtraction, setAutoMetadataExtraction] = useState(true);
-  const [confidenceThreshold, setConfidenceThreshold] = useState(75);
+  const [_webSources] = React.useState<WebSource[]>([]);
+  const [_trainingMetrics] = React.useState<TrainingMetric[]>([]);
+  const [showMlDialog, setShowMlDialog] = React.useState(false);
+  const [mlDialogType, setMlDialogType] = React.useState('');
+  const [mlIntegrationEnabled, setMlIntegrationEnabled] = React.useState(true);
+  const [autoMetadataExtraction, setAutoMetadataExtraction] = React.useState(true);
+  const [confidenceThreshold, setConfidenceThreshold] = React.useState(75);
 
   // WebSocket Training Visualization States
-  const [trainingProgress, setTrainingProgress] = useState<TrainingProgress | null>(null);
-  const [wsConnected, setWsConnected] = useState(false);
-  const [wsError, setWsError] = useState<string | null>(null);
-  const [showTrainingPanel, setShowTrainingPanel] = useState(false);
-  const [epochHistory, setEpochHistory] = useState<EpochData[]>([]);
-  const [liveMetrics, setLiveMetrics] = useState<Record<string, number[]>>({});
-  const [wsServerUrl, setWsServerUrl] = useState<string>('ws://localhost:8765/training');
-  const [isConnecting, setIsConnecting] = useState<boolean>(false);
-  const [trainingControlsEnabled, setTrainingControlsEnabled] = useState<boolean>(true);
-  const wsRef = useRef<WebSocket | null>(null);
+  const [trainingProgress, setTrainingProgress] = React.useState<TrainingProgress | null>(null);
+  const [wsConnected, setWsConnected] = React.useState(false);
+  const [wsError, setWsError] = React.useState<string | null>(null);
+  const [showTrainingPanel, setShowTrainingPanel] = React.useState(false);
+  const [epochHistory, setEpochHistory] = React.useState<EpochData[]>([]);
+  const [liveMetrics, setLiveMetrics] = React.useState<Record<string, number[]>>({});
+  const [wsServerUrl, setWsServerUrl] = React.useState<string>('ws://localhost:8765/training');
+  const [isConnecting, setIsConnecting] = React.useState<boolean>(false);
+  const [trainingControlsEnabled, setTrainingControlsEnabled] = React.useState<boolean>(true);
+  const wsRef = React.useRef<WebSocket | null>(null);
 
   // Unknown Assets States
-  const [unknownAssets, setUnknownAssets] = useState<UnknownAsset[]>([]);
-  const [selectedUnknownAsset, setSelectedUnknownAsset] = useState<UnknownAsset | null>(null);
-  const [showUnknownAssetDialog, setShowUnknownAssetDialog] = useState(false);
-  const [unknownAssetDialogType, setUnknownAssetDialogType] = useState('');
-  const [manualTags, setManualTags] = useState<string[]>([]);
-  const [newTag, setNewTag] = useState('');
-  const [assetNotes, setAssetNotes] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('');
-  const [resubmissionSuccess, setResubmissionSuccess] = useState(false);
-  const [assetCategories] = useState(['Tile', 'Stone', 'Wood', 'Ceramic', 'Porcelain', 'Vinyl', 'Laminate', 'Other']);
-  const [identificationStats, setIdentificationStats] = useState({
+  const [unknownAssets, setUnknownAssets] = React.useState<UnknownAsset[]>([]);
+  const [selectedUnknownAsset, setSelectedUnknownAsset] = React.useState<UnknownAsset | null>(null);
+  const [showUnknownAssetDialog, setShowUnknownAssetDialog] = React.useState(false);
+  const [unknownAssetDialogType, setUnknownAssetDialogType] = React.useState('');
+  const [manualTags, setManualTags] = React.useState<string[]>([]);
+  const [newTag, setNewTag] = React.useState('');
+  const [assetNotes, setAssetNotes] = React.useState('');
+  const [selectedCategory, setSelectedCategory] = React.useState('');
+  const [resubmissionSuccess, setResubmissionSuccess] = React.useState(false);
+  const [assetCategories] = React.useState(['Tile', 'Stone', 'Wood', 'Ceramic', 'Porcelain', 'Vinyl', 'Laminate', 'Other']);
+  const [identificationStats, setIdentificationStats] = React.useState({
     totalUnidentified: 0,
     manuallyIdentified: 0,
     resubmitted: 0,
@@ -463,7 +458,7 @@ const KnowledgeBaseDashboard = () => {
   });
 
   // Fetch initial data
-  useEffect(() => {
+  React.useEffect(() => {
     fetchData();
     fetchUnknownAssets();
 
@@ -885,7 +880,7 @@ const KnowledgeBaseDashboard = () => {
   };
 
   // WebSocket connection handlers
-  const connectToTrainingServer = useCallback(() => {
+  const connectToTrainingServer = React.useCallback(() => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       // Already connected
       return;
@@ -931,7 +926,7 @@ const KnowledgeBaseDashboard = () => {
               valAccuracy: data.valAccuracy
             };
 
-            setEpochHistory(prev => [...prev, newEpochData]);
+            setEpochHistory((prev: EpochData[]) => [...prev, newEpochData]);
           }
 
           // Update live metrics
@@ -973,7 +968,7 @@ const KnowledgeBaseDashboard = () => {
     }
   }, [epochHistory, wsServerUrl]);
 
-  const disconnectFromTrainingServer = useCallback(() => {
+  const disconnectFromTrainingServer = React.useCallback(() => {
     if (wsRef.current) {
       // Send a message to notify server about disconnection if needed
       try {
@@ -994,7 +989,7 @@ const KnowledgeBaseDashboard = () => {
   }, []);
 
   // Send a command to the training server
-  const sendTrainingCommand = useCallback((command: string) => {
+  const sendTrainingCommand = React.useCallback((command: string) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       try {
         wsRef.current.send(JSON.stringify({
@@ -1035,7 +1030,7 @@ const KnowledgeBaseDashboard = () => {
   }, [trainingProgress]);
 
   const toggleTrainingPanel = () => {
-    setShowTrainingPanel(prev => !prev);
+    setShowTrainingPanel((prev: boolean) => !prev);
   };
 
   const triggerMLTraining = () => {
@@ -1108,10 +1103,10 @@ const KnowledgeBaseDashboard = () => {
   };
 
   const handleRemoveTag = (tagToRemove: string) => {
-    setManualTags(manualTags.filter(tag => tag !== tagToRemove));
+    setManualTags(manualTags.filter((tag: string) => tag !== tagToRemove));
   };
 
-  const handleNewTagKeyPress = (e: KeyboardEvent<HTMLInputElement>) => {
+  const handleNewTagKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && newTag.trim()) {
       e.preventDefault();
       handleAddTag();
@@ -1135,7 +1130,7 @@ const KnowledgeBaseDashboard = () => {
       // });
 
       // Update the asset in the local state
-      const updatedAssets = unknownAssets.map(asset => {
+      const updatedAssets = unknownAssets.map((asset: UnknownAsset) => {
         if (asset.id === selectedUnknownAsset.id) {
           return {
             ...asset,
@@ -1217,7 +1212,7 @@ const KnowledgeBaseDashboard = () => {
       // Wait a moment before closing dialog to show success message
       setTimeout(() => {
         // Update the asset in the local state
-        const updatedAssets = unknownAssets.map(asset => {
+        const updatedAssets = unknownAssets.map((asset: UnknownAsset) => {
           if (asset.id === selectedUnknownAsset.id) {
             return {
               ...asset,
@@ -1336,8 +1331,8 @@ const KnowledgeBaseDashboard = () => {
               label="Search Knowledge Base"
               variant="outlined"
               value={searchQuery}
-              onChange={(e: ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
-              onKeyPress={(e: KeyboardEvent<HTMLInputElement>) => e.key === 'Enter' && handleSearch()}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
+              onKeyPress={(e: React.KeyboardEvent<HTMLInputElement>) => e.key === 'Enter' && handleSearch()}
             />
           </Grid>
           <Grid item>
@@ -1387,6 +1382,7 @@ const KnowledgeBaseDashboard = () => {
           <Tab icon={<StorageIcon />} label="Index Management" id="kb-tab-3" aria-controls="kb-tabpanel-3" />
           <Tab icon={<PsychologyIcon />} label="ML Integration" id="kb-tab-4" aria-controls="kb-tabpanel-4" />
           <Tab icon={<BugReportIcon />} label="Unknown Assets" id="kb-tab-5" aria-controls="kb-tabpanel-5" />
+          <Tab icon={<CategoryIcon />} label="Categories" id="kb-tab-6" aria-controls="kb-tabpanel-6" />
         </Tabs>
 
         {/* Loading indicator */}
@@ -1563,7 +1559,7 @@ const KnowledgeBaseDashboard = () => {
                         control={
                           <Switch
                             checked={mlIntegrationEnabled}
-                            onChange={(e: ChangeEvent<HTMLInputElement>) => handleMLSettingsChange('integration', e.target.checked)}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleMLSettingsChange('integration', e.target.checked)}
                             name="ml-integration"
                             color="primary"
                           />
@@ -1580,7 +1576,7 @@ const KnowledgeBaseDashboard = () => {
                         control={
                           <Switch
                             checked={autoMetadataExtraction}
-                            onChange={(e: ChangeEvent<HTMLInputElement>) => handleMLSettingsChange('metadata', e.target.checked)}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleMLSettingsChange('metadata', e.target.checked)}
                             name="metadata-extraction"
                             color="primary"
                           />
@@ -1603,7 +1599,7 @@ const KnowledgeBaseDashboard = () => {
                           max="95"
                           step="5"
                           value={confidenceThreshold}
-                          onChange={(e: ChangeEvent<HTMLInputElement>) => handleMLSettingsChange('threshold', parseInt(e.target.value))}
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleMLSettingsChange('threshold', parseInt(e.target.value))}
                           style={{ width: '100%' }}
                         />
                       </Box>
@@ -2090,7 +2086,7 @@ const KnowledgeBaseDashboard = () => {
                                 alignItems: 'flex-end',
                                 justifyContent: 'space-between'
                               }}>
-                                {epochHistory.slice(-10).map((epoch, idx) => (
+                                {epochHistory.slice(-10).map((epoch: EpochData, idx: number) => (
                                   <Box
                                     key={idx}
                                     sx={{
@@ -2191,30 +2187,33 @@ const KnowledgeBaseDashboard = () => {
                           </Typography>
                           <Paper variant="outlined" sx={{ p: 2 }}>
                             <Grid container spacing={2}>
-                              {Object.entries(liveMetrics).map(([key, values]) => (
-                                <Grid item xs={12} sm={6} md={4} key={key}>
-                                  <Card variant="outlined" sx={{ p: 2 }}>
-                                    <Typography variant="subtitle2" gutterBottom sx={{ textTransform: 'capitalize' }}>
-                                      {key.replace('_', ' ')}
-                                    </Typography>
-                                    <Typography variant="h6">
-                                      {typeof values[values.length - 1] === 'number'
-                                        ? Number(values[values.length - 1]).toFixed(4)
-                                        : values[values.length - 1]}
-                                    </Typography>
-                                    {values.length > 1 && (
-                                      <Box sx={{
-                                        mt: 1,
-                                        height: 40,
-                                        display: 'flex',
-                                        alignItems: 'flex-end',
-                                        justifyContent: 'space-between',
-                                        borderBottom: '1px solid #eee',
-                                        borderLeft: '1px solid #eee',
-                                        position: 'relative'
-                                      }}>
-                                        {/* Simple sparkline visualization */}
-                                        {values.slice(-5).map((value, idx, arr) => {
+                              {Object.entries(liveMetrics).map(([key, values]) => {
+                                // Type assertion for values
+                                const typedValues = values as number[];
+                                return (
+                                  <Grid item xs={12} sm={6} md={4} key={key}>
+                                    <Card variant="outlined" sx={{ p: 2 }}>
+                                      <Typography variant="subtitle2" gutterBottom sx={{ textTransform: 'capitalize' }}>
+                                        {key.replace('_', ' ')}
+                                      </Typography>
+                                      <Typography variant="h6">
+                                        {typeof typedValues[typedValues.length - 1] === 'number'
+                                          ? Number(typedValues[typedValues.length - 1]).toFixed(4)
+                                          : typedValues[typedValues.length - 1]}
+                                      </Typography>
+                                      {typedValues.length > 1 && (
+                                        <Box sx={{
+                                          mt: 1,
+                                          height: 40,
+                                          display: 'flex',
+                                          alignItems: 'flex-end',
+                                          justifyContent: 'space-between',
+                                          borderBottom: '1px solid #eee',
+                                          borderLeft: '1px solid #eee',
+                                          position: 'relative'
+                                        }}>
+                                          {/* Simple sparkline visualization */}
+                                          {typedValues.slice(-5).map((value: number, idx: number, arr: number[]) => {
                                           const max = Math.max(...arr);
                                           const min = Math.min(...arr);
                                           const range = max - min || 1;
@@ -2237,7 +2236,8 @@ const KnowledgeBaseDashboard = () => {
                                     )}
                                   </Card>
                                 </Grid>
-                              ))}
+                                );
+                              })}
                             </Grid>
                           </Paper>
                         </Box>
@@ -2621,7 +2621,7 @@ const KnowledgeBaseDashboard = () => {
             </Paper>
           ) : (
             <Grid container spacing={3}>
-              {unknownAssets.map((asset) => (
+              {unknownAssets.map((asset: UnknownAsset) => (
                 <Grid item xs={12} sm={6} md={4} key={asset.id}>
                   <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
                     <Box sx={{ position: 'relative', pt: '56.25%' }}> {/* 16:9 aspect ratio */}
@@ -2675,7 +2675,7 @@ const KnowledgeBaseDashboard = () => {
                             Manual Tags:
                           </Typography>
                           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                            {asset.manualTags.slice(0, 3).map((tag, idx) => (
+                            {asset.manualTags.slice(0, 3).map((tag: string, idx: number) => (
                               <Chip
                                 key={idx}
                                 label={tag}
@@ -3014,7 +3014,7 @@ const KnowledgeBaseDashboard = () => {
                         ML Suggested Tags:
                       </Typography>
                       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                        {selectedUnknownAsset.suggestedTags.map((tag, idx) => (
+                        {selectedUnknownAsset.suggestedTags.map((tag: string, idx: number) => (
                           <Chip
                             key={idx}
                             label={tag}
@@ -3032,7 +3032,7 @@ const KnowledgeBaseDashboard = () => {
                         Manual Tags:
                       </Typography>
                       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                        {selectedUnknownAsset.manualTags.map((tag, idx) => (
+                        {selectedUnknownAsset.manualTags.map((tag: string, idx: number) => (
                           <Chip
                             key={idx}
                             label={tag}
@@ -3124,7 +3124,7 @@ const KnowledgeBaseDashboard = () => {
                         ML Suggested Tags:
                       </Typography>
                       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                        {selectedUnknownAsset.suggestedTags.map((tag, idx) => (
+                        {selectedUnknownAsset.suggestedTags.map((tag: string, idx: number) => (
                           <Chip
                             key={idx}
                             label={tag}
@@ -3161,7 +3161,7 @@ const KnowledgeBaseDashboard = () => {
                       <MenuItem value="">
                         <Typography component="span" fontStyle="italic">Select a category</Typography>
                       </MenuItem>
-                      {assetCategories.map((category) => (
+                      {assetCategories.map((category: string) => (
                         <MenuItem key={category} value={category}>
                           {category}
                         </MenuItem>
@@ -3193,7 +3193,7 @@ const KnowledgeBaseDashboard = () => {
                   </Box>
 
                   <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 3 }}>
-                    {manualTags.map((tag, idx) => (
+                    {manualTags.map((tag: string, idx: number) => (
                       <Chip
                         key={idx}
                         label={tag}
@@ -3275,7 +3275,7 @@ const KnowledgeBaseDashboard = () => {
                           <Typography component="span" fontWeight="bold">Tags:</Typography>
                         </Typography>
                         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 1 }}>
-                          {selectedUnknownAsset.manualTags?.map((tag, idx) => (
+                          {selectedUnknownAsset.manualTags?.map((tag: string, idx: number) => (
                             <Chip
                               key={idx}
                               label={tag}

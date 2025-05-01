@@ -1,0 +1,94 @@
+name: Deploy Frontend
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Environment to deploy to (production or staging)'
+        required: true
+        type: string
+      api_url:
+        description: 'API URL for the environment'
+        required: true
+        type: string
+    secrets:
+      vercel_token:
+        required: true
+      vercel_org_id:
+        required: true
+      vercel_project_id_client:
+        required: true
+      vercel_project_id_admin:
+        required: true
+      supabase_url:
+        required: true
+      supabase_anon_key:
+        required: true
+      stripe_publishable_key:
+        required: false
+      slack_webhook:
+        required: false
+
+jobs:
+  deploy-frontend:
+    name: Deploy Frontend to Vercel
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+          cache: 'yarn'
+      
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+      
+      - name: Set Vercel environment variables
+        run: |
+          # Install Vercel CLI
+          npm install -g vercel
+          
+          # Set environment variables for client
+          vercel env add GATSBY_API_URL ${{ inputs.api_url }} --token ${{ secrets.vercel_token }} --scope ${{ secrets.vercel_org_id }} --project ${{ secrets.vercel_project_id_client }} --${{ inputs.environment }}
+          vercel env add GATSBY_SUPABASE_URL ${{ secrets.supabase_url }} --token ${{ secrets.vercel_token }} --scope ${{ secrets.vercel_org_id }} --project ${{ secrets.vercel_project_id_client }} --${{ inputs.environment }}
+          vercel env add GATSBY_SUPABASE_ANON_KEY ${{ secrets.supabase_anon_key }} --token ${{ secrets.vercel_token }} --scope ${{ secrets.vercel_org_id }} --project ${{ secrets.vercel_project_id_client }} --${{ inputs.environment }}
+          
+          # Set Stripe environment variables if provided
+          if [ -n "${{ secrets.stripe_publishable_key }}" ]; then
+            vercel env add GATSBY_STRIPE_PUBLISHABLE_KEY ${{ secrets.stripe_publishable_key }} --token ${{ secrets.vercel_token }} --scope ${{ secrets.vercel_org_id }} --project ${{ secrets.vercel_project_id_client }} --${{ inputs.environment }}
+          fi
+          
+          # Set environment variables for admin panel
+          vercel env add GATSBY_API_URL ${{ inputs.api_url }} --token ${{ secrets.vercel_token }} --scope ${{ secrets.vercel_org_id }} --project ${{ secrets.vercel_project_id_admin }} --${{ inputs.environment }}
+          vercel env add GATSBY_SUPABASE_URL ${{ secrets.supabase_url }} --token ${{ secrets.vercel_token }} --scope ${{ secrets.vercel_org_id }} --project ${{ secrets.vercel_project_id_admin }} --${{ inputs.environment }}
+          vercel env add GATSBY_SUPABASE_ANON_KEY ${{ secrets.supabase_anon_key }} --token ${{ secrets.vercel_token }} --scope ${{ secrets.vercel_org_id }} --project ${{ secrets.vercel_project_id_admin }} --${{ inputs.environment }}
+      
+      - name: Deploy client to Vercel
+        uses: amondnet/vercel-action@v20
+        with:
+          vercel-token: ${{ secrets.vercel_token }}
+          vercel-org-id: ${{ secrets.vercel_org_id }}
+          vercel-project-id: ${{ secrets.vercel_project_id_client }}
+          working-directory: ./packages/client
+          vercel-args: '--prod'
+      
+      - name: Deploy admin panel to Vercel
+        uses: amondnet/vercel-action@v20
+        with:
+          vercel-token: ${{ secrets.vercel_token }}
+          vercel-org-id: ${{ secrets.vercel_org_id }}
+          vercel-project-id: ${{ secrets.vercel_project_id_admin }}
+          working-directory: ./packages/admin
+          vercel-args: '--prod'
+      
+      - name: Notify deployment status
+        if: secrets.slack_webhook != ''
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_WEBHOOK: ${{ secrets.slack_webhook }}
+          SLACK_TITLE: "Frontend Deployment Status"
+          SLACK_MESSAGE: "Frontend deployment to ${{ inputs.environment }} ${{ job.status }}"
+          SLACK_COLOR: ${{ job.status == 'success' && 'good' || 'danger' }}

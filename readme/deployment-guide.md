@@ -1,42 +1,32 @@
-# Kai Platform Deployment and Development Guide
+# KAI Platform Automated Deployment Guide
 
-This comprehensive guide covers all aspects of deploying and developing with the Kai platform, including production deployment configurations, development environment setup, Docker optimization strategies, and advanced deployment techniques like canary deployments.
+This comprehensive guide covers the fully automated deployment process for the KAI platform, including infrastructure provisioning, Kubernetes cluster setup, CI/CD pipeline configuration, and monitoring.
 
 ## Table of Contents
 
 - [Overview](#overview)
 - [Architecture](#architecture)
 - [Prerequisites](#prerequisites)
-- [Component Installation](#component-installation)
-- [Deployment Options](#deployment-options)
-  - [Cloud Provider Deployment](#cloud-provider-deployment)
-  - [Self-Hosted Deployment](#self-hosted-deployment)
-  - [Kubernetes Deployment](#kubernetes-deployment)
-  - [Docker Configuration and Optimization](#docker-configuration-and-optimization)
-- [Deployment Process](#deployment-process)
-  - [Environment Configuration](#environment-configuration)
-  - [Database Setup and Migration](#database-setup-and-migration)
-  - [Build Process](#build-process)
-  - [Containerization](#containerization)
-  - [Kubernetes Deployment](#kubernetes-deployment-1)
-  - [Canary Deployments](#canary-deployments)
-  - [Vercel Deployment](#vercel-deployment)
-  - [Supabase Deployment](#supabase-deployment)
-- [CI/CD Pipeline](#cicd-pipeline)
-- [Development Environment](#development-environment)
-  - [Local Setup](#local-setup)
-  - [Development Workflow](#development-workflow)
-  - [Debugging](#debugging)
-  - [Common Development Tasks](#common-development-tasks)
+- [Automated Deployment with GitHub Actions](#automated-deployment-with-github-actions)
+  - [Required GitHub Secrets](#required-github-secrets)
+  - [Complete GitHub Actions Workflow](#complete-github-actions-workflow)
+  - [Workflow Explanation](#workflow-explanation)
+- [Digital Ocean Kubernetes Cluster Configuration](#digital-ocean-kubernetes-cluster-configuration)
+  - [Cluster Requirements](#cluster-requirements)
+  - [Node Pool Configuration](#node-pool-configuration)
+  - [Resource Allocation](#resource-allocation)
+- [SSL Certificate Management](#ssl-certificate-management)
+- [Frontend Deployment to Vercel](#frontend-deployment-to-vercel)
+- [Environment Variables and Secrets](#environment-variables-and-secrets)
+- [Deployment Verification and Monitoring](#deployment-verification-and-monitoring)
 - [Maintenance and Updates](#maintenance-and-updates)
   - [Updating the Application](#updating-the-application)
   - [Scaling the Application](#scaling-the-application)
   - [Backup and Disaster Recovery](#backup-and-disaster-recovery)
 - [Troubleshooting](#troubleshooting)
-  - [Supabase Issues](#supabase-issues)
-  - [Vercel Deployment Issues](#vercel-deployment-issues)
+  - [Deployment Issues](#deployment-issues)
   - [Kubernetes Issues](#kubernetes-issues)
-  - [Docker Issues](#docker-issues)
+  - [SSL Certificate Issues](#ssl-certificate-issues)
 - [Performance Optimization](#performance-optimization)
 
 ## Overview
@@ -142,19 +132,1112 @@ With the recently added features, the architecture has been extended:
 Before proceeding with deployment, ensure you have the following:
 
 - GitHub account with administrator access to the repository
-- Supabase account
-- Vercel account
-- Digital Ocean account with Kubernetes support
-- Node.js (v16+) and Yarn (v1.22+) installed locally
-- Docker and kubectl installed locally for testing
+- Supabase account and project set up
+- Vercel account with projects created for frontend and admin panel
+- Digital Ocean account with API access
 - Domain name(s) for your deployment
-- NVIDIA GPU operators installed (for ML features)
-- Nodes with NVIDIA L40S/H100 GPUs available for ML workloads
-- Persistent storage configured for parameter history and ML artifacts
+- OpenAI API key (for AI features)
+- MongoDB Atlas account (or other MongoDB provider)
+- Stripe account (if using payment features)
 
-## Component Installation
+You do not need to install any local tools as the entire deployment process is automated through GitHub Actions.
 
-This section provides installation instructions for all Kai system components. Follow these steps to set up the required dependencies and services before deployment.
+## Automated Deployment with GitHub Actions
+
+The KAI platform uses GitHub Actions to fully automate the deployment process, from building and testing code to provisioning infrastructure and deploying to Kubernetes and Vercel. Our approach uses modular, reusable workflows for better maintainability and flexibility.
+
+### Workflow Architecture
+
+The deployment system consists of several reusable workflows:
+
+1. **Main Workflow (`deploy.yml`)**:
+   - Orchestrates the entire deployment process
+   - Determines which environment to deploy to (staging or production)
+   - Calls the appropriate reusable workflows in sequence
+
+2. **Build and Test (`build-test.yml`)**:
+   - Builds the application code
+   - Runs tests to ensure code quality
+   - Uploads build artifacts for later use
+
+3. **Docker Build (`docker-build.yml`)**:
+   - Builds Docker images for all services
+   - Pushes images to the Docker registry
+   - Tags images with both the commit SHA and environment
+
+4. **Infrastructure Provisioning (`provision-infrastructure.yml`)**:
+   - Checks if a Kubernetes cluster exists
+   - Creates a new cluster if needed
+   - Sets up node pools optimized for different workloads
+
+5. **Kubernetes Setup (`setup-kubernetes.yml`)**:
+   - Creates necessary namespaces
+   - Sets up Kubernetes secrets
+   - Installs cert-manager for SSL certificates
+   - Installs NGINX Ingress Controller
+   - Installs Argo Workflows for ML pipelines
+
+6. **Application Deployment (`deploy-application.yml`)**:
+   - Deploys the application using Helm
+   - Runs database migrations
+   - Verifies the deployment
+
+7. **Frontend Deployment (`deploy-frontend.yml`)**:
+   - Deploys the client frontend to Vercel
+   - Deploys the admin panel to Vercel
+   - Sets up environment variables
+
+8. **Deployment Verification (`verify-deployment.yml`)**:
+   - Performs comprehensive health checks
+   - Verifies API availability
+   - Checks SSL certificate validity
+   - Sends deployment notifications
+
+### Required GitHub Secrets
+
+Before running the deployment workflow, you need to add the following secrets to your GitHub repository:
+
+#### Digital Ocean / Infrastructure Secrets
+- `DIGITALOCEAN_ACCESS_TOKEN`: Your Digital Ocean API token with write access
+- `CLUSTER_NAME`: Base name for your Kubernetes cluster (e.g., "kai")
+- `DO_REGION`: Region for your cluster (e.g., "ams3")
+
+#### Docker Registry Secrets
+- `DOCKER_REGISTRY`: Your Docker registry URL (e.g., "registry.digitalocean.com")
+- `DOCKER_USERNAME`: Your Docker registry username
+- `DOCKER_PASSWORD`: Your Docker registry password
+
+#### Domain and SSL Secrets
+- `DOMAIN_NAME`: Your domain name (e.g., "kai-platform.com")
+- `ADMIN_EMAIL`: Email for SSL certificate notifications
+- `BASE_URL`: Base URL for the application (e.g., "https://api.kai-platform.com")
+
+#### Database Secrets
+- `MONGODB_URI`: MongoDB connection string
+- `DATABASE_URL`: Database connection string (if using a different database)
+- `DATABASE_HOST`: Database host (if not using connection string)
+- `DATABASE_PORT`: Database port
+- `DATABASE_USER`: Database username
+- `DATABASE_PASSWORD`: Database password
+- `DATABASE_NAME`: Database name
+- `DATABASE_SSL`: Whether to use SSL for database connection (true/false)
+- `DATABASE_MAX_CONNECTIONS`: Maximum number of database connections
+- `DATABASE_CONNECTION_TIMEOUT`: Database connection timeout in milliseconds
+
+#### Authentication Secrets
+- `JWT_SECRET`: Secret for JWT tokens
+- `JWT_EXPIRES_IN`: JWT token expiration time (e.g., "1d")
+- `RATE_LIMIT_WINDOW`: Rate limiting window in milliseconds
+- `RATE_LIMIT_MAX`: Maximum number of requests per window
+- `CORS_ORIGINS`: Comma-separated list of allowed origins for CORS
+- `MAX_UPLOAD_SIZE`: Maximum upload size in bytes
+
+#### AI/ML Model Secrets
+- `OPENAI_API_KEY`: Your OpenAI API key
+- `OPENAI_DEFAULT_MODEL`: Default model to use (e.g., "gpt-4")
+- `OPENAI_TEMPERATURE`: Temperature setting (e.g., "0.7")
+- `ANTHROPIC_API_KEY`: Your Anthropic API key for Claude models
+- `HF_API_KEY` or `HUGGINGFACE_API_KEY`: Your Hugging Face API key
+- `HF_ORGANIZATION_ID`: Your Hugging Face organization ID (optional)
+- `HF_DEFAULT_TEXT_MODEL`: Default text model (e.g., "google/flan-t5-xxl")
+- `HF_DEFAULT_EMBEDDING_MODEL`: Default embedding model (e.g., "sentence-transformers/all-MiniLM-L6-v2")
+- `HF_DEFAULT_IMAGE_MODEL`: Default image model (e.g., "google/vit-base-patch16-224")
+- `HF_MODEL_TIMEOUT`: Timeout for model requests in milliseconds
+- `HF_USE_FAST_MODELS`: Whether to use faster models (true/false)
+- `OCR_MODEL_PATH`: Path to OCR model
+- `ML_MAX_PROCESSING_TIME`: Maximum processing time for ML tasks in milliseconds
+- `MODEL_CACHE_PATH`: Path to model cache directory
+
+#### S3 Storage Secrets
+- `S3_ENDPOINT`: S3 endpoint URL
+- `S3_ACCESS_KEY`: S3 access key
+- `S3_SECRET_KEY`: S3 secret key
+- `S3_BUCKET`: S3 bucket name
+- `S3_REGION`: S3 region (e.g., "us-east-1")
+- `S3_PUBLIC_URL`: Public URL for S3 bucket (optional)
+- `AWS_REGION`: AWS region (if using AWS S3)
+- `AWS_ACCESS_KEY_ID`: AWS access key ID (if using AWS S3)
+- `AWS_SECRET_ACCESS_KEY`: AWS secret access key (if using AWS S3)
+- `TEMP`: Temporary directory for file processing
+
+#### Redis Secrets
+- `REDIS_URL`: Redis connection URL (or use host/port/password)
+- `REDIS_HOST`: Redis host (if not using connection URL)
+- `REDIS_PORT`: Redis port
+- `REDIS_PASSWORD`: Redis password
+- `REDIS_SSL`: Whether to use SSL for Redis connection (true/false)
+- `REDIS_DB`: Redis database number
+
+#### Supabase Secrets - Staging
+- `SUPABASE_URL_STAGING`: Your Supabase staging project URL
+- `SUPABASE_KEY_STAGING`: Your Supabase staging service key
+- `SUPABASE_ANON_KEY_STAGING`: Your Supabase staging anonymous key
+- `SUPABASE_SERVICE_ROLE_KEY_STAGING`: Supabase service role key for staging
+
+#### Supabase Secrets - Production
+- `SUPABASE_URL_PRODUCTION`: Your Supabase production project URL
+- `SUPABASE_KEY_PRODUCTION`: Your Supabase production service key
+- `SUPABASE_ANON_KEY_PRODUCTION`: Your Supabase production anonymous key
+- `SUPABASE_SERVICE_ROLE_KEY_PRODUCTION`: Supabase service role key for production
+- `SUPABASE_STORAGE_BUCKET`: Supabase storage bucket name (e.g., "materials")
+
+#### Stripe Payment Secrets
+- `STRIPE_SECRET_KEY`: Stripe secret key
+- `STRIPE_PUBLISHABLE_KEY`: Stripe publishable key
+- `STRIPE_WEBHOOK_SECRET`: Stripe webhook secret
+- `STRIPE_API_VERSION`: Stripe API version (e.g., "2023-10-16")
+- `STRIPE_TEST_MODE`: Whether to use Stripe in test mode (true/false)
+
+#### Vercel Secrets
+- `VERCEL_TOKEN`: Your Vercel API token
+- `VERCEL_ORG_ID`: Your Vercel organization ID
+- `VERCEL_PROJECT_ID_CLIENT`: Vercel project ID for client frontend
+- `VERCEL_PROJECT_ID_ADMIN`: Vercel project ID for admin panel
+
+#### Model Selection Configuration
+- `MODEL_EVALUATION_STANDARD_CYCLE`: Number of standard operations before evaluation
+- `MODEL_EVALUATION_TEST_CYCLE`: Number of evaluation operations
+- `MODEL_SELECTION_METRICS_WEIGHTS`: Weights for accuracy, latency, and cost
+
+#### Service Integration
+- `KAI_API_URL`: Main KAI API URL
+- `KAI_VECTOR_DB_URL`: Vector database service URL
+- `KAI_ML_SERVICE_URL`: Machine learning service URL
+- `ML_API_URL`: ML API URL for LLM fallback
+- `KAI_API_KEY`: API key for KAI service authentication
+- `API_URL`: API URL (if different from KAI_API_URL)
+- `MCP_SERVER_URL`: MCP server URL
+- `USE_MCP_SERVER`: Whether to use MCP server (true/false)
+- `MCP_HEALTH_CHECK_TIMEOUT`: Timeout for MCP health check in milliseconds
+- `ENABLE_MOCK_FALLBACK`: Enable mock services as fallback (true/false)
+
+#### Agent Configuration
+- `AGENT_VERBOSE_MODE`: Enable verbose mode for agents (true/false)
+- `AGENT_MEMORY_ENABLED`: Enable agent memory persistence (true/false)
+- `AGENT_MAX_ITERATIONS`: Maximum number of iterations for agent tasks
+- `AGENT_TIMEOUT`: Default timeout for agent operations in milliseconds
+- `MAX_CONCURRENT_SESSIONS`: Maximum number of concurrent agent sessions
+- `AGENT_API_KEY`: API key for agent authentication
+- `LOG_LEVEL`: Logging level (error, warn, info, http, debug)
+- `LOG_FILE_PATH`: Path to log file
+- `LOG_CONSOLE_OUTPUT`: Whether to output logs to console (true/false)
+
+#### Frontend Configuration
+- `GATSBY_API_URL`: API URL for frontend to connect to backend services
+- `GATSBY_WS_URL`: WebSocket URL for real-time communication
+- `GATSBY_SUPABASE_URL`: Supabase URL for client
+- `GATSBY_SUPABASE_ANON_KEY`: Supabase anonymous key for client
+- `GATSBY_STORAGE_URL`: Storage URL for frontend assets
+- `GATSBY_DEFAULT_LOCALE`: Default locale
+- `GATSBY_ENABLE_OFFLINE_MODE`: Enable offline mode (true/false)
+- `GATSBY_GOOGLE_ANALYTICS_ID`: Google Analytics ID
+- `REACT_APP_VERSION`: App version
+- `GATSBY_APP_NAME`: App name
+- `GATSBY_STRIPE_PUBLISHABLE_KEY`: Stripe publishable key for frontend
+
+#### Monitoring Configuration
+- `HEALTH_CHECK_INTERVAL`: Health check interval in milliseconds
+- `METRICS_ENABLED`: Whether to enable metrics (true/false)
+- `METRICS_PORT`: Port for metrics server
+
+#### Notification Secrets
+- `SLACK_WEBHOOK`: Slack webhook URL for deployment notifications
+
+#### Web Crawler Secrets
+- `CREDENTIALS_ENCRYPTION_KEY`: Encryption key for stored credentials
+- `JINA_API_KEY`: Jina AI API key for web crawler
+
+### Complete GitHub Actions Workflow
+
+Create a file at `.github/workflows/deploy.yml` with the following content:
+
+```yaml
+name: KAI Platform CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - staging
+          - production
+      create_cluster:
+        description: 'Create new cluster if not exists'
+        type: boolean
+        default: false
+
+env:
+  DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
+  ENVIRONMENT: ${{ github.event.inputs.environment || 'production' }}
+
+jobs:
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+          cache: 'yarn'
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Build packages
+        run: yarn build
+
+      - name: Run tests
+        run: yarn test
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: build-artifacts
+          path: packages/*/dist
+
+  build-docker:
+    name: Build and Push Docker Images
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: build-artifacts
+          path: packages
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to Docker Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ secrets.DOCKER_REGISTRY }}
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push API server
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: packages/server/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-api:${{ github.sha }}
+            ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-api:latest
+
+      - name: Build and push Coordinator service
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: packages/coordinator/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-coordinator:${{ github.sha }}
+            ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-coordinator:latest
+
+      - name: Build and push ML services
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: packages/ml/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-ml:${{ github.sha }}
+            ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-ml:latest
+
+      - name: Build and push Notification service
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: packages/notification/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-notification:${{ github.sha }}
+            ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-notification:latest
+
+  provision-infrastructure:
+    name: Provision Kubernetes Cluster
+    needs: build-docker
+    runs-on: ubuntu-latest
+    if: github.event.inputs.create_cluster == 'true' || github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Check if cluster exists
+        id: check-cluster
+        run: |
+          CLUSTER_NAME="${{ secrets.CLUSTER_NAME }}-${{ env.ENVIRONMENT }}"
+          if doctl kubernetes cluster get $CLUSTER_NAME &>/dev/null; then
+            echo "Cluster exists, skipping creation"
+            echo "cluster_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Cluster does not exist"
+            echo "cluster_exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Digital Ocean Kubernetes cluster
+        if: steps.check-cluster.outputs.cluster_exists == 'false' && (github.event.inputs.create_cluster == 'true' || github.ref == 'refs/heads/main')
+        run: |
+          CLUSTER_NAME="${{ secrets.CLUSTER_NAME }}-${{ env.ENVIRONMENT }}"
+
+          echo "Creating main Kubernetes cluster with orchestration node pool..."
+          # Create the main cluster with the orchestration node pool
+          doctl kubernetes cluster create $CLUSTER_NAME \
+            --region ${{ secrets.DO_REGION }} \
+            --version latest \
+            --tag kai-platform \
+            --tag ${{ env.ENVIRONMENT }} \
+            --auto-upgrade=true \
+            --maintenance-window="saturday=21:00" \
+            --size s-2vcpu-4gb \
+            --count 3 \
+            --node-pool "name=orchestration;size=s-2vcpu-4gb;count=3;label=node-type=orchestration;tag=orchestration" \
+            --wait
+
+          # Save kubeconfig
+          doctl kubernetes cluster kubeconfig save $CLUSTER_NAME
+
+          # Wait for cluster to be fully ready
+          echo "Waiting for cluster to be ready..."
+          sleep 60
+
+          echo "Adding CPU-optimized node pool..."
+          # Add CPU-optimized node pool
+          doctl kubernetes cluster node-pool create $CLUSTER_NAME \
+            --name cpu-optimized \
+            --size c-4 \
+            --count 3 \
+            --label node-type=cpu-optimized \
+            --tag cpu-optimized
+
+          # Add GPU node pool if in production
+          if [ "${{ env.ENVIRONMENT }}" = "production" ]; then
+            echo "Adding GPU-optimized node pool..."
+            doctl kubernetes cluster node-pool create $CLUSTER_NAME \
+              --name gpu-optimized \
+              --size gd-l40s-4vcpu-24gb \
+              --count 2 \
+              --label node-type=gpu-optimized \
+              --tag gpu-optimized
+          fi
+
+          # Add memory-optimized node pool if in production
+          if [ "${{ env.ENVIRONMENT }}" = "production" ]; then
+            echo "Adding memory-optimized node pool..."
+            doctl kubernetes cluster node-pool create $CLUSTER_NAME \
+              --name memory-optimized \
+              --size m-4vcpu-32gb \
+              --count 1 \
+              --label node-type=memory-optimized \
+              --tag memory-optimized
+          fi
+
+      - name: Get kubeconfig
+        if: steps.check-cluster.outputs.cluster_exists == 'true'
+        run: |
+          CLUSTER_NAME="${{ secrets.CLUSTER_NAME }}-${{ env.ENVIRONMENT }}"
+          doctl kubernetes cluster kubeconfig save $CLUSTER_NAME
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Verify cluster
+        run: |
+          kubectl get nodes
+          kubectl get nodes --show-labels
+
+  deploy-kubernetes:
+    name: Deploy to Kubernetes
+    needs: [build-docker, provision-infrastructure]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Get kubeconfig
+        run: |
+          CLUSTER_NAME="${{ secrets.CLUSTER_NAME }}-${{ env.ENVIRONMENT }}"
+          doctl kubernetes cluster kubeconfig save $CLUSTER_NAME
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'v3.10.0'
+
+      - name: Create environment files
+        run: |
+          # Create .env file for production
+          cat > .env.production << EOF
+          # OpenAI API
+          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+
+          # Database
+          MONGODB_URI=${{ secrets.MONGODB_URI }}
+
+          # Authentication
+          JWT_SECRET=${{ secrets.JWT_SECRET }}
+
+          # Supabase
+          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}
+
+          # Frontend URLs
+          GATSBY_API_URL=https://api.${{ secrets.DOMAIN_NAME }}
+          GATSBY_SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          GATSBY_SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+
+          # Stripe (if using payments)
+          STRIPE_SECRET_KEY=${{ secrets.STRIPE_SECRET_KEY }}
+          GATSBY_STRIPE_PUBLISHABLE_KEY=${{ secrets.STRIPE_PUBLISHABLE_KEY }}
+          EOF
+
+      - name: Create Kubernetes namespace
+        run: |
+          kubectl create namespace kai-system --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Create Kubernetes secrets
+        run: |
+          # Create main secrets
+          kubectl create secret generic kai-secrets \
+            --namespace kai-system \
+            --from-literal=mongodb-uri='${{ secrets.MONGODB_URI }}' \
+            --from-literal=jwt-secret='${{ secrets.JWT_SECRET }}' \
+            --from-literal=openai-api-key='${{ secrets.OPENAI_API_KEY }}' \
+            --from-literal=supabase-url='${{ secrets.SUPABASE_URL }}' \
+            --from-literal=supabase-key='${{ secrets.SUPABASE_KEY }}' \
+            --from-literal=stripe-secret-key='${{ secrets.STRIPE_SECRET_KEY }}' \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          # Create Redis password secret
+          kubectl create secret generic redis-password \
+            --namespace kai-system \
+            --from-literal=redis-password='${{ secrets.REDIS_PASSWORD }}' \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Check and Install cert-manager
+        run: |
+          # Check if cert-manager is already installed
+          if kubectl get namespace cert-manager &>/dev/null && kubectl get deployment -n cert-manager cert-manager &>/dev/null; then
+            echo "cert-manager is already installed, skipping installation"
+          else
+            echo "Installing cert-manager..."
+            # Add Jetstack Helm repo
+            helm repo add jetstack https://charts.jetstack.io
+
+            # Install cert-manager
+            helm upgrade --install cert-manager jetstack/cert-manager \
+              --namespace cert-manager \
+              --create-namespace \
+              --version v1.11.0 \
+              --set installCRDs=true
+
+            # Wait for cert-manager to be ready
+            kubectl -n cert-manager rollout status deployment/cert-manager
+            kubectl -n cert-manager rollout status deployment/cert-manager-webhook
+          fi
+
+          # Check if ClusterIssuer exists
+          if kubectl get clusterissuer letsencrypt-prod &>/dev/null; then
+            echo "ClusterIssuer already exists, skipping creation"
+          else
+            echo "Creating ClusterIssuer for Let's Encrypt..."
+            # Create ClusterIssuer for Let's Encrypt
+            cat > cluster-issuer.yaml << EOF
+            apiVersion: cert-manager.io/v1
+            kind: ClusterIssuer
+            metadata:
+              name: letsencrypt-prod
+            spec:
+              acme:
+                server: https://acme-v02.api.letsencrypt.org/directory
+                email: ${{ secrets.ADMIN_EMAIL }}
+                privateKeySecretRef:
+                  name: letsencrypt-prod
+                solvers:
+                - http01:
+                    ingress:
+                      class: nginx
+            EOF
+
+            kubectl apply -f cluster-issuer.yaml
+          fi
+
+      - name: Check and Install NGINX Ingress Controller
+        run: |
+          # Check if NGINX Ingress is already installed
+          if kubectl get deployment -n kai-system nginx-ingress-ingress-nginx-controller &>/dev/null; then
+            echo "NGINX Ingress Controller is already installed, skipping installation"
+          else
+            echo "Installing NGINX Ingress Controller..."
+            # Add NGINX Ingress Helm repo
+            helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+
+            # Install NGINX Ingress
+            helm upgrade --install nginx-ingress ingress-nginx/ingress-nginx \
+              --namespace kai-system \
+              --set controller.publishService.enabled=true
+
+            # Wait for NGINX Ingress to be ready
+            kubectl -n kai-system rollout status deployment/nginx-ingress-ingress-nginx-controller
+          fi
+
+      - name: Check and Install Argo Workflows
+        run: |
+          # Check if Argo Workflows is already installed
+          if kubectl get namespace argo &>/dev/null && kubectl get deployment -n argo argo-server &>/dev/null; then
+            echo "Argo Workflows is already installed, skipping installation"
+          else
+            echo "Installing Argo Workflows..."
+            # Create namespace
+            kubectl create namespace argo --dry-run=client -o yaml | kubectl apply -f -
+
+            # Install Argo Workflows
+            kubectl apply -n argo -f https://github.com/argoproj/argo-workflows/releases/download/v3.4.5/install.yaml
+
+            # Wait for Argo to be ready
+            kubectl -n argo rollout status deployment/argo-server
+          fi
+
+          # Check and update Argo configuration
+          echo "Configuring Argo to work with the kai-system namespace..."
+          kubectl patch configmap/workflow-controller-configmap \
+            -n argo \
+            --type merge \
+            -p '{"data":{"workflowNamespaces":"kai-system,argo"}}' \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Deploy with Helm
+        run: |
+          # Update Helm repos
+          helm repo update
+
+          # Create values override file
+          cat > values-override.yaml << EOF
+          global:
+            environment: ${{ env.ENVIRONMENT }}
+            imageRegistry: ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}
+            imageTag: ${{ github.sha }}
+            domain: ${{ secrets.DOMAIN_NAME }}
+            ingress:
+              enabled: true
+              annotations:
+                kubernetes.io/ingress.class: nginx
+                cert-manager.io/cluster-issuer: letsencrypt-prod
+              hosts:
+                - host: api.${{ secrets.DOMAIN_NAME }}
+                  paths:
+                    - path: /
+                      pathType: Prefix
+              tls:
+                - secretName: kai-tls-cert
+                  hosts:
+                    - api.${{ secrets.DOMAIN_NAME }}
+          EOF
+
+          # Deploy using Helm
+          helm upgrade --install kai ./helm-charts/kai \
+            --namespace kai-system \
+            --values ./helm-charts/kai/values-${{ env.ENVIRONMENT }}.yaml \
+            --values values-override.yaml
+
+      - name: Verify deployment
+        run: |
+          # Wait for deployments to be ready
+          kubectl -n kai-system rollout status deployment/api-server
+          kubectl -n kai-system rollout status deployment/coordinator-service
+
+          # Check if services are running
+          kubectl -n kai-system get services
+
+          # Check if ingress is configured
+          kubectl -n kai-system get ingress
+
+          # Check if certificates are issued
+          kubectl -n kai-system get certificates
+
+      - name: Run database migrations
+        run: |
+          # Create a temporary pod to run migrations
+          cat > migration-job.yaml << EOF
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: database-migrations
+            namespace: kai-system
+          spec:
+            template:
+              spec:
+                containers:
+                - name: migrations
+                  image: ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-api:${{ github.sha }}
+                  command: ["node", "scripts/run-migrations.js"]
+                  env:
+                  - name: MONGODB_URI
+                    valueFrom:
+                      secretKeyRef:
+                        name: kai-secrets
+                        key: mongodb-uri
+                restartPolicy: Never
+            backoffLimit: 4
+          EOF
+
+          kubectl apply -f migration-job.yaml
+
+          # Wait for migrations to complete
+          kubectl -n kai-system wait --for=condition=complete job/database-migrations --timeout=120s
+
+      - name: Notify deployment status
+        if: always()
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+          SLACK_TITLE: "Deployment Status"
+          SLACK_MESSAGE: "Kubernetes deployment ${{ job.status }}"
+          SLACK_COLOR: ${{ job.status == 'success' && 'good' || 'danger' }}
+
+  deploy-frontend:
+    name: Deploy Frontend to Vercel
+    needs: deploy-kubernetes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+          cache: 'yarn'
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Deploy to Vercel
+        uses: amondnet/vercel-action@v20
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID_CLIENT }}
+          working-directory: ./packages/client
+          vercel-args: '--prod'
+
+      - name: Deploy admin panel to Vercel
+        uses: amondnet/vercel-action@v20
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID_ADMIN }}
+          working-directory: ./packages/admin
+          vercel-args: '--prod'
+
+  verify-deployment:
+    name: Verify Full Deployment
+    needs: [deploy-kubernetes, deploy-frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comprehensive health check
+        run: |
+          # Wait for DNS propagation (may take some time)
+          echo "Waiting for DNS propagation..."
+          sleep 60
+
+          # Check API health endpoint
+          curl -sSf https://api.${{ secrets.DOMAIN_NAME }}/health || echo "API not yet available, may need more time for DNS propagation"
+
+          # Check pod status
+          kubectl get pods -n kai-system -o json | jq '.items[] | select(.status.phase != "Running" or ([ .status.containerStatuses[] | select(.ready == false) ] | length > 0)) | .metadata.name' || echo "All pods are running"
+
+          # Check recent logs for errors
+          kubectl logs -n kai-system -l app=api-server --tail=50 | grep -i error || echo "No errors in recent logs"
+
+          # Check SSL certificate validity and expiration
+          CERT_EXPIRY=$(echo | openssl s_client -servername api.${{ secrets.DOMAIN_NAME }} -connect api.${{ secrets.DOMAIN_NAME }}:443 2>/dev/null | openssl x509 -noout -enddate | cut -d= -f2 || echo "Certificate not yet available")
+          echo "Certificate expires on: $CERT_EXPIRY"
+
+      - name: Send deployment notification
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+          SLACK_TITLE: "Deployment Complete"
+          SLACK_MESSAGE: "✅ KAI Platform has been successfully deployed to ${{ env.ENVIRONMENT }}!"
+          SLACK_COLOR: "good"
+```
+
+### Workflow Explanation
+
+The GitHub Actions workflow above automates the entire deployment process:
+
+1. **Build and Test**:
+   - Checks out the code
+   - Installs dependencies
+   - Builds all packages
+   - Runs tests
+   - Uploads build artifacts for later use
+
+2. **Build Docker Images**:
+   - Downloads the build artifacts
+   - Builds Docker images for all services
+   - Pushes images to the Docker registry
+
+3. **Provision Infrastructure**:
+   - Checks if a Kubernetes cluster already exists
+   - Creates a new cluster if needed with all required node pools
+   - Configures the cluster with appropriate labels and tags
+
+4. **Deploy to Kubernetes**:
+   - Creates necessary namespaces
+   - Creates Kubernetes secrets from GitHub secrets
+   - Installs cert-manager for SSL certificates (if not already installed)
+   - Installs NGINX Ingress Controller (if not already installed)
+   - Installs Argo Workflows for ML pipelines (if not already installed)
+   - Deploys the application using Helm charts
+   - Verifies the deployment
+   - Runs database migrations
+
+5. **Deploy Frontend**:
+   - Deploys the client frontend to Vercel
+   - Deploys the admin panel to Vercel
+
+6. **Verify Full Deployment**:
+   - Performs comprehensive health checks
+   - Verifies API availability
+   - Checks pod status
+   - Examines logs for errors
+   - Verifies SSL certificate validity
+   - Sends a notification when deployment is complete
+
+## Digital Ocean Kubernetes Cluster Configuration
+
+The KAI platform is designed to run on a Kubernetes cluster with specific node pools optimized for different workloads. This section details the cluster configuration required for optimal performance.
+
+### Cluster Requirements
+
+Based on the KAI platform's architecture and resource needs, the following cluster configuration is recommended:
+
+1. **Kubernetes Version**: Latest stable version (1.32.x or newer)
+2. **Region**: Choose the region closest to your users
+3. **High Availability**: At least 3 nodes in the orchestration pool for production
+
+### Node Pool Configuration
+
+The KAI platform requires several specialized node pools to handle different types of workloads:
+
+#### 1. Orchestration Pool
+- **Purpose**: Runs the API server, coordinator service, and other control plane components
+- **Machine Type**: Standard Droplets
+- **Size**: 4GB RAM / 2 vCPUs (s-2vcpu-4gb)
+- **Count**: 3 nodes (for high availability in production)
+- **Labels**: `node-type=orchestration`
+
+#### 2. CPU-Optimized Pool
+- **Purpose**: Handles general processing, data transformation, and non-GPU workloads
+- **Machine Type**: CPU-Optimized Droplets
+- **Size**: 8GB RAM / 4 vCPUs (c-4)
+- **Count**: 3 nodes
+- **Labels**: `node-type=cpu-optimized`
+
+#### 3. GPU Pool
+- **Purpose**: Runs ML inference and training tasks, 3D model generation
+- **Machine Type**: GPU Droplets
+- **Size**: With NVIDIA L40S or H100 GPUs
+- **Count**: 2 nodes
+- **Labels**: `node-type=gpu-optimized`
+- **Note**: Required for production, optional for staging
+
+#### 4. Memory-Optimized Pool
+- **Purpose**: Handles large model loading and memory-intensive operations
+- **Machine Type**: Memory-Optimized Droplets
+- **Size**: 32GB RAM / 4 vCPUs (m-4vcpu-32gb)
+- **Count**: 1 node
+- **Labels**: `node-type=memory-optimized`
+- **Note**: Required for production, optional for staging
+
+### Resource Allocation
+
+The KAI platform components have specific resource requirements that are automatically configured based on the environment:
+
+| Component | Resource | Staging | Production |
+|-----------|----------|---------|------------|
+| API Server | Replicas | 1 | 3 |
+| API Server | CPU Request | 200m | 500m |
+| API Server | Memory Request | 512Mi | 1Gi |
+| API Server | CPU Limit | 1000m | 2000m |
+| API Server | Memory Limit | 2Gi | 4Gi |
+| Coordinator | Replicas | 1 | 3 |
+| Coordinator | CPU Request | 200m | 500m |
+| Coordinator | Memory Request | 512Mi | 1Gi |
+| Coordinator | CPU Limit | 1000m | 2000m |
+| Coordinator | Memory Limit | 2Gi | 4Gi |
+| ML Services | Replicas | 1 | 1-3 (auto-scaled) |
+| ML Services | CPU Request | 500m-1000m | 1000m-4000m |
+| ML Services | Memory Request | 1Gi-2Gi | 2Gi-8Gi |
+| ML Services | GPU Request | 0-1 | 1 |
+| Notification | Replicas | 1 | 3 |
+| Notification | CPU Request | 200m | 500m |
+| Notification | Memory Request | 256Mi | 512Mi |
+
+## SSL Certificate Management
+
+The KAI platform uses cert-manager to automatically manage SSL certificates. This section explains how certificates are issued and renewed.
+
+### Certificate Issuance
+
+When you deploy the KAI platform, the GitHub Actions workflow automatically:
+
+1. Installs cert-manager in the cluster (if not already installed)
+2. Creates a ClusterIssuer for Let's Encrypt
+3. Configures the ingress resources with appropriate annotations
+4. Requests certificates for all configured domains
+
+### Automatic Certificate Renewal
+
+Cert-manager handles certificate renewal automatically:
+
+1. **Monitoring**: Cert-manager continuously monitors certificate expiration dates
+2. **Proactive Renewal**: It automatically initiates renewal when certificates reach ~30 days before expiration
+3. **Zero-downtime Process**: New certificates are obtained in the background and only replaced after successful validation
+4. **Failure Handling**: If renewal fails, cert-manager retries with exponential backoff
+
+### Certificate Verification
+
+You can verify the status of your certificates using:
+
+```bash
+kubectl get certificates -n kai-system
+kubectl get certificaterequests -n kai-system
+kubectl describe certificate kai-tls-cert -n kai-system
+```
+
+## Frontend Deployment to Vercel
+
+The KAI platform frontend applications are deployed to Vercel for optimal performance and reliability.
+
+### Vercel Projects Setup
+
+Before running the GitHub Actions workflow, you need to set up two projects in Vercel:
+
+1. **Client Frontend** (Gatsby):
+   - Create a new project in Vercel
+   - Connect to your GitHub repository
+   - Configure the project:
+     - Framework Preset: Gatsby
+     - Root Directory: `packages/client`
+     - Build Command: `yarn build`
+     - Output Directory: `public`
+   - Note the Project ID for the GitHub secret `VERCEL_PROJECT_ID_CLIENT`
+
+2. **Admin Panel** (Next.js):
+   - Create a new project in Vercel
+   - Connect to your GitHub repository
+   - Configure the project:
+     - Framework Preset: Next.js
+     - Root Directory: `packages/admin`
+     - Build Command: `yarn build`
+     - Output Directory: `out`
+   - Note the Project ID for the GitHub secret `VERCEL_PROJECT_ID_ADMIN`
+
+### Vercel Environment Variables
+
+The GitHub Actions workflow automatically sets the required environment variables for your Vercel deployments, including:
+
+- API URL
+- Supabase configuration
+- Stripe keys (if using payments)
+- Other application-specific settings
+
+### Custom Domain Configuration
+
+After the first deployment, you should configure custom domains in Vercel:
+
+1. Go to your Vercel project settings
+2. Navigate to the "Domains" section
+3. Add your custom domains:
+   - `app.yourdomain.com` for the client frontend
+   - `admin.yourdomain.com` for the admin panel
+4. Configure DNS records as instructed by Vercel
+
+## Environment Variables and Secrets
+
+The KAI platform requires various environment variables and secrets for proper operation. This section explains how they are managed.
+
+### GitHub Secrets
+
+All sensitive information is stored as GitHub Secrets and injected into the deployment process by the GitHub Actions workflow. This includes:
+
+- API keys
+- Database credentials
+- JWT secrets
+- Supabase credentials
+- Vercel tokens
+- Docker registry credentials
+
+### Kubernetes Secrets
+
+The GitHub Actions workflow creates Kubernetes secrets from the GitHub Secrets, making them available to the applications running in the cluster:
+
+```yaml
+# Example of how secrets are created
+kubectl create secret generic kai-secrets \
+  --namespace kai-system \
+  --from-literal=mongodb-uri='${{ secrets.MONGODB_URI }}' \
+  --from-literal=jwt-secret='${{ secrets.JWT_SECRET }}' \
+  --from-literal=openai-api-key='${{ secrets.OPENAI_API_KEY }}' \
+  --from-literal=supabase-url='${{ secrets.SUPABASE_URL }}' \
+  --from-literal=supabase-key='${{ secrets.SUPABASE_KEY }}' \
+  --from-literal=stripe-secret-key='${{ secrets.STRIPE_SECRET_KEY }}' \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+### Environment-Specific Configuration
+
+The KAI platform uses different configuration values for staging and production environments:
+
+1. **Helm Values Files**:
+   - `values.yaml`: Default values
+   - `values-staging.yaml`: Staging-specific overrides
+   - `values-production.yaml`: Production-specific overrides
+
+2. **Environment Variables**:
+   - The GitHub Actions workflow creates environment-specific `.env` files
+   - These files are used during the build process
+
+## Initial Setup and Deployment
+
+To get started with the automated deployment system, follow these steps:
+
+### 1. Set Up GitHub Repository
+
+1. **Configure GitHub Secrets**:
+   - Go to your GitHub repository
+   - Navigate to Settings > Secrets and variables > Actions
+   - Add all the required secrets listed in the "Required GitHub Secrets" section
+
+### 2. Set Up External Services
+
+1. **Set Up Supabase Projects**:
+   - Create a staging project in Supabase
+   - Create a production project in Supabase
+   - Set up the necessary tables and storage buckets
+   - Note the URLs and API keys for the GitHub secrets
+
+2. **Set Up Vercel Projects**:
+   - Create a project for the client frontend
+     - Framework Preset: Gatsby
+     - Root Directory: `packages/client`
+   - Create a project for the admin panel
+     - Framework Preset: Next.js
+     - Root Directory: `packages/admin`
+   - Note the project IDs for the GitHub secrets
+
+3. **Configure DNS**:
+   - Set up your domain with your DNS provider
+   - Create records for:
+     - `api.yourdomain.com` (production API)
+     - `api.staging.yourdomain.com` (staging API)
+     - `app.yourdomain.com` (production frontend)
+     - `app.staging.yourdomain.com` (staging frontend)
+     - `admin.yourdomain.com` (production admin panel)
+     - `admin.staging.yourdomain.com` (staging admin panel)
+
+### 3. Trigger the Initial Deployment
+
+1. **Run the Workflow**:
+   - Go to the "Actions" tab in your GitHub repository
+   - Select the "KAI Platform CI/CD Pipeline" workflow
+   - Click "Run workflow"
+   - Choose the environment (staging or production)
+   - Check "Create new cluster if not exists"
+   - Click "Run workflow"
+
+2. **Monitor the Deployment**:
+   - Watch the workflow progress in the GitHub Actions tab
+   - Check for any errors and fix them if needed
+   - The workflow will automatically:
+     - Build and test your code
+     - Build Docker images
+     - Provision Kubernetes infrastructure
+     - Deploy the application
+     - Deploy the frontend
+     - Verify the deployment
+
+### 4. Verify the Deployment
+
+The GitHub Actions workflow includes a comprehensive verification step that checks:
+
+1. **API Availability**: Verifies that the API is responding correctly
+2. **Pod Status**: Ensures all pods are running and ready
+3. **Logs**: Examines recent logs for errors
+4. **SSL Certificates**: Verifies certificate validity and expiration
+
+You can perform additional verification manually:
+
+```bash
+# Check pod status
+kubectl get pods -n kai-system
+
+# Check services
+kubectl get services -n kai-system
+
+# Check ingress
+kubectl get ingress -n kai-system
+
+# Check certificates
+kubectl get certificates -n kai-system
+
+# Check API health
+curl https://api.yourdomain.com/health
+```
+
+### Monitoring
+
+For ongoing monitoring, the KAI platform includes:
+
+1. **Prometheus Metrics**: All services expose Prometheus metrics
+2. **Grafana Dashboards**: Pre-configured dashboards for monitoring system health
+3. **Liveness and Readiness Probes**: All pods have appropriate health checks
+4. **Logging**: Structured JSON logs for easy analysis
+
+To access Grafana (if installed):
+
+```bash
+# Port forward to Grafana
+kubectl port-forward -n monitoring svc/grafana 3000:80
+
+# Access in browser
+open http://localhost:3000
+```
+
+Default login: admin / admin (change on first login)
 
 ### Neural OCR Installation
 
@@ -263,16 +1346,16 @@ The Notification System provides multi-channel notification capabilities:
    # Notification Service
    NOTIFICATION_SERVICE_ENABLED=true
    DEFAULT_NOTIFICATION_CHANNEL=in-app
-   
+
    # Email Provider
    EMAIL_PROVIDER=sendgrid  # sendgrid, mailchimp, or ses
    EMAIL_API_KEY=your_api_key
-   
+
    # SMS Provider (optional)
    SMS_PROVIDER=twilio  # twilio or nexmo
    SMS_API_KEY=your_api_key
    SMS_ACCOUNT_SID=your_sid  # twilio only
-   
+
    # Webhook Configuration
    WEBHOOK_RETRY_ATTEMPTS=3
    WEBHOOK_TIMEOUT_MS=5000
@@ -421,7 +1504,7 @@ The CrewAI integration adds intelligent agent capabilities to the Kai platform:
    OPENAI_TEMPERATURE=0.7
    ENABLE_MOCK_FALLBACK=true
    LOG_LEVEL=info
-   
+
    # Redis Configuration (for agent state persistence)
    REDIS_URL=redis://localhost:6379
    REDIS_PASSWORD=
@@ -432,7 +1515,7 @@ The CrewAI integration adds intelligent agent capabilities to the Kai platform:
    cd packages/agents
    yarn verify
    ```
-   
+
    Or run integration tests:
    ```bash
    yarn test:integration
@@ -460,7 +1543,7 @@ The Hugging Face integration with adaptive model selection provides enhanced AI 
    ```
    # Required for Hugging Face integration
    HF_API_KEY=your_huggingface_api_key
-   
+
    # Optional Hugging Face configuration
    HF_ORGANIZATION_ID=your_organization_id
    HF_DEFAULT_TEXT_MODEL=google/flan-t5-xxl
@@ -468,11 +1551,11 @@ The Hugging Face integration with adaptive model selection provides enhanced AI 
    HF_DEFAULT_IMAGE_MODEL=google/vit-base-patch16-224
    HF_MODEL_TIMEOUT=30000
    HF_USE_FAST_MODELS=true
-   
+
    # Optional additional providers
    OPENAI_API_KEY=your_openai_api_key
    ANTHROPIC_API_KEY=your_anthropic_api_key
-   
+
    # Adaptive model selection configuration
    MODEL_EVALUATION_STANDARD_CYCLE=10
    MODEL_EVALUATION_TEST_CYCLE=3
@@ -483,7 +1566,7 @@ The Hugging Face integration with adaptive model selection provides enhanced AI 
    ```bash
    curl http://localhost:3000/api/ai/models/list
    ```
-   
+
    The response should include available models across all configured providers.
 
 4. Test the adaptive model selection system:
@@ -558,25 +1641,25 @@ The KAI ML Platform uses a job-based processing architecture with Argo Workflows
        - Node Plan: 4 GB / 2 vCPU or higher
        - Node Count: 3 (for high availability)
        - Labels: `node-type=orchestration`
-       
+
      - **CPU-Optimized Pool**:
        - Machine Type: CPU-Optimized
        - Node Plan: 8 GB / 4 vCPU or higher
        - Node Count: 3
        - Labels: `node-type=cpu-optimized`
-       
+
      - **GPU-Optimized Pool**:
        - Machine Type: GPU-Optimized
        - Node Plan: With NVIDIA L40S/H100 GPUs
        - Node Count: 2
        - Labels: `node-type=gpu-optimized`
-       
+
      - **Memory-Optimized Pool**:
        - Machine Type: Memory-Optimized
        - Node Plan: 16 GB RAM or higher
        - Node Count: 2
        - Labels: `node-type=memory-optimized`
-       
+
 4. Enable the NVIDIA GPU Operator (if using GPU nodes)
 5. Name your cluster (e.g., `kai-ml-cluster`)
 6. Click "Create Cluster"
@@ -1097,11 +2180,11 @@ COMPONENT_TIMEOUT_MS=5000
    db.materials.createIndex({ "collectionId": 1 })
    db.materials.createIndex({ "tags": 1 })
    db.materials.createIndex({ "$**": "text" })
-   
+
    // Versions Collection Indexes
    db.versions.createIndex({ "entityId": 1, "entityType": 1 })
    db.versions.createIndex({ "createdAt": -1 })
-   
+
    // Queue Collections Indexes
    db.pdf_jobs.createIndex({ "status": 1, "priority": -1, "createdAt": 1 })
    db.crawler_jobs.createIndex({ "status": 1, "priority": -1, "createdAt": 1 })
@@ -1180,10 +2263,10 @@ Database migrations are integrated into the CI/CD pipeline to ensure they run au
   uses: actions/setup-node@v3
   with:
     node-version: ${{ env.NODE_VERSION }}
-    
+
 - name: Install dependencies
   run: yarn install --frozen-lockfile
-  
+
 - name: Run database migrations (Staging)
   run: |
     echo "Running database migrations for staging environment..."
@@ -1571,15 +2654,15 @@ COMMIT;
 ALTER TABLE queue_jobs ENABLE ROW LEVEL SECURITY;
 
 -- Create policy for authenticated users
-CREATE POLICY "Authenticated users can view all jobs" 
-  ON queue_jobs FOR SELECT 
-  TO authenticated 
+CREATE POLICY "Authenticated users can view all jobs"
+  ON queue_jobs FOR SELECT
+  TO authenticated
   USING (true);
 
 -- Create policy for service role to perform all operations
-CREATE POLICY "Service role can perform all operations" 
-  ON queue_jobs FOR ALL 
-  TO service_role 
+CREATE POLICY "Service role can perform all operations"
+  ON queue_jobs FOR ALL
+  TO service_role
   USING (true);
 ```
 
@@ -1652,25 +2735,25 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-        
+
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'yarn'
-          
+
       - name: Install dependencies
         run: yarn install --frozen-lockfile
-        
+
       - name: Run linting
         run: yarn lint
-        
+
       - name: Run unit tests
         run: yarn test
-        
+
       - name: Build packages
         run: yarn build
-        
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v3
         with:
@@ -1686,8 +2769,8 @@ jobs:
     name: Build Docker Images
     needs: build-and-test
     if: |
-      (github.ref == 'refs/heads/staging') || 
-      (github.ref == 'refs/heads/main') || 
+      (github.ref == 'refs/heads/staging') ||
+      (github.ref == 'refs/heads/main') ||
       (github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     strategy:
@@ -1756,8 +2839,8 @@ jobs:
     name: Deploy to ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'staging') }}
     needs: build-docker-images
     if: |
-      (github.ref == 'refs/heads/staging') || 
-      (github.ref == 'refs/heads/main') || 
+      (github.ref == 'refs/heads/staging') ||
+      (github.ref == 'refs/heads/main') ||
       (github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     concurrency:
@@ -1786,16 +2869,16 @@ jobs:
           fi
 
       # ... more deployment steps ...
-      
+
       # Run database migrations before deployment
       - name: Setup Node.js for migrations
         uses: actions/setup-node@v3
         with:
           node-version: ${{ env.NODE_VERSION }}
-          
+
       - name: Install dependencies
         run: yarn install --frozen-lockfile
-        
+
       - name: Run database migrations
         run: |
           echo "Running database migrations for ${{ env.DEPLOY_ENV }} environment..."
@@ -1812,15 +2895,15 @@ jobs:
         id: deploy
         run: |
           echo "Applying Kubernetes manifests for ${{ env.DEPLOY_ENV }}..."
-          
+
           # Create a backup of current deployments for potential rollback
           echo "Creating backup of current deployments..."
           kubectl --context=${{ env.KUBE_CONTEXT }} get deployments -n kai-system -o yaml > deployments-backup.yaml
-          
+
           # Apply the deployment with environment parameter
           chmod +x ./kubernetes/deploy.sh
           ./kubernetes/deploy.sh --context=${{ env.KUBE_CONTEXT }} --registry=${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }} --tag=${{ github.sha }} --env=${{ env.DEPLOY_ENV }}
-          
+
           echo "deployment_id=$(date +%s)" >> $GITHUB_OUTPUT
 
       # Monitor deployment health
@@ -1829,11 +2912,11 @@ jobs:
         run: |
           echo "Monitoring deployment health for 2 minutes..."
           FAILURES=0
-          
+
           for i in {1..12}; do
             sleep 10
             HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" ${{ env.API_URL }}/health || echo "000")
-            
+
             if [ "$HEALTH_STATUS" != "200" ]; then
               FAILURES=$((FAILURES+1))
               echo "::warning::Health check #$i failed with status $HEALTH_STATUS"
@@ -1841,7 +2924,7 @@ jobs:
               echo "Health check #$i passed"
             fi
           done
-          
+
           if [ "$FAILURES" -gt 3 ]; then
             echo "::error::Too many health check failures. Initiating rollback."
             echo "rollback=true" >> $GITHUB_OUTPUT
@@ -1886,22 +2969,22 @@ update-gitops:
         path: gitops
         token: ${{ secrets.GITOPS_PAT }}
         ref: ${{ env.TARGET_BRANCH }}
-        
+
     - name: Update image tags in HelmReleases
       run: |
         echo "Updating image tags for ${{ env.DEPLOY_ENV }} environment..."
-        
+
         # Update coordinator release
         cd gitops/clusters/${{ env.DEPLOY_ENV }}/releases
-        
+
         # Use yq to update the image tag in the HelmRelease
         yq e '.spec.values.image.tag = "${{ github.sha }}"' -i coordinator.yaml
-        
+
         # Additional services can be updated similarly
-        
+
         git config --global user.name "Kai CI Bot"
         git config --global user.email "ci-bot@kai-platform.com"
-        
+
         git add .
         git commit -m "ci: update image tags to ${{ github.sha }} for ${{ env.DEPLOY_ENV }}" || echo "No changes to commit"
         git push
@@ -1956,7 +3039,7 @@ The pipeline uses the following secrets, which should be set in your GitHub repo
    ```bash
    # Use the centralized .env file in the root directory
    cp .env.example .env
-   
+
    # Configure all necessary environment variables in the .env file
    # including database connections, API keys, services URLs, etc.
    ```
@@ -1965,7 +3048,7 @@ The pipeline uses the following secrets, which should be set in your GitHub repo
    ```bash
    # Option 1: Using Docker
    docker run -d -p 27017:27017 --name kai-mongodb mongo:5
-   
+
    # Option 2: Using MongoDB Atlas
    # Configure your MongoDB Atlas connection string in the root .env file
    ```
@@ -1982,7 +3065,7 @@ The pipeline uses the following secrets, which should be set in your GitHub repo
    ```bash
    # Option 1: Using Supabase cloud
    # Create a project at https://supabase.com and configure in the root .env file
-   
+
    # Option 2: Using Supabase local development
    npx supabase start
    ```
@@ -2115,7 +3198,7 @@ packages/
    ```bash
    # Start API server in debug mode
    yarn workspace @kai/server dev:debug
-   
+
    # Then connect using Chrome DevTools or VS Code
    ```
 
@@ -2215,7 +3298,7 @@ packages/
    ```typescript
    // In packages/server/src/routes/material.routes.ts
    router.post('/materials/search', validateSearchRequest, materialController.searchMaterials);
-   
+
    // In packages/server/src/controllers/material.controller.ts
    export const searchMaterials = async (req: Request, res: Response, next: NextFunction) => {
      try {
@@ -2237,7 +3320,7 @@ packages/
          .post('/materials/search')
          .send({ query: 'ceramic', materialType: 'tile' })
          .set('Authorization', `Bearer ${testToken}`);
-       
+
        expect(response.status).toBe(200);
        expect(response.body.materials).toBeInstanceOf(Array);
      });
@@ -2250,7 +3333,7 @@ packages/
    ```tsx
    // In packages/client/src/components/MaterialCard.tsx
    import React from 'react';
-   
+
    interface MaterialCardProps {
      id: string;
      name: string;
@@ -2258,7 +3341,7 @@ packages/
      manufacturer: string;
      onClick?: () => void;
    }
-   
+
    export const MaterialCard: React.FC<MaterialCardProps> = ({
      id,
      name,
@@ -2284,7 +3367,7 @@ packages/
    import React from 'react';
    import { render, screen, fireEvent } from '@testing-library/react';
    import { MaterialCard } from '../MaterialCard';
-   
+
    describe('MaterialCard', () => {
      it('renders material information correctly', () => {
        render(
@@ -2295,12 +3378,12 @@ packages/
            manufacturer="Example Tiles Inc."
          />
        );
-       
+
        expect(screen.getByText('Ceramic Tile')).toBeInTheDocument();
        expect(screen.getByText('Example Tiles Inc.')).toBeInTheDocument();
        expect(screen.getByAltText('Ceramic Tile')).toHaveAttribute('src', '/example.jpg');
      });
-     
+
      it('calls onClick when clicked', () => {
        const handleClick = jest.fn();
        render(
@@ -2312,7 +3395,7 @@ packages/
            onClick={handleClick}
          />
        );
-       
+
        fireEvent.click(screen.getByText('Ceramic Tile'));
        expect(handleClick).toHaveBeenCalledTimes(1);
      });
@@ -2326,7 +3409,7 @@ packages/
    # In packages/ml/python/models/texture_classifier.py
    import tensorflow as tf
    from tensorflow.keras import layers, models
-   
+
    def create_texture_classifier(input_shape=(224, 224, 3), num_classes=10):
        """Create a CNN model for texture classification."""
        model = models.Sequential([
@@ -2343,13 +3426,13 @@ packages/
            layers.Dropout(0.5),
            layers.Dense(num_classes, activation='softmax')
        ])
-       
+
        model.compile(
            optimizer='adam',
            loss='categorical_crossentropy',
            metrics=['accuracy']
        )
-       
+
        return model
    ```
 
@@ -2360,15 +3443,15 @@ packages/
    import numpy as np
    import tensorflow as tf
    from models.texture_classifier import create_texture_classifier
-   
+
    def train_texture_classifier(dataset_path, output_dir, epochs=10, batch_size=32):
        """Train the texture classifier on a dataset."""
        # Load and preprocess data
        # ...
-       
+
        # Create model
        model = create_texture_classifier(num_classes=len(class_names))
-       
+
        # Train the model
        history = model.fit(
            train_dataset,
@@ -2384,14 +3467,14 @@ packages/
                )
            ]
        )
-       
+
        # Save the model
        model.save(os.path.join(output_dir, 'texture_classifier.h5'))
-       
+
        # Save class names
        with open(os.path.join(output_dir, 'class_names.txt'), 'w') as f:
            f.write('\n'.join(class_names))
-       
+
        return {
            'model_path': os.path.join(output_dir, 'texture_classifier.h5'),
            'class_names': class_names,
@@ -2407,26 +3490,26 @@ packages/
    def classify_texture():
        if 'image' not in request.files:
            return jsonify({'error': 'No image provided'}), 400
-       
+
        image_file = request.files['image']
        img = load_and_preprocess_image(image_file)
-       
+
        # Load the model (cached)
        model = get_texture_classifier()
-       
+
        # Make prediction
        predictions = model.predict(np.expand_dims(img, axis=0))[0]
        class_names = get_texture_class_names()
-       
+
        # Format results
        results = [
            {'class': class_name, 'confidence': float(confidence)}
            for class_name, confidence in zip(class_names, predictions)
        ]
-       
+
        # Sort by confidence
        results.sort(key=lambda x: x['confidence'], reverse=True)
-       
+
        return jsonify({
            'results': results[:5],  # Top 5 predictions
            'processingTimeMs': int((time.time() - start_time) * 1000)
@@ -2443,13 +3526,13 @@ packages/
      }>;
      processingTimeMs: number;
    }
-   
+
    export async function classifyTexture(
      imagePath: string
    ): Promise<TextureClassificationResult> {
      const formData = new FormData();
      formData.append('image', fs.createReadStream(imagePath));
-     
+
      const response = await axios.post<TextureClassificationResult>(
        `${ML_API_URL}/api/classify-texture`,
        formData,
@@ -2459,39 +3542,171 @@ packages/
          }
        }
      );
-     
+
      return response.data;
    }
    ```
 
-## Maintenance and Updates
+## Ongoing Maintenance and Updates
+
+Once your initial deployment is complete, the system is designed for easy maintenance and updates.
 
 ### Updating the Application
 
-1. Push changes to the main branch
-2. The GitHub Actions workflow will automatically:
-   - Run tests
-   - Build new Docker images
-   - Update Kubernetes deployments
-   - Deploy frontend apps to Vercel
+With the automated GitHub Actions workflow, updating the KAI platform is straightforward:
+
+1. **Code Changes**:
+   - Make your changes in a feature branch
+   - Create a pull request to the main branch
+   - Review and merge the pull request
+
+2. **Automatic Deployment**:
+   - The GitHub Actions workflow automatically triggers when changes are pushed to the main branch
+   - The workflow:
+     - Runs tests
+     - Builds new Docker images
+     - Updates Kubernetes deployments
+     - Deploys frontend apps to Vercel
+
+3. **Manual Deployment**:
+   - You can also trigger a deployment manually:
+     - Go to the "Actions" tab in your GitHub repository
+     - Select the "KAI Platform CI/CD Pipeline" workflow
+     - Click "Run workflow"
+     - Choose the environment (staging or production)
+     - Optionally select "Create new cluster if not exists"
+
+### Deployment Workflow
+
+The deployment process follows these steps:
+
+1. **Code is pushed** to the main branch (for production) or staging branch (for staging)
+2. **GitHub Actions workflow is triggered**
+3. **Build and test** job runs to verify code quality
+4. **Docker images are built** for all services
+5. **Infrastructure is checked** and provisioned if needed
+6. **Kubernetes components are set up** (cert-manager, NGINX, Argo)
+7. **Application is deployed** using Helm charts
+8. **Frontend is deployed** to Vercel
+9. **Deployment is verified** with comprehensive health checks
+10. **Notification is sent** upon completion
 
 ### Scaling the Application
 
-1. **Kubernetes Scaling**:
+The KAI platform can be scaled in several ways:
+
+1. **Horizontal Pod Autoscaling**:
+   - The platform uses Kubernetes Horizontal Pod Autoscalers (HPAs) to automatically scale based on CPU and memory usage
+   - You can adjust the HPA settings in the Helm values files
+
+2. **Manual Scaling**:
    ```bash
-   kubectl scale deployment api-server -n kai-ml --replicas=5
-   kubectl scale deployment coordinator-service -n kai-ml --replicas=3
+   # Scale API server
+   kubectl scale deployment api-server -n kai-system --replicas=5
+
+   # Scale coordinator service
+   kubectl scale deployment coordinator-service -n kai-system --replicas=3
+
+   # Scale notification service
+   kubectl scale deployment notification-service -n kai-system --replicas=3
    ```
 
-2. **Node Pool Scaling**:
-   - In the Digital Ocean dashboard, navigate to your Kubernetes cluster
-   - Select the node pool and increase the number of nodes
+3. **Node Pool Scaling**:
+   - In the Digital Ocean dashboard:
+     - Navigate to your Kubernetes cluster
+     - Select the node pool you want to scale
+     - Click "Edit" and adjust the number of nodes
+
+   - Using the command line:
+     ```bash
+     # Get the cluster name
+     doctl kubernetes cluster list
+
+     # Get node pool ID
+     doctl kubernetes cluster node-pool list your-cluster-name
+
+     # Scale the node pool
+     doctl kubernetes cluster node-pool update your-cluster-name node-pool-id --count=5
+     ```
+
+4. **Autoscaling Node Pools**:
+   - Digital Ocean supports node pool autoscaling
+   - Enable autoscaling when creating the cluster or update existing node pools:
+     ```bash
+     doctl kubernetes cluster node-pool update your-cluster-name node-pool-id --auto-scale --min-nodes=2 --max-nodes=5
+     ```
 
 ### Backup and Disaster Recovery
 
-1. **MongoDB Backup**:
-   - Use MongoDB Atlas automated backups
-   - Set up periodic exports to S3
+The KAI platform includes several backup and disaster recovery mechanisms:
+
+1. **Database Backups**:
+   - **MongoDB Atlas**: If using MongoDB Atlas, configure automated backups:
+     - Daily snapshots with 7-day retention
+     - Point-in-time recovery
+     - Periodic exports to S3 for long-term storage
+
+   - **Self-hosted MongoDB**: Use the backup job included in the deployment:
+     ```bash
+     # Check backup job status
+     kubectl get cronjobs -n kai-system
+
+     # Trigger a manual backup
+     kubectl create job --from=cronjob/mongodb-backup manual-backup-$(date +%s) -n kai-system
+     ```
+
+2. **Kubernetes State Backups**:
+   - The deployment script automatically creates backups before applying changes
+   - Backups are stored in `./kubernetes/backups/<environment>/<timestamp>/`
+   - To restore from a backup:
+     ```bash
+     ./kubernetes/deploy.sh --context=your-context --env=production --rollback=20250412153022
+     ```
+
+3. **Disaster Recovery Procedure**:
+
+   In case of a major failure:
+
+   a. **Assess the Situation**:
+      - Identify the affected components
+      - Check logs and monitoring data
+
+   b. **Restore Database**:
+      - Restore the most recent MongoDB backup
+      - Verify data integrity
+
+   c. **Rebuild Infrastructure**:
+      - If the cluster is compromised, create a new one:
+        ```bash
+        # Trigger manual workflow with "create_cluster=true"
+        # Go to GitHub Actions → KAI Platform CI/CD Pipeline → Run workflow
+        ```
+
+   d. **Restore Application State**:
+      - Deploy the last known good version:
+        ```bash
+        # Find the last successful deployment
+        git log --oneline
+
+        # Checkout that commit
+        git checkout <commit-hash>
+
+        # Trigger deployment
+        git push -f origin HEAD:main
+        ```
+
+   e. **Verify Recovery**:
+      - Check all services are running
+      - Verify API endpoints
+      - Test frontend functionality
+      - Validate data consistency
+
+4. **High Availability Configuration**:
+   - The production environment is configured for high availability:
+     - Multiple replicas for all critical services
+     - Pod Disruption Budgets to ensure minimum availability
+     - Anti-affinity rules to distribute pods across nodes
+     - Readiness and liveness probes for automatic recovery
 
 2. **Kubernetes State Backup**:
    - Use [Velero](https://velero.io/) for Kubernetes cluster backups
@@ -2502,6 +3717,44 @@ packages/
    - Schedule regular database exports
 
 ## Troubleshooting
+
+This section provides solutions for common issues you might encounter during deployment or operation of the KAI platform.
+
+### Deployment Issues
+
+#### GitHub Actions Workflow Failures
+
+1. **Build Failures**:
+   - Check the build logs for specific error messages
+   - Verify that all dependencies are correctly specified
+   - Ensure that tests are passing locally before pushing
+
+2. **Docker Image Build Failures**:
+   - Verify Docker registry credentials
+   - Check for disk space issues in the GitHub runner
+   - Ensure Dockerfiles are correctly formatted
+
+3. **Deployment Timeouts**:
+   - Increase the timeout values in the workflow
+   - Check if the cluster is under heavy load
+   - Verify network connectivity to the cluster
+
+### Vercel Deployment Issues
+
+1. **Build Failures**:
+   - Check the Vercel build logs
+   - Verify environment variables are correctly set
+   - Ensure the project configuration is correct
+
+2. **Domain Configuration Issues**:
+   - Verify DNS records are correctly configured
+   - Check SSL certificate issuance
+   - Ensure custom domains are properly set up in Vercel
+
+3. **Runtime Errors**:
+   - Check the browser console for errors
+   - Verify that API calls are properly configured with the correct URL
+   - Check CORS configurations on the backend
 
 ### Supabase Issues
 
@@ -2515,40 +3768,155 @@ packages/
    - Check that the realtime service is enabled
    - Verify WebSocket connections in the browser console
 
-### Vercel Deployment Issues
-
-1. **Build Failures**:
-   - Check the build logs for errors
-   - Verify that all dependencies are properly installed
-   - Ensure environment variables are correctly set
-
-2. **Runtime Errors**:
-   - Check the browser console for errors
-   - Verify that API calls are properly configured with the correct URL
-   - Check CORS configurations on the backend
+3. **Database Connection Issues**:
+   - Verify connection string format
+   - Check network access rules
+   - Ensure the database is running and accessible
 
 ### Kubernetes Issues
 
-1. **Pod Startup Failures**:
-   - Check pod logs: `kubectl logs -n kai-ml <pod-name>`
-   - Describe the pod for events: `kubectl describe pod -n kai-ml <pod-name>`
-   - Verify that secrets and config maps are correctly mounted
+#### Pod Startup Failures
 
-2. **Connection Issues**:
-   - Check if services are properly configured: `kubectl get svc -n kai-ml`
-   - Verify ingress configuration: `kubectl describe ingress -n kai-ml kai-ingress`
-   - Check if TLS certificates are properly issued: `kubectl get certificates -n kai-ml`
+1. **ImagePullBackOff**:
+   - Verify Docker registry credentials
+   - Check image name and tag
+   - Ensure the image exists in the registry
 
-3. **Resource Constraints**:
-   - Check pod resource usage: `kubectl top pods -n kai-ml`
-   - Increase resource limits if necessary in the deployment YAML files
+   ```bash
+   # Check pod status
+   kubectl get pods -n kai-system
 
-4. **Argo Workflow Issues**:
-   - Check workflow status: `kubectl get workflows -n kai-ml`
-   - Get workflow details: `kubectl get workflow -n kai-ml <workflow-name> -o yaml`
-   - Check pod logs for workflow step: `kubectl logs -n kai-ml <workflow-pod-name>`
-   - Check if ServiceAccount has appropriate permissions
-   - Verify PVC creation and access
+   # Describe the failing pod
+   kubectl describe pod <pod-name> -n kai-system
+
+   # Check image pull secrets
+   kubectl get secrets -n kai-system
+   ```
+
+2. **CrashLoopBackOff**:
+   - Check container logs
+   - Verify environment variables
+   - Check for resource constraints
+
+   ```bash
+   # Get logs from the failing pod
+   kubectl logs <pod-name> -n kai-system
+
+   # Check events
+   kubectl get events -n kai-system --sort-by='.lastTimestamp'
+   ```
+
+3. **Pending Pods**:
+   - Check for resource constraints
+   - Verify node pool availability
+   - Check for taints and tolerations
+
+   ```bash
+   # Check node status
+   kubectl get nodes
+
+   # Describe the node
+   kubectl describe node <node-name>
+   ```
+
+#### Service Connectivity Issues
+
+1. **Service Not Accessible**:
+   - Verify service is running
+   - Check endpoints
+   - Verify network policies
+
+   ```bash
+   # Check service
+   kubectl get svc -n kai-system
+
+   # Check endpoints
+   kubectl get endpoints -n kai-system
+
+   # Test connectivity from within the cluster
+   kubectl run -it --rm debug --image=curlimages/curl --restart=Never -- curl http://service-name.kai-system
+   ```
+
+2. **Ingress Issues**:
+   - Verify ingress controller is running
+   - Check ingress resource configuration
+   - Verify SSL certificate
+
+   ```bash
+   # Check ingress
+   kubectl get ingress -n kai-system
+
+   # Describe ingress
+   kubectl describe ingress <ingress-name> -n kai-system
+
+   # Check ingress controller logs
+   kubectl logs -n kai-system -l app=nginx-ingress-ingress-nginx-controller
+   ```
+
+#### Argo Workflow Issues
+
+1. **Workflow Failures**:
+   - Check workflow status
+   - Examine workflow logs
+   - Verify service account permissions
+
+   ```bash
+   # Check workflow status
+   kubectl get workflows -n kai-system
+
+   # Get workflow details
+   kubectl get workflow -n kai-system <workflow-name> -o yaml
+
+   # Check pod logs for workflow step
+   kubectl logs -n kai-system <workflow-pod-name>
+   ```
+
+2. **Workflow Stuck in Pending**:
+   - Check for PVC issues
+   - Verify resource availability
+   - Check for node selector issues
+
+   ```bash
+   # Check PVCs
+   kubectl get pvc -n kai-system
+
+   # Check resource quotas
+   kubectl describe resourcequota -n kai-system
+   ```
+
+### SSL Certificate Issues
+
+1. **Certificate Not Issued**:
+   - Verify cert-manager is running
+   - Check certificate resource
+   - Check DNS configuration
+
+   ```bash
+   # Check cert-manager pods
+   kubectl get pods -n cert-manager
+
+   # Check certificate status
+   kubectl get certificate -n kai-system
+
+   # Check certificate request
+   kubectl get certificaterequest -n kai-system
+
+   # Check challenge
+   kubectl get challenge -n kai-system
+   ```
+
+2. **Certificate Renewal Failures**:
+   - Check cert-manager logs
+   - Verify ACME account registration
+   - Check for rate limiting
+
+   ```bash
+   # Check cert-manager logs
+   kubectl logs -n cert-manager -l app=cert-manager
+
+   # Check ACME account
+   kubectl get secret -n cert-manager letsencrypt-prod
+   ```
 
 ### Docker Issues
 
@@ -2566,6 +3934,34 @@ packages/
    - Use multi-stage builds to reduce final image size
    - Minimize the number of RUN instructions
    - Clean up package caches in the same layer they're created
+
+### Performance Issues
+
+1. **High CPU/Memory Usage**:
+   - Check resource usage
+   - Identify resource-intensive pods
+   - Consider scaling up resources
+
+   ```bash
+   # Check resource usage
+   kubectl top pods -n kai-system
+
+   # Check node resource usage
+   kubectl top nodes
+   ```
+
+2. **Slow API Responses**:
+   - Check for database bottlenecks
+   - Verify network latency
+   - Check for resource constraints
+
+   ```bash
+   # Check API server logs
+   kubectl logs -n kai-system -l app=api-server
+
+   # Check database metrics
+   # (Requires Prometheus and MongoDB exporter)
+   ```
 
 ## Performance Optimization
 

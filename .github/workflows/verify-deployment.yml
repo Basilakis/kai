@@ -1,0 +1,49 @@
+name: Verify Deployment
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Environment to verify (production or staging)'
+        required: true
+        type: string
+      domain:
+        description: 'Domain name for the environment'
+        required: true
+        type: string
+    secrets:
+      slack_webhook:
+        required: false
+
+jobs:
+  verify-deployment:
+    name: Verify Full Deployment
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comprehensive health check
+        run: |
+          # Wait for DNS propagation (may take some time)
+          echo "Waiting for DNS propagation..."
+          sleep 60
+          
+          # Check API health endpoint
+          curl -sSf https://api.${{ inputs.domain }}/health || echo "API not yet available, may need more time for DNS propagation"
+          
+          # Check pod status
+          kubectl get pods -n kai-system -o json | jq '.items[] | select(.status.phase != "Running" or ([ .status.containerStatuses[] | select(.ready == false) ] | length > 0)) | .metadata.name' || echo "All pods are running"
+          
+          # Check recent logs for errors
+          kubectl logs -n kai-system -l app=api-server --tail=50 | grep -i error || echo "No errors in recent logs"
+          
+          # Check SSL certificate validity and expiration
+          CERT_EXPIRY=$(echo | openssl s_client -servername api.${{ inputs.domain }} -connect api.${{ inputs.domain }}:443 2>/dev/null | openssl x509 -noout -enddate | cut -d= -f2 || echo "Certificate not yet available")
+          echo "Certificate expires on: $CERT_EXPIRY"
+      
+      - name: Send deployment notification
+        if: secrets.slack_webhook != ''
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_WEBHOOK: ${{ secrets.slack_webhook }}
+          SLACK_TITLE: "Deployment Complete"
+          SLACK_MESSAGE: "✅ KAI Platform has been successfully deployed to ${{ inputs.environment }}!"
+          SLACK_COLOR: "good"

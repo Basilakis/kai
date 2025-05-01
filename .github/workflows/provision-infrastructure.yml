@@ -1,0 +1,114 @@
+name: Provision Infrastructure
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Environment to provision (production or staging)'
+        required: true
+        type: string
+      create_cluster:
+        description: 'Create new cluster if not exists'
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      digitalocean_token:
+        required: true
+      cluster_name:
+        required: true
+      do_region:
+        required: true
+
+jobs:
+  provision-kubernetes:
+    name: Provision Kubernetes Cluster
+    runs-on: ubuntu-latest
+    env:
+      CLUSTER_NAME: ${{ secrets.cluster_name }}-${{ inputs.environment }}
+      DO_REGION: ${{ secrets.do_region }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.digitalocean_token }}
+      
+      - name: Check if cluster exists
+        id: check-cluster
+        run: |
+          if doctl kubernetes cluster get $CLUSTER_NAME &>/dev/null; then
+            echo "Cluster exists, skipping creation"
+            echo "cluster_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Cluster does not exist"
+            echo "cluster_exists=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Create Digital Ocean Kubernetes cluster
+        if: steps.check-cluster.outputs.cluster_exists == 'false' && inputs.create_cluster
+        run: |
+          echo "Creating main Kubernetes cluster with orchestration node pool..."
+          # Create the main cluster with the orchestration node pool
+          doctl kubernetes cluster create $CLUSTER_NAME \
+            --region $DO_REGION \
+            --version latest \
+            --tag kai-platform \
+            --tag ${{ inputs.environment }} \
+            --auto-upgrade=true \
+            --maintenance-window="saturday=21:00" \
+            --size s-2vcpu-4gb \
+            --count 3 \
+            --node-pool "name=orchestration;size=s-2vcpu-4gb;count=3;label=node-type=orchestration;tag=orchestration" \
+            --wait
+          
+          # Save kubeconfig
+          doctl kubernetes cluster kubeconfig save $CLUSTER_NAME
+          
+          # Wait for cluster to be fully ready
+          echo "Waiting for cluster to be ready..."
+          sleep 60
+          
+          echo "Adding CPU-optimized node pool..."
+          # Add CPU-optimized node pool
+          doctl kubernetes cluster node-pool create $CLUSTER_NAME \
+            --name cpu-optimized \
+            --size c-4 \
+            --count 3 \
+            --label node-type=cpu-optimized \
+            --tag cpu-optimized
+          
+          # Add GPU node pool if in production
+          if [ "${{ inputs.environment }}" = "production" ]; then
+            echo "Adding GPU-optimized node pool..."
+            doctl kubernetes cluster node-pool create $CLUSTER_NAME \
+              --name gpu-optimized \
+              --size gd-l40s-4vcpu-24gb \
+              --count 2 \
+              --label node-type=gpu-optimized \
+              --tag gpu-optimized
+          fi
+          
+          # Add memory-optimized node pool if in production
+          if [ "${{ inputs.environment }}" = "production" ]; then
+            echo "Adding memory-optimized node pool..."
+            doctl kubernetes cluster node-pool create $CLUSTER_NAME \
+              --name memory-optimized \
+              --size m-4vcpu-32gb \
+              --count 1 \
+              --label node-type=memory-optimized \
+              --tag memory-optimized
+          fi
+      
+      - name: Get kubeconfig
+        if: steps.check-cluster.outputs.cluster_exists == 'true' || inputs.create_cluster
+        run: |
+          doctl kubernetes cluster kubeconfig save $CLUSTER_NAME
+      
+      - name: Verify cluster
+        if: steps.check-cluster.outputs.cluster_exists == 'true' || inputs.create_cluster
+        run: |
+          kubectl get nodes
+          kubectl get nodes --show-labels

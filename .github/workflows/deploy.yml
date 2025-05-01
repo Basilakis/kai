@@ -1,4 +1,4 @@
-name: Kai Platform CI/CD Pipeline
+name: KAI Platform CI/CD Pipeline
 
 on:
   push:
@@ -15,13 +15,26 @@ on:
         options:
           - staging
           - production
+      create_cluster:
+        description: 'Create new cluster if not exists'
+        type: boolean
+        default: false
 
 # The following secrets are expected to be configured in the repository:
 # - DOCKER_USERNAME, DOCKER_PASSWORD, DOCKER_REGISTRY: Docker registry credentials
-# - GITOPS_PAT: Personal Access Token for GitOps repository
-# - KUBE_CONFIG_DATA: Base64-encoded Kubernetes config
-# - SUPABASE_URL_PRODUCTION, SUPABASE_KEY_PRODUCTION: Supabase production credentials
-# - SUPABASE_URL_STAGING, SUPABASE_KEY_STAGING: Supabase staging credentials
+# - DIGITALOCEAN_ACCESS_TOKEN: Digital Ocean API token
+# - CLUSTER_NAME: Base name for Kubernetes cluster (e.g., "kai")
+# - DO_REGION: Digital Ocean region (e.g., "ams3")
+# - KUBE_CONFIG_DATA: Base64-encoded Kubernetes config (if not using DO provisioning)
+# - DOMAIN_NAME: Domain name for the application (e.g., "kai-platform.com")
+# - ADMIN_EMAIL: Email for SSL certificate notifications
+# - MONGODB_URI: MongoDB connection string
+# - JWT_SECRET: Secret for JWT tokens
+# - OPENAI_API_KEY: OpenAI API key
+# - REDIS_PASSWORD: Password for Redis
+# - SUPABASE_URL_PRODUCTION, SUPABASE_KEY_PRODUCTION, SUPABASE_ANON_KEY_PRODUCTION: Supabase production credentials
+# - SUPABASE_URL_STAGING, SUPABASE_KEY_STAGING, SUPABASE_ANON_KEY_STAGING: Supabase staging credentials
+# - STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY: Stripe payment credentials (optional)
 # - VERCEL_TOKEN, VERCEL_ORG_ID: Vercel credentials
 # - VERCEL_PROJECT_ID_CLIENT, VERCEL_PROJECT_ID_ADMIN: Vercel project IDs
 # - SLACK_WEBHOOK: Slack notification webhook URL
@@ -52,44 +65,179 @@ jobs:
       docker_password: ${{ secrets.DOCKER_PASSWORD }}
       docker_registry: ${{ secrets.DOCKER_REGISTRY }}
 
-  # Deploy to staging
-  deploy-staging:
-    name: Deploy to Staging
+  # Provision infrastructure if needed
+  provision-infrastructure-staging:
+    name: Provision Staging Infrastructure
     needs: build-docker-images
     if: |
       (github.ref == 'refs/heads/staging') ||
       (github.event.inputs.environment == 'staging')
-    uses: ./.github/workflows/deploy-staging.yml
+    uses: ./.github/workflows/provision-infrastructure.yml
     with:
-      sha: ${{ github.sha }}
-      kube-context: 'kai-staging-cluster'
-      api-url: 'https://api-staging.kai.yourdomain.com'
+      environment: 'staging'
+      create_cluster: ${{ github.event.inputs.create_cluster }}
     secrets:
-      gitops_pat: ${{ secrets.GITOPS_PAT }}
-      supabase_url: ${{ secrets.SUPABASE_URL_STAGING }}
-      supabase_key: ${{ secrets.SUPABASE_KEY_STAGING }}
-      vercel_token: ${{ secrets.VERCEL_TOKEN }}
-      vercel_org_id: ${{ secrets.VERCEL_ORG_ID }}
-      vercel_project_id_client: ${{ secrets.VERCEL_PROJECT_ID_CLIENT }}
-      vercel_project_id_admin: ${{ secrets.VERCEL_PROJECT_ID_ADMIN }}
+      digitalocean_token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+      cluster_name: ${{ secrets.CLUSTER_NAME }}
+      do_region: ${{ secrets.DO_REGION }}
 
-  # Deploy to production
-  deploy-production:
-    name: Deploy to Production
+  provision-infrastructure-production:
+    name: Provision Production Infrastructure
     needs: build-docker-images
     if: |
       (github.ref == 'refs/heads/main') ||
       (github.event.inputs.environment == 'production')
-    uses: ./.github/workflows/deploy-production.yml
+    uses: ./.github/workflows/provision-infrastructure.yml
     with:
-      sha: ${{ github.sha }}
-      kube-context: 'kai-production-cluster'
-      api-url: 'https://api.kai.yourdomain.com'
+      environment: 'production'
+      create_cluster: ${{ github.event.inputs.create_cluster }}
     secrets:
-      gitops_pat: ${{ secrets.GITOPS_PAT }}
+      digitalocean_token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+      cluster_name: ${{ secrets.CLUSTER_NAME }}
+      do_region: ${{ secrets.DO_REGION }}
+
+  # Setup Kubernetes infrastructure
+  setup-kubernetes-staging:
+    name: Setup Staging Kubernetes
+    needs: provision-infrastructure-staging
+    if: |
+      (github.ref == 'refs/heads/staging') ||
+      (github.event.inputs.environment == 'staging')
+    uses: ./.github/workflows/setup-kubernetes.yml
+    with:
+      environment: 'staging'
+      domain: 'staging.${{ secrets.DOMAIN_NAME }}'
+    secrets:
+      admin_email: ${{ secrets.ADMIN_EMAIL }}
+      mongodb_uri: ${{ secrets.MONGODB_URI }}
+      jwt_secret: ${{ secrets.JWT_SECRET }}
+      openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+      supabase_url: ${{ secrets.SUPABASE_URL_STAGING }}
+      supabase_key: ${{ secrets.SUPABASE_KEY_STAGING }}
+      supabase_anon_key: ${{ secrets.SUPABASE_ANON_KEY_STAGING }}
+      redis_password: ${{ secrets.REDIS_PASSWORD }}
+      stripe_secret_key: ${{ secrets.STRIPE_SECRET_KEY }}
+      stripe_publishable_key: ${{ secrets.STRIPE_PUBLISHABLE_KEY }}
+
+  setup-kubernetes-production:
+    name: Setup Production Kubernetes
+    needs: provision-infrastructure-production
+    if: |
+      (github.ref == 'refs/heads/main') ||
+      (github.event.inputs.environment == 'production')
+    uses: ./.github/workflows/setup-kubernetes.yml
+    with:
+      environment: 'production'
+      domain: ${{ secrets.DOMAIN_NAME }}
+    secrets:
+      admin_email: ${{ secrets.ADMIN_EMAIL }}
+      mongodb_uri: ${{ secrets.MONGODB_URI }}
+      jwt_secret: ${{ secrets.JWT_SECRET }}
+      openai_api_key: ${{ secrets.OPENAI_API_KEY }}
       supabase_url: ${{ secrets.SUPABASE_URL_PRODUCTION }}
       supabase_key: ${{ secrets.SUPABASE_KEY_PRODUCTION }}
+      supabase_anon_key: ${{ secrets.SUPABASE_ANON_KEY_PRODUCTION }}
+      redis_password: ${{ secrets.REDIS_PASSWORD }}
+      stripe_secret_key: ${{ secrets.STRIPE_SECRET_KEY }}
+      stripe_publishable_key: ${{ secrets.STRIPE_PUBLISHABLE_KEY }}
+
+  # Deploy application to Kubernetes
+  deploy-application-staging:
+    name: Deploy to Staging
+    needs: setup-kubernetes-staging
+    if: |
+      (github.ref == 'refs/heads/staging') ||
+      (github.event.inputs.environment == 'staging')
+    uses: ./.github/workflows/deploy-application.yml
+    with:
+      environment: 'staging'
+      domain: 'staging.${{ secrets.DOMAIN_NAME }}'
+      sha: ${{ github.sha }}
+    secrets:
+      docker_registry: ${{ secrets.DOCKER_REGISTRY }}
+      docker_username: ${{ secrets.DOCKER_USERNAME }}
+      slack_webhook: ${{ secrets.SLACK_WEBHOOK }}
+
+  deploy-application-production:
+    name: Deploy to Production
+    needs: setup-kubernetes-production
+    if: |
+      (github.ref == 'refs/heads/main') ||
+      (github.event.inputs.environment == 'production')
+    uses: ./.github/workflows/deploy-application.yml
+    with:
+      environment: 'production'
+      domain: ${{ secrets.DOMAIN_NAME }}
+      sha: ${{ github.sha }}
+    secrets:
+      docker_registry: ${{ secrets.DOCKER_REGISTRY }}
+      docker_username: ${{ secrets.DOCKER_USERNAME }}
+      slack_webhook: ${{ secrets.SLACK_WEBHOOK }}
+
+  # Deploy frontend to Vercel
+  deploy-frontend-staging:
+    name: Deploy Frontend to Staging
+    needs: deploy-application-staging
+    if: |
+      (github.ref == 'refs/heads/staging') ||
+      (github.event.inputs.environment == 'staging')
+    uses: ./.github/workflows/deploy-frontend.yml
+    with:
+      environment: 'staging'
+      api_url: 'https://api.staging.${{ secrets.DOMAIN_NAME }}'
+    secrets:
       vercel_token: ${{ secrets.VERCEL_TOKEN }}
       vercel_org_id: ${{ secrets.VERCEL_ORG_ID }}
       vercel_project_id_client: ${{ secrets.VERCEL_PROJECT_ID_CLIENT }}
       vercel_project_id_admin: ${{ secrets.VERCEL_PROJECT_ID_ADMIN }}
+      supabase_url: ${{ secrets.SUPABASE_URL_STAGING }}
+      supabase_anon_key: ${{ secrets.SUPABASE_ANON_KEY_STAGING }}
+      stripe_publishable_key: ${{ secrets.STRIPE_PUBLISHABLE_KEY }}
+      slack_webhook: ${{ secrets.SLACK_WEBHOOK }}
+
+  deploy-frontend-production:
+    name: Deploy Frontend to Production
+    needs: deploy-application-production
+    if: |
+      (github.ref == 'refs/heads/main') ||
+      (github.event.inputs.environment == 'production')
+    uses: ./.github/workflows/deploy-frontend.yml
+    with:
+      environment: 'production'
+      api_url: 'https://api.${{ secrets.DOMAIN_NAME }}'
+    secrets:
+      vercel_token: ${{ secrets.VERCEL_TOKEN }}
+      vercel_org_id: ${{ secrets.VERCEL_ORG_ID }}
+      vercel_project_id_client: ${{ secrets.VERCEL_PROJECT_ID_CLIENT }}
+      vercel_project_id_admin: ${{ secrets.VERCEL_PROJECT_ID_ADMIN }}
+      supabase_url: ${{ secrets.SUPABASE_URL_PRODUCTION }}
+      supabase_anon_key: ${{ secrets.SUPABASE_ANON_KEY_PRODUCTION }}
+      stripe_publishable_key: ${{ secrets.STRIPE_PUBLISHABLE_KEY }}
+      slack_webhook: ${{ secrets.SLACK_WEBHOOK }}
+
+  # Verify deployment
+  verify-deployment-staging:
+    name: Verify Staging Deployment
+    needs: [deploy-application-staging, deploy-frontend-staging]
+    if: |
+      (github.ref == 'refs/heads/staging') ||
+      (github.event.inputs.environment == 'staging')
+    uses: ./.github/workflows/verify-deployment.yml
+    with:
+      environment: 'staging'
+      domain: 'staging.${{ secrets.DOMAIN_NAME }}'
+    secrets:
+      slack_webhook: ${{ secrets.SLACK_WEBHOOK }}
+
+  verify-deployment-production:
+    name: Verify Production Deployment
+    needs: [deploy-application-production, deploy-frontend-production]
+    if: |
+      (github.ref == 'refs/heads/main') ||
+      (github.event.inputs.environment == 'production')
+    uses: ./.github/workflows/verify-deployment.yml
+    with:
+      environment: 'production'
+      domain: ${{ secrets.DOMAIN_NAME }}
+    secrets:
+      slack_webhook: ${{ secrets.SLACK_WEBHOOK }}

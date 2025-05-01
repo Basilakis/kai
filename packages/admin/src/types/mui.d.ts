@@ -275,6 +275,33 @@ declare module '@mui/material' {
   export const AccordionDetails: React.ComponentType<any>;
   export const LinearProgress: React.ComponentType<any>;
 
+  // Additional components used in KnowledgeBaseDashboard.tsx
+  export const Box: React.ComponentType<any>;
+  export const Button: React.ComponentType<any>;
+  export const Card: React.ComponentType<any>;
+  export const CardContent: React.ComponentType<any>;
+  export const CircularProgress: React.ComponentType<any>;
+  export const Container: React.ComponentType<any>;
+  export const Dialog: React.ComponentType<any>;
+  export const DialogActions: React.ComponentType<any>;
+  export const DialogContent: React.ComponentType<any>;
+  export const DialogTitle: React.ComponentType<any>;
+  export const Grid: React.ComponentType<any>;
+  export const IconButton: React.ComponentType<any>;
+  export const Paper: React.ComponentType<any>;
+  export const Tab: React.ComponentType<any>;
+  export const Tabs: React.ComponentType<any>;
+  export const TextField: React.ComponentType<any>;
+  export const Typography: React.ComponentType<any>;
+  export const FormControl: React.ComponentType<any>;
+  export const Switch: React.ComponentType<any>;
+  export const Chip: React.ComponentType<any>;
+  export const MenuItem: React.ComponentType<any>;
+  export const Select: React.ComponentType<any>;
+  export const InputLabel: React.ComponentType<any>;
+  export const Tooltip: React.ComponentType<any>;
+  export const Alert: React.ComponentType<any>;
+
   // Add interfaces for the new components
   export interface SliderProps {
     value?: number | number[];

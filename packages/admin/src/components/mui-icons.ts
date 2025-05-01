@@ -21,6 +21,25 @@ import UploadFileIcon from '@mui/icons-material/UploadFile';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import WarningIcon from '@mui/icons-material/Warning';
 
+// Additional icons used in KnowledgeBaseDashboard.tsx
+import SearchIcon from '@mui/icons-material/Search';
+import BookmarkIcon from '@mui/icons-material/Bookmark';
+import CollectionsBookmarkIcon from '@mui/icons-material/CollectionsBookmark';
+import AssessmentIcon from '@mui/icons-material/Assessment';
+import LoopIcon from '@mui/icons-material/Loop';
+import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
+import LanguageIcon from '@mui/icons-material/Language';
+import PsychologyIcon from '@mui/icons-material/Psychology';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import DoneIcon from '@mui/icons-material/Done';
+import ForwardIcon from '@mui/icons-material/Forward';
+import LaptopIcon from '@mui/icons-material/Laptop';
+import InsightsIcon from '@mui/icons-material/Insights';
+import DataUsageIcon from '@mui/icons-material/DataUsage';
+import StopIcon from '@mui/icons-material/Stop';
+import HelpIcon from '@mui/icons-material/Help';
+import BugReportIcon from '@mui/icons-material/BugReport';
+
 // Re-export the individually imported icons
 export {
   RefreshIcon,
@@ -40,5 +59,24 @@ export {
   SettingsIcon,
   UploadFileIcon,
   CloudUploadIcon,
-  WarningIcon
+  WarningIcon,
+
+  // Additional icons used in KnowledgeBaseDashboard.tsx
+  SearchIcon,
+  BookmarkIcon,
+  CollectionsBookmarkIcon,
+  AssessmentIcon,
+  LoopIcon,
+  PictureAsPdfIcon,
+  LanguageIcon,
+  PsychologyIcon,
+  InfoOutlinedIcon,
+  DoneIcon,
+  ForwardIcon,
+  LaptopIcon,
+  InsightsIcon,
+  DataUsageIcon,
+  StopIcon,
+  HelpIcon,
+  BugReportIcon
 };
