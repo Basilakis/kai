@@ -1,0 +1,99 @@
+name: 'Load Environment Variables'
+description: 'Loads environment variables from .env file and environment-specific overrides'
+inputs:
+  env-file:
+    description: 'Path to the base environment file'
+    required: false
+    default: '.env'
+  environment:
+    description: 'Environment (production, staging, development)'
+    required: false
+    default: 'development'
+  fallback-file:
+    description: 'Fallback file if env-file does not exist'
+    required: false
+    default: '.env.template'
+outputs:
+  env-loaded:
+    description: 'Whether the environment variables were loaded successfully'
+    value: ${{ steps.load-env.outputs.env-loaded }}
+runs:
+  using: "composite"
+  steps:
+    - name: Load environment variables
+      id: load-env
+      shell: bash
+      run: |
+        echo "Loading environment variables for ${{ inputs.environment }} environment"
+
+        # Check if the base env file exists
+        BASE_ENV_FILE="${{ inputs.env-file }}"
+        if [ ! -f "$BASE_ENV_FILE" ]; then
+          echo "Base environment file $BASE_ENV_FILE not found. Using ${{ inputs.fallback-file }} as fallback."
+          BASE_ENV_FILE="${{ inputs.fallback-file }}"
+          if [ ! -f "$BASE_ENV_FILE" ]; then
+            echo "::error::Neither ${{ inputs.env-file }} nor ${{ inputs.fallback-file }} found."
+            echo "env-loaded=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+        fi
+
+        # Load base environment variables
+        echo "Loading base environment variables from $BASE_ENV_FILE"
+        while IFS= read -r line || [ -n "$line" ]; do
+          # Skip comments and empty lines
+          if [[ $line =~ ^#.*$ || -z $line ]]; then
+            continue
+          fi
+
+          # Extract variable name and value
+          if [[ $line =~ ^([^=]+)=(.*)$ ]]; then
+            name="${BASH_REMATCH[1]}"
+            value="${BASH_REMATCH[2]}"
+
+            # Remove quotes if present
+            value="${value%\"}"
+            value="${value#\"}"
+            value="${value%\'}"
+            value="${value#\'}"
+
+            # Set environment variable for the workflow
+            echo "$name=$value" >> $GITHUB_ENV
+            echo "Set $name from base config"
+          fi
+        done < "$BASE_ENV_FILE"
+
+        # Always load environment-specific variables
+        ENV_SPECIFIC_FILE=".env.${{ inputs.environment }}"
+        if [ -f "$ENV_SPECIFIC_FILE" ]; then
+          echo "Loading environment-specific variables from $ENV_SPECIFIC_FILE"
+
+          while IFS= read -r line || [ -n "$line" ]; do
+            # Skip comments and empty lines
+            if [[ $line =~ ^#.*$ || -z $line ]]; then
+              continue
+            fi
+
+            # Extract variable name and value
+            if [[ $line =~ ^([^=]+)=(.*)$ ]]; then
+              name="${BASH_REMATCH[1]}"
+              value="${BASH_REMATCH[2]}"
+
+              # Remove quotes if present
+              value="${value%\"}"
+              value="${value#\"}"
+              value="${value%\'}"
+              value="${value#\'}"
+
+              # Set environment variable for the workflow
+              echo "$name=$value" >> $GITHUB_ENV
+              echo "Overrode $name with environment-specific value"
+            fi
+          done < "$ENV_SPECIFIC_FILE"
+        else
+          echo "Warning: Environment-specific file $ENV_SPECIFIC_FILE not found."
+        fi
+
+        # Load GitHub secrets as environment variables
+        echo "Environment variables loaded successfully"
+        echo "env-loaded=true" >> $GITHUB_OUTPUT

@@ -20,6 +20,8 @@ on:
         type: boolean
         default: false
 
+# Environment variables are loaded from the .env file in the root directory
+# For sensitive information, use GitHub Secrets instead
 # The following secrets are expected to be configured in the repository:
 # - DOCKER_USERNAME, DOCKER_PASSWORD, DOCKER_REGISTRY: Docker registry credentials
 # - DIGITALOCEAN_ACCESS_TOKEN: Digital Ocean API token

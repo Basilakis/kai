@@ -47,6 +47,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, closeSidebar }) => {
     { name: 'Training Status', href: '/training-status', icon: ChartBarIcon },
     { name: 'Datasets', href: '/datasets', icon: DatabaseIcon },
     { name: 'Deployment', href: '/deployment', icon: ServerIcon },
+    { name: 'Dependency Management', href: '/dependency-management', icon: CogIcon },
     { name: 'Notifications', href: '/notifications', icon: BellIcon },
     { name: 'Webhooks', href: '/webhooks', icon: GlobeAltIcon },
     { name: 'Reports', href: '/reports', icon: ChartBarIcon },

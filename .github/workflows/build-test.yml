@@ -20,6 +20,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - name: Load environment variables
+        uses: ./.github/actions/load-env
+        with:
+          environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+
       - name: Set up Node.js ${{ inputs.node-version }}
         uses: actions/setup-node@v3
         with:

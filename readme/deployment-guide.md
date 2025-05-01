@@ -1088,7 +1088,96 @@ After the first deployment, you should configure custom domains in Vercel:
 
 ## Environment Variables and Secrets
 
-The KAI platform requires various environment variables and secrets for proper operation. This section explains how they are managed.
+The KAI platform uses a centralized approach to environment variables for configuration. We use a single `.env` file in the root directory for both local development and CI/CD workflows.
+
+### Environment File Structure
+
+The KAI platform uses a structured approach to environment variables:
+
+1. **Base Configuration**: `.env` file contains all sensitive configuration variables
+2. **Environment-Specific Overrides**: Separate files for each environment
+
+#### File Organization
+
+- `.env` - Contains sensitive information (API keys, secrets, credentials)
+- `.env.template` - Template for `.env` with empty values (committed to repository)
+- `.env.development` - Development-specific configuration (non-sensitive)
+- `.env.staging` - Staging-specific configuration (non-sensitive)
+- `.env.production` - Production-specific configuration (non-sensitive)
+
+#### Setup Instructions
+
+1. Copy `.env.template` to `.env`:
+   ```bash
+   cp .env.template .env
+   ```
+
+2. Fill in the sensitive values in `.env`:
+   ```bash
+   # Required API keys
+   OPENAI_API_KEY=your_openai_api_key
+   JWT_SECRET=your_jwt_secret
+   MONGODB_URI=mongodb://localhost:27017/kai
+
+   # S3/Storage credentials
+   S3_ACCESS_KEY=your_s3_access_key
+   S3_SECRET_KEY=your_s3_secret_key
+
+   # Supabase credentials
+   SUPABASE_KEY=your_supabase_key
+   SUPABASE_ANON_KEY=your_supabase_anon_key
+
+   # Other sensitive values...
+   ```
+
+3. The environment-specific files (`.env.development`, `.env.staging`, `.env.production`) already contain appropriate non-sensitive configuration for each environment:
+
+#### Environment-Specific Configuration
+
+Each environment has its own configuration file with appropriate values:
+
+**Development Environment** (`.env.development`):
+```bash
+NODE_ENV=development
+KAI_API_URL=http://localhost:3000/api
+MONGODB_URI=mongodb://localhost:27017/kai-dev
+LOG_LEVEL=debug
+ENABLE_MOCK_FALLBACK=true
+USE_MCP_SERVER=false
+STRIPE_TEST_MODE=true
+```
+
+**Staging Environment** (`.env.staging`):
+```bash
+NODE_ENV=production
+KAI_API_URL=https://api.staging.kai-platform.com/api
+DATABASE_SSL=true
+LOG_LEVEL=info
+ENABLE_MOCK_FALLBACK=false
+USE_MCP_SERVER=true
+STRIPE_TEST_MODE=true
+```
+
+**Production Environment** (`.env.production`):
+```bash
+NODE_ENV=production
+KAI_API_URL=https://api.kai-platform.com/api
+DATABASE_SSL=true
+LOG_LEVEL=warn
+ENABLE_MOCK_FALLBACK=false
+USE_MCP_SERVER=true
+STRIPE_TEST_MODE=false
+```
+
+These files override the values in the main `.env` file when the corresponding environment is active.
+
+### GitHub Actions Integration
+
+Our GitHub Actions workflows use a custom action to load environment variables from the `.env` file. This ensures consistency between local development and CI/CD environments.
+
+The action is located at `.github/actions/load-env` and is used in all workflows that need environment variables.
+
+For sensitive information that should not be committed to the repository, use GitHub Secrets instead. These secrets are referenced in the workflows and are injected into the Kubernetes deployment as environment variables and secrets.
 
 ### GitHub Secrets
 
@@ -1118,7 +1207,7 @@ kubectl create secret generic kai-secrets \
   --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-### Environment-Specific Configuration
+### Environment-Specific Configuration in Kubernetes
 
 The KAI platform uses different configuration values for staging and production environments:
 
@@ -1128,8 +1217,9 @@ The KAI platform uses different configuration values for staging and production 
    - `values-production.yaml`: Production-specific overrides
 
 2. **Environment Variables**:
-   - The GitHub Actions workflow creates environment-specific `.env` files
-   - These files are used during the build process
+   - The GitHub Actions workflow loads environment variables from the `.env` file
+   - Environment-specific variables are loaded from `.env.staging` or `.env.production`
+   - These variables are used during the build process and deployment
 
 ## Initial Setup and Deployment
 
