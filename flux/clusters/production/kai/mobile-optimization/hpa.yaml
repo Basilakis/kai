@@ -2,7 +2,6 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: mobile-optimization-hpa
-  namespace: kai-ml
   labels:
     app: mobile-optimization
     component: ml-services

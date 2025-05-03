@@ -2,7 +2,6 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   name: wasm-compiler-pdb
-  namespace: kai-ml
 spec:
   minAvailable: 1 # Ensure at least 1 replica is always available
   selector:

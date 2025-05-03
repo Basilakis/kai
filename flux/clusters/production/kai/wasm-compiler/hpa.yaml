@@ -2,7 +2,6 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: wasm-compiler-hpa
-  namespace: kai-ml
   labels:
     app: wasm-compiler
     component: compilation

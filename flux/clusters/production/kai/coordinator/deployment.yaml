@@ -2,7 +2,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: coordinator-service
-  namespace: kai-ml
   labels:
     app: coordinator-service
     component: orchestration

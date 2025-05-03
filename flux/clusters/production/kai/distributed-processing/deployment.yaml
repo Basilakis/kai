@@ -2,7 +2,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: task-queue-manager
-  namespace: kai-ml
   labels:
     app: task-queue-manager
     component: processing
@@ -112,7 +111,6 @@ apiVersion: v1
 kind: Service
 metadata:
   name: task-queue-manager
-  namespace: kai-ml
   labels:
     app: task-queue-manager
     component: processing
@@ -134,7 +132,6 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: task-queue-manager-config
-  namespace: kai-ml
 data:
   config.json: |
     {
@@ -226,7 +223,6 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: workflow-templates
-  namespace: kai-ml
 data:
   3d-reconstruction.yaml: |
     apiVersion: argoproj.io/v1alpha1
@@ -309,7 +305,6 @@ apiVersion: autoscaling/v2beta2
 kind: HorizontalPodAutoscaler
 metadata:
   name: task-queue-manager
-  namespace: kai-ml
 spec:
   scaleTargetRef:
     apiVersion: apps/v1

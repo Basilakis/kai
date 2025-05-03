@@ -2,7 +2,6 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: coordinator-service-hpa
-  namespace: kai-ml
   labels:
     app: coordinator-service
     component: orchestration

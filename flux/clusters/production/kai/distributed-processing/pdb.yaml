@@ -2,7 +2,6 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   name: task-queue-manager-pdb
-  namespace: kai-ml
 spec:
   minAvailable: 2 # Ensure at least 2 replicas are always available (since minReplicas is 3)
   selector:

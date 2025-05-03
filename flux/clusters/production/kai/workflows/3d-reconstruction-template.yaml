@@ -2,7 +2,6 @@ apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
   name: 3d-reconstruction
-  namespace: kai-ml
   labels:
     app: kai-ml
     component: workflows
