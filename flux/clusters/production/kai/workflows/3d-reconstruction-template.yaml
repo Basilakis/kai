@@ -1,11 +1,11 @@
 apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
-  name: 3d-reconstruction
+  name: threed-reconstruction
   labels:
     app: kai
     component: workflows
-    pipeline: 3d-reconstruction
+    pipeline: threed-reconstruction
 spec:
   entrypoint: main
   # Default workflow timeout (can be overridden per task)
