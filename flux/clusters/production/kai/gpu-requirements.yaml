@@ -141,16 +141,16 @@ data:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: 3d-generator
+  name: threed-generator
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: 3d-generator
+      app: threed-generator
   template:
     metadata:
       labels:
-        app: 3d-generator
+        app: threed-generator
     spec:
       nodeSelector:
         cloud.digitalocean.com/gpu-type: "nvidia-h100"
@@ -232,12 +232,12 @@ spec:
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: 3d-generator-hpa
+  name: threed-generator-hpa
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: 3d-generator
+    name: threed-generator
   minReplicas: 1
   maxReplicas: 10
   metrics:
@@ -270,10 +270,10 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: 3d-generator-service
+  name: threed-generator-service
 spec:
   selector:
-    app: 3d-generator
+    app: threed-generator
   ports:
   - port: 8080
     targetPort: 8080
