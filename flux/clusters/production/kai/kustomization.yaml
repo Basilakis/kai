@@ -14,4 +14,4 @@ resources:
   - ./notification-system/
   - ./parameter-registry/
   - ./wasm-compiler/
-  # - ./workflows/
+  - ./workflows/
