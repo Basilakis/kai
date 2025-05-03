@@ -301,7 +301,7 @@ data:
               - name: output-format
                 value: "{{workflow.parameters.output-format}}"
 ---
-apiVersion: autoscaling/v2beta2
+apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: task-queue-manager
