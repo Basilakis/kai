@@ -1,7 +1,6 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - sources
-  - releases
-  - flux-system
-  - kai
+  - ./deployment.yaml
+  - ./hpa.yaml
+  - ./pdb.yaml

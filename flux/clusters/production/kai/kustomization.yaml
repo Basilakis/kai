@@ -1,0 +1,17 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: kai
+resources:
+  - ./namespace.yaml
+  - ./gpu-requirements.yaml
+  - ./continuous-learning-deployment.yaml
+  - ./coordinator/
+  - ./distributed-processing/
+  # - ./infrastructure/  this code is meant for gcp
+  - ./jobs/
+  - ./ml-services/
+  - ./mobile-optimization/
+  - ./notification-system/
+  - ./parameter-registry/
+  - ./wasm-compiler/
+  - ./workflows/
