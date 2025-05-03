@@ -264,7 +264,7 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: prometheus
-  namespace: kai-ml
+  namespace: kai
 
 ---
 # Grafana ConfigMap
@@ -836,7 +836,7 @@ data:
           {
             "datasource": "Prometheus",
             "enable": true,
-            "expr": "kube_horizontalpodautoscaler_status_desired_replicas{namespace=\"kai-ml\"}",
+            "expr": "kube_horizontalpodautoscaler_status_desired_replicas{namespace=\"kai\"}",
             "iconColor": "rgba(255, 96, 96, 1)",
             "name": "HPA Scale Events",
             "showIn": 0,
@@ -915,13 +915,13 @@ data:
           "steppedLine": true,
           "targets": [
             {
-              "expr": "kube_horizontalpodautoscaler_status_current_replicas{namespace=\"kai-ml\"}",
+              "expr": "kube_horizontalpodautoscaler_status_current_replicas{namespace=\"kai\"}",
               "interval": "",
               "legendFormat": "Current - {{horizontalpodautoscaler}}",
               "refId": "A"
             },
             {
-              "expr": "kube_horizontalpodautoscaler_status_desired_replicas{namespace=\"kai-ml\"}",
+              "expr": "kube_horizontalpodautoscaler_status_desired_replicas{namespace=\"kai\"}",
               "interval": "",
               "legendFormat": "Desired - {{horizontalpodautoscaler}}",
               "refId": "B"

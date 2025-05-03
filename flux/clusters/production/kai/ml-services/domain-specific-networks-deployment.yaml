@@ -175,13 +175,13 @@ metadata:
   name: domain-specific-networks-config
 data:
   log_level: "info"
-  redis_host: "redis-master.kai-ml.svc.cluster.local"
+  redis_host: "redis-master.kai.svc.cluster.local"
   redis_port: "6379"
   max_batch_size: "8"
   default_model_type: "texture_resnet18"
   use_texture_backbone: "true"
   use_svd_features: "true"
-  parameter_registry_url: "http://parameter-registry.kai-ml.svc.cluster.local"
+  parameter_registry_url: "http://parameter-registry.kai.svc.cluster.local"
   model_config.json: |
     {
       "supportedModels": {
@@ -327,7 +327,7 @@ spec:
         - name: EXPORT_ONNX
           value: "true"
         - name: PARAMETER_REGISTRY_URL
-          value: "http://parameter-registry.kai-ml.svc.cluster.local"
+          value: "http://parameter-registry.kai.svc.cluster.local"
         volumeMounts:
         - name: models-volume
           mountPath: /models

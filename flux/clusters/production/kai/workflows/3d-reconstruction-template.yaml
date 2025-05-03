@@ -3,7 +3,7 @@ kind: WorkflowTemplate
 metadata:
   name: 3d-reconstruction
   labels:
-    app: kai-ml
+    app: kai
     component: workflows
     pipeline: 3d-reconstruction
 spec:

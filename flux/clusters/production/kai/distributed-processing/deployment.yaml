@@ -50,11 +50,11 @@ spec:
         - name: LOG_LEVEL
           value: "info"
         - name: REDIS_HOST
-          value: "redis-master.kai-ml.svc.cluster.local"
+          value: "redis-master.kai.svc.cluster.local"
         - name: REDIS_PORT
           value: "6379"
         - name: KAFKA_BOOTSTRAP_SERVERS
-          value: "kafka.kai-ml.svc.cluster.local:9092"
+          value: "kafka.kai.svc.cluster.local:9092"
         - name: ARGO_WORKFLOWS_API
           value: "argo-server.argo.svc.cluster.local:2746"
         - name: MAX_CONCURRENT_TASKS

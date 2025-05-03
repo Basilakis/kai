@@ -104,7 +104,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: coordinator-service-account
-    namespace: kai-ml
+    namespace: kai
 roleRef:
   kind: Role
   name: coordinator-workflow-manager
@@ -162,7 +162,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: coordinator-service-account
-    namespace: kai-ml
+    namespace: kai
 roleRef:
   kind: ClusterRole
   name: coordinator-cluster-monitor

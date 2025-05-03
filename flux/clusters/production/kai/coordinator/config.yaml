@@ -7,7 +7,7 @@ metadata:
     component: orchestration
 data:
   # Redis configuration
-  redis_host: "redis-master.kai-ml.svc.cluster.local"
+  redis_host: "redis-master.kai.svc.cluster.local"
   redis_port: "6379"
   
   # Workflow configuration

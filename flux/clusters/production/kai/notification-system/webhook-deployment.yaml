@@ -167,13 +167,13 @@ metadata:
   name: webhook-config
 data:
   log_level: "info"
-  redis_host: "redis-master.kai-ml.svc.cluster.local"
+  redis_host: "redis-master.kai.svc.cluster.local"
   redis_port: "6379"
   webhook_timeout: "5000"
   webhook_max_retries: "3"
   webhook_retry_delay: "1000"
   supabase_url: "https://your-project.supabase.co"
-  kafka_bootstrap_servers: "kafka.kai-ml.svc.cluster.local:9092"
+  kafka_bootstrap_servers: "kafka.kai.svc.cluster.local:9092"
   kafka_topic_webhook_events: "webhook-events"
 ---
 apiVersion: networking.k8s.io/v1

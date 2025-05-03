@@ -341,7 +341,7 @@ metadata:
   labels:
     component: storage
 data:
-  cache_bucket: "kai-ml-cache"
+  cache_bucket: "kai-cache"
   cas_config: |
     {
       "storage": {
@@ -355,7 +355,7 @@ data:
           "evictionPolicy": "lfu"
         },
         "object": {
-          "bucket": "kai-ml-cache",
+          "bucket": "kai-cache",
           "region": "us-west-1"
         }
       },

@@ -2,19 +2,19 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: kai-ml
+  name: kai
   labels:
-    name: kai-ml
+    name: kai
     component: ml-platform
     environment: production
 
 ---
-# Resource quotas for the kai-ml namespace
+# Resource quotas for the kai namespace
 apiVersion: v1
 kind: ResourceQuota
 metadata:
-  name: kai-ml-quota
-  namespace: kai-ml
+  name: kai-quota
+  namespace: kai
 spec:
   hard:
     # Pod limits
@@ -44,8 +44,8 @@ spec:
 apiVersion: v1
 kind: LimitRange
 metadata:
-  name: kai-ml-limits
-  namespace: kai-ml
+  name: kai-limits
+  namespace: kai
 spec:
   limits:
   - default:

@@ -8,7 +8,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: cpu-pool-config
-  namespace: kai-ml
+  namespace: kai
   labels:
     node-pool: cpu-optimized
 data:
@@ -35,7 +35,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: gpu-pool-config
-  namespace: kai-ml
+  namespace: kai
   labels:
     node-pool: gpu-optimized
 data:
@@ -63,7 +63,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: gpu-high-end-pool-config
-  namespace: kai-ml
+  namespace: kai
   labels:
     node-pool: gpu-high-end
 data:
@@ -91,7 +91,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: memory-pool-config
-  namespace: kai-ml
+  namespace: kai
   labels:
     node-pool: memory-optimized
 data:
@@ -116,7 +116,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: storage-pool-config
-  namespace: kai-ml
+  namespace: kai
   labels:
     node-pool: storage-optimized
 data:
@@ -142,7 +142,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: orchestration-pool-config
-  namespace: kai-ml
+  namespace: kai
   labels:
     node-pool: orchestration
 data:
@@ -167,7 +167,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: spot-pool-config
-  namespace: kai-ml
+  namespace: kai
   labels:
     node-pool: spot-instances
 data:

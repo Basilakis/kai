@@ -203,7 +203,7 @@ metadata:
   name: notification-config
 data:
   log_level: "info"
-  redis_host: "redis-master.kai-ml.svc.cluster.local"
+  redis_host: "redis-master.kai.svc.cluster.local"
   redis_port: "6379"
   email_service: "smtp"
   email_host: "smtp.example.com"

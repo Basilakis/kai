@@ -148,7 +148,7 @@ metadata:
   name: parameter-registry-config
 data:
   log_level: "info"
-  redis_host: "redis-master.kai-ml.svc.cluster.local"
+  redis_host: "redis-master.kai.svc.cluster.local"
   redis_port: "6379"
   supabase_url: "https://your-project.supabase.co"
   material_defaults.json: |
