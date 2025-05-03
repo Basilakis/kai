@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'gatsby';
 // Import shared interfaces to reduce duplication
-import { 
-  NavItem, 
-  HeaderBehavior, 
+import {
+  NavItem,
+  HeaderBehavior,
   createNavigationHandler,
   headerClassNames as cn
 } from '../../../shared/src/components/interfaces/HeaderInterfaces';
 import { useUser } from '../providers/UserProvider';
+import LanguageSelector from './language/LanguageSelector';
 
 /**
  * Navigation items for the client application
@@ -16,6 +17,7 @@ const navItems: NavItem[] = [
   { label: 'Materials', path: '/materials' },
   { label: 'Recognition', path: '/recognition' },
   { label: 'Catalogs', path: '/catalogs' },
+  { label: 'Property Relationships', path: '/property-relationships' },
   { label: 'About', path: '/about' }
 ];
 
@@ -33,7 +35,7 @@ const Header: React.FC = () => {
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 10);
     };
-    
+
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
@@ -60,15 +62,15 @@ const Header: React.FC = () => {
               <span className="logo-text">Kai</span>
             </Link>
           </div>
-          
-          <button 
-            className="mobile-menu-button" 
+
+          <button
+            className="mobile-menu-button"
             onClick={toggleMenu}
             aria-label="Toggle menu"
           >
             <span className={`hamburger ${isMenuOpen ? 'open' : ''}`}></span>
           </button>
-          
+
           <nav className={`main-nav ${isMenuOpen ? 'open' : ''}`}>
             <ul className="nav-links">
               <li>
@@ -87,12 +89,21 @@ const Header: React.FC = () => {
                 </Link>
               </li>
               <li>
+                <Link to="/property-relationships" activeClassName="active">
+                  Property Relationships
+                </Link>
+              </li>
+              <li>
                 <Link to="/about" activeClassName="active">
                   About
                 </Link>
               </li>
             </ul>
-            
+
+            <div className="language-selector mr-4">
+              <LanguageSelector variant="icon" />
+            </div>
+
             {!isLoading && (
               <div className="auth-buttons">
                 {user ? (
@@ -100,8 +111,8 @@ const Header: React.FC = () => {
                     <Link to="/profile" className="button secondary user-profile-link">
                       My Profile
                     </Link>
-                    <button 
-                      onClick={() => { 
+                    <button
+                      onClick={() => {
                         if (window.confirm('Are you sure you want to log out?')) {
                           // Call logout from UserProvider
                           logout();

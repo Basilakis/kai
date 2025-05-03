@@ -1,202 +1,297 @@
 /**
- * Script to analyze the compatibility of package updates
- * Uses OpenAI to evaluate potential breaking changes and config file impacts
+ * Dependency Compatibility Analyzer
+ * 
+ * Uses OpenAI to analyze dependency updates for potential breaking changes,
+ * configuration impacts, and compatibility risks.
  */
 
 const fs = require('fs');
 const path = require('path');
-const { OpenAIClient, AzureKeyCredential } = require('@azure/openai');
+const { OpenAI } = require('openai');
+const semver = require('semver');
 
 // Configuration
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const OPENAI_ENDPOINT = process.env.OPENAI_ENDPOINT || 'https://api.openai.com/v1';
-const MODEL = process.env.OPENAI_MODEL || 'gpt-4';
+const DEPENDENCY_UPDATES_FILE = path.resolve(process.cwd(), '.github/dependency-updates.json');
+const CONFIG_FILES = [
+  'tsconfig.json',
+  'babel.config.js',
+  '.babelrc',
+  'webpack.config.js',
+  '.eslintrc',
+  'jest.config.js',
+  'package.json',
+  'requirements.txt',
+  'pyproject.toml',
+  'Dockerfile',
+  'docker-compose.yml',
+  'helm-charts/**/values.yaml',
+  'kubernetes/**/*.yaml',
+  '.env.example'
+];
 
-if (!OPENAI_API_KEY) {
-  console.error('Error: OPENAI_API_KEY environment variable is required');
-  process.exit(1);
-}
+// Initialize OpenAI
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
 
-// Helper to identify config files that might need updates
-const CONFIG_FILE_PATTERNS = {
-  // Node.js related configs
-  'react': ['next.config.js', 'packages/*/next.config.js'],
-  'next': ['next.config.js', 'packages/*/next.config.js'],
-  'webpack': ['webpack.config.js', 'packages/*/webpack.config.js'],
-  'typescript': ['tsconfig.json', 'packages/*/tsconfig.json'],
-  'jest': ['jest.config.js', 'packages/*/jest.config.js'],
-  'eslint': ['.eslintrc.js', '.eslintrc.json', 'packages/*/.eslintrc.js'],
-  'babel': ['.babelrc', 'babel.config.js', 'packages/*/.babelrc'],
-  
-  // Python related configs
-  'tensorflow': ['requirements.txt', 'packages/ml/requirements.txt'],
-  'torch': ['requirements.txt', 'packages/ml/requirements.txt'],
-  'numpy': ['requirements.txt', 'packages/ml/requirements.txt'],
-  'pandas': ['requirements.txt', 'packages/ml/requirements.txt'],
-  'opencv': ['requirements.txt', 'packages/ml/requirements.txt'],
-  'scikit-learn': ['requirements.txt', 'packages/ml/requirements.txt'],
-  'pillow': ['requirements.txt', 'packages/ml/requirements.txt'],
-};
-
-// Helper function to identify potential config files that might need updates
-function findPotentialConfigFiles(packageName) {
-  // Look for exact matches
-  if (CONFIG_FILE_PATTERNS[packageName]) {
-    return CONFIG_FILE_PATTERNS[packageName];
-  }
-  
-  // Look for partial matches
-  for (const [pattern, files] of Object.entries(CONFIG_FILE_PATTERNS)) {
-    if (packageName.includes(pattern) || pattern.includes(packageName)) {
-      return files;
-    }
-  }
-  
-  return [];
-}
-
-// Initialize OpenAI client
-const openai = new OpenAIClient(
-  OPENAI_ENDPOINT,
-  new AzureKeyCredential(OPENAI_API_KEY)
-);
-
-async function analyzePackageUpdate(pkg) {
+/**
+ * Load dependency updates
+ */
+function loadDependencyUpdates() {
   try {
-    // Prepare prompt for OpenAI
-    const prompt = `
-You are an expert AI package compatibility analyzer. You need to evaluate if updating a package would cause compatibility issues.
-
-Package: ${pkg.name}
-Current Version: ${pkg.current}
-Target Version: ${pkg.latest}
-Package Type: ${pkg.packageType} (${pkg.packageType === 'node' ? 'JavaScript/TypeScript' : 'Python'})
-Update Type: ${pkg.updateType}
-
-Please analyze:
-1. Is this likely to be a breaking change? Why or why not?
-2. What specific areas of an application might be affected?
-3. Are there any configuration files that might need updates?
-4. Would you recommend this as a safe update, or does it require careful testing?
-
-Provide your assessment in JSON format with the following structure:
-{
-  "breakingChange": true/false,
-  "confidence": "high"/"medium"/"low",
-  "reasoning": "brief explanation",
-  "affectedAreas": ["list", "of", "affected", "areas"],
-  "configChangesNeeded": true/false,
-  "recommendation": "safe"/"caution"/"manual-update"
-}
-`;
-
-    // Call OpenAI API for analysis
-    const response = await openai.getCompletions(MODEL, [prompt], {
-      temperature: 0.3,
-      maxTokens: 1000
-    });
-    
-    // Parse the response
-    const responseText = response.choices[0].text.trim();
-    let analysis;
-    
-    try {
-      // Extract JSON from the response (it might be wrapped in markdown code blocks)
-      const jsonMatch = responseText.match(/```json\n([\s\S]*)\n```/) || 
-                         responseText.match(/```\n([\s\S]*)\n```/) || 
-                         [null, responseText];
-      
-      const jsonStr = jsonMatch[1] || responseText;
-      analysis = JSON.parse(jsonStr);
-    } catch (error) {
-      console.error(`Error parsing OpenAI response for ${pkg.name}:`, error);
-      console.log('Raw response:', responseText);
-      
-      // Fallback to a conservative analysis
-      analysis = {
-        breakingChange: pkg.updateType === 'major',
-        confidence: 'low',
-        reasoning: 'Failed to parse AI response, defaulting to conservative estimate based on semver',
-        affectedAreas: [],
-        configChangesNeeded: pkg.updateType === 'major',
-        recommendation: pkg.updateType === 'major' ? 'manual-update' : 'caution'
-      };
-    }
-    
-    // Add potential config files
-    const potentialConfigFiles = findPotentialConfigFiles(pkg.name);
-    
-    return {
-      ...pkg,
-      analysis: {
-        ...analysis,
-        potentialConfigFiles
-      }
-    };
+    const data = fs.readFileSync(DEPENDENCY_UPDATES_FILE, 'utf8');
+    return JSON.parse(data);
   } catch (error) {
-    console.error(`Error analyzing package ${pkg.name}:`, error);
-    
-    // Return a fallback analysis
-    return {
-      ...pkg,
-      analysis: {
-        breakingChange: pkg.updateType === 'major',
-        confidence: 'low',
-        reasoning: `Failed to analyze: ${error.message}`,
-        affectedAreas: [],
-        configChangesNeeded: pkg.updateType === 'major',
-        recommendation: 'manual-update',
-        potentialConfigFiles: findPotentialConfigFiles(pkg.name)
-      }
-    };
-  }
-}
-
-async function main() {
-  try {
-    // Read the outdated package reports
-    const nodeReport = JSON.parse(fs.readFileSync('outdated-report.json', 'utf8'));
-    const pythonReport = JSON.parse(fs.readFileSync('python-outdated-report.json', 'utf8'));
-    
-    // Combine packages
-    const allPackages = [
-      ...nodeReport.packages,
-      ...pythonReport.packages
-    ];
-    
-    console.log(`Analyzing compatibility for ${allPackages.length} packages...`);
-    
-    // Analyze each package (with rate limiting for API calls)
-    const analyzedPackages = [];
-    for (const pkg of allPackages) {
-      console.log(`Analyzing ${pkg.name} (${pkg.current} -> ${pkg.latest})...`);
-      const analyzed = await analyzePackageUpdate(pkg);
-      analyzedPackages.push(analyzed);
-      
-      // Simple rate limiting
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    }
-    
-    // Generate the compatibility report
-    const compatibilityReport = {
-      timestamp: new Date().toISOString(),
-      summary: {
-        total: analyzedPackages.length,
-        safe: analyzedPackages.filter(p => p.analysis.recommendation === 'safe').length,
-        caution: analyzedPackages.filter(p => p.analysis.recommendation === 'caution').length,
-        manualUpdate: analyzedPackages.filter(p => p.analysis.recommendation === 'manual-update').length
-      },
-      packages: analyzedPackages
-    };
-    
-    // Write the report to file
-    fs.writeFileSync('compatibility-report.json', JSON.stringify(compatibilityReport, null, 2));
-    console.log(`Successfully analyzed ${analyzedPackages.length} packages`);
-    
-  } catch (error) {
-    console.error('Error in compatibility analysis:', error);
+    console.error(`Error loading dependency updates: ${error.message}`);
     process.exit(1);
   }
 }
 
-main();
+/**
+ * Find all configuration files in the project
+ */
+function findConfigFiles() {
+  const foundConfigFiles = [];
+  
+  CONFIG_FILES.forEach(pattern => {
+    try {
+      // Handle glob patterns
+      if (pattern.includes('*')) {
+        const files = require('glob').sync(pattern);
+        foundConfigFiles.push(...files);
+      } else if (fs.existsSync(pattern)) {
+        foundConfigFiles.push(pattern);
+      }
+    } catch (error) {
+      console.warn(`Error checking config file ${pattern}: ${error.message}`);
+    }
+  });
+  
+  return foundConfigFiles;
+}
+
+/**
+ * Analyze package for compatibility using OpenAI
+ */
+async function analyzePackageCompatibility(pkg, configFiles) {
+  const { name, current, latest, updateType, packageType } = pkg;
+  
+  console.log(`Analyzing compatibility for ${name} (${current} → ${latest})`);
+  
+  try {
+    // Create prompt for OpenAI
+    const prompt = `Analyze the following dependency update for potential breaking changes and compatibility issues:
+
+Package: ${name}
+Current Version: ${current}
+Latest Version: ${latest}
+Update Type: ${updateType}
+Package Type: ${packageType}
+
+Based on the version change and known patterns for this package, please determine:
+
+1. Is this update likely to contain breaking changes?
+2. What specific areas of the codebase might be affected?
+3. Are any configuration files likely to need updates?
+4. How confident are you in this analysis (high/medium/low)?
+5. Would you recommend this as a safe automatic update, a cautious update, or a manual update requiring code changes?
+
+Please provide a detailed, specific analysis for this particular package and version change.`;
+
+    // Call OpenAI API
+    const response = await openai.chat.completions.create({
+      model: "gpt-4",
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.2,
+      max_tokens: 1500
+    });
+
+    const content = response.choices[0].message.content;
+    
+    // Parse the response
+    let breakingChange = false;
+    let confidence = 'medium';
+    let recommendation = 'caution';
+    let reasoning = content;
+    let affectedAreas = [];
+    let configChangesNeeded = false;
+    let potentialConfigFiles = [];
+    
+    // Extract breaking change assessment
+    if (content.includes('breaking changes') || content.includes('Breaking changes')) {
+      if (
+        content.includes('no breaking changes') || 
+        content.includes('unlikely to contain breaking changes') ||
+        content.includes('should not contain breaking changes')
+      ) {
+        breakingChange = false;
+      } else if (
+        content.includes('likely to contain breaking changes') ||
+        content.includes('contains breaking changes') ||
+        content.includes('major breaking changes')
+      ) {
+        breakingChange = true;
+      } else if (updateType === 'major') {
+        // Default to true for major updates unless explicitly stated otherwise
+        breakingChange = true;
+      }
+    } else if (updateType === 'major') {
+      // Default to true for major updates
+      breakingChange = true;
+    }
+    
+    // Extract confidence level
+    if (content.includes('high confidence') || content.includes('High confidence')) {
+      confidence = 'high';
+    } else if (content.includes('low confidence') || content.includes('Low confidence')) {
+      confidence = 'low';
+    }
+    
+    // Extract recommendation
+    if (
+      content.includes('safe automatic update') || 
+      content.includes('safe update') ||
+      content.includes('recommend this as a safe')
+    ) {
+      recommendation = 'safe';
+    } else if (
+      content.includes('manual update') || 
+      content.includes('requires manual') ||
+      content.includes('manual review')
+    ) {
+      recommendation = 'manual-update';
+    }
+    
+    // Default recommendation based on update type if not clearly stated
+    if (!content.includes('recommend')) {
+      if (updateType === 'patch') {
+        recommendation = 'safe';
+      } else if (updateType === 'major') {
+        recommendation = 'manual-update';
+      }
+    }
+    
+    // Extract affected areas
+    const areasMatch = content.match(/affected areas?[:\s]+([\s\S]+?)(?=\n\n|\n[A-Z]|$)/i);
+    if (areasMatch) {
+      const areasText = areasMatch[1];
+      affectedAreas = areasText
+        .split(/[,\n]/)
+        .map(area => area.trim())
+        .filter(area => area && !area.includes(':') && area.length > 2);
+    }
+    
+    // Check for configuration changes
+    if (
+      content.includes('configuration files') || 
+      content.includes('config files') ||
+      content.includes('configuration changes')
+    ) {
+      if (
+        !content.includes('no configuration changes') && 
+        !content.includes('configuration files are not likely')
+      ) {
+        configChangesNeeded = true;
+        
+        // Extract potential config files
+        configFiles.forEach(file => {
+          if (content.includes(path.basename(file))) {
+            potentialConfigFiles.push(file);
+          }
+        });
+      }
+    }
+    
+    // Create analysis object
+    const analysis = {
+      breakingChange,
+      confidence,
+      reasoning: content.slice(0, 500), // Limit reasoning to 500 chars
+      affectedAreas: affectedAreas.slice(0, 5), // Limit to 5 areas
+      configChangesNeeded,
+      recommendation,
+      potentialConfigFiles
+    };
+    
+    return analysis;
+  } catch (error) {
+    console.error(`Error analyzing ${name}: ${error.message}`);
+    
+    // Provide a conservative default analysis
+    return {
+      breakingChange: updateType === 'major',
+      confidence: 'low',
+      reasoning: `Failed to analyze due to API error: ${error.message}`,
+      affectedAreas: [],
+      configChangesNeeded: updateType === 'major',
+      recommendation: updateType === 'patch' ? 'safe' : 'manual-update',
+      potentialConfigFiles: []
+    };
+  }
+}
+
+/**
+ * Main function to analyze all packages
+ */
+async function analyzeAllPackages() {
+  // Load dependency updates
+  const updates = loadDependencyUpdates();
+  
+  // Find configuration files
+  const configFiles = findConfigFiles();
+  console.log(`Found ${configFiles.length} configuration files`);
+  
+  // Analyze each package
+  for (let i = 0; i < updates.packages.length; i++) {
+    const pkg = updates.packages[i];
+    
+    // Skip analysis for packages with low importance
+    if (
+      pkg.updateType === 'patch' && 
+      !pkg.name.includes('react') && 
+      !pkg.name.includes('webpack') && 
+      !pkg.name.includes('babel') && 
+      !pkg.name.includes('eslint') && 
+      !pkg.name.includes('typescript')
+    ) {
+      // For most patch updates, don't use API call - just mark as safe
+      updates.packages[i].analysis = {
+        breakingChange: false,
+        confidence: 'high',
+        reasoning: 'Patch update, unlikely to contain breaking changes.',
+        affectedAreas: [],
+        configChangesNeeded: false,
+        recommendation: 'safe',
+        potentialConfigFiles: []
+      };
+      console.log(`Skipping detailed analysis for patch update: ${pkg.name}`);
+      continue;
+    }
+    
+    // Analyze package compatibility
+    const analysis = await analyzePackageCompatibility(pkg, configFiles);
+    updates.packages[i].analysis = analysis;
+    
+    // Add small delay to avoid rate limiting
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
+  
+  // Update summary based on analysis
+  updates.summary.safe = updates.packages.filter(pkg => pkg.analysis?.recommendation === 'safe').length;
+  updates.summary.caution = updates.packages.filter(pkg => pkg.analysis?.recommendation === 'caution').length;
+  updates.summary.manualUpdate = updates.packages.filter(pkg => pkg.analysis?.recommendation === 'manual-update').length;
+  
+  // Save updated data
+  fs.writeFileSync(DEPENDENCY_UPDATES_FILE, JSON.stringify(updates, null, 2));
+  
+  console.log(`Analyzed ${updates.packages.length} packages:`);
+  console.log(`- Safe: ${updates.summary.safe}`);
+  console.log(`- Caution: ${updates.summary.caution}`);
+  console.log(`- Manual Review: ${updates.summary.manualUpdate}`);
+}
+
+// Run analysis
+analyzeAllPackages().catch(error => {
+  console.error(`Error analyzing packages: ${error.message}`);
+  process.exit(1);
+});

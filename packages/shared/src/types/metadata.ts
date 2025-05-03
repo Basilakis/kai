@@ -1,6 +1,6 @@
 /**
  * Material Metadata Types
- * 
+ *
  * Type definitions for material metadata fields based on material categories.
  * These types provide structure for material metadata across the application.
  */
@@ -26,20 +26,53 @@ export interface GlobalMetadata {
  * Tile-specific metadata fields
  */
 export interface TileMetadata extends GlobalMetadata {
-  vRating?: 'V1' | 'V2' | 'V3' | 'V4';
-  rRating?: 'R9' | 'R10' | 'R11' | 'R12' | 'R13';
+  // Physical properties
   size: string; // Format like "60x60", "30x60"
   thickness: number; // In mm
+  material: 'Ceramic' | 'Porcelain' | 'Marble' | 'Granite' | 'Terracotta' | 'Quartzite' | 'Limestone' | 'Slate' | 'Glass' | 'Cement';
+  color: string;
+  weight?: number; // Weight per m²
+
+  // Format/Shape
+  format?: 'Square' | 'Rectangular' | 'Hexagonal' | 'Subway' | 'Mosaic' | 'Large Format/Slabs' | '3D/Sculpted';
+
+  // Appearance
+  finish: 'Matte' | 'Glossy' | 'Semi-polished' | 'Lappato' | 'Polished' | 'Textured' | 'Anti-slip' | 'Satin' | 'Silk' | 'Honed' | 'Natural' | 'Structured';
+  pattern?: string;
+  texture?: string;
+  surface?: string;
+  edgeType?: 'Rectified' | 'Non-rectified' | 'Beveled' | 'Micro-beveled' | 'Pillowed';
+  rectified?: boolean;
+
+  // Technical properties
+  vRating?: 'V1' | 'V2' | 'V3' | 'V4'; // Shade variation
+  rRating?: 'R9' | 'R10' | 'R11' | 'R12' | 'R13'; // Slip resistance
   waterAbsorption?: 'BIa (≤0.5%)' | 'BIb (0.5-3%)' | 'BIIa (3-6%)' | 'BIIb (6-10%)' | 'BIII (>10%)';
   frostResistance?: boolean;
-  peiRating?: 'PEI I' | 'PEI II' | 'PEI III' | 'PEI IV' | 'PEI V';
-  moh?: '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '10';
-  material: 'Ceramic' | 'Porcelain' | 'Marble' | 'Granite' | 'Terracotta' | 'Quartzite' | 'Limestone' | 'Slate' | 'Glass' | 'Cement';
-  finish: 'Matte' | 'Glossy' | 'Polished' | 'Honed' | 'Textured' | 'Lappato' | 'Semi-polished' | 'Natural' | 'Structured' | 'Satin';
-  color: string;
-  usage: 'Floor' | 'Wall' | 'Floor & Wall' | 'Outdoor' | 'Indoor' | 'Bathroom' | 'Kitchen' | 'Living Room' | 'Commercial';
-  rectified?: boolean;
+  peiRating?: 'PEI I' | 'PEI II' | 'PEI III' | 'PEI IV' | 'PEI V'; // Wear resistance
+  moh?: '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '10'; // Hardness
+  chemicalResistance?: string;
+  stainResistance?: string;
+  fireRating?: string;
+  heatResistance?: boolean;
+  soundInsulation?: string;
+
+  // Usage and application
+  usage: 'Wall Tile' | 'Floor Tile' | 'Outdoor Tile' | 'Pool Tile' | 'Facade/Cladding Tile' | 'Roof Tile' | 'Floor & Wall' | 'Bathroom' | 'Kitchen' | 'Living Room' | 'Commercial';
+  applicationArea?: 'Indoor' | 'Outdoor' | 'Pool' | 'Wet Areas' | 'High Traffic' | 'Low Traffic';
+  installationType?: 'Glue' | 'Raised Floor' | 'Mortar' | 'Thin-set' | 'Dry-set';
+
+  // Special features
   antibacterial?: boolean;
+  lookType?: 'Wood-look' | 'Stone-look' | 'Concrete-look' | 'Marble-look' | 'Metal-look' | 'Patterned';
+  specialtyType?: 'Anti-bacterial' | 'Thin/Slim' | 'Outdoor deck' | 'Raised floor' | 'Technical porcelain';
+
+  // Commercial information
+  batchNumber?: string;
+  packaging?: string; // Tiles per box, m² per box
+  availability?: 'In stock' | 'Outlet' | 'B-quality' | 'Special order';
+  sku?: string; // Product code
+  barcode?: string;
 }
 
 /**
@@ -126,24 +159,30 @@ export interface DecorationMetadata extends Omit<GlobalMetadata, 'sustainability
 /**
  * Union type representing all possible material metadata types
  */
-export type MaterialMetadata = 
-  | TileMetadata 
-  | WoodMetadata 
-  | LightingMetadata 
-  | FurnitureMetadata 
+export type MaterialMetadata =
+  | TileMetadata
+  | WoodMetadata
+  | LightingMetadata
+  | FurnitureMetadata
   | DecorationMetadata;
 
 /**
  * Type guard to check if metadata is for Tile
  */
 export function isTileMetadata(metadata: unknown): metadata is TileMetadata {
-  return typeof metadata === 'object' && 
-    metadata !== null && 
+  return typeof metadata === 'object' &&
+    metadata !== null &&
     (
-      'rRating' in metadata || 
-      'vRating' in metadata || 
-      ('material' in metadata && 
-       typeof metadata.material === 'string' && 
+      'rRating' in metadata ||
+      'vRating' in metadata ||
+      'format' in metadata ||
+      'lookType' in metadata ||
+      'specialtyType' in metadata ||
+      ('usage' in metadata &&
+       typeof metadata.usage === 'string' &&
+       ['Wall Tile', 'Floor Tile', 'Outdoor Tile', 'Pool Tile', 'Facade/Cladding Tile', 'Roof Tile'].some(u => metadata.usage.includes(u))) ||
+      ('material' in metadata &&
+       typeof metadata.material === 'string' &&
        ['Ceramic', 'Porcelain', 'Marble', 'Granite', 'Terracotta', 'Quartzite', 'Limestone', 'Slate', 'Glass', 'Cement'].includes(metadata.material))
     );
 }
@@ -152,13 +191,13 @@ export function isTileMetadata(metadata: unknown): metadata is TileMetadata {
  * Type guard to check if metadata is for Wood
  */
 export function isWoodMetadata(metadata: unknown): metadata is WoodMetadata {
-  return typeof metadata === 'object' && 
-    metadata !== null && 
+  return typeof metadata === 'object' &&
+    metadata !== null &&
     (
-      'woodType' in metadata || 
+      'woodType' in metadata ||
       'construction' in metadata ||
-      ('material' in metadata && 
-       typeof metadata.material === 'string' && 
+      ('material' in metadata &&
+       typeof metadata.material === 'string' &&
        metadata.material.toLowerCase().includes('wood'))
     );
 }
@@ -167,10 +206,10 @@ export function isWoodMetadata(metadata: unknown): metadata is WoodMetadata {
  * Type guard to check if metadata is for Lighting
  */
 export function isLightingMetadata(metadata: unknown): metadata is LightingMetadata {
-  return typeof metadata === 'object' && 
-    metadata !== null && 
+  return typeof metadata === 'object' &&
+    metadata !== null &&
     (
-      'lightingType' in metadata || 
+      'lightingType' in metadata ||
       'bulbType' in metadata ||
       'wattage' in metadata
     );
@@ -180,10 +219,10 @@ export function isLightingMetadata(metadata: unknown): metadata is LightingMetad
  * Type guard to check if metadata is for Furniture
  */
 export function isFurnitureMetadata(metadata: unknown): metadata is FurnitureMetadata {
-  return typeof metadata === 'object' && 
-    metadata !== null && 
+  return typeof metadata === 'object' &&
+    metadata !== null &&
     (
-      'furnitureType' in metadata || 
+      'furnitureType' in metadata ||
       'cushionFilling' in metadata ||
       'weightCapacity' in metadata
     );
@@ -193,10 +232,10 @@ export function isFurnitureMetadata(metadata: unknown): metadata is FurnitureMet
  * Type guard to check if metadata is for Decoration
  */
 export function isDecorationMetadata(metadata: unknown): metadata is DecorationMetadata {
-  return typeof metadata === 'object' && 
-    metadata !== null && 
+  return typeof metadata === 'object' &&
+    metadata !== null &&
     (
-      'decorationType' in metadata || 
+      'decorationType' in metadata ||
       'mountingType' in metadata ||
       'setSize' in metadata
     );
@@ -231,20 +270,53 @@ export function getMetadataFieldType(
   // Material-specific fields
   const fieldTypes: Record<string, Record<string, 'text' | 'number' | 'dropdown' | 'boolean' | 'textarea' | 'date'>> = {
     tile: {
-      vRating: 'dropdown',
-      rRating: 'dropdown',
+      // Physical properties
       size: 'text',
       thickness: 'number',
+      material: 'dropdown',
+      color: 'dropdown',
+      weight: 'number',
+
+      // Format/Shape
+      format: 'dropdown',
+
+      // Appearance
+      finish: 'dropdown',
+      pattern: 'text',
+      texture: 'text',
+      surface: 'text',
+      edgeType: 'dropdown',
+      rectified: 'boolean',
+
+      // Technical properties
+      vRating: 'dropdown',
+      rRating: 'dropdown',
       waterAbsorption: 'dropdown',
       frostResistance: 'boolean',
       peiRating: 'dropdown',
       moh: 'dropdown',
-      material: 'dropdown',
-      finish: 'dropdown',
-      color: 'dropdown',
+      chemicalResistance: 'text',
+      stainResistance: 'text',
+      fireRating: 'text',
+      heatResistance: 'boolean',
+      soundInsulation: 'text',
+
+      // Usage and application
       usage: 'dropdown',
-      rectified: 'boolean',
-      antibacterial: 'boolean'
+      applicationArea: 'dropdown',
+      installationType: 'dropdown',
+
+      // Special features
+      antibacterial: 'boolean',
+      lookType: 'dropdown',
+      specialtyType: 'dropdown',
+
+      // Commercial information
+      batchNumber: 'text',
+      packaging: 'text',
+      availability: 'dropdown',
+      sku: 'text',
+      barcode: 'text'
     },
     wood: {
       woodType: 'dropdown',
@@ -315,7 +387,7 @@ export function getMetadataFieldType(
 
   // Check if the material type exists and get its field types
   const materialFieldTypes = materialType in fieldTypes ? fieldTypes[materialType] : null;
-  
+
   // If we have field types for this material and the field exists, return its type
   if (materialFieldTypes && fieldName in materialFieldTypes) {
     return materialFieldTypes[fieldName] as 'text' | 'number' | 'dropdown' | 'boolean' | 'textarea' | 'date';

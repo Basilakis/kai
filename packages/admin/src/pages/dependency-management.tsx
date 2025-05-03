@@ -1,5 +1,4 @@
-import * as React from 'react';
-const { useState, useEffect } = React;
+import React from 'react';
 import {
   Box,
   Typography,
@@ -26,15 +25,16 @@ import {
   AccordionDetails,
 } from '@mui/material';
 import Layout from '../components/Layout';
-import { dependencyService } from '../services/dependencyService';
+// Import the dependency service
+import dependencyService from '../services/dependency-service';
 // Import icons using the project's established pattern
-import { 
-  Refresh as RefreshIcon,
-  CheckCircle as CheckCircleIcon, 
-  Warning as WarningIcon,
-  Update as UpdateIcon,
-  Error as ErrorIcon,
-  ExpandMore as ExpandMoreIcon 
+import {
+  RefreshIcon,
+  CheckCircleIcon,
+  WarningIcon,
+  UpdateIcon,
+  ErrorIcon,
+  ExpandMoreIcon
 } from '../components/mui-icons';
 
 interface TabPanelProps {
@@ -87,19 +87,19 @@ interface PackageSummary {
 }
 
 const DependencyManagementPage: React.FC = () => {
-  const [tabValue, setTabValue] = useState(0);
-  const [nodePackages, setNodePackages] = useState<PackageUpdate[]>([]);
-  const [pythonPackages, setPythonPackages] = useState<PackageUpdate[]>([]);
-  const [summary, setSummary] = useState<PackageSummary | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [scanRunning, setScanRunning] = useState(false);
-  const [openDialog, setOpenDialog] = useState(false);
-  const [selectedPackages, setSelectedPackages] = useState<PackageUpdate[]>([]);
-  const [updateType, setUpdateType] = useState<'safe' | 'caution' | 'manual'>('safe');
+  const [tabValue, setTabValue] = React.useState(0);
+  const [nodePackages, setNodePackages] = React.useState<PackageUpdate[]>([]);
+  const [pythonPackages, setPythonPackages] = React.useState<PackageUpdate[]>([]);
+  const [summary, setSummary] = React.useState<PackageSummary | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+  const [scanRunning, setScanRunning] = React.useState(false);
+  const [openDialog, setOpenDialog] = React.useState(false);
+  const [selectedPackages, setSelectedPackages] = React.useState<PackageUpdate[]>([]);
+  const [updateType, setUpdateType] = React.useState<'safe' | 'caution' | 'manual'>('safe');
 
   // Fetch dependencies on component mount
-  useEffect(() => {
+  React.useEffect(() => {
     fetchDependencies();
   }, []);
 
@@ -108,15 +108,15 @@ const DependencyManagementPage: React.FC = () => {
     setError(null);
     try {
       const data = await dependencyService.getOutdatedPackages();
-      
+
       // Split packages by type
       const node = data.packages.filter((pkg: PackageUpdate) => pkg.packageType === 'node');
       const python = data.packages.filter((pkg: PackageUpdate) => pkg.packageType === 'python');
-      
+
       setNodePackages(node);
       setPythonPackages(python);
       setSummary(data.summary);
-      
+
     } catch (err) {
       setError('Failed to fetch dependency data. Please try again.');
       console.error(err);
@@ -125,7 +125,7 @@ const DependencyManagementPage: React.FC = () => {
     }
   };
 
-  const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
+  const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
   };
 
@@ -151,9 +151,9 @@ const DependencyManagementPage: React.FC = () => {
 
   const handleUpdateSelected = (updateType: 'safe' | 'caution' | 'manual') => {
     setUpdateType(updateType);
-    
+
     let packagesToUpdate: PackageUpdate[] = [];
-    
+
     // Filter packages based on update type
     if (updateType === 'safe') {
       packagesToUpdate = [...nodePackages, ...pythonPackages].filter(
@@ -168,7 +168,7 @@ const DependencyManagementPage: React.FC = () => {
         (pkg: PackageUpdate) => pkg.analysis?.recommendation === 'manual-update'
       );
     }
-    
+
     setSelectedPackages(packagesToUpdate);
     setOpenDialog(true);
   };
@@ -180,7 +180,7 @@ const DependencyManagementPage: React.FC = () => {
   const handleConfirmUpdate = async () => {
     setOpenDialog(false);
     setLoading(true);
-    
+
     try {
       const packageNames = selectedPackages.map((pkg: PackageUpdate) => pkg.name);
       await dependencyService.updatePackages(packageNames, updateType);
@@ -197,28 +197,28 @@ const DependencyManagementPage: React.FC = () => {
   // Helper to render status chip
   const renderStatusChip = (pkg: PackageUpdate) => {
     if (!pkg.analysis) return null;
-    
+
     switch (pkg.analysis.recommendation) {
       case 'safe':
-        return <Chip 
-          label="Safe" 
-          color="success" 
-          size="small" 
-          icon={<CheckCircleIcon />} 
+        return <Chip
+          label="Safe"
+          color="success"
+          size="small"
+          icon={<CheckCircleIcon />}
         />;
       case 'caution':
-        return <Chip 
-          label="Caution" 
-          color="warning" 
-          size="small" 
-          icon={<WarningIcon />} 
+        return <Chip
+          label="Caution"
+          color="warning"
+          size="small"
+          icon={<WarningIcon />}
         />;
       case 'manual-update':
-        return <Chip 
-          label="Manual Review" 
-          color="error" 
-          size="small" 
-          icon={<ErrorIcon />} 
+        return <Chip
+          label="Manual Review"
+          color="error"
+          size="small"
+          icon={<ErrorIcon />}
         />;
       default:
         return null;
@@ -319,8 +319,8 @@ const DependencyManagementPage: React.FC = () => {
             Dependency Management
           </Typography>
           <Box>
-            <Button 
-              variant="outlined" 
+            <Button
+              variant="outlined"
               startIcon={<RefreshIcon />}
               onClick={fetchDependencies}
               sx={{ mr: 1 }}
@@ -328,8 +328,8 @@ const DependencyManagementPage: React.FC = () => {
             >
               Refresh
             </Button>
-            <Button 
-              variant="contained" 
+            <Button
+              variant="contained"
               startIcon={<UpdateIcon />}
               onClick={handleStartScan}
               disabled={loading || scanRunning}
@@ -388,8 +388,8 @@ const DependencyManagementPage: React.FC = () => {
                     </Typography>
                   </Box>
                   <Box sx={{ ml: 'auto' }}>
-                    <Button 
-                      variant="contained" 
+                    <Button
+                      variant="contained"
                       color="success"
                       onClick={() => handleUpdateSelected('safe')}
                       disabled={summary.safe === 0}
@@ -397,8 +397,8 @@ const DependencyManagementPage: React.FC = () => {
                     >
                       Update Safe ({summary.safe})
                     </Button>
-                    <Button 
-                      variant="contained" 
+                    <Button
+                      variant="contained"
                       color="warning"
                       onClick={() => handleUpdateSelected('caution')}
                       disabled={summary.caution === 0}
@@ -406,8 +406,8 @@ const DependencyManagementPage: React.FC = () => {
                     >
                       Update With Caution ({summary.caution})
                     </Button>
-                    <Button 
-                      variant="outlined" 
+                    <Button
+                      variant="outlined"
                       color="error"
                       onClick={() => handleUpdateSelected('manual')}
                       disabled={summary.manualUpdate === 0}
@@ -447,7 +447,7 @@ const DependencyManagementPage: React.FC = () => {
         </DialogTitle>
         <DialogContent>
           <DialogContentText>
-            {updateType === 'safe' 
+            {updateType === 'safe'
               ? 'You are about to update packages that have been analyzed as safe.'
               : updateType === 'caution'
                 ? 'You are about to update packages that require caution. Make sure you have reviewed the potential impacts.'
@@ -473,9 +473,9 @@ const DependencyManagementPage: React.FC = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={handleCloseDialog}>Cancel</Button>
-          <Button 
-            onClick={handleConfirmUpdate} 
-            variant="contained" 
+          <Button
+            onClick={handleConfirmUpdate}
+            variant="contained"
             color={updateType === 'safe' ? 'success' : updateType === 'caution' ? 'warning' : 'error'}
           >
             Confirm Update

@@ -43,6 +43,7 @@ The KAI platform uses Prometheus for metrics collection, aggregation, and storag
 - **Prometheus Server**: Collects and stores time-series metrics data
 - **Alert Manager**: Handles alerts sent by Prometheus server
 - **Grafana**: Provides visualization and dashboards for Prometheus metrics
+- **Prometheus Adapter**: Exposes Prometheus metrics to Kubernetes for HPA
 
 ### Metrics Collection
 
@@ -56,21 +57,75 @@ prometheus.io/path: "/metrics"
 
 These annotations enable Prometheus to automatically discover and scrape metrics from the services.
 
+### Custom Metrics API
+
+The platform uses the Prometheus Adapter to expose custom metrics to the Kubernetes API, enabling advanced autoscaling based on application-specific metrics:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-adapter-config
+  namespace: kai-ml
+data:
+  config.yaml: |
+    rules:
+    # API Request Rate Metrics
+    - seriesQuery: 'http_requests_total{kubernetes_namespace!="",kubernetes_pod_name!=""}'
+      resources:
+        overrides:
+          kubernetes_namespace: {resource: "namespace"}
+          kubernetes_pod_name: {resource: "pod"}
+      name:
+        matches: "^(.*)_total"
+        as: "${1}_per_second"
+      metricsQuery: 'sum(rate(<<.Series>>{<<.LabelMatchers>>}[2m])) by (<<.GroupBy>>)'
+
+    # Queue Depth Metrics for Coordinator
+    - seriesQuery: 'kai_coordinator_queue_depth{kubernetes_namespace!="",kubernetes_pod_name!=""}'
+      resources:
+        overrides:
+          kubernetes_namespace: {resource: "namespace"}
+          kubernetes_pod_name: {resource: "pod"}
+      name:
+        matches: "kai_coordinator_queue_depth"
+        as: "coordinator_queue_depth"
+      metricsQuery: 'sum(<<.Series>>{<<.LabelMatchers>>}) by (<<.GroupBy>>)'
+```
+
 ### Available Metrics
 
 The platform exposes various metrics through the monitoring service:
 
-- **Workflow Metrics**: 
+- **Workflow Metrics**:
   - `workflow_started_total`: Counter for started workflows
   - `workflow_completed_total`: Counter for completed workflows
   - `workflow_duration_seconds`: Histogram for workflow durations
   - `workflow_error_total`: Counter for workflow errors
-  
+
 - **Resource Metrics**:
   - `workflow_cpu_usage_cores`: Gauge for CPU usage
   - `workflow_memory_usage_bytes`: Gauge for memory usage
   - `workflow_gpu_usage_percent`: Gauge for GPU utilization
-  
+
+- **Coordinator Metrics**:
+  - `kai_coordinator_queue_depth`: Gauge for queue depth by priority
+  - `kai_coordinator_active_workflows`: Gauge for active workflows by type
+  - `kai_coordinator_workflow_duration_seconds`: Histogram for workflow durations
+  - `kai_coordinator_workflow_completed_total`: Counter for completed workflows
+  - `kai_coordinator_workflow_error_total`: Counter for workflow errors
+  - `kai_coordinator_resource_utilization`: Gauge for resource utilization
+
+- **Database Connection Metrics**:
+  - `kai_supabase_connection_pool_active`: Gauge for active connections
+  - `kai_supabase_connection_pool_idle`: Gauge for idle connections
+  - `kai_supabase_connection_pool_total`: Gauge for total connections
+  - `kai_supabase_connection_pool_utilization`: Gauge for connection pool utilization
+  - `kai_supabase_connection_pool_waiting_acquires`: Gauge for waiting connection acquires
+  - `kai_supabase_connection_pool_acquire_success_rate`: Gauge for connection acquisition success rate
+  - `kai_supabase_connection_pool_average_acquire_time`: Gauge for average connection acquisition time
+  - `kai_supabase_connection_pool_connection_errors`: Gauge for connection errors
+
 - **Cache Metrics**:
   - `workflow_cache_hit_total`: Counter for cache hits
   - `workflow_stage_duration_seconds`: Histogram for stage durations
@@ -114,17 +169,35 @@ kubectl get secret prometheus-grafana -n monitoring -o jsonpath="{.data.admin-pa
 
 The following pre-configured dashboards are available:
 
-1. **Kubernetes Dashboard**: 
+1. **Kubernetes Dashboard**:
    - Shows cluster-wide metrics
    - Navigate to Dashboards → Browse → Default → Kubernetes Dashboard
 
-2. **ML Workflows Dashboard**: 
+2. **ML Workflows Dashboard**:
    - Shows execution times and resource usage of ML pipelines
    - Navigate to Dashboards → Browse → Default → ML Workflows Dashboard
 
-3. **ML Processing Dashboard**: 
+3. **ML Processing Dashboard**:
    - Shows metrics for different processing stages
    - Navigate to Dashboards → Browse → Default → ML Processing Dashboard
+
+4. **Supabase Connection Pool Dashboard**:
+   - Shows database connection pool metrics
+   - Monitors connection counts, utilization, and performance
+   - Tracks connection acquisition times and error rates
+   - Navigate to Dashboards → Browse → Default → Supabase Connection Pool
+
+5. **Kubernetes HPA Metrics Dashboard**:
+   - Shows Horizontal Pod Autoscaler metrics
+   - Monitors replica counts, scaling events, and custom metrics
+   - Visualizes CPU/memory utilization and queue depths
+   - Navigate to Dashboards → Browse → Default → Kubernetes HPA Metrics
+
+6. **Coordinator Service Dashboard**:
+   - Shows metrics for the Coordinator service
+   - Monitors queue depths, workflow durations, and error rates
+   - Tracks resource utilization and processing performance
+   - Navigate to Dashboards → Browse → Default → Coordinator Service
 
 ### Exploring Metrics
 

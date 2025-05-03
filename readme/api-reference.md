@@ -472,6 +472,31 @@ These endpoints require admin role and some are restricted to internal networks 
 | POST | /api/admin/jobs/:id/cancel | Cancel a job | INTERNAL_ONLY |
 | GET | /api/admin/dashboard | Get admin dashboard stats | INTERNAL_ONLY |
 
+### Visual Reference Library API
+
+| Method | Endpoint | Description | Default Access |
+|--------|----------|-------------|----------------|
+| GET | /api/property-references | Get property reference images | ANY |
+| POST | /api/property-references | Create a property reference image | ANY |
+| PUT | /api/property-references/:id | Update a property reference image | ANY |
+| DELETE | /api/property-references/:id | Delete a property reference image | ANY |
+
+### Visual Reference AI Training API
+
+| Method | Endpoint | Description | Default Access |
+|--------|----------|-------------|----------------|
+| POST | /api/ai/visual-reference/datasets | Create a training dataset from visual references | INTERNAL_ONLY |
+| POST | /api/ai/visual-reference/models | Train a model using a visual reference dataset | INTERNAL_ONLY |
+| POST | /api/ai/visual-reference/train | Create a dataset and train a model in one step | INTERNAL_ONLY |
+
+### Visual Reference OCR API
+
+| Method | Endpoint | Description | Default Access |
+|--------|----------|-------------|----------------|
+| POST | /api/ocr/visual-reference/enhance | Enhance OCR extraction with visual reference verification | ANY |
+| POST | /api/ocr/visual-reference/enhance-multiple | Enhance multiple OCR extractions with visual reference verification | ANY |
+| GET | /api/ocr/visual-reference/patterns/:propertyName/:materialType | Get extraction patterns for a property based on visual references | ANY |
+
 #### Get Admin Dashboard Stats Example
 
 ```http
@@ -805,10 +830,10 @@ async function login() {
       email: 'user@example.com',
       password: 'password'
     });
-    
+
     // Store token for subsequent requests
     client.setToken(token);
-    
+
     return user;
   } catch (error) {
     console.error('Login failed:', error.message);
@@ -823,7 +848,7 @@ async function recognizeMaterial(imageFile) {
       modelType: 'enhanced',
       maxResults: 5
     });
-    
+
     return result.results;
   } catch (error) {
     console.error('Recognition failed:', error.message);
@@ -863,10 +888,10 @@ def login():
             email='user@example.com',
             password='password'
         )
-        
+
         # Store token for subsequent requests
         client.set_token(response['token'])
-        
+
         return response['user']
     except Exception as e:
         print(f"Login failed: {str(e)}")
@@ -880,7 +905,7 @@ def recognize_material(image_path):
                 model_type='enhanced',
                 max_results=5
             )
-        
+
         return result['results']
     except Exception as e:
         print(f"Recognition failed: {str(e)}")

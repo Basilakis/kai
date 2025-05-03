@@ -20,6 +20,8 @@ All detailed documentation is available in the `readme` folder:
 - [CrewAI Implementation](./readme/agents-crewai-implementation.md) - Implementation details for crewAI agents
 - [CrewAI Development Steps](./readme/agents-crewai-next-steps.md) - Next steps for enhancing crewAI integration
 - [Material Metadata Enhancement](./readme/material-metadata-response-enhancement.md) - Comprehensive material metadata in responses
+- [Material Metadata Extraction](./readme/shared-material-metadata-extraction.md) - Extraction system for metadata with Visual Reference Library
+- [Property Relationship Graph](./readme/property-relationship-graph.md) - Define and store relationships between different properties
 - [MoodBoard Feature](./readme/moodboard-feature.md) - Material collection and organization feature
 
 ## Quick Start

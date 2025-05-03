@@ -24,6 +24,7 @@
     "@heroui/node": "^1.0.0",
     "@kai/shared": "0.1.0",
     "@kai/mcp-client": "1.0.0",
+    "@kubernetes/client-node": "^0.20.0",
     "@supabase/supabase-js": "^2.39.0",
     "axios": "^0.27.2",
     "form-data": "^4.0.0",

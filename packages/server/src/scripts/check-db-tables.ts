@@ -1,6 +1,6 @@
 /**
  * Database Table Check Script
- * 
+ *
  * This script checks if the required database tables for response quality
  * and model improvement features exist in the database.
  */
@@ -18,7 +18,10 @@ const requiredTables = [
   'error_patterns',
   'improvement_suggestions',
   'models',
-  'migrations'
+  'migrations',
+  'validation_rules',
+  'validation_rule_dependencies',
+  'validation_results'
 ];
 
 /**
@@ -82,12 +85,12 @@ async function createGetTablesFunction() {
       AS $$
       BEGIN
         RETURN QUERY
-        SELECT 
+        SELECT
           t.table_name::text,
           t.table_schema::text
-        FROM 
+        FROM
           information_schema.tables t
-        WHERE 
+        WHERE
           t.table_schema = 'public'
           AND t.table_type = 'BASE TABLE';
       END;

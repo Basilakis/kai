@@ -7,7 +7,8 @@
  */
 
 import express, { Request, Response } from 'express';
-import container from './container';
+// Container is used for dependency injection but not directly referenced in this file
+// import container from './container';
 import { getDatabaseService } from './services/database/databaseService';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -34,7 +35,9 @@ import { initializeModelImprovementJobs } from './jobs/model-improvement.job';
 dotenv.config();
 
 // Import and validate environment variables
-import { validateEnvironment, getEnvironmentHealth } from './utils/environment.validator';
+import { validateEnvironment } from './utils/environment.validator';
+// getEnvironmentHealth is available for more detailed environment checks but not used here
+// import { getEnvironmentHealth } from './utils/environment.validator';
 // Create a local validator for Supabase configuration
 function validateSupabaseConfig() {
   const hasUrl = !!process.env.SUPABASE_URL;
@@ -74,6 +77,13 @@ try {
       url: process.env.SUPABASE_URL!,
       key: process.env.SUPABASE_KEY!
     });
+
+    // Check validation tables
+    import('./scripts/check-validation-tables').then(module => {
+      module.default().catch(error => {
+        logger.error('Error checking validation tables:', error);
+      });
+    });
   } else {
     logger.warn('Supabase configuration validation failed, some features may not work properly');
   }
@@ -94,10 +104,14 @@ import pdfRoutes from './routes/api/pdf.routes';
 import credentialsRoutes from './routes/credentials.routes';
 import agentRoutes from './routes/agents.routes';
 import aiRoutes from './routes/ai.routes';
+import visualReferenceTrainingRoutes from './routes/ai/visual-reference-training.routes';
+import propertyPredictionRoutes from './routes/ai/property-prediction.routes';
+import visualReferenceOcrRoutes from './routes/ocr/visual-reference-ocr.routes';
 import searchRoutes from './routes/search.routes';
 import multiModalSearchRoutes from './routes/multi-modal-search.routes';
 import conversationalSearchRoutes from './routes/conversational-search.routes';
 import domainSearchRoutes from './routes/domain-search.routes';
+import relationshipEnhancedSearchRoutes from './routes/search/relationship-enhanced-search.routes';
 import analyticsRoutes from './routes/analytics.routes';
 import realTimeAnalyticsRoutes from './routes/real-time-analytics.routes';
 import predictiveAnalyticsRoutes from './routes/predictive-analytics.routes';
@@ -111,6 +125,13 @@ import { sceneOptimizationRoutes } from './routes/scene-optimization.routes';
 import { roomLayoutRoutes } from './routes/room-layout.routes';
 import pointCloudRoutes from './routes/point-cloud.routes';
 import sceneGraphRoutes from './routes/scene-graph.routes';
+import dependencyRoutes from './routes/dependencies.routes';
+import propertyReferenceRoutes from './routes/property-reference.routes';
+import propertyRelationshipsRoutes from './routes/property-relationships.routes';
+import multilingualDictionariesRoutes from './routes/multilingual-dictionaries.routes';
+import classificationRoutes from './routes/classification.routes';
+import visualReferencesRoutes from './routes/visual-references.routes';
+import validationRoutes from './routes/validation.routes';
 import { scheduleSessionCleanup } from './controllers/agents.controller';
 
 // Import new feature routes
@@ -176,10 +197,14 @@ app.use('/api/pdf', authMiddleware, pdfRoutes);
 app.use('/api/credentials', authMiddleware, noCacheHeaders, credentialsRoutes);
 app.use('/api/agents', agentRoutes);
 app.use('/api/ai', authMiddleware, aiRoutes);
+app.use('/api/ai/visual-reference', authMiddleware, visualReferenceTrainingRoutes);
+app.use('/api/ai/property-prediction', authMiddleware, propertyPredictionRoutes);
+app.use('/api/ocr/visual-reference', authMiddleware, visualReferenceOcrRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/search', multiModalSearchRoutes);
 app.use('/api/search', conversationalSearchRoutes);
 app.use('/api/search', domainSearchRoutes);
+app.use('/api/search', relationshipEnhancedSearchRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/analytics', realTimeAnalyticsRoutes);
 app.use('/api/analytics', predictiveAnalyticsRoutes);
@@ -193,6 +218,13 @@ app.use('/api/scene-optimization', sceneOptimizationRoutes);
 app.use('/api/room-layout', roomLayoutRoutes);
 app.use('/api/point-cloud', pointCloudRoutes);
 app.use('/api/scene-graph', sceneGraphRoutes);
+app.use('/api/dependencies', authMiddleware, dependencyRoutes);
+app.use('/api/property-references', propertyReferenceRoutes);
+app.use('/api/property-relationships', propertyRelationshipsRoutes);
+app.use('/api/multilingual', multilingualDictionariesRoutes);
+app.use('/api/classification', classificationRoutes);
+app.use('/api/visual-references', visualReferencesRoutes);
+app.use('/api/validation', validationRoutes);
 
 // Register new feature routes
 app.use('/api/auth', noCacheHeaders, authEnhancedRoutes); // Enhanced auth features

@@ -1,0 +1,65 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-adapter-config
+  namespace: kai-ml
+  labels:
+    app: prometheus-adapter
+    component: monitoring
+data:
+  config.yaml: |
+    rules:
+    # API Request Rate Metrics
+    - seriesQuery: 'http_requests_total{kubernetes_namespace!="",kubernetes_pod_name!=""}'
+      resources:
+        overrides:
+          kubernetes_namespace: {resource: "namespace"}
+          kubernetes_pod_name: {resource: "pod"}
+      name:
+        matches: "^(.*)_total"
+        as: "${1}_per_second"
+      metricsQuery: 'sum(rate(<<.Series>>{<<.LabelMatchers>>}[2m])) by (<<.GroupBy>>)'
+    
+    # Queue Depth Metrics for Coordinator
+    - seriesQuery: 'kai_coordinator_queue_depth{kubernetes_namespace!="",kubernetes_pod_name!=""}'
+      resources:
+        overrides:
+          kubernetes_namespace: {resource: "namespace"}
+          kubernetes_pod_name: {resource: "pod"}
+      name:
+        matches: "kai_coordinator_queue_depth"
+        as: "coordinator_queue_depth"
+      metricsQuery: 'sum(<<.Series>>{<<.LabelMatchers>>}) by (<<.GroupBy>>)'
+    
+    # Processing Time Metrics for ML Services
+    - seriesQuery: 'kai_ml_processing_time_seconds{kubernetes_namespace!="",kubernetes_pod_name!=""}'
+      resources:
+        overrides:
+          kubernetes_namespace: {resource: "namespace"}
+          kubernetes_pod_name: {resource: "pod"}
+      name:
+        matches: "kai_ml_processing_time_seconds"
+        as: "ml_processing_time_seconds"
+      metricsQuery: 'avg(<<.Series>>{<<.LabelMatchers>>}) by (<<.GroupBy>>)'
+    
+    # Database Connection Pool Metrics
+    - seriesQuery: 'kai_supabase_connection_pool_utilization{kubernetes_namespace!="",kubernetes_pod_name!=""}'
+      resources:
+        overrides:
+          kubernetes_namespace: {resource: "namespace"}
+          kubernetes_pod_name: {resource: "pod"}
+      name:
+        matches: "kai_supabase_connection_pool_utilization"
+        as: "db_connection_utilization"
+      metricsQuery: 'avg(<<.Series>>{<<.LabelMatchers>>}) by (<<.GroupBy>>)'
+    
+    # Memory Usage Percentage (for more accurate memory-based scaling)
+    - seriesQuery: 'container_memory_usage_bytes{container!="POD",container!="",kubernetes_namespace!="",kubernetes_pod_name!=""}'
+      resources:
+        overrides:
+          kubernetes_namespace: {resource: "namespace"}
+          kubernetes_pod_name: {resource: "pod"}
+      name:
+        matches: "container_memory_usage_bytes"
+        as: "memory_usage_percentage"
+      metricsQuery: 'sum(<<.Series>>{<<.LabelMatchers>>}) by (<<.GroupBy>>) / sum(kube_pod_container_resource_limits_memory_bytes{<<.LabelMatchers>>}) by (<<.GroupBy>>) * 100'

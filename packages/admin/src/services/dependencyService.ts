@@ -1,119 +1,196 @@
 import axios from 'axios';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api';
-const ADMIN_API = `${API_URL}/admin/dependencies`;
+/**
+ * Service for managing dependencies
+ * Provides functionality to scan for updates, retrieve pending PRs, and monitor dependency status
+ */
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '/api';
+
+interface ScanStatus {
+  status: 'idle' | 'running' | 'completed' | 'failed';
+  lastRun: Date | null;
+  duration?: number;
+}
+
+interface PendingPR {
+  id: string;
+  title: string;
+  url: string;
+  status: string;
+  type: string;
+}
+
+interface RecentUpdate {
+  name: string;
+  from: string;
+  to: string;
+  date: string;
+  type: string;
+}
+
+interface PackageInfo {
+  name: string;
+  current: string;
+  latest: string;
+  type: 'nodejs' | 'python';
+  updateType: 'major' | 'minor' | 'patch';
+  compatibilityRisk: 'low' | 'medium' | 'high';
+  configImpact: boolean;
+  notes?: string;
+}
 
 /**
- * Service for managing dependencies in the admin panel
+ * Get the current status of dependency scanning
+ * @returns Promise with scan status information
  */
-export const dependencyService = {
-  /**
-   * Get outdated packages with analysis
-   */
-  async getOutdatedPackages() {
-    try {
-      const response = await axios.get(`${ADMIN_API}/outdated`);
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching outdated packages:', error);
-      throw error;
-    }
-  },
-
-  /**
-   * Trigger a dependency scan
-   * @param scanType - The type of scan to run ('all', 'node', or 'python')
-   */
-  async triggerDependencyScan(scanType = 'all') {
-    try {
-      const response = await axios.post(`${ADMIN_API}/scan`, { scanType });
-      return response.data;
-    } catch (error) {
-      console.error('Error triggering dependency scan:', error);
-      throw error;
-    }
-  },
-
-  /**
-   * Get status of a scan job
-   * @param id - The ID of the scan job or 'latest' for the most recent job
-   */
-  async getScanStatus(id = 'latest') {
-    try {
-      const response = await axios.get(`${ADMIN_API}/scan/${id}/status`);
-      return response.data;
-    } catch (error) {
-      console.error('Error getting scan status:', error);
-      throw error;
-    }
-  },
-
-  /**
-   * Update packages
-   * @param packages - Array of package names to update
-   * @param updateType - Type of update ('safe', 'caution', or 'manual')
-   */
-  async updatePackages(packages: string[], updateType: 'safe' | 'caution' | 'manual') {
-    try {
-      const response = await axios.post(`${ADMIN_API}/update`, {
-        packages,
-        updateType
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error updating packages:', error);
-      throw error;
-    }
-  },
-
-  /**
-   * Get configuration impact analysis for packages
-   * @param packages - Array of package names to analyze
-   */
-  async getConfigImpactAnalysis(packages: string[]) {
-    try {
-      const response = await axios.post(`${ADMIN_API}/config-analysis`, {
-        packages
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error getting config impact analysis:', error);
-      throw error;
-    }
-  },
-
-  /**
-   * Check Helm chart compatibility
-   * @param packages - Array of package names to check compatibility for
-   */
-  async checkHelmCompatibility(packages: string[]) {
-    try {
-      const response = await axios.post(`${ADMIN_API}/helm-compatibility`, {
-        packages
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error checking Helm compatibility:', error);
-      throw error;
-    }
-  },
-
-  /**
-   * Get update history
-   * @param limit - Maximum number of records to return
-   * @param offset - Number of records to skip
-   */
-  async getUpdateHistory(limit = 10, offset = 0) {
-    try {
-      const response = await axios.get(`${ADMIN_API}/history`, {
-        params: { limit, offset }
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error getting update history:', error);
-      throw error;
-    }
+const getScanStatus = async (): Promise<ScanStatus> => {
+  try {
+    const response = await axios.get(`${API_URL}/dependencies/status`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching dependency scan status:', error);
+    return {
+      status: 'idle',
+      lastRun: null
+    };
   }
 };
 
-export default dependencyService;
+/**
+ * Trigger a dependency scan
+ * @returns Promise with the triggered job information
+ */
+const triggerDependencyScan = async (): Promise<any> => {
+  try {
+    const response = await axios.post(`${API_URL}/dependencies/scan`);
+    return response.data;
+  } catch (error) {
+    console.error('Error triggering dependency scan:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get a list of outdated packages
+ * @returns Promise with list of outdated packages
+ */
+const getOutdatedPackages = async (): Promise<PackageInfo[]> => {
+  try {
+    const response = await axios.get(`${API_URL}/dependencies/outdated`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching outdated packages:', error);
+    return [];
+  }
+};
+
+/**
+ * Get a list of pending dependency update PRs
+ * @returns Promise with list of pending PRs
+ */
+const getPendingPRs = async (): Promise<PendingPR[]> => {
+  try {
+    const response = await axios.get(`${API_URL}/dependencies/pending-prs`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching pending PRs:', error);
+    return [];
+  }
+};
+
+/**
+ * Get a list of recently updated packages
+ * @returns Promise with list of recent updates
+ */
+const getRecentUpdates = async (): Promise<RecentUpdate[]> => {
+  try {
+    const response = await axios.get(`${API_URL}/dependencies/recent-updates`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching recent updates:', error);
+    return [];
+  }
+};
+
+/**
+ * Update a specific package to its latest version
+ * @param packageName Name of the package to update
+ * @param packageType Type of package (nodejs or python)
+ * @returns Promise with the update status
+ */
+const updatePackage = async (packageName: string, packageType: 'nodejs' | 'python'): Promise<any> => {
+  try {
+    const response = await axios.post(`${API_URL}/dependencies/update`, {
+      packageName,
+      packageType
+    });
+    return response.data;
+  } catch (error) {
+    console.error(`Error updating package ${packageName}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Update multiple packages based on update type
+ * @param packageNames Array of package names to update
+ * @param updateType Type of update (safe, caution, manual)
+ * @returns Promise with the update status
+ */
+const updatePackages = async (packageNames: string[], updateType: 'safe' | 'caution' | 'manual'): Promise<any> => {
+  try {
+    const response = await axios.post(`${API_URL}/dependencies/update-batch`, {
+      packages: packageNames,
+      updateType
+    });
+    return response.data;
+  } catch (error) {
+    console.error(`Error updating packages:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Get logs for a specific dependency scan job
+ * @param jobId ID of the job to get logs for
+ * @returns Promise with the job logs
+ */
+const getJobLogs = async (jobId: string): Promise<string> => {
+  try {
+    const response = await axios.get(`${API_URL}/dependencies/logs/${jobId}`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching logs for job ${jobId}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Get compatibility analysis for a package update
+ * @param packageName Name of the package
+ * @param packageType Type of package (nodejs or python)
+ * @returns Promise with compatibility analysis
+ */
+const getCompatibilityAnalysis = async (packageName: string, packageType: 'nodejs' | 'python'): Promise<any> => {
+  try {
+    const response = await axios.get(`${API_URL}/dependencies/compatibility`, {
+      params: { packageName, packageType }
+    });
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching compatibility analysis for ${packageName}:`, error);
+    throw error;
+  }
+};
+
+export default {
+  getScanStatus,
+  triggerDependencyScan,
+  getOutdatedPackages,
+  getPendingPRs,
+  getRecentUpdates,
+  updatePackage,
+  updatePackages,
+  getJobLogs,
+  getCompatibilityAnalysis
+};

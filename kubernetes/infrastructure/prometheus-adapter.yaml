@@ -1,0 +1,159 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus-adapter
+  namespace: kai-ml
+  labels:
+    app: prometheus-adapter
+    component: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus-adapter
+  strategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: prometheus-adapter
+        component: monitoring
+    spec:
+      serviceAccountName: prometheus-adapter
+      containers:
+      - name: prometheus-adapter
+        image: registry.k8s.io/prometheus-adapter/prometheus-adapter:v0.10.0
+        args:
+        - --cert-dir=/var/run/serving-cert
+        - --config=/etc/adapter/config.yaml
+        - --logtostderr=true
+        - --metrics-relist-interval=1m
+        - --prometheus-url=http://prometheus.kai-ml.svc:9090/
+        - --secure-port=6443
+        ports:
+        - containerPort: 6443
+        volumeMounts:
+        - name: config
+          mountPath: /etc/adapter
+        - name: tmp
+          mountPath: /tmp
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+      volumes:
+      - name: config
+        configMap:
+          name: prometheus-adapter-config
+      - name: tmp
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus-adapter
+  namespace: kai-ml
+  labels:
+    app: prometheus-adapter
+    component: monitoring
+spec:
+  ports:
+  - port: 443
+    targetPort: 6443
+    name: https
+  selector:
+    app: prometheus-adapter
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus-adapter
+  namespace: kai-ml
+  labels:
+    app: prometheus-adapter
+    component: monitoring
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus-adapter
+  labels:
+    app: prometheus-adapter
+    component: monitoring
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - nodes
+  - namespaces
+  - pods
+  - services
+  verbs:
+  - get
+  - list
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: custom-metrics-server-resources
+  labels:
+    app: prometheus-adapter
+    component: monitoring
+rules:
+- apiGroups:
+  - custom.metrics.k8s.io
+  resources: ["*"]
+  verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus-adapter-hpa-controller
+  labels:
+    app: prometheus-adapter
+    component: monitoring
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: custom-metrics-server-resources
+subjects:
+- kind: ServiceAccount
+  name: horizontal-pod-autoscaler
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus-adapter
+  labels:
+    app: prometheus-adapter
+    component: monitoring
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus-adapter
+subjects:
+- kind: ServiceAccount
+  name: prometheus-adapter
+  namespace: kai-ml
+---
+apiVersion: apiregistration.k8s.io/v1
+kind: APIService
+metadata:
+  name: v1beta1.custom.metrics.k8s.io
+  labels:
+    app: prometheus-adapter
+    component: monitoring
+spec:
+  service:
+    name: prometheus-adapter
+    namespace: kai-ml
+  group: custom.metrics.k8s.io
+  version: v1beta1
+  insecureSkipTLSVerify: true
+  groupPriorityMinimum: 100
+  versionPriority: 100

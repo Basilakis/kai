@@ -1,342 +1,262 @@
 # Dependency Management System
 
-The Dependency Management System is a comprehensive solution for automated monitoring, analyzing, and updating of software dependencies across both Node.js and Python codebases. It helps maintain security, stability, and modernity of the codebase by providing intelligent update recommendations based on compatibility analysis.
+The Dependency Management System is a comprehensive solution for monitoring, analyzing, and updating dependencies across both Node.js and Python codebases. It integrates with Kubernetes infrastructure to provide efficient, on-demand scanning with intelligent compatibility analysis and automated updates.
+
+## Architecture Overview
+
+![Dependency Management System Architecture](../docs/images/dependency-management-architecture.png)
+
+The system consists of the following main components:
+
+1. **Admin Panel Interface**
+   - Dependency Management Page
+   - Deployment Dashboard Integration
+   - Visual Package Analysis
+
+2. **Backend API Services**
+   - Kubernetes Integration
+   - Scan Management
+   - Package Analysis
+
+3. **Kubernetes Jobs**
+   - Resource-efficient scanning
+   - Selective testing
+   - Automated PR creation
+
+4. **AI Compatibility Analysis**
+   - Breaking change detection
+   - Configuration impact assessment
+   - Test selection
 
 ## Features
 
-### Automated Dependency Scanning
+### Admin Panel Integration
 
-- **Multi-technology Support**: Scans both Node.js and Python dependencies
-- **Scheduled Scanning**: Automatically runs on a weekly basis via GitHub Actions
-- **On-demand Scanning**: Can be triggered manually from the admin panel
-- **Detailed Package Analysis**: Shows current version, latest version, and update type (major/minor/patch)
+- **Dedicated Management Page**
+  - Comprehensive view of all dependencies
+  - Filtering by package type, update type, and risk level
+  - One-click scan triggering and status monitoring
 
-### AI-Powered Compatibility Analysis
+- **Deployment Dashboard Panel**
+  - Real-time dependency status
+  - Pending PRs and recent updates
+  - Quick scan triggering
 
-- **Breaking Change Detection**: Identifies potential breaking changes in dependency updates
-- **Configuration Impact Analysis**: Determines which configuration files might need updates
-- **Risk Assessment**: Categorizes updates as "safe", "caution", or "manual review"
-- **Confidence Scoring**: Provides a confidence level (high/medium/low) for each analysis
+### Intelligent Analysis
 
-### Helm Chart Compatibility Checking
+- **AI-Powered Compatibility Checking**
+  - Risk categorization (safe, caution, major)
+  - Breaking change detection
+  - Configuration impact analysis
 
-- **Kubernetes Configuration Analysis**: Identifies potential impacts on Helm charts
-- **Deployment Safety**: Ensures that dependency updates won't break Kubernetes deployments
-- **Configuration Recommendation**: Suggests necessary changes to Helm values
+- **Selective Testing**
+  - Only tests affected components
+  - Reduces CI resource usage
+  - Improves update confidence
 
-### Admin Panel Interface
+### Kubernetes Integration
 
-- **Visual Dashboard**: Clean, intuitive interface for managing dependencies
-- **Filtering Options**: Filter packages by technology (Node.js/Python) and update type
-- **Bulk Actions**: Update multiple packages at once with appropriate safety measures
-- **Detailed Analysis View**: Examine AI analysis for each package update
+- **Resource-Efficient Scanning**
+  - Dedicated pods only when needed
+  - Proper resource limits
+  - Automatic cleanup
 
-### GitHub Integration
+- **Schedule and On-Demand Options**
+  - Weekly scheduled scans via CronJob
+  - On-demand scans from admin panel
+  - Command-line triggering option for automation
 
-- **Automated PR Creation**: Creates Pull Requests for safe dependency updates
-- **PR Categorization**: Separate PRs for different types of updates (safe/risky)
-- **Documentation**: Includes detailed change information in PR descriptions
+### Cross-Technology Support
 
-## Architecture
+- **Node.js and Python Support**
+  - Consistent handling across technologies
+  - Uniform admin interface
+  - Technology-specific analysis
 
-The Dependency Management System consists of:
+## Admin Panel Usage
 
-1. **GitHub Actions Workflow**: Automation for scanning and PR creation
-2. **Helper Scripts**: Analysis and processing scripts
-3. **Backend API**: Endpoints for triggering and managing dependency updates
-4. **Admin Panel**: User interface for interacting with the system
+### Dependency Management Page
 
-```
-┌─────────────────┐      ┌─────────────────┐      ┌─────────────────┐
-│  GitHub Actions │      │   Helper Scripts │      │   Backend API   │
-│  (Automation)   │◄────►│   (Processing)   │◄────►│   (Control)     │
-└─────────────────┘      └─────────────────┘      └────────┬────────┘
-                                                           │
-                                                           ▼
-                                                  ┌─────────────────┐
-                                                  │   Admin Panel   │
-                                                  │   (Interface)   │
-                                                  └─────────────────┘
-```
+1. **Accessing the Page**
+   - Navigate to the admin panel
+   - Click "Dependency Management" in the sidebar
 
-## GitHub Actions Workflow
+2. **Triggering a Scan**
+   - Click the "Trigger Scan" button
+   - Select scan options (all, Node.js, Python)
+   - View real-time scan status
 
-The system uses a GitHub Actions workflow to automate dependency scanning and updates.
+3. **Viewing Results**
+   - Review outdated packages list
+   - See compatibility analysis for each
+   - Filter by various criteria
 
-### Workflow Configuration
+4. **Managing Updates**
+   - Select packages to update
+   - Review potential impact
+   - Apply updates individually or in batches
 
-The workflow is defined in `.github/workflows/dependency-scanner.yml`:
+### Deployment Dashboard Integration
+
+The dependency status panel in the deployment dashboard provides:
+
+- Current scan status
+- Pending update PRs
+- Recent updates
+- Quick scan trigger
+
+## Technical Implementation
+
+### Backend Services
+
+1. **Kubernetes Integration**
+   - `kubernetes.service.ts` - Core K8s API client
+   - `job-monitor.service.ts` - Job management
+
+2. **API Controller**
+   - `dependencies.controller.ts` - Request handling
+   - Scan triggering, status monitoring, logs
+
+3. **API Routes**
+   - RESTful endpoints
+   - Authentication and access control
+   - Swagger documentation
+
+### Admin Panel Components
+
+1. **Management Page**
+   - `dependency-management.tsx` - Main page component
+   - Package listing and filtering
+   - Update management
+
+2. **Dashboard Integration**
+   - `DependencyUpdatesPanel.tsx` - Dashboard component
+   - Status summary and quick actions
+
+3. **Service Layer**
+   - `dependencyService.ts` - API client
+   - Type-safe interface to backend
+
+### Kubernetes Resources
+
+1. **Job Definition**
+   - `dependency-management-job.yaml`
+   - CronJob and Job templates
+   - Resource configuration
+
+2. **Container Image**
+   - `Dockerfile.dependency-scanner`
+   - Multi-stage build
+   - Caching optimization
+
+### CI/CD Integration
+
+The system integrates with the CI/CD pipeline:
+
+1. **Docker Image Building**
+   - Automatic builds via CI/CD workflows
+   - Tags based on Git commit/version
+   - Registry pushing
+
+2. **Kubernetes Deployment**
+   - Application via GitOps/Flux
+   - Automatic configuration updates
+   - Environment-specific settings
+
+## Configuration Options
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `KUBERNETES_NAMESPACE` | Namespace for jobs | `default` |
+| `DEPENDENCY_SCANNER_IMAGE` | Scanner image | `dependency-scanner:latest` |
+| `GITHUB_ORG` | GitHub organization | - |
+| `REPO_NAME` | Repository name | - |
+| `SCAN_INTERVAL` | Scan frequency | `0 0 * * 0` (weekly) |
+
+### Resource Configuration
+
+Job resources can be configured in the `dependency-management-job.yaml` file:
 
 ```yaml
-name: Dependency Scanner
-
-on:
-  schedule:
-    - cron: '0 0 * * 0'  # Run weekly at midnight on Sunday
-  workflow_dispatch:     # Allow manual triggering
-
-jobs:
-  scan-dependencies:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-        
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-          
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-          
-      # Additional steps to scan and analyze dependencies
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
 ```
 
-### Process Flow
+## Security Considerations
 
-1. The workflow runs on a schedule or when manually triggered
-2. It scans for outdated dependencies in both Node.js and Python codebases
-3. Helper scripts analyze the compatibility of potential updates
-4. Safe updates are automatically created as PRs, while riskier updates are flagged for review
+1. **Authentication**
+   - Admin panel access control
+   - API authentication
+   - Kubernetes RBAC
 
-## Helper Scripts
+2. **Credentials Management**
+   - GitHub token in Kubernetes secret
+   - OpenAI API key in Kubernetes secret
+   - No hardcoded credentials
 
-The system uses several helper scripts to process dependency information and generate intelligent recommendations.
+3. **Job Isolation**
+   - Dedicated pods for scanning
+   - Proper security context
+   - Network policy enforcement
 
-### parse-outdated.js
+## Development Guidelines
 
-Parses the output of `yarn outdated --json` to create a structured report of Node.js dependencies. It categorizes updates as major, minor, or patch based on semantic versioning.
+### Adding New Features
 
-### combine-python-outdated.py
+1. Update the admin panel components
+2. Extend the API controller and routes
+3. Modify Kubernetes job templates if needed
+4. Update this documentation
 
-Processes the output of `pip list --outdated --format=json` and combines information from multiple Python requirements files to create a unified report.
+### Testing
 
-### analyze-compatibility.js
+1. Frontend components with Jest
+2. API endpoints with integration tests
+3. End-to-end testing with Cypress
 
-Uses the OpenAI API to analyze each dependency update for potential breaking changes. It examines version changes, release notes, and common patterns to predict compatibility issues.
+## Troubleshooting
 
-```javascript
-// Example compatibility analysis entry
-{
-  "name": "react",
-  "current": "17.0.2",
-  "latest": "18.2.0",
-  "updateType": "major",
-  "analysis": {
-    "breakingChange": true,
-    "confidence": "high",
-    "reasoning": "React 18 introduces changes to the rendering behavior with the new concurrent features.",
-    "affectedAreas": ["component lifecycle", "event handling", "strict mode"],
-    "configChangesNeeded": true,
-    "recommendation": "manual-update",
-    "potentialConfigFiles": ["tsconfig.json", "babel.config.js"]
-  }
-}
-```
+### Common Issues
 
-### create-update-prs.js
+1. **Scan Not Starting**
+   - Check Kubernetes permissions
+   - Verify image accessibility
+   - Check for resource constraints
 
-Generates Pull Requests for dependency updates based on the compatibility analysis. It creates separate PRs for different types of updates (safe vs. risky) and includes detailed information about potential impacts.
+2. **Analysis Inaccuracies**
+   - Review OpenAI API key validity
+   - Check for rate limiting
+   - Verify compatibility algorithm parameters
 
-## Admin Panel Interface
-
-The admin panel provides a user-friendly interface for interacting with the dependency management system.
-
-### Dashboard Views
-
-![Dependency Management Dashboard](../docs/images/dependency-dashboard.png)
-
-The dashboard includes:
-
-- Summary statistics of outdated packages
-- Filtering by package type (Node.js/Python)
-- Filtering by update type (major/minor/patch)
-- Visual indicators for update safety (green/yellow/red)
-
-### Detailed Analysis View
-
-Each package includes a detailed analysis view showing:
-
-- Version comparison
-- Compatibility analysis
-- Configuration impact
-- Recommended update strategy
-
-### Update Controls
-
-![Update Controls](../docs/images/dependency-update-controls.png)
-
-The interface provides controls for:
-
-- Triggering new dependency scans
-- Approving safe updates
-- Reviewing cautioned updates
-- Manually handling high-risk updates
-
-## Backend API
-
-The backend provides RESTful API endpoints for managing dependencies.
-
-### API Endpoints
-
-#### Get Outdated Packages
-
-```
-GET /admin/dependencies/outdated
-```
-
-Retrieves a list of outdated packages with analysis information.
-
-#### Trigger Dependency Scan
-
-```
-POST /admin/dependencies/scan
-```
-
-Initiates a new dependency scan.
-
-Parameters:
-- `scanType`: Type of scan to perform (`all`, `node`, `python`)
-
-#### Get Scan Status
-
-```
-GET /admin/dependencies/scan/:id/status
-```
-
-Retrieves the status of a scan job.
-
-Parameters:
-- `id`: Scan job ID or `latest` for the most recent scan
-
-#### Update Packages
-
-```
-POST /admin/dependencies/update
-```
-
-Updates specified packages.
-
-Parameters:
-- `packages`: Array of package names to update
-- `updateType`: Type of update strategy (`safe`, `caution`, `manual`)
-
-#### Get Configuration Impact Analysis
-
-```
-POST /admin/dependencies/config-analysis
-```
-
-Analyzes the impact of package updates on configuration files.
-
-Parameters:
-- `packages`: Array of package names to analyze
-
-#### Check Helm Compatibility
-
-```
-POST /admin/dependencies/helm-compatibility
-```
-
-Checks compatibility of package updates with Helm charts.
-
-Parameters:
-- `packages`: Array of package names to check
-
-#### Get Update History
-
-```
-GET /admin/dependencies/history
-```
-
-Retrieves history of dependency updates.
-
-Parameters:
-- `limit`: Maximum number of records to return
-- `offset`: Number of records to skip
-
-## Update Classification
-
-Updates are classified into three categories:
-
-### Safe Updates (Green)
-
-- Patch version updates (X.Y.Z → X.Y.W)
-- Minor version updates with high confidence of backward compatibility
-- No configuration changes required
-
-### Caution Updates (Yellow)
-
-- Minor version updates that might require configuration changes
-- Major version updates with limited breaking changes
-- Medium confidence in compatibility analysis
-
-### Manual Review Updates (Red)
-
-- Major version updates with significant breaking changes
-- Updates affecting critical system components
-- Low confidence in compatibility analysis
-- Complex configuration changes required
-
-## How AI Analysis Works
-
-The system uses artificial intelligence to analyze potential updates:
-
-1. **Version Analysis**: Examines the semantic versioning changes (major/minor/patch)
-2. **Release Notes**: Extracts information from release notes and changelogs
-3. **Library Knowledge**: Applies knowledge of common patterns in specific libraries
-4. **Configuration Impact**: Analyzes potential impacts on configuration files
-5. **Risk Assessment**: Generates a confidence score and recommendation
-
-Example prompt used for AI analysis:
-
-```
-Analyze the following dependency update:
-- Package: react
-- Current Version: 17.0.2
-- Latest Version: 18.2.0
-
-Determine:
-1. Is this likely to contain breaking changes?
-2. What specific areas of the codebase might be affected?
-3. Are configuration changes likely needed?
-4. Should this be updated automatically or manually reviewed?
-```
-
-## Setup and Configuration
-
-To enable all dependency management features, ensure the following:
-
-1. GitHub Actions are enabled for the repository
-2. The appropriate token permissions are configured
-3. The admin panel is properly deployed
-4. API endpoints are properly secured
-
-## Best Practices
-
-1. **Regular Scans**: Run dependency scans on a weekly basis
-2. **Incremental Updates**: Update dependencies incrementally to minimize risk
-3. **Testing**: Run the test suite after any dependency update
-4. **Review Analysis**: Manually review AI-generated compatibility analysis for high-impact libraries
-5. **Configuration Backups**: Backup configuration files before implementing changes
-
-## Integration with CI/CD
-
-The dependency management system integrates with the project's CI/CD pipeline:
-
-- **Test Integration**: Dependency updates trigger automated tests
-- **Deployment Verification**: Critical updates include deployment verifications
-- **Rollback Mechanism**: Automatic rollback if updates cause issues in staging
+3. **GitHub Integration Issues**
+   - Validate GitHub token permissions
+   - Check repository access
+   - Verify network connectivity
 
 ## Future Enhancements
 
-Planned enhancements for the dependency management system include:
+1. **Enhanced AI Analysis**
+   - More detailed breaking change detection
+   - Code modification suggestions
+   - Vulnerability assessment integration
 
-1. **Custom Rules**: Allow custom rules for specific packages
-2. **Dependency Graph**: Visualize the dependency graph to identify crucial packages
-3. **Security Scoring**: Integrate with security databases for vulnerability assessment
-4. **Automated Testing**: Run targeted tests based on updated packages
-5. **Update Scheduling**: Schedule updates for specific timeframes
+2. **Additional Technology Support**
+   - Java/Maven dependencies
+   - Go modules
+   - Rust crates
+
+3. **Performance Improvements**
+   - Faster scanning techniques
+   - Dependency graph caching
+   - Parallelized analysis
+
+## Conclusion
+
+The Dependency Management System provides a comprehensive solution for keeping dependencies up-to-date across the entire stack. By integrating with the admin panel, Kubernetes infrastructure, and AI-powered analysis, it enables efficient and safe dependency updates with minimal manual intervention.

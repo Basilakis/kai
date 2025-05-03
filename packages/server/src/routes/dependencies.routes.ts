@@ -1,51 +1,47 @@
-import express from 'express';
+import express, { Request, Response } from 'express';
+const Router = express.Router;
 import { dependenciesController } from '../controllers/dependencies.controller';
 import { authMiddleware } from '../middleware/auth.middleware';
-import moduleAccessMiddleware from '../middleware/module-access.middleware';
+import moduleAccess from '../middleware/module-access.middleware';
 
-const router = express.Router();
-// Assign middlewares
-const auth = authMiddleware;
-// Create middleware to restrict access to admin users
-const adminOnly = moduleAccessMiddleware.requireModuleAccess('admin');
+const router = Router();
 
-/**
- * @swagger
- * tags:
- *   name: Dependencies
- *   description: Dependency management API
- */
+// API routes for dependency management
+// These endpoints are protected by authentication and module access control
 
 /**
  * @swagger
- * /admin/dependencies/outdated:
+ * /api/dependencies/packages:
  *   get:
- *     summary: Get list of outdated packages with analysis
- *     tags: [Dependencies]
+ *     summary: Get outdated packages with analysis
+ *     description: Returns a list of outdated packages with compatibility analysis
  *     security:
- *       - bearerAuth: []
+ *       - BearerAuth: []
  *     responses:
  *       200:
- *         description: Successfully retrieved outdated packages
+ *         description: List of outdated packages
  *       401:
  *         description: Unauthorized
  *       403:
- *         description: Forbidden - Admin access required
+ *         description: Forbidden
  *       500:
  *         description: Server error
  */
-router.get('/outdated', auth, adminOnly, dependenciesController.getOutdatedPackages.bind(dependenciesController));
+router.get('/packages',
+  authMiddleware,
+  moduleAccess.requireModuleAccess('admin'),
+  dependenciesController.getOutdatedPackages.bind(dependenciesController)
+);
 
 /**
  * @swagger
- * /admin/dependencies/scan:
+ * /api/dependencies/scan:
  *   post:
  *     summary: Trigger a dependency scan
- *     tags: [Dependencies]
+ *     description: Starts a new dependency scan job
  *     security:
- *       - bearerAuth: []
+ *       - BearerAuth: []
  *     requestBody:
- *       required: true
  *       content:
  *         application/json:
  *           schema:
@@ -57,57 +53,95 @@ router.get('/outdated', auth, adminOnly, dependenciesController.getOutdatedPacka
  *                 default: all
  *     responses:
  *       200:
- *         description: Scan job started successfully
- *       400:
- *         description: Invalid request
+ *         description: Scan job started
  *       401:
  *         description: Unauthorized
  *       403:
- *         description: Forbidden - Admin access required
+ *         description: Forbidden
  *       500:
  *         description: Server error
  */
-router.post('/scan', auth, adminOnly, dependenciesController.triggerDependencyScan.bind(dependenciesController));
+router.post('/scan',
+  authMiddleware,
+  moduleAccess.requireModuleAccess('admin'),
+  dependenciesController.triggerDependencyScan.bind(dependenciesController)
+);
 
 /**
  * @swagger
- * /admin/dependencies/scan/{id}/status:
+ * /api/dependencies/scan/{id}/status:
  *   get:
- *     summary: Get status of a scan job
- *     tags: [Dependencies]
+ *     summary: Get scan job status
+ *     description: Returns the status of a specific scan job
  *     security:
- *       - bearerAuth: []
+ *       - BearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
- *         required: true
  *         schema:
  *           type: string
- *         description: ID of the scan job or 'latest'
+ *         required: true
+ *         description: The ID of the scan job or 'latest' for the most recent job
  *     responses:
  *       200:
- *         description: Successfully retrieved scan status
- *       404:
- *         description: Scan job not found
+ *         description: Scan job status
  *       401:
  *         description: Unauthorized
  *       403:
- *         description: Forbidden - Admin access required
+ *         description: Forbidden
+ *       404:
+ *         description: Job not found
  *       500:
  *         description: Server error
  */
-router.get('/scan/:id/status', auth, adminOnly, dependenciesController.getScanStatus.bind(dependenciesController));
+router.get('/scan/:id/status',
+  authMiddleware,
+  moduleAccess.requireModuleAccess('admin'),
+  dependenciesController.getDependencyScanStatus.bind(dependenciesController)
+);
 
 /**
  * @swagger
- * /admin/dependencies/update:
- *   post:
- *     summary: Update specified packages
- *     tags: [Dependencies]
+ * /api/dependencies/scan/{id}/logs:
+ *   get:
+ *     summary: Get scan job logs
+ *     description: Returns the logs from a specific scan job
  *     security:
- *       - bearerAuth: []
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: The ID of the scan job
+ *     responses:
+ *       200:
+ *         description: Scan job logs
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
+ *       404:
+ *         description: Job not found
+ *       500:
+ *         description: Server error
+ */
+router.get('/scan/:id/logs',
+  authMiddleware,
+  moduleAccess.requireModuleAccess('admin'),
+  dependenciesController.getJobLogs.bind(dependenciesController)
+);
+
+/**
+ * @swagger
+ * /api/dependencies/update:
+ *   post:
+ *     summary: Update packages
+ *     description: Triggers updates for specified packages
+ *     security:
+ *       - BearerAuth: []
  *     requestBody:
- *       required: true
  *       content:
  *         application/json:
  *           schema:
@@ -123,28 +157,29 @@ router.get('/scan/:id/status', auth, adminOnly, dependenciesController.getScanSt
  *                 default: safe
  *     responses:
  *       200:
- *         description: Update job started successfully
- *       400:
- *         description: Invalid request
+ *         description: Update triggered
  *       401:
  *         description: Unauthorized
  *       403:
- *         description: Forbidden - Admin access required
+ *         description: Forbidden
  *       500:
  *         description: Server error
  */
-router.post('/update', auth, adminOnly, dependenciesController.updatePackages.bind(dependenciesController));
+router.post('/update',
+  authMiddleware,
+  moduleAccess.requireModuleAccess('admin'),
+  dependenciesController.updatePackage.bind(dependenciesController)
+);
 
 /**
  * @swagger
- * /admin/dependencies/config-analysis:
+ * /api/dependencies/config-impact:
  *   post:
- *     summary: Get configuration impact analysis for packages
- *     tags: [Dependencies]
+ *     summary: Get configuration impact analysis
+ *     description: Analyzes how package updates might impact configuration files
  *     security:
- *       - bearerAuth: []
+ *       - BearerAuth: []
  *     requestBody:
- *       required: true
  *       content:
  *         application/json:
  *           schema:
@@ -156,28 +191,29 @@ router.post('/update', auth, adminOnly, dependenciesController.updatePackages.bi
  *                   type: string
  *     responses:
  *       200:
- *         description: Successfully retrieved config impact analysis
- *       400:
- *         description: Invalid request
+ *         description: Configuration impact analysis
  *       401:
  *         description: Unauthorized
  *       403:
- *         description: Forbidden - Admin access required
+ *         description: Forbidden
  *       500:
  *         description: Server error
  */
-router.post('/config-analysis', auth, adminOnly, dependenciesController.getConfigImpactAnalysis.bind(dependenciesController));
+router.post('/config-impact',
+  authMiddleware,
+  moduleAccess.requireModuleAccess('admin'),
+  dependenciesController.getCompatibilityAnalysis.bind(dependenciesController)
+);
 
 /**
  * @swagger
- * /admin/dependencies/helm-compatibility:
+ * /api/dependencies/helm-compatibility:
  *   post:
- *     summary: Check Helm chart compatibility with package updates
- *     tags: [Dependencies]
+ *     summary: Check Helm chart compatibility
+ *     description: Analyzes how package updates might impact Helm charts
  *     security:
- *       - bearerAuth: []
+ *       - BearerAuth: []
  *     requestBody:
- *       required: true
  *       content:
  *         application/json:
  *           schema:
@@ -189,47 +225,61 @@ router.post('/config-analysis', auth, adminOnly, dependenciesController.getConfi
  *                   type: string
  *     responses:
  *       200:
- *         description: Successfully checked Helm compatibility
- *       400:
- *         description: Invalid request
+ *         description: Helm chart compatibility analysis
  *       401:
  *         description: Unauthorized
  *       403:
- *         description: Forbidden - Admin access required
+ *         description: Forbidden
  *       500:
  *         description: Server error
  */
-router.post('/helm-compatibility', auth, adminOnly, dependenciesController.checkHelmCompatibility.bind(dependenciesController));
+// Not implemented yet, return a "not implemented" response
+router.post('/helm-compatibility',
+  authMiddleware,
+  moduleAccess.requireModuleAccess('admin'),
+  (_req: Request, res: Response) => {
+    res.status(501).json({ error: 'Not implemented yet' });
+  }
+);
 
 /**
  * @swagger
- * /admin/dependencies/history:
+ * /api/dependencies/history:
  *   get:
- *     summary: Get dependency update history
- *     tags: [Dependencies]
+ *     summary: Get update history
+ *     description: Returns the history of dependency updates
  *     security:
- *       - bearerAuth: []
+ *       - BearerAuth: []
  *     parameters:
  *       - in: query
  *         name: limit
  *         schema:
  *           type: integer
  *           default: 10
+ *         description: Number of records to return
  *       - in: query
  *         name: offset
  *         schema:
  *           type: integer
  *           default: 0
+ *         description: Number of records to skip
  *     responses:
  *       200:
- *         description: Successfully retrieved update history
+ *         description: Update history
  *       401:
  *         description: Unauthorized
  *       403:
- *         description: Forbidden - Admin access required
+ *         description: Forbidden
  *       500:
  *         description: Server error
  */
-router.get('/history', auth, adminOnly, dependenciesController.getUpdateHistory.bind(dependenciesController));
+// Not implemented yet, return a "not implemented" response
+router.get('/history',
+  authMiddleware,
+  moduleAccess.requireModuleAccess('admin'),
+  (_req: Request, res: Response) => {
+    res.status(501).json({ error: 'Not implemented yet' });
+  }
+);
 
 export default router;

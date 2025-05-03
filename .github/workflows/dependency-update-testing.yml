@@ -1,0 +1,116 @@
+name: Dependency Update Testing
+
+on:
+  schedule:
+    - cron: '0 0 * * 0'  # Run weekly at midnight on Sunday
+  workflow_dispatch:     # Allow manual triggering
+    inputs:
+      package_type:
+        description: 'Type of packages to check'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - node
+          - python
+
+jobs:
+  scan-and-test-dependencies:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Fetch all history for proper analysis
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+      
+      - name: Install Node.js dependencies
+        run: |
+          npm ci
+          # Install specific dependencies needed for the dependency management scripts
+          npm install --no-save openai semver glob
+      
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-rag.txt
+          pip install pytest pytest-json-report pytest-json
+      
+      - name: Scan for outdated Node.js packages
+        if: ${{ github.event.inputs.package_type == 'all' || github.event.inputs.package_type == 'node' || github.event.inputs.package_type == '' }}
+        run: |
+          npx yarn outdated --json > .github/node-outdated.json || true
+      
+      - name: Scan for outdated Python packages
+        if: ${{ github.event.inputs.package_type == 'all' || github.event.inputs.package_type == 'python' || github.event.inputs.package_type == '' }}
+        run: |
+          python -m pip list --outdated --format=json > .github/python-outdated.json || true
+      
+      - name: Parse outdated packages
+        run: |
+          node .github/scripts/parse-outdated.js
+        
+      - name: Analyze dependency compatibility
+        run: |
+          node .github/scripts/analyze-compatibility.js
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      
+      - name: Analyze dependency impact
+        run: |
+          node .github/scripts/dependency-impact-analysis.js
+      
+      - name: Run targeted tests
+        id: targeted_tests
+        run: |
+          node .github/scripts/run-targeted-tests.js
+        continue-on-error: true
+      
+      - name: Create GitHub PR for safe updates
+        if: ${{ steps.targeted_tests.outcome == 'success' }}
+        run: |
+          node .github/scripts/create-update-prs-with-test-results.js
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Upload test results
+        uses: actions/upload-artifact@v3
+        with:
+          name: dependency-test-results
+          path: |
+            .github/dependency-impact.json
+            .github/dependency-test-results.json
+            .github/test-results-summary.md
+      
+      - name: Add test summary to PR
+        if: ${{ steps.targeted_tests.outcome == 'success' }}
+        run: |
+          echo "::group::Dependency Update Test Results"
+          cat .github/test-results-summary.md
+          echo "::endgroup::"
+      
+      - name: Create issue for failed updates
+        if: ${{ steps.targeted_tests.outcome == 'failure' }}
+        uses: JasonEtco/create-an-issue@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_TEMPLATE: .github/ISSUE_TEMPLATE/dependency-update-failed.md
+          TEST_RESULTS: ${{ steps.targeted_tests.outputs.summary }}
+      
+      - name: Notify on test failures
+        if: ${{ steps.targeted_tests.outcome == 'failure' }}
+        run: |
+          echo "::warning::Some dependency updates failed their tests. An issue has been created with details."

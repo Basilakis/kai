@@ -1,0 +1,19 @@
+# Core dependencies
+openai>=1.0.0
+numpy>=1.24.0
+pandas>=2.0.0
+requests>=2.31.0
+
+# Parsing and analysis
+semver>=3.0.0
+PyGithub>=2.1.0
+packaging>=23.0
+
+# Testing utilities
+pytest>=7.0.0
+pytest-mock>=3.10.0
+
+# Utility libraries
+tqdm>=4.65.0
+pyyaml>=6.0.0
+rich>=13.3.0

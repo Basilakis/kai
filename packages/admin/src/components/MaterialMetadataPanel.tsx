@@ -31,7 +31,9 @@ import {
   Chip,
   Divider,
   FormControl,
+  FormHelperText,
   Grid,
+  IconButton,
   InputLabel,
   MenuItem,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -40,6 +42,7 @@ import {
   Tab,
   Tabs,
   TextField,
+  Tooltip,
   Typography,
   useTheme
 } from '../components/mui';
@@ -49,8 +52,15 @@ import {
   Wallpaper as TileIcon,
   Lightbulb as LightingIcon,
   Weekend as FurnitureIcon,
-  Palette as DecorationIcon
+  Palette as DecorationIcon,
+  Info as InfoIcon
 } from '@mui/icons-material';
+
+// Import field descriptions
+import { tileFieldDescriptions } from '@kai/shared/src/docs/tile-field-descriptions';
+import PropertyReferenceButton from './PropertyReferenceButton';
+import PropertyRelationshipButton from './PropertyRelationshipButton';
+import PropertyValidationAlert from './PropertyValidationAlert';
 
 // Import shared types using the path mapping
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -120,31 +130,56 @@ const getFieldGroups = (materialType: string): FieldGroup[] => {
             { name: 'thickness', label: 'Thickness (mm)', type: 'number' },
             { name: 'material', label: 'Material', type: 'dropdown' },
             { name: 'color', label: 'Color', type: 'dropdown' },
-          ]
-        },
-        {
-          name: 'Technical Properties',
-          fields: [
-            { name: 'vRating', label: 'V-Rating', type: 'dropdown' },
-            { name: 'rRating', label: 'R-Rating', type: 'dropdown' },
-            { name: 'waterAbsorption', label: 'Water Absorption', type: 'dropdown' },
-            { name: 'frostResistance', label: 'Frost Resistance', type: 'boolean' },
-            { name: 'peiRating', label: 'PEI Rating', type: 'dropdown' },
-            { name: 'moh', label: 'Mohs Hardness', type: 'dropdown' },
+            { name: 'weight', label: 'Weight per m²', type: 'number' },
+            { name: 'format', label: 'Format/Shape', type: 'dropdown' },
           ]
         },
         {
           name: 'Appearance',
           fields: [
             { name: 'finish', label: 'Finish', type: 'dropdown' },
+            { name: 'pattern', label: 'Pattern', type: 'text' },
+            { name: 'texture', label: 'Texture', type: 'text' },
+            { name: 'surface', label: 'Surface', type: 'text' },
+            { name: 'edgeType', label: 'Edge Type', type: 'dropdown' },
             { name: 'rectified', label: 'Rectified', type: 'boolean' },
+            { name: 'lookType', label: 'Look Type', type: 'dropdown' },
           ]
         },
         {
-          name: 'Usage',
+          name: 'Technical Properties',
           fields: [
-            { name: 'usage', label: 'Usage Area', type: 'dropdown' },
+            { name: 'vRating', label: 'Shade Variation (V Rating)', type: 'dropdown' },
+            { name: 'rRating', label: 'Slip Resistance (R Rating)', type: 'dropdown' },
+            { name: 'waterAbsorption', label: 'Water Absorption', type: 'dropdown' },
+            { name: 'frostResistance', label: 'Frost Resistance', type: 'boolean' },
+            { name: 'peiRating', label: 'Wear Resistance (PEI Rating)', type: 'dropdown' },
+            { name: 'moh', label: 'Mohs Hardness', type: 'dropdown' },
+            { name: 'chemicalResistance', label: 'Chemical Resistance', type: 'text' },
+            { name: 'stainResistance', label: 'Stain Resistance', type: 'text' },
+            { name: 'fireRating', label: 'Fire Rating', type: 'text' },
+            { name: 'heatResistance', label: 'Heat Resistance', type: 'boolean' },
+            { name: 'soundInsulation', label: 'Sound Insulation', type: 'text' },
+          ]
+        },
+        {
+          name: 'Usage & Application',
+          fields: [
+            { name: 'usage', label: 'Usage Type', type: 'dropdown' },
+            { name: 'applicationArea', label: 'Application Area', type: 'dropdown' },
+            { name: 'installationType', label: 'Installation Type', type: 'dropdown' },
             { name: 'antibacterial', label: 'Antibacterial', type: 'boolean' },
+            { name: 'specialtyType', label: 'Specialty Type', type: 'dropdown' },
+          ]
+        },
+        {
+          name: 'Commercial Information',
+          fields: [
+            { name: 'batchNumber', label: 'Batch Number', type: 'text' },
+            { name: 'packaging', label: 'Packaging', type: 'text' },
+            { name: 'availability', label: 'Availability', type: 'dropdown' },
+            { name: 'sku', label: 'SKU/Product Code', type: 'text' },
+            { name: 'barcode', label: 'Barcode', type: 'text' },
           ]
         }
       ];
@@ -300,17 +335,38 @@ const getFieldGroups = (materialType: string): FieldGroup[] => {
 const getFieldOptions = (fieldName: string, materialType: string): string[] => {
   const options: Record<string, string[]> = {
     // Tile options
+    // Physical properties
+    material: ['Ceramic', 'Porcelain', 'Marble', 'Granite', 'Terracotta', 'Quartzite', 'Limestone', 'Slate', 'Glass', 'Cement'],
+
+    // Format/Shape
+    format: ['Square', 'Rectangular', 'Hexagonal', 'Subway', 'Mosaic', 'Large Format/Slabs', '3D/Sculpted'],
+
+    // Appearance
+    finish: materialType === 'tile'
+      ? ['Matte', 'Glossy', 'Semi-polished', 'Lappato', 'Polished', 'Textured', 'Anti-slip', 'Satin', 'Silk', 'Honed', 'Natural', 'Structured']
+      : materialType === 'wood'
+      ? ['Oiled', 'Lacquered', 'Waxed', 'Brushed', 'Untreated', 'Smoked', 'Distressed']
+      : [],
+    edgeType: ['Rectified', 'Non-rectified', 'Beveled', 'Micro-beveled', 'Pillowed'],
+
+    // Technical properties
     vRating: ['V1', 'V2', 'V3', 'V4'],
     rRating: ['R9', 'R10', 'R11', 'R12', 'R13'],
     waterAbsorption: ['BIa (≤0.5%)', 'BIb (0.5-3%)', 'BIIa (3-6%)', 'BIIb (6-10%)', 'BIII (>10%)'],
     peiRating: ['PEI I', 'PEI II', 'PEI III', 'PEI IV', 'PEI V'],
     moh: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'],
-    finish: materialType === 'tile'
-      ? ['Matte', 'Glossy', 'Polished', 'Honed', 'Textured', 'Lappato', 'Semi-polished', 'Natural', 'Structured', 'Satin']
-      : materialType === 'wood'
-      ? ['Oiled', 'Lacquered', 'Waxed', 'Brushed', 'Untreated', 'Smoked', 'Distressed']
-      : [],
-    usage: ['Floor', 'Wall', 'Floor & Wall', 'Outdoor', 'Indoor', 'Bathroom', 'Kitchen', 'Living Room', 'Commercial'],
+
+    // Usage and application
+    usage: ['Wall Tile', 'Floor Tile', 'Outdoor Tile', 'Pool Tile', 'Facade/Cladding Tile', 'Roof Tile', 'Floor & Wall', 'Bathroom', 'Kitchen', 'Living Room', 'Commercial'],
+    applicationArea: ['Indoor', 'Outdoor', 'Pool', 'Wet Areas', 'High Traffic', 'Low Traffic'],
+    installationType: ['Glue', 'Raised Floor', 'Mortar', 'Thin-set', 'Dry-set'],
+
+    // Special features
+    lookType: ['Wood-look', 'Stone-look', 'Concrete-look', 'Marble-look', 'Metal-look', 'Patterned'],
+    specialtyType: ['Anti-bacterial', 'Thin/Slim', 'Outdoor deck', 'Raised floor', 'Technical porcelain'],
+
+    // Commercial information
+    availability: ['In stock', 'Outlet', 'B-quality', 'Special order'],
 
     // Wood options
     grade: ['Prime', 'Select', 'Natural', 'Rustic', 'Character'],
@@ -403,27 +459,69 @@ const MaterialMetadataPanel: React.FC<MaterialMetadataPanelProps> = ({
     onMetadataChange(updatedMetadata as MaterialMetadata);
   };
 
+  // Get field description based on field name and material type
+  const getFieldDescription = (fieldName: string, materialType: string): string => {
+    // For tile fields, use the dedicated descriptions
+    if (materialType === 'tile' && fieldName in tileFieldDescriptions) {
+      return tileFieldDescriptions[fieldName];
+    }
+
+    // For other material types or fields without descriptions, return a generic message
+    return `${fieldName} property for ${materialType}`;
+  };
+
   // Render field based on type
   const renderField = (field: { name: string; label: string; type: string }) => {
     const value = (metadata as any)[field.name];
+    const description = getFieldDescription(field.name, materialType);
+
+    // Create a label with info icon for tooltip
+    const fieldLabel = (
+      <Box sx={{ display: 'flex', alignItems: 'center' }}>
+        {field.label}
+        <Tooltip title={description} arrow placement="top">
+          <IconButton size="small" sx={{ ml: 0.5, p: 0 }}>
+            <InfoIcon fontSize="small" color="action" />
+          </IconButton>
+        </Tooltip>
+      </Box>
+    );
 
     if (readOnly) {
       return (
         <Box>
-          <Typography variant="body2" color="textSecondary">
-            {field.label}:
-          </Typography>
-          {field.type === 'boolean' ? (
-            <Chip
-              size="small"
-              label={value ? 'Yes' : 'No'}
-              color={value ? 'success' : 'default'}
-            />
-          ) : (
-            <Typography variant="body1">
-              {value !== undefined ? value.toString() : 'N/A'}
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+            <Typography variant="body2" color="textSecondary">
+              {field.label}:
             </Typography>
-          )}
+            <Tooltip title={description} arrow placement="top">
+              <IconButton size="small" sx={{ ml: 0.5, p: 0 }}>
+                <InfoIcon fontSize="small" color="action" />
+              </IconButton>
+            </Tooltip>
+          </Box>
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            {field.type === 'boolean' ? (
+              <Chip
+                size="small"
+                label={value ? 'Yes' : 'No'}
+                color={value ? 'success' : 'default'}
+              />
+            ) : (
+              <Typography variant="body1" sx={{ mr: 1 }}>
+                {value !== undefined ? value.toString() : 'N/A'}
+              </Typography>
+            )}
+            {field.type === 'dropdown' && value && (
+              <PropertyReferenceButton
+                propertyName={field.name}
+                propertyValue={value as string}
+                materialType={materialType}
+                size="small"
+                readOnly={true}
+              />
+            )}
+          </Box>
         </Box>
       );
     }
@@ -442,6 +540,29 @@ const MaterialMetadataPanel: React.FC<MaterialMetadataPanelProps> = ({
               onChange={(e: any) =>
                 handleFieldChange(field.name, e.target.value as string)
               }
+              endAdornment={
+                value ? (
+                  <Box sx={{ display: 'flex' }}>
+                    <PropertyReferenceButton
+                      propertyName={field.name}
+                      propertyValue={value}
+                      materialType={materialType}
+                      size="small"
+                      readOnly={readOnly}
+                    />
+                    {!readOnly && (
+                      <PropertyRelationshipButton
+                        propertyName={field.name}
+                        propertyValue={value}
+                        materialType={materialType}
+                        metadata={metadata}
+                        onRecommendationSelect={handleFieldChange}
+                        size="small"
+                      />
+                    )}
+                  </Box>
+                ) : null
+              }
             >
               <MenuItem value="">
                 <Typography variant="body2" sx={{ fontStyle: 'italic' }}>None</Typography>
@@ -452,6 +573,18 @@ const MaterialMetadataPanel: React.FC<MaterialMetadataPanelProps> = ({
                 </MenuItem>
               ))}
             </Select>
+            <FormHelperText>
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                <Tooltip title={description} arrow placement="top">
+                  <IconButton size="small" sx={{ mr: 0.5, p: 0 }}>
+                    <InfoIcon fontSize="small" color="action" />
+                  </IconButton>
+                </Tooltip>
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontStyle: 'italic' }}>
+                  {description.length > 60 ? description.substring(0, 60) + '...' : description}
+                </Typography>
+              </Box>
+            </FormHelperText>
           </FormControl>
         );
       case 'boolean':
@@ -474,6 +607,18 @@ const MaterialMetadataPanel: React.FC<MaterialMetadataPanelProps> = ({
               <MenuItem value="true">Yes</MenuItem>
               <MenuItem value="false">No</MenuItem>
             </Select>
+            <FormHelperText>
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                <Tooltip title={description} arrow placement="top">
+                  <IconButton size="small" sx={{ mr: 0.5, p: 0 }}>
+                    <InfoIcon fontSize="small" color="action" />
+                  </IconButton>
+                </Tooltip>
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontStyle: 'italic' }}>
+                  {description.length > 60 ? description.substring(0, 60) + '...' : description}
+                </Typography>
+              </Box>
+            </FormHelperText>
           </FormControl>
         );
       case 'textarea':
@@ -490,6 +635,18 @@ const MaterialMetadataPanel: React.FC<MaterialMetadataPanelProps> = ({
               handleFieldChange(field.name, e.target.value)
             }
             size="small"
+            helperText={
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                <Tooltip title={description} arrow placement="top">
+                  <IconButton size="small" sx={{ mr: 0.5, p: 0 }}>
+                    <InfoIcon fontSize="small" color="action" />
+                  </IconButton>
+                </Tooltip>
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontStyle: 'italic' }}>
+                  {description.length > 60 ? description.substring(0, 60) + '...' : description}
+                </Typography>
+              </Box>
+            }
           />
         );
       case 'number':
@@ -506,6 +663,18 @@ const MaterialMetadataPanel: React.FC<MaterialMetadataPanelProps> = ({
               handleFieldChange(field.name, val ? parseFloat(val) : null);
             }}
             size="small"
+            helperText={
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                <Tooltip title={description} arrow placement="top">
+                  <IconButton size="small" sx={{ mr: 0.5, p: 0 }}>
+                    <InfoIcon fontSize="small" color="action" />
+                  </IconButton>
+                </Tooltip>
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontStyle: 'italic' }}>
+                  {description.length > 60 ? description.substring(0, 60) + '...' : description}
+                </Typography>
+              </Box>
+            }
           />
         );
       case 'text':
@@ -521,6 +690,18 @@ const MaterialMetadataPanel: React.FC<MaterialMetadataPanelProps> = ({
               handleFieldChange(field.name, e.target.value)
             }
             size="small"
+            helperText={
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                <Tooltip title={description} arrow placement="top">
+                  <IconButton size="small" sx={{ mr: 0.5, p: 0 }}>
+                    <InfoIcon fontSize="small" color="action" />
+                  </IconButton>
+                </Tooltip>
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontStyle: 'italic' }}>
+                  {description.length > 60 ? description.substring(0, 60) + '...' : description}
+                </Typography>
+              </Box>
+            }
           />
         );
     }
@@ -534,6 +715,14 @@ const MaterialMetadataPanel: React.FC<MaterialMetadataPanelProps> = ({
           {materialType.charAt(0).toUpperCase() + materialType.slice(1)} Metadata
         </Typography>
       </Box>
+
+      {!readOnly && (
+        <PropertyValidationAlert
+          materialType={materialType}
+          metadata={metadata}
+          onRecommendationApply={handleFieldChange}
+        />
+      )}
 
       <Tabs
         value={activeTab}

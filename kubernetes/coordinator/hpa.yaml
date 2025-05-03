@@ -3,24 +3,65 @@ kind: HorizontalPodAutoscaler
 metadata:
   name: coordinator-service-hpa
   namespace: kai-ml
+  labels:
+    app: coordinator-service
+    component: orchestration
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
     name: coordinator-service
-  minReplicas: 2 # Ensure at least 2 replicas are running
-  maxReplicas: 5 # Scale up to 5 replicas
+  minReplicas: 2
+  maxReplicas: 10
   metrics:
+  # CPU-based scaling
   - type: Resource
     resource:
       name: cpu
       target:
         type: Utilization
-        averageUtilization: 75 # Target 75% CPU utilization
-  # Optionally add memory-based scaling
-  # - type: Resource
-  #   resource:
-  #     name: memory
-  #     target:
-  #       type: Utilization
-  #       averageUtilization: 75
+        averageUtilization: 70
+  # Memory-based scaling
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  # Queue depth-based scaling
+  - type: Pods
+    pods:
+      metric:
+        name: coordinator_queue_depth
+      target:
+        type: AverageValue
+        averageValue: 10
+  # Processing time-based scaling
+  - type: Pods
+    pods:
+      metric:
+        name: ml_processing_time_seconds
+      target:
+        type: AverageValue
+        averageValue: 5
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 60
+      - type: Pods
+        value: 4
+        periodSeconds: 60
+      selectPolicy: Max
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+      - type: Pods
+        value: 2
+        periodSeconds: 60
+      selectPolicy: Min

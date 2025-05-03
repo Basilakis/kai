@@ -1,0 +1,50 @@
+FROM node:18-alpine as base
+
+# Install Python, Git, and build dependencies
+RUN apk add --no-cache \
+    python3 \
+    py3-pip \
+    git \
+    bash \
+    curl \
+    build-base \
+    python3-dev \
+    openssh-client
+
+# Create app directories
+WORKDIR /app
+RUN mkdir -p /app/scripts /app/repo
+
+# Install global npm packages
+RUN npm install -g npm@latest typescript
+
+# Copy dependency management scripts
+COPY .github/scripts/dependency-impact-analysis.js /app/scripts/
+COPY .github/scripts/analyze-compatibility.js /app/scripts/
+COPY .github/scripts/run-targeted-tests.js /app/scripts/
+COPY .github/scripts/create-update-prs-with-test-results.js /app/scripts/
+COPY .github/scripts/parse-outdated.js /app/scripts/
+COPY .github/scripts/combine-python-outdated.py /app/scripts/
+
+# Install Node.js dependencies
+COPY package.json /app/package.json
+RUN npm install openai semver glob axios @octokit/rest
+
+# Install Python dependencies
+COPY requirements-scanner.txt /app/
+RUN pip install --no-cache-dir -r /app/requirements-scanner.txt
+
+# Create entrypoint script
+RUN echo '#!/bin/sh \n\
+set -e \n\
+\n\
+# Configure git \n\
+git config --global user.name "Dependency Bot" \n\
+git config --global user.email "dependency-bot@example.com" \n\
+\n\
+# Run the specified command \n\
+exec "$@"' > /app/entrypoint.sh && \
+    chmod +x /app/entrypoint.sh
+
+ENTRYPOINT ["/app/entrypoint.sh"]
+CMD ["node", "/app/scripts/dependency-impact-analysis.js"]

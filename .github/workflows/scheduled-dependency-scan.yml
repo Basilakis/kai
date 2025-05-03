@@ -1,0 +1,148 @@
+name: Scheduled Dependency Scan
+
+on:
+  schedule:
+    - cron: '0 0 * * 0'  # Run weekly at midnight on Sunday
+  workflow_dispatch:
+    inputs:
+      scan_type:
+        description: 'Type of dependencies to scan'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - nodejs
+          - python
+
+jobs:
+  trigger-scan:
+    name: Trigger Dependency Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        
+      - name: Configure Kubernetes
+        uses: azure/k8s-set-context@v3
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBE_CONFIG }}
+          
+      - name: Trigger dependency scan job
+        run: |
+          # Determine the scan type from inputs or default to 'all'
+          SCAN_TYPE="${{ github.event.inputs.scan_type || 'all' }}"
+          
+          # Create a unique job name with timestamp
+          JOB_NAME="dependency-scan-$(date +%Y%m%d%H%M%S)"
+          
+          # Load the job template
+          cat kubernetes/jobs/dependency-management-job.yaml > job.yaml
+          
+          # Update the job name
+          sed -i "s/name: dependency-scan/name: $JOB_NAME/g" job.yaml
+          
+          # Add scan type as an environment variable
+          sed -i "/env:/a \          - name: SCAN_TYPE\n            value: $SCAN_TYPE" job.yaml
+          
+          # Apply the job
+          kubectl apply -f job.yaml
+          
+          # Store the job name for later steps
+          echo "JOB_NAME=$JOB_NAME" >> $GITHUB_ENV
+          
+          echo "Dependency scan job '$JOB_NAME' created successfully"
+          
+      - name: Wait for job to start
+        run: |
+          # Wait up to 2 minutes for the job to start
+          TIMEOUT=120
+          INTERVAL=5
+          ELAPSED=0
+          
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            STATUS=$(kubectl get job ${{ env.JOB_NAME }} -o jsonpath='{.status.active}')
+            
+            if [ "$STATUS" == "1" ]; then
+              echo "Job has started successfully"
+              break
+            fi
+            
+            echo "Waiting for job to start... ($ELAPSED/$TIMEOUT seconds)"
+            sleep $INTERVAL
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+          
+          if [ $ELAPSED -ge $TIMEOUT ]; then
+            echo "Timed out waiting for job to start"
+            exit 1
+          fi
+          
+      - name: Create status issue
+        id: create-issue
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const issue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: 'Dependency Scan Started: ${{ env.JOB_NAME }}',
+              body: `
+              ## Dependency Scan Status
+              
+              A dependency scan job has been started with the following details:
+              
+              - **Job Name:** \`${{ env.JOB_NAME }}\`
+              - **Scan Type:** \`${{ github.event.inputs.scan_type || 'all' }}\`
+              - **Triggered By:** ${context.actor}
+              - **Triggered At:** ${new Date().toISOString()}
+              
+              You can monitor the job status in the admin panel or using kubectl:
+              
+              \`\`\`
+              kubectl get job ${{ env.JOB_NAME }}
+              kubectl logs job/${{ env.JOB_NAME }}
+              \`\`\`
+              
+              This issue will be updated when the scan completes.
+              `
+            });
+            
+            console.log(`Issue created: ${issue.data.html_url}`);
+            return issue.data.number;
+            
+      - name: Add issue to project
+        if: steps.create-issue.outputs.result
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            // If you have a GitHub project, add the issue to it
+            // This requires appropriate permissions and project setup
+            // Example:
+            // const projectId = 'YOUR_PROJECT_ID';
+            // await github.rest.projects.createCard({
+            //   column_id: 'YOUR_COLUMN_ID',
+            //   content_id: ${{ steps.create-issue.outputs.result }},
+            //   content_type: 'Issue'
+            // });
+            
+      - name: Schedule issue update
+        run: |
+          echo "An issue (#${{ steps.create-issue.outputs.result }}) has been created to track the dependency scan job"
+          echo "In a production environment, you would set up a separate job to monitor and update this issue"
+          
+          # In a real implementation, you would:
+          # 1. Set up a separate workflow to periodically check the job status
+          # 2. Update the issue when the job completes
+          # 3. Include links to any PRs created

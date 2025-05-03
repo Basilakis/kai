@@ -1,6 +1,6 @@
 /**
  * Gatsby Browser APIs
- * 
+ *
  * This file implements Gatsby browser APIs that customize the browser
  * rendering of the site, wrapping the entire app with our providers.
  */
@@ -12,10 +12,11 @@ import FavoritesProvider from './src/providers/FavoritesProvider';
 import SearchFilterProvider from './src/providers/SearchFilterProvider';
 import SharingProvider from './src/providers/SharingProvider';
 import OfflineProvider from './src/providers/OfflineProvider';
+import { LanguageProvider } from './src/hooks/useLanguage';
 
 /**
  * Wrap the app with all providers
- * 
+ *
  * Providers are nested in a specific order to ensure proper dependency management:
  * 1. UserProvider - For user authentication and profile data
  * 2. OfflineProvider - For network status and offline capabilities
@@ -31,9 +32,11 @@ export const wrapRootElement = ({ element }) => {
         <FavoritesProvider>
           <SearchFilterProvider>
             <SharingProvider>
-              <HeroUIProvider>
-                {element}
-              </HeroUIProvider>
+              <LanguageProvider>
+                <HeroUIProvider>
+                  {element}
+                </HeroUIProvider>
+              </LanguageProvider>
             </SharingProvider>
           </SearchFilterProvider>
         </FavoritesProvider>

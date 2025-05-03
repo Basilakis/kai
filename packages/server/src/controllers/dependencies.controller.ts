@@ -1,510 +1,309 @@
 import { Request, Response } from 'express';
-import { exec } from 'child_process';
-import * as util from 'util';
-import * as fs from 'fs';
-import * as path from 'path';
-import axios from 'axios';
+// Commented out unused imports
+// import { promisify } from 'util';
+// import { exec } from 'child_process';
+// import * as fs from 'fs';
+// import * as path from 'path';
+import jobMonitor from '../services/kubernetes/job-monitor.service';
+import { logger } from '../utils/logger';
 
-// Use typed promisify
-const execAsync = util.promisify(exec);
-
-interface ScanJob {
-  id: string;
-  status: 'queued' | 'running' | 'completed' | 'failed';
-  scanType: 'all' | 'node' | 'python';
-  startedAt: Date;
-  completedAt?: Date;
-  progress?: number;
-  error?: string;
-}
-
-// In-memory storage for scan jobs
-const scanJobs: Map<string, ScanJob> = new Map();
+// Commented out unused variable
+// const execPromise = promisify(exec);
 
 /**
  * Controller for managing dependencies
+ * Provides API endpoints for scanning, analyzing, and updating dependencies
  */
 export class DependenciesController {
   /**
-   * Get outdated packages with analysis
+   * Get the status of the latest dependency scan
+   * @param req Request object
+   * @param res Response object
    */
-  async getOutdatedPackages(req: Request, res: Response) {
+  async getDependencyScanStatus(_req: Request, res: Response): Promise<void> {
     try {
-      // Get the latest report from the filesystem
-      const reportsDir = path.join(process.cwd(), '.github', 'dependency-reports');
-      
-      // Ensure the directory exists
-      if (!fs.existsSync(reportsDir)) {
-        return res.status(404).json({
-          success: false,
-          error: 'No dependency reports found. Please run a scan first.'
+      // List dependency-management jobs with label selector
+      const jobs = await jobMonitor.listJobs('app=dependency-management');
+
+      if (!jobs.items || jobs.items.length === 0) {
+        res.json({
+          status: 'idle',
+          lastRun: null
         });
+        return;
       }
-      
-      // Find the latest report file
-      const files = fs.readdirSync(reportsDir)
-        .filter(file => file.endsWith('.json'))
-        .map(file => ({
-          name: file,
-          path: path.join(reportsDir, file),
-          mtime: fs.statSync(path.join(reportsDir, file)).mtime
-        }))
-        .sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
-      
-      if (files.length === 0) {
-        return res.status(404).json({
-          success: false,
-          error: 'No dependency reports found. Please run a scan first.'
-        });
-      }
-      
-      // Read the latest report - ensure files array is not empty and convert Buffer to string
-      if (!files[0]) {
-        return res.status(404).json({
-          success: false,
-          error: 'No valid dependency reports found. Please run a scan first.'
-        });
-      }
-      const fileContent = fs.readFileSync(files[0].path);
-      const latestReport = JSON.parse(fileContent.toString('utf8'));
-      
-      return res.json(latestReport);
-    } catch (error) {
-      console.error('Error getting outdated packages:', error);
-      return res.status(500).json({
-        success: false,
-        error: `Failed to get outdated packages. ${error instanceof Error ? error.message : String(error)}`
+
+      // Sort jobs by creation timestamp (newest first)
+      const sortedJobs = jobs.items.sort((a: any, b: any) => {
+        const dateA = new Date(a.metadata?.creationTimestamp || 0);
+        const dateB = new Date(b.metadata?.creationTimestamp || 0);
+        return dateB.getTime() - dateA.getTime();
       });
+
+      const latestJob = sortedJobs[0];
+      const jobName = latestJob.metadata?.name;
+      const creationTimestamp = latestJob.metadata?.creationTimestamp;
+      const completionTimestamp = latestJob.status?.completionTime;
+
+      let status = 'idle';
+      if (latestJob.status?.active > 0) {
+        status = 'running';
+      } else if (latestJob.status?.succeeded > 0) {
+        status = 'completed';
+      } else if (latestJob.status?.failed > 0) {
+        status = 'failed';
+      }
+
+      // Calculate duration if job completed
+      let duration = null;
+      if (creationTimestamp && completionTimestamp) {
+        const startTime = new Date(creationTimestamp).getTime();
+        const endTime = new Date(completionTimestamp).getTime();
+        duration = Math.floor((endTime - startTime) / 1000); // Duration in seconds
+      }
+
+      res.json({
+        status,
+        lastRun: creationTimestamp ? new Date(creationTimestamp) : null,
+        duration,
+        jobName
+      });
+    } catch (error) {
+      logger.error('Error getting dependency scan status:', error);
+      res.status(500).json({ error: 'Failed to get dependency scan status' });
     }
   }
 
   /**
    * Trigger a dependency scan
+   * @param req Request object
+   * @param res Response object
    */
-  async triggerDependencyScan(req: Request, res: Response) {
+  async triggerDependencyScan(_req: Request, res: Response): Promise<void> {
     try {
-      const { scanType = 'all' } = req.body;
-      
-      // Validate scan type
-      if (!['all', 'node', 'python'].includes(scanType)) {
-        return res.status(400).json({
-          success: false,
-          error: 'Invalid scan type. Must be "all", "node", or "python".'
-        });
-      }
-      
-      // Generate job ID
-      const jobId = `scan-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      
-      // Create job
-      const job: ScanJob = {
-        id: jobId,
-        status: 'queued',
-        scanType,
-        startedAt: new Date()
-      };
-      
-      // Store job
-      scanJobs.set(jobId, job);
-      
-      // Start the scan in the background
-      this.runScan(jobId, scanType);
-      
-      return res.json({
-        success: true,
-        id: jobId,
-        message: `Dependency scan started with ID: ${jobId}`
+      const job = await jobMonitor.triggerDependencyScan();
+
+      res.json({
+        status: 'started',
+        jobName: job.metadata?.name,
+        message: 'Dependency scan started successfully'
       });
     } catch (error) {
-      console.error('Error triggering dependency scan:', error);
-      return res.status(500).json({
-        success: false,
-        error: `Failed to trigger dependency scan. ${error instanceof Error ? error.message : String(error)}`
-      });
+      logger.error('Error triggering dependency scan:', error);
+      res.status(500).json({ error: 'Failed to trigger dependency scan' });
     }
   }
 
   /**
-   * Get status of a scan job
+   * Get logs for a dependency scan job
+   * @param req Request object
+   * @param res Response object
    */
-  async getScanStatus(req: Request, res: Response) {
+  async getJobLogs(req: Request, res: Response): Promise<void> {
     try {
-      const { id } = req.params;
-      
-      // If 'latest', get the most recent job
-      if (id === 'latest') {
-        const jobs = Array.from(scanJobs.values())
-          .sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
-        
-        if (jobs.length === 0) {
-          return res.status(404).json({
-            success: false,
-            error: 'No scan jobs found.'
-          });
-        }
-        
-        const latestJob = jobs[0]; 
-        // Check that latestJob exists (TypeScript check)
-        if (!latestJob) {
-          return res.status(404).json({
-            success: false,
-            error: 'Latest scan job not found.'
-          });
-        }
-        return res.json({
-          ...latestJob,
-          completed: ['completed', 'failed'].includes(latestJob.status)
-        });
+      const { jobName } = req.params;
+
+      if (!jobName) {
+        res.status(400).json({ error: 'Job name is required' });
+        return;
       }
-      
-      // Get specific job - ensure id is treated as string
-      const job = scanJobs.get(id as string);
-      
-      if (!job) {
-        return res.status(404).json({
-          success: false,
-          error: `Scan job with ID "${id}" not found.`
-        });
-      }
-      
-      return res.json({
-        ...job,
-        completed: ['completed', 'failed'].includes(job.status)
+
+      const logs = await jobMonitor.getJobLogs(jobName);
+
+      res.json({
+        jobName,
+        logs
       });
     } catch (error) {
-      console.error('Error getting scan status:', error);
-      return res.status(500).json({
-        success: false,
-        error: `Failed to get scan status. ${error instanceof Error ? error.message : String(error)}`
-      });
+      logger.error('Error getting job logs:', error);
+      res.status(500).json({ error: 'Failed to get job logs' });
     }
   }
 
   /**
-   * Update packages
+   * Get a list of outdated packages
+   * @param req Request object
+   * @param res Response object
    */
-  async updatePackages(req: Request, res: Response) {
+  async getOutdatedPackages(_req: Request, res: Response): Promise<void> {
     try {
-      const { packages, updateType = 'safe' } = req.body;
-      
-      // Validate update type
-      if (!['safe', 'caution', 'manual'].includes(updateType)) {
-        return res.status(400).json({
-          success: false,
-          error: 'Invalid update type. Must be "safe", "caution", or "manual".'
-        });
+      // Get the latest job output
+      const jobs = await jobMonitor.listJobs('app=dependency-management');
+
+      if (!jobs.items || jobs.items.length === 0) {
+        res.json([]);
+        return;
       }
-      
-      // Validate packages
-      if (!Array.isArray(packages) || packages.length === 0) {
-        return res.status(400).json({
-          success: false,
-          error: 'Invalid packages. Must be a non-empty array of package names.'
-        });
+
+      // Sort jobs by creation timestamp (newest first)
+      const sortedJobs = jobs.items.sort((a: any, b: any) => {
+        const dateA = new Date(a.metadata?.creationTimestamp || 0);
+        const dateB = new Date(b.metadata?.creationTimestamp || 0);
+        return dateB.getTime() - dateA.getTime();
+      });
+
+      const latestJob = sortedJobs[0];
+      const jobName = latestJob.metadata?.name;
+
+      // Check if job has successful completion
+      if (!latestJob.status?.succeeded) {
+        res.status(404).json({ error: 'No successful dependency scan found' });
+        return;
       }
-      
-      // Trigger a GitHub workflow to create PRs for the updates
-      // This would typically call the GitHub API to trigger a workflow
-      // For now, we'll simulate this by returning a success response
-      
-      // In a real implementation, you might do something like:
-      /*
-      await axios.post(
-        `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/dispatches`,
+
+      // Get logs to extract outdated package information
+      const logs = await jobMonitor.getJobLogs(jobName);
+
+      // Parse the logs to extract outdated package information
+      // This assumes the job outputs JSON with outdated package info
+      const outdatedPackagesMatch = logs.match(/OUTDATED_PACKAGES_START([\s\S]*?)OUTDATED_PACKAGES_END/);
+
+      if (!outdatedPackagesMatch || outdatedPackagesMatch.length < 2) {
+        res.json([]);
+        return;
+      }
+
+      try {
+        // Add null check to prevent TypeScript error
+        const jsonContent = outdatedPackagesMatch[1] || '[]';
+        const outdatedPackages = JSON.parse(jsonContent);
+        res.json(outdatedPackages);
+      } catch (parseError) {
+        logger.error('Error parsing outdated packages:', parseError);
+        res.status(500).json({ error: 'Failed to parse outdated packages' });
+      }
+    } catch (error) {
+      logger.error('Error getting outdated packages:', error);
+      res.status(500).json({ error: 'Failed to get outdated packages' });
+    }
+  }
+
+  /**
+   * Get a list of pending PRs
+   * @param req Request object
+   * @param res Response object
+   */
+  async getPendingPRs(_req: Request, res: Response): Promise<void> {
+    try {
+      // In a real implementation, this would query the GitHub API
+      // For now, return mock data
+      res.json([
         {
-          event_type: 'update-dependencies',
-          client_payload: {
-            packages,
-            updateType
-          }
+          id: 'pr-1',
+          title: 'Update lodash from 4.17.20 to 4.17.21',
+          url: 'https://github.com/example/repo/pull/123',
+          status: 'open',
+          type: 'safe'
         },
         {
-          headers: {
-            Authorization: `token ${process.env.GITHUB_TOKEN}`,
-            Accept: 'application/vnd.github.v3+json'
-          }
+          id: 'pr-2',
+          title: 'Update express from 4.17.1 to 4.18.0',
+          url: 'https://github.com/example/repo/pull/124',
+          status: 'open',
+          type: 'caution'
         }
-      );
-      */
-      
-      return res.json({
-        success: true,
-        updatedPackages: packages,
-        message: `Update triggered for ${packages.length} packages with update type "${updateType}".`,
-        pullRequestUrl: `https://github.com/${process.env.GITHUB_REPOSITORY || 'your-org/your-repo'}/pull/123` // Simulated PR URL
-      });
+      ]);
     } catch (error) {
-      console.error('Error updating packages:', error);
-      return res.status(500).json({
-        success: false,
-        error: `Failed to update packages. ${error instanceof Error ? error.message : String(error)}`
-      });
+      logger.error('Error getting pending PRs:', error);
+      res.status(500).json({ error: 'Failed to get pending PRs' });
     }
   }
 
   /**
-   * Get configuration impact analysis
+   * Get a list of recent updates
+   * @param req Request object
+   * @param res Response object
    */
-  async getConfigImpactAnalysis(req: Request, res: Response) {
+  async getRecentUpdates(_req: Request, res: Response): Promise<void> {
     try {
-      const { packages } = req.body;
-      
-      // Validate packages
-      if (!Array.isArray(packages) || packages.length === 0) {
-        return res.status(400).json({
-          success: false,
-          error: 'Invalid packages. Must be a non-empty array of package names.'
-        });
-      }
-      
-      // Get the latest report
-      const reportsDir = path.join(process.cwd(), '.github', 'dependency-reports');
-      const files = fs.readdirSync(reportsDir)
-        .filter(file => file.endsWith('.json'))
-        .map(file => ({
-          name: file,
-          path: path.join(reportsDir, file),
-          mtime: fs.statSync(path.join(reportsDir, file)).mtime
-        }))
-        .sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
-      
-      if (files.length === 0) {
-        return res.status(404).json({
-          success: false,
-          error: 'No dependency reports found. Please run a scan first.'
-        });
-      }
-      
-      // Read the latest report - ensure files array is not empty and convert Buffer to string
-      if (!files[0]) {
-        return res.status(404).json({
-          success: false,
-          error: 'No valid dependency reports found. Please run a scan first.'
-        });
-      }
-      const fileContent = fs.readFileSync(files[0].path);
-      const latestReport = JSON.parse(fileContent.toString('utf8'));
-      
-      // Extract config impact analysis for the requested packages
-      const packagesWithAnalysis = latestReport.packages.filter(
-        (pkg: any) => packages.includes(pkg.name)
-      );
-      
-      const configFiles = new Set<string>();
-      let requiresManualReview = false;
-      
-      packagesWithAnalysis.forEach((pkg: any) => {
-        if (pkg.analysis?.configChangesNeeded && pkg.analysis?.potentialConfigFiles) {
-          pkg.analysis.potentialConfigFiles.forEach((file: string) => configFiles.add(file));
-          
-          if (pkg.analysis.recommendation === 'manual-update') {
-            requiresManualReview = true;
-          }
+      // In a real implementation, this would query the GitHub API or a database
+      // For now, return mock data
+      res.json([
+        {
+          name: 'axios',
+          from: '0.21.1',
+          to: '0.21.4',
+          date: '2023-04-15',
+          type: 'safe'
+        },
+        {
+          name: 'react',
+          from: '17.0.2',
+          to: '18.0.0',
+          date: '2023-04-10',
+          type: 'major'
         }
-      });
-      
-      return res.json({
-        configFiles: Array.from(configFiles),
-        analysisDetails: `${packagesWithAnalysis.length} of ${packages.length} packages may require configuration changes.`,
-        recommendation: requiresManualReview ? 'manual-review' : 'automated-update',
-        packages: packagesWithAnalysis
-      });
+      ]);
     } catch (error) {
-      console.error('Error getting config impact analysis:', error);
-      return res.status(500).json({
-        success: false,
-        error: `Failed to get config impact analysis. ${error instanceof Error ? error.message : String(error)}`
-      });
+      logger.error('Error getting recent updates:', error);
+      res.status(500).json({ error: 'Failed to get recent updates' });
     }
   }
 
   /**
-   * Check Helm chart compatibility
+   * Update a specific package
+   * @param req Request object
+   * @param res Response object
    */
-  async checkHelmCompatibility(req: Request, res: Response) {
+  async updatePackage(req: Request, res: Response): Promise<void> {
     try {
-      const { packages } = req.body;
-      
-      // Validate packages
-      if (!Array.isArray(packages) || packages.length === 0) {
-        return res.status(400).json({
-          success: false,
-          error: 'Invalid packages. Must be a non-empty array of package names.'
-        });
+      const { packageName, packageType } = req.body;
+
+      if (!packageName || !packageType) {
+        res.status(400).json({ error: 'Package name and type are required' });
+        return;
       }
-      
-      // This would typically analyze Helm charts to determine if updates would break them
-      // For now, we'll return a simulated response
-      
-      // Check if any packages might affect Helm charts
-      const helmRelatedPackages = packages.filter(pkg => 
-        ['kubernetes', 'k8s', 'helm', 'chart', 'docker', 'container'].some(
-          keyword => pkg.toLowerCase().includes(keyword)
-        )
-      );
-      
-      const compatibilityIssues = helmRelatedPackages.map(pkg => 
-        `Package "${pkg}" might affect Helm chart configuration.`
-      );
-      
-      return res.json({
-        compatible: compatibilityIssues.length === 0,
-        issues: compatibilityIssues,
-        chartUpdatesNeeded: helmRelatedPackages.length > 0 ? ['helm-charts/api-server', 'helm-charts/coordinator'] : []
+
+      // In a real implementation, this would trigger a job to update the package
+      // For now, return a mock response
+      res.json({
+        status: 'success',
+        message: `Update for ${packageName} (${packageType}) queued successfully`,
+        prUrl: 'https://github.com/example/repo/pull/125'
       });
     } catch (error) {
-      console.error('Error checking Helm compatibility:', error);
-      return res.status(500).json({
-        success: false,
-        error: `Failed to check Helm compatibility. ${error instanceof Error ? error.message : String(error)}`
-      });
+      logger.error('Error updating package:', error);
+      res.status(500).json({ error: 'Failed to update package' });
     }
   }
 
   /**
-   * Get update history
+   * Get compatibility analysis for a package update
+   * @param req Request object
+   * @param res Response object
    */
-  async getUpdateHistory(req: Request, res: Response) {
+  async getCompatibilityAnalysis(req: Request, res: Response): Promise<void> {
     try {
-      const limit = parseInt(req.query.limit as string) || 10;
-      const offset = parseInt(req.query.offset as string) || 0;
-      
-      // This would typically fetch update history from a database
-      // For now, we'll return simulated data
-      
-      const updates = [
-        {
-          id: 'update-123',
-          timestamp: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days ago
-          packages: ['react', 'react-dom', 'typescript'],
-          success: true,
-          pullRequestUrl: 'https://github.com/your-org/your-repo/pull/123'
-        },
-        {
-          id: 'update-124',
-          timestamp: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(), // 14 days ago
-          packages: ['eslint', 'prettier'],
-          success: true,
-          pullRequestUrl: 'https://github.com/your-org/your-repo/pull/124'
-        },
-        {
-          id: 'update-125',
-          timestamp: new Date(Date.now() - 21 * 24 * 60 * 60 * 1000).toISOString(), // 21 days ago
-          packages: ['axios', 'lodash'],
-          success: false
-        }
-      ];
-      
-      return res.json({
-        updates: updates.slice(offset, offset + limit),
-        total: updates.length
-      });
-    } catch (error) {
-      console.error('Error getting update history:', error);
-      return res.status(500).json({
-        success: false,
-        error: `Failed to get update history. ${error instanceof Error ? error.message : String(error)}`
-      });
-    }
-  }
+      const { packageName, packageType } = req.query;
 
-  // Private method to run a scan
-  private async runScan(jobId: string, scanType: 'all' | 'node' | 'python') {
-    const job = scanJobs.get(jobId);
-    
-    if (!job) {
-      console.error(`Job ${jobId} not found.`);
-      return;
-    }
-    
-    try {
-      // Update job status
-      job.status = 'running';
-      scanJobs.set(jobId, job);
-      
-      // Run the GitHub Action workflow via API
-      // In a real implementation, you might do something like:
-      /*
-      await axios.post(
-        `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/dispatches`,
-        {
-          event_type: 'scan-dependencies',
-          client_payload: {
-            scan_type: scanType,
-            job_id: jobId
+      if (!packageName || !packageType) {
+        res.status(400).json({ error: 'Package name and type are required' });
+        return;
+      }
+
+      // In a real implementation, this would retrieve analysis from the job output
+      // For now, return mock data
+      res.json({
+        packageName,
+        packageType,
+        fromVersion: '1.0.0',
+        toVersion: '2.0.0',
+        compatibilityScore: 0.8,
+        breakingChanges: [
+          'Method X has been removed',
+          'Parameter Y is now required in function Z'
+        ],
+        configChanges: [
+          {
+            file: 'tsconfig.json',
+            change: 'Need to enable strictNullChecks'
           }
-        },
-        {
-          headers: {
-            Authorization: `token ${process.env.GITHUB_TOKEN}`,
-            Accept: 'application/vnd.github.v3+json'
-          }
-        }
-      );
-      */
-      
-      // For local development, run the scan directly
-      // This is a simplified version that would need to be enhanced in production
-      const reportsDir = path.join(process.cwd(), '.github', 'dependency-reports');
-      
-      // Ensure the directory exists
-      if (!fs.existsSync(reportsDir)) {
-        fs.mkdirSync(reportsDir, { recursive: true });
-      }
-      
-      // Run the appropriate scan command
-      let command = '';
-      if (scanType === 'all' || scanType === 'node') {
-        command += 'yarn outdated --json > .github/dependency-reports/node-outdated.json; ';
-      }
-      
-      if (scanType === 'all' || scanType === 'python') {
-        command += 'pip list --outdated --format=json > .github/dependency-reports/python-outdated.json; ';
-      }
-      
-      // For local testing, create a simulated report if the commands would fail
-      command += `
-        if [ ! -f .github/dependency-reports/node-outdated.json ]; then
-          echo '{"data":{"body":[["react","17.0.2","18.2.0","18.2.0","dependencies",""],["typescript","4.5.5","5.1.6","5.1.6","devDependencies",""]]}}' > .github/dependency-reports/node-outdated.json;
-        fi;
-        if [ ! -f .github/dependency-reports/python-outdated.json ]; then
-          echo '[{"name":"numpy","version":"1.20.0","latest_version":"1.24.0"},{"name":"pandas","version":"1.3.0","latest_version":"2.0.0"}]' > .github/dependency-reports/python-outdated.json;
-        fi;
-      `;
-      
-      // Run combined script to parse results (simplified)
-      command += `
-        node .github/scripts/parse-outdated.js;
-        python .github/scripts/combine-python-outdated.py;
-        node .github/scripts/analyze-compatibility.js;
-        
-        # Combine reports into a single file with timestamp
-        timestamp=$(date +%Y%m%d%H%M%S);
-        cp compatibility-report.json .github/dependency-reports/report-\${timestamp}.json;
-      `;
-      
-      // Execute the commands
-      const { stdout, stderr } = await execAsync(command);
-      
-      console.log('Scan output:', stdout);
-      if (stderr) {
-        console.error('Scan errors:', stderr);
-      }
-      
-      // Update job status
-      job.status = 'completed';
-      job.completedAt = new Date();
-      job.progress = 100;
-      scanJobs.set(jobId, job);
-      
+        ],
+        recommendation: 'Update with caution and test thoroughly'
+      });
     } catch (error) {
-      console.error(`Error running scan ${jobId}:`, error);
-      
-      // Update job status
-      job.status = 'failed';
-      job.completedAt = new Date();
-      job.error = error instanceof Error ? error.message : String(error);
-      scanJobs.set(jobId, job);
+      logger.error('Error getting compatibility analysis:', error);
+      res.status(500).json({ error: 'Failed to get compatibility analysis' });
     }
   }
 }

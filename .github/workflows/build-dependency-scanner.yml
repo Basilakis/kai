@@ -1,0 +1,113 @@
+name: Build Dependency Scanner Image
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'Dockerfile.dependency-scanner'
+      - '.github/scripts/**'
+      - 'requirements-scanner.txt'
+  pull_request:
+    paths:
+      - 'Dockerfile.dependency-scanner'
+      - '.github/scripts/**'
+      - 'requirements-scanner.txt'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/dependency-scanner
+
+jobs:
+  build-and-push:
+    name: Build and Push Dependency Scanner Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=sha,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./Dockerfile.dependency-scanner
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            NODE_ENV=${{ github.event.inputs.environment || 'production' }}
+
+      - name: Update deployment image
+        if: github.event_name != 'pull_request'
+        run: |
+          echo "Dependency scanner image built and pushed: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}"
+          # Update Flux configuration if using GitOps
+          if [ -d "flux/clusters" ]; then
+            # Extract the short SHA
+            SHA=$(echo ${{ github.sha }} | cut -c1-7)
+            
+            # Update image tag in relevant Kubernetes manifests
+            if [ -f "kubernetes/jobs/dependency-management-job.yaml" ]; then
+              sed -i "s|image: .*dependency-scanner:.*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$SHA|g" kubernetes/jobs/dependency-management-job.yaml
+              git config --global user.name "GitHub Actions"
+              git config --global user.email "actions@github.com"
+              git add kubernetes/jobs/dependency-management-job.yaml
+              git commit -m "ci: update dependency scanner image to $SHA" || echo "No changes to commit"
+              git push || echo "Could not push changes"
+            fi
+          fi
+
+  notify-admin-panel:
+    name: Notify Admin Panel
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    
+    steps:
+      - name: Send notification
+        run: |
+          # For demonstration - in a real environment this would call an API endpoint
+          # to notify the admin panel about the new image availability
+          echo "Notifying admin panel about new dependency scanner image"
+          
+          # Example of calling an API endpoint:
+          # curl -X POST -H "Content-Type: application/json" -d '{"event": "image_update", "service": "dependency-scanner", "version": "${{ github.sha }}"}' https://admin-api.example.com/notifications

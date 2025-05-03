@@ -20,6 +20,11 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import WarningIcon from '@mui/icons-material/Warning';
+import ErrorIcon from '@mui/icons-material/Error';
+import UpdateIcon from '@mui/icons-material/Update';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import CubeIcon from '@mui/icons-material/ViewInAr';
 
 // Additional icons used in KnowledgeBaseDashboard.tsx
 import SearchIcon from '@mui/icons-material/Search';
@@ -60,6 +65,11 @@ export {
   UploadFileIcon,
   CloudUploadIcon,
   WarningIcon,
+  ErrorIcon,
+  UpdateIcon,
+  ExpandMoreIcon,
+  AccessTimeIcon,
+  CubeIcon,
 
   // Additional icons used in KnowledgeBaseDashboard.tsx
   SearchIcon,

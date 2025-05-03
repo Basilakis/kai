@@ -47,6 +47,10 @@ Welcome to the Kai documentation. This index provides links to all documentation
 - [Queue System](./queue-system.md) - Message broker and async processing
 - [Web Crawling](./web-crawling.md) - Web content extraction for materials
 - [Testing Approach](./testing-approach.md) - Testing strategy and best practices
+- [Kubernetes Architecture](./kubernetes-architecture.md) - Kubernetes implementation details
+- [HPA Configuration Guide](./hpa-configuration-guide.md) - Horizontal Pod Autoscaling configuration
+- [Advanced Scaling Features](./advanced-scaling-features.md) - Predictive scaling and cross-service dependencies
+- [Monitoring System](./monitoring-system.md) - System health monitoring and operational visibility
 
 ### Deployment
 

@@ -277,7 +277,7 @@ description: "This priority class is used for interactive user requests that req
 
 ### Advanced Workflow Orchestration
 - **Requirement**: Replace sequential job creation with declarative workflow definitions
-- **Implementation**: 
+- **Implementation**:
   - Argo Workflows integration in Coordinator Service
   - Conditional paths based on QualityManager assessments
   - Parallel processing steps in workflow templates
@@ -332,7 +332,7 @@ The 3D reconstruction workflow demonstrates how Argo Workflows manages complex M
 ### Progressive Enhancement Architecture
 
 - **Implementation**: QualityManager for determining appropriate quality levels
-- **Quality Tiers**: 
+- **Quality Tiers**:
   - Low: Basic processing, minimal resources
   - Medium: Standard quality, balanced resources
   - High: Premium quality, intensive resources
@@ -486,7 +486,7 @@ global:
   environment: "staging"
   namespace: "kai-system-staging"
   resourceMultiplier: 1
-  
+
 coordinator:
   replicaCount: 1
   minReplicas: 1
@@ -608,7 +608,7 @@ The Flux GitOps implementation consists of several controllers running in the Ku
 └──────────────────────────────────────────────────────────┘
 ```
 
-1. **Source Controller**: 
+1. **Source Controller**:
    - Manages Git/Helm repositories as sources of truth
    - Fetches and validates the GitOps repository content
    - Detects changes in the source and makes them available to other controllers
@@ -719,21 +719,21 @@ Our Flux implementation seamlessly integrates with our Helm-based deployment arc
 The CI/CD pipeline interacts with the GitOps repository to trigger deployments:
 
 ```
-┌────────────────┐     ┌────────────────┐     ┌────────────────┐     
-│                │     │                │     │                │     
-│  CI Build &    │────▶│  Update GitOps │────▶│  Flux          │     
-│  Test          │     │  Repository    │     │  Controllers   │     
-│                │     │                │     │                │     
-└────────────────┘     └────────────────┘     └────────────────┘     
-                                                      │              
-                                                      │              
-                                                      ▼              
-┌────────────────┐     ┌────────────────┐     ┌────────────────┐     
-│                │     │                │     │                │     
-│  Notification  │◀────│  Reconciliation│◀────│  Apply         │     
-│                │     │  Status        │     │  Changes       │     
-│                │     │                │     │                │     
-└────────────────┘     └────────────────┘     └────────────────┘     
+┌────────────────┐     ┌────────────────┐     ┌────────────────┐
+│                │     │                │     │                │
+│  CI Build &    │────▶│  Update GitOps │────▶│  Flux          │
+│  Test          │     │  Repository    │     │  Controllers   │
+│                │     │                │     │                │
+└────────────────┘     └────────────────┘     └────────────────┘
+                                                      │
+                                                      │
+                                                      ▼
+┌────────────────┐     ┌────────────────┐     ┌────────────────┐
+│                │     │                │     │                │
+│  Notification  │◀────│  Reconciliation│◀────│  Apply         │
+│                │     │  Status        │     │  Changes       │
+│                │     │                │     │                │
+└────────────────┘     └────────────────┘     └────────────────┘
 ```
 
 1. The CI pipeline builds and tests new versions of components
@@ -942,32 +942,97 @@ The KAI Platform implements a sophisticated multi-layer scaling architecture to 
 
 ### Horizontal Pod Autoscaling (HPA)
 
-The platform uses HPA to automatically adjust replica counts for stateless components based on observed metrics:
+The platform uses HPA to automatically adjust replica counts for stateless components based on observed metrics, including both standard resource metrics and custom application metrics:
 
 ```yaml
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: coordinator-service
+  name: coordinator-service-hpa
+  namespace: kai-ml
+  labels:
+    app: coordinator-service
+    component: orchestration
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
     name: coordinator-service
-  minReplicas: 3
+  minReplicas: 2
   maxReplicas: 10
   metrics:
+  # CPU-based scaling
   - type: Resource
     resource:
       name: cpu
       target:
         type: Utilization
+        averageUtilization: 70
+  # Memory-based scaling
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
         averageUtilization: 80
+  # Queue depth-based scaling
+  - type: Pods
+    pods:
+      metric:
+        name: coordinator_queue_depth
+      target:
+        type: AverageValue
+        averageValue: 10
+  # Processing time-based scaling
+  - type: Pods
+    pods:
+      metric:
+        name: ml_processing_time_seconds
+      target:
+        type: AverageValue
+        averageValue: 5
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 60
+      - type: Pods
+        value: 4
+        periodSeconds: 60
+      selectPolicy: Max
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+      - type: Pods
+        value: 2
+        periodSeconds: 60
+      selectPolicy: Min
 ```
+
+#### Custom Metrics for Intelligent Scaling
+
+Our platform implements advanced custom metrics for more intelligent scaling decisions:
+
+1. **Queue-Based Metrics**: Scale based on actual workload in the queue
+   - `coordinator_queue_depth`: Number of pending tasks in the queue
+   - `coordinator_queue_processing_rate`: Rate at which tasks are being processed
+
+2. **Processing Time Metrics**: Scale based on actual processing performance
+   - `ml_processing_time_seconds`: Average time to process a task
+   - `ml_processing_backlog_seconds`: Estimated time to process all queued tasks
+
+3. **Database Connection Metrics**: Scale based on database connection pool utilization
+   - `db_connection_utilization`: Percentage of database connections in use
+   - `db_connection_wait_time`: Time spent waiting for database connections
 
 #### Platform Communication with HPA:
 
-Our system interacts with the HPA controller through a metrics pipeline:
+Our system interacts with the HPA controller through a sophisticated metrics pipeline:
 
 - **Metrics Exposition**: All components expose metrics via Prometheus annotations:
   ```yaml
@@ -980,6 +1045,20 @@ Our system interacts with the HPA controller through a metrics pipeline:
   2. Prometheus scrapes detailed custom metrics from component endpoints
   3. Prometheus Adapter converts Prometheus metrics to the custom metrics API format
   4. HPA controller queries these APIs every 15 seconds to make scaling decisions
+
+- **Prometheus Adapter Configuration**: Custom metrics are exposed to Kubernetes via the Prometheus Adapter:
+  ```yaml
+  rules:
+  - seriesQuery: 'kai_coordinator_queue_depth{kubernetes_namespace!="",kubernetes_pod_name!=""}'
+    resources:
+      overrides:
+        kubernetes_namespace: {resource: "namespace"}
+        kubernetes_pod_name: {resource: "pod"}
+    name:
+      matches: "kai_coordinator_queue_depth"
+      as: "coordinator_queue_depth"
+    metricsQuery: 'sum(<<.Series>>{<<.LabelMatchers>>}) by (<<.GroupBy>>)'
+  ```
 
 - **Coordinator Service Role**: The Coordinator actively participates in the scaling architecture by:
   - Exposing workload metrics (queue depths, processing times) via its `/metrics` endpoint

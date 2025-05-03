@@ -1,16 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import Layout from '../../components/Layout';
 import {
-  ServerIcon,
+  StorageIcon as ServerIcon,
   CubeIcon,
-  ClockIcon,
-  ExclamationCircleIcon,
+  AccessTimeIcon as ClockIcon,
+  ErrorIcon as ExclamationCircleIcon,
   CheckCircleIcon,
   RefreshIcon,
-  QueueListIcon,
-  ArrowPathIcon,
-  BoltIcon
-} from '@heroicons/react/outline';
+  ChartBarIcon,
+  OpenInNewIcon
+} from '../../components/mui-icons';
+import { Box, Button, Typography, Paper, Grid } from '@mui/material';
+import Link from 'next/link';
 import kubernetesService, { ClusterStats, PodDetails as PodDetailsType } from '../../services/kubernetes.service';
 import PodList from '../../components/deployment/PodList';
 import PodDetails from '../../components/deployment/PodDetails';
@@ -18,6 +19,7 @@ import EventList from '../../components/deployment/EventList';
 import CICDPipeline from '../../components/deployment/CICDPipeline';
 import FluxDeployments from '../../components/deployment/FluxDeployments';
 import QueueStatusPanel from '../../components/training-status/QueueStatusPanel';
+import DependencyUpdatesPanel from '../../components/deployment/DependencyUpdatesPanel';
 
 /**
  * Kubernetes Deployment Dashboard
@@ -31,12 +33,12 @@ import QueueStatusPanel from '../../components/training-status/QueueStatusPanel'
  * - Troubleshooting suggestions
  */
 export default function DeploymentDashboard() {
-  const [loading, setLoading] = useState(true);
-  const [clusterStats, setClusterStats] = useState<ClusterStats | null>(null);
-  const [healthStatus, setHealthStatus] = useState('healthy');
-  const [lastUpdated, setLastUpdated] = useState(new Date());
-  const [error, setError] = useState<string | null>(null);
-  const [selectedPod, setSelectedPod] = useState<PodDetailsType | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [clusterStats, setClusterStats] = React.useState<ClusterStats | null>(null);
+  const [healthStatus, setHealthStatus] = React.useState('healthy');
+  const [lastUpdated, setLastUpdated] = React.useState(new Date());
+  const [error, setError] = React.useState<string | null>(null);
+  const [selectedPod, setSelectedPod] = React.useState<PodDetailsType | null>(null);
 
   // Load data from the Kubernetes API
   const loadData = async () => {
@@ -76,7 +78,7 @@ export default function DeploymentDashboard() {
   };
 
   // Load data on component mount
-  useEffect(() => {
+  React.useEffect(() => {
     loadData();
   }, []);
 
@@ -118,6 +120,12 @@ export default function DeploymentDashboard() {
       <div className="mb-8">
         <h2 className="text-xl font-medium text-gray-700 mb-4">Training Queue Status</h2>
         <QueueStatusPanel />
+      </div>
+
+      {/* Dependency Updates */}
+      <div className="mb-8">
+        <h2 className="text-xl font-medium text-gray-700 mb-4">Dependency Updates</h2>
+        <DependencyUpdatesPanel />
       </div>
 
       {/* Error message */}
@@ -245,7 +253,7 @@ export default function DeploymentDashboard() {
           />
         ) : (
           <PodList
-            onSelectPod={(pod) => setSelectedPod(pod)}
+            onSelectPod={(pod: PodDetailsType) => setSelectedPod(pod)}
           />
         )}
       </div>
@@ -266,6 +274,93 @@ export default function DeploymentDashboard() {
       <div className="mb-8">
         <h2 className="text-xl font-medium text-gray-700 mb-4">Cluster Events</h2>
         <EventList />
+      </div>
+
+      {/* Grafana Dashboards */}
+      <div className="mb-8">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-medium text-gray-700">Grafana Dashboards</h2>
+          <Link href="/monitoring/grafana">
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<OpenInNewIcon />}
+            >
+              View All Dashboards
+            </Button>
+          </Link>
+        </div>
+
+        <Paper elevation={2} className="p-6">
+          <Typography variant="body1" gutterBottom>
+            Access detailed metrics and monitoring dashboards for your Kubernetes infrastructure.
+          </Typography>
+
+          <Grid container spacing={3} className="mt-4">
+            <Grid item xs={12} md={4}>
+              <Paper elevation={1} className="p-4 border border-gray-200 hover:border-blue-500 transition-colors">
+                <div className="flex items-center mb-2">
+                  <ChartBarIcon className="h-5 w-5 text-blue-500 mr-2" />
+                  <Typography variant="h6">Kubernetes Overview</Typography>
+                </div>
+                <Typography variant="body2" color="textSecondary" className="mb-4">
+                  Cluster-wide metrics and resource utilization
+                </Typography>
+                <Link href="/monitoring/grafana">
+                  <Button
+                    variant="text"
+                    size="small"
+                    endIcon={<OpenInNewIcon />}
+                  >
+                    Open Dashboard
+                  </Button>
+                </Link>
+              </Paper>
+            </Grid>
+
+            <Grid item xs={12} md={4}>
+              <Paper elevation={1} className="p-4 border border-gray-200 hover:border-blue-500 transition-colors">
+                <div className="flex items-center mb-2">
+                  <ChartBarIcon className="h-5 w-5 text-green-500 mr-2" />
+                  <Typography variant="h6">HPA Metrics</Typography>
+                </div>
+                <Typography variant="body2" color="textSecondary" className="mb-4">
+                  Horizontal Pod Autoscaler metrics and scaling events
+                </Typography>
+                <Link href="/monitoring/grafana">
+                  <Button
+                    variant="text"
+                    size="small"
+                    endIcon={<OpenInNewIcon />}
+                  >
+                    Open Dashboard
+                  </Button>
+                </Link>
+              </Paper>
+            </Grid>
+
+            <Grid item xs={12} md={4}>
+              <Paper elevation={1} className="p-4 border border-gray-200 hover:border-blue-500 transition-colors">
+                <div className="flex items-center mb-2">
+                  <ChartBarIcon className="h-5 w-5 text-purple-500 mr-2" />
+                  <Typography variant="h6">Coordinator Service</Typography>
+                </div>
+                <Typography variant="body2" color="textSecondary" className="mb-4">
+                  Queue depths, workflow durations, and processing metrics
+                </Typography>
+                <Link href="/monitoring/grafana">
+                  <Button
+                    variant="text"
+                    size="small"
+                    endIcon={<OpenInNewIcon />}
+                  >
+                    Open Dashboard
+                  </Button>
+                </Link>
+              </Paper>
+            </Grid>
+          </Grid>
+        </Paper>
       </div>
     </Layout>
   );

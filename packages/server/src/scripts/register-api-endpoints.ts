@@ -11,6 +11,181 @@ import { NetworkAccessType } from '../utils/network';
 
 // Define the endpoints to register
 const endpointsToRegister = [
+  // Property Reference Endpoints
+  {
+    path: '/api/property-references',
+    method: 'GET',
+    description: 'Get property reference images',
+    accessType: NetworkAccessType.ANY
+  },
+  {
+    path: '/api/property-references',
+    method: 'POST',
+    description: 'Create a property reference image',
+    accessType: NetworkAccessType.ANY
+  },
+  {
+    path: '/api/property-references/:id',
+    method: 'PUT',
+    description: 'Update a property reference image',
+    accessType: NetworkAccessType.ANY
+  },
+  {
+    path: '/api/property-references/:id',
+    method: 'DELETE',
+    description: 'Delete a property reference image',
+    accessType: NetworkAccessType.ANY
+  },
+
+  // Visual Reference Training Endpoints
+  {
+    path: '/api/ai/visual-reference/datasets',
+    method: 'POST',
+    description: 'Create a training dataset from visual references',
+    accessType: NetworkAccessType.INTERNAL_ONLY
+  },
+  {
+    path: '/api/ai/visual-reference/models',
+    method: 'POST',
+    description: 'Train a model using a visual reference dataset',
+    accessType: NetworkAccessType.INTERNAL_ONLY
+  },
+  {
+    path: '/api/ai/visual-reference/train',
+    method: 'POST',
+    description: 'Create a dataset and train a model in one step',
+    accessType: NetworkAccessType.INTERNAL_ONLY
+  },
+
+  // Visual Reference OCR Endpoints
+  {
+    path: '/api/ocr/visual-reference/enhance',
+    method: 'POST',
+    description: 'Enhance OCR extraction with visual reference verification',
+    accessType: NetworkAccessType.ANY
+  },
+  {
+    path: '/api/ocr/visual-reference/enhance-multiple',
+    method: 'POST',
+    description: 'Enhance multiple OCR extractions with visual reference verification',
+    accessType: NetworkAccessType.ANY
+  },
+  {
+    path: '/api/ocr/visual-reference/patterns/:propertyName/:materialType',
+    method: 'GET',
+    description: 'Get extraction patterns for a property based on visual references',
+    accessType: NetworkAccessType.ANY
+  },
+
+  // Property Relationship Endpoints
+  {
+    path: '/api/property-relationships',
+    method: 'POST',
+    description: 'Create a new property relationship',
+    accessType: NetworkAccessType.ANY
+  },
+  {
+    path: '/api/property-relationships/:id',
+    method: 'GET',
+    description: 'Get a property relationship by ID',
+    accessType: NetworkAccessType.ANY
+  },
+  {
+    path: '/api/property-relationships/material/:materialType',
+    method: 'GET',
+    description: 'Get property relationships by material type',
+    accessType: NetworkAccessType.ANY
+  },
+  {
+    path: '/api/property-relationships/source/:sourceProperty',
+    method: 'GET',
+    description: 'Get property relationships by source property',
+    accessType: NetworkAccessType.ANY
+  },
+  {
+    path: '/api/property-relationships/target/:targetProperty',
+    method: 'GET',
+    description: 'Get property relationships by target property',
+    accessType: NetworkAccessType.ANY
+  },
+  {
+    path: '/api/property-relationships/:id',
+    method: 'PUT',
+    description: 'Update a property relationship',
+    accessType: NetworkAccessType.ANY
+  },
+  {
+    path: '/api/property-relationships/:id',
+    method: 'DELETE',
+    description: 'Delete a property relationship',
+    accessType: NetworkAccessType.ANY
+  },
+  {
+    path: '/api/property-relationships/:relationshipId/correlations',
+    method: 'POST',
+    description: 'Create a new property value correlation',
+    accessType: NetworkAccessType.ANY
+  },
+  {
+    path: '/api/property-relationships/:relationshipId/correlations',
+    method: 'GET',
+    description: 'Get property value correlations by relationship ID',
+    accessType: NetworkAccessType.ANY
+  },
+  {
+    path: '/api/property-relationships/correlations/:id',
+    method: 'PUT',
+    description: 'Update a property value correlation',
+    accessType: NetworkAccessType.ANY
+  },
+  {
+    path: '/api/property-relationships/correlations/:id',
+    method: 'DELETE',
+    description: 'Delete a property value correlation',
+    accessType: NetworkAccessType.ANY
+  },
+  {
+    path: '/api/property-relationships/:relationshipId/compatibility',
+    method: 'POST',
+    description: 'Create a new property compatibility rule',
+    accessType: NetworkAccessType.ANY
+  },
+  {
+    path: '/api/property-relationships/:relationshipId/compatibility',
+    method: 'GET',
+    description: 'Get property compatibility rules by relationship ID',
+    accessType: NetworkAccessType.ANY
+  },
+  {
+    path: '/api/property-relationships/compatibility/:id',
+    method: 'PUT',
+    description: 'Update a property compatibility rule',
+    accessType: NetworkAccessType.ANY
+  },
+  {
+    path: '/api/property-relationships/compatibility/:id',
+    method: 'DELETE',
+    description: 'Delete a property compatibility rule',
+    accessType: NetworkAccessType.ANY
+  },
+  {
+    path: '/api/property-relationships/validate',
+    method: 'POST',
+    description: 'Validate a set of property values',
+    accessType: NetworkAccessType.ANY
+  },
+  {
+    path: '/api/property-relationships/recommend',
+    method: 'POST',
+    description: 'Get property recommendations',
+    accessType: NetworkAccessType.ANY
+  },
+  {
+    path: '/api/property-relationships/graph/:materialType',
+    method: 'GET',
+    description: 'Get property graph visualization data',
+    accessType: NetworkAccessType.ANY
+  },
   // Response Quality Analytics Endpoints
   {
     path: '/api/analytics/response-quality/metrics',

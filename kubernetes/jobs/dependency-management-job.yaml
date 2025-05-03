@@ -1,0 +1,139 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: dependency-update-job
+  labels:
+    app: dependency-management
+    component: update-job
+spec:
+  ttlSecondsAfterFinished: 86400  # Automatically delete job 24 hours after completion
+  backoffLimit: 3                 # Retry up to 3 times if the job fails
+  template:
+    metadata:
+      labels:
+        app: dependency-management
+        component: update-job
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: dependency-scanner
+        image: ${REGISTRY}/dependency-scanner:latest
+        imagePullPolicy: Always
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "512Mi"
+          limits:
+            cpu: "1000m"
+            memory: "1Gi"
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: ai-service-keys
+              key: openai-api-key
+        - name: GITHUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: github-credentials
+              key: token
+        volumeMounts:
+        - name: repo-volume
+          mountPath: /app/repo
+        - name: npm-cache
+          mountPath: /root/.npm
+        - name: pip-cache
+          mountPath: /root/.cache/pip
+        command:
+        - "/bin/sh"
+        - "-c"
+        - |
+          cd /app/repo && 
+          git clone --depth 1 https://github.com/${GITHUB_ORG}/${REPO_NAME}.git . &&
+          node /app/scripts/dependency-impact-analysis.js &&
+          node /app/scripts/analyze-compatibility.js &&
+          node /app/scripts/run-targeted-tests.js &&
+          node /app/scripts/create-update-prs-with-test-results.js
+      volumes:
+      - name: repo-volume
+        emptyDir: {}
+      - name: npm-cache
+        emptyDir: {}
+      - name: pip-cache
+        emptyDir: {}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: dependency-scanner-cron
+  labels:
+    app: dependency-management
+    component: scheduled-scan
+spec:
+  schedule: "0 0 * * 0"  # Run at midnight every Sunday
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 86400  # Automatically delete job 24 hours after completion
+      backoffLimit: 3
+      template:
+        metadata:
+          labels:
+            app: dependency-management
+            component: scheduled-scan
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: dependency-scanner
+            image: ${REGISTRY}/dependency-scanner:latest
+            imagePullPolicy: Always
+            resources:
+              requests:
+                cpu: "500m"
+                memory: "512Mi"
+              limits:
+                cpu: "1000m"
+                memory: "1Gi"
+            env:
+            - name: NODE_ENV
+              value: "production"
+            - name: LOG_LEVEL
+              value: "info"
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ai-service-keys
+                  key: openai-api-key
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: github-credentials
+                  key: token
+            volumeMounts:
+            - name: repo-volume
+              mountPath: /app/repo
+            - name: npm-cache
+              mountPath: /root/.npm
+            - name: pip-cache
+              mountPath: /root/.cache/pip
+            command:
+            - "/bin/sh"
+            - "-c"
+            - |
+              cd /app/repo && 
+              git clone --depth 1 https://github.com/${GITHUB_ORG}/${REPO_NAME}.git . &&
+              node /app/scripts/dependency-impact-analysis.js &&
+              node /app/scripts/analyze-compatibility.js &&
+              node /app/scripts/run-targeted-tests.js &&
+              node /app/scripts/create-update-prs-with-test-results.js
+          volumes:
+          - name: repo-volume
+            emptyDir: {}
+          - name: npm-cache
+            emptyDir: {}
+          - name: pip-cache
+            emptyDir: {}
