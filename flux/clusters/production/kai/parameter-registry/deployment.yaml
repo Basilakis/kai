@@ -318,3 +318,14 @@ spec:
       target:
         type: Utilization
         averageUtilization: 80
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: parameter-registry-pdb
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: parameter-registry
+      component: api
