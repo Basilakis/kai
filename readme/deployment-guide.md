@@ -1425,10 +1425,8 @@ The Notification System provides multi-channel notification capabilities:
 
 2. Run database migrations:
    ```bash
-   cd packages/server/src/migrations
-   node ../../scripts/run-migrations.js notification-tables.sql
-   node ../../scripts/run-migrations.js push-notifications.sql
-   node ../../scripts/run-migrations.js webhooks.sql
+   cd packages/server
+   node scripts/run-migrations.ts
    ```
 
 3. Configure environment variables:
@@ -1470,8 +1468,8 @@ The Parameter Registry system manages hyperparameters for material analysis:
 
 2. Run database migrations:
    ```bash
-   cd packages/server/src/migrations
-   node ../../scripts/run-migrations.js parameter-registry.sql
+   cd packages/server
+   node scripts/run-migrations.ts
    ```
 
 3. Configure environment variables:
@@ -2312,13 +2310,17 @@ Migration files are SQL scripts stored in `packages/server/src/services/supabase
 002_hybrid_search.sql
 003_dataset_upload.sql
 004_material_metadata_fields.sql
-004_message_broker.sql
+005_message_broker.sql
+006_enhanced_vector_storage.sql
+007_agent_sessions.sql
+008_validation_rules.sql
+009_execute_sql_function.sql
 ...
 ```
 
 ##### Migration Tracking
 
-Migrations are tracked in a `schema_migrations` table in the Supabase database:
+Migrations are tracked in a `migrations` table in the Supabase database. Each migration is only applied once, and the system keeps track of which migrations have been applied to ensure database consistency.
 
 ```sql
 CREATE TABLE schema_migrations (

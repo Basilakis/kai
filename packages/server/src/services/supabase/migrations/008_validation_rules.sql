@@ -12,34 +12,34 @@ CREATE TABLE IF NOT EXISTS public.validation_rules (
     severity VARCHAR(20) NOT NULL CHECK (severity IN ('error', 'warning', 'info')),
     message TEXT NOT NULL,
     is_active BOOLEAN DEFAULT true,
-    
+
     -- Range validation fields
     min NUMERIC,
     max NUMERIC,
     step NUMERIC,
     unit VARCHAR(20),
-    
+
     -- Pattern validation fields
     pattern TEXT,
     flags VARCHAR(10),
-    
+
     -- Enum validation fields
     allowed_values TEXT[],
-    
+
     -- Dependency validation fields
     condition JSONB,
     required_value JSONB,
     required_pattern TEXT,
     required_range JSONB,
-    
+
     -- Custom validation fields
     function_name VARCHAR(100),
     parameters JSONB,
-    
+
     -- Composite validation fields
     operator VARCHAR(10),
     rules TEXT[],
-    
+
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL
@@ -81,6 +81,29 @@ CREATE INDEX IF NOT EXISTS idx_validation_results_rule_id ON public.validation_r
 CREATE INDEX IF NOT EXISTS idx_validation_results_property_name ON public.validation_results(property_name);
 CREATE INDEX IF NOT EXISTS idx_validation_results_material_type ON public.validation_results(material_type);
 CREATE INDEX IF NOT EXISTS idx_validation_results_is_valid ON public.validation_results(is_valid);
+
+-- Grant access to authenticated users
+GRANT SELECT ON public.validation_rules TO authenticated;
+GRANT SELECT, INSERT, UPDATE ON public.validation_results TO authenticated;
+
+-- Add server-side function to clean up old validation results (for admin use)
+CREATE OR REPLACE FUNCTION cleanup_old_validation_results(days_to_keep INTEGER)
+RETURNS INTEGER AS $$
+DECLARE
+    deleted_count INTEGER;
+BEGIN
+    DELETE FROM public.validation_results
+    WHERE created_at < (NOW() - (days_to_keep || ' days')::INTERVAL)
+    RETURNING COUNT(*) INTO deleted_count;
+
+    RETURN deleted_count;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Add comments for documentation
+COMMENT ON TABLE public.validation_rules IS 'Stores validation rules for material properties';
+COMMENT ON TABLE public.validation_rule_dependencies IS 'Tracks relationships between composite validation rules and their components';
+COMMENT ON TABLE public.validation_results IS 'Stores validation results for analytics purposes';
 
 -- Add this migration to the migrations table
 INSERT INTO public.migrations (name, applied_at)

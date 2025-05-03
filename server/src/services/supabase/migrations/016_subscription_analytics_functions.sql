@@ -1,8 +1,8 @@
--- Subscription Analytics SQL Functions
--- This file contains SQL functions for subscription analytics
+-- Migration: 016_subscription_analytics_functions.sql
+-- Description: Creates functions for subscription analytics
 
 -- Function to get subscription tier analytics
-CREATE OR REPLACE FUNCTION get_subscription_tier_analytics()
+CREATE OR REPLACE FUNCTION public.get_subscription_tier_analytics()
 RETURNS TABLE (
   tier_id UUID,
   tier_name TEXT,
@@ -17,9 +17,9 @@ BEGIN
     COUNT(us.id) AS count,
     SUM(st.price) AS revenue
   FROM
-    subscription_tiers st
+    public.subscription_tiers st
   LEFT JOIN
-    user_subscriptions us ON st.id = us.tier_id AND us.status = 'active'
+    public.user_subscriptions us ON st.id = us.tier_id AND us.status = 'active'
   GROUP BY
     st.id, st.name
   ORDER BY
@@ -28,7 +28,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Function to get credit usage by feature
-CREATE OR REPLACE FUNCTION get_credit_usage_by_feature()
+CREATE OR REPLACE FUNCTION public.get_credit_usage_by_feature()
 RETURNS TABLE (
   feature TEXT,
   credits BIGINT
@@ -39,7 +39,7 @@ BEGIN
     COALESCE(ct.metadata->>'feature', 'Other') AS feature,
     SUM(ABS(ct.amount)) AS credits
   FROM
-    credit_transactions ct
+    public.credit_transactions ct
   WHERE
     ct.type = 'usage'
   GROUP BY
@@ -50,7 +50,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Function to get subscription churn by tier
-CREATE OR REPLACE FUNCTION get_subscription_churn_by_tier()
+CREATE OR REPLACE FUNCTION public.get_subscription_churn_by_tier()
 RETURNS TABLE (
   tier_id UUID,
   tier_name TEXT,
@@ -67,9 +67,9 @@ BEGIN
       COUNT(us.id) AS total_subscribers,
       COUNT(CASE WHEN us.status = 'canceled' THEN 1 END) AS churned_subscribers
     FROM
-      subscription_tiers st
+      public.subscription_tiers st
     LEFT JOIN
-      user_subscriptions us ON st.id = us.tier_id
+      public.user_subscriptions us ON st.id = us.tier_id
     GROUP BY
       st.id, st.name
   )
@@ -90,7 +90,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Function to get subscription churn by period
-CREATE OR REPLACE FUNCTION get_subscription_churn_by_period()
+CREATE OR REPLACE FUNCTION public.get_subscription_churn_by_period()
 RETURNS TABLE (
   period TEXT,
   total_subscribers BIGINT,
@@ -105,7 +105,7 @@ BEGIN
       COUNT(us.id) AS total_subscribers,
       COUNT(CASE WHEN us.status = 'canceled' THEN 1 END) AS churned_subscribers
     FROM
-      user_subscriptions us
+      public.user_subscriptions us
     WHERE
       us.created_at >= NOW() - INTERVAL '6 months'
     GROUP BY
@@ -127,7 +127,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Function to get subscription revenue by tier
-CREATE OR REPLACE FUNCTION get_subscription_revenue_by_tier()
+CREATE OR REPLACE FUNCTION public.get_subscription_revenue_by_tier()
 RETURNS TABLE (
   tier_id UUID,
   tier_name TEXT,
@@ -142,9 +142,9 @@ BEGIN
     COUNT(us.id) AS subscribers,
     SUM(st.price) AS revenue
   FROM
-    subscription_tiers st
+    public.subscription_tiers st
   LEFT JOIN
-    user_subscriptions us ON st.id = us.tier_id AND us.status = 'active'
+    public.user_subscriptions us ON st.id = us.tier_id AND us.status = 'active'
   GROUP BY
     st.id, st.name
   ORDER BY
@@ -153,7 +153,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Function to get subscription revenue by period
-CREATE OR REPLACE FUNCTION get_subscription_revenue_by_period()
+CREATE OR REPLACE FUNCTION public.get_subscription_revenue_by_period()
 RETURNS TABLE (
   period TEXT,
   subscribers BIGINT,
@@ -167,9 +167,9 @@ BEGIN
       COUNT(us.id) AS subscribers,
       SUM(st.price) AS revenue
     FROM
-      user_subscriptions us
+      public.user_subscriptions us
     JOIN
-      subscription_tiers st ON us.tier_id = st.id
+      public.subscription_tiers st ON us.tier_id = st.id
     WHERE
       us.status = 'active' AND
       us.created_at >= NOW() - INTERVAL '6 months'
@@ -186,3 +186,24 @@ BEGIN
     period_revenue;
 END;
 $$ LANGUAGE plpgsql;
+
+-- Grant permissions to authenticated users
+GRANT EXECUTE ON FUNCTION public.get_subscription_tier_analytics TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_credit_usage_by_feature TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_subscription_churn_by_tier TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_subscription_churn_by_period TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_subscription_revenue_by_tier TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_subscription_revenue_by_period TO authenticated;
+
+-- Add comments for documentation
+COMMENT ON FUNCTION public.get_subscription_tier_analytics IS 'Function to get analytics on subscription tiers';
+COMMENT ON FUNCTION public.get_credit_usage_by_feature IS 'Function to get credit usage by feature';
+COMMENT ON FUNCTION public.get_subscription_churn_by_tier IS 'Function to get subscription churn by tier';
+COMMENT ON FUNCTION public.get_subscription_churn_by_period IS 'Function to get subscription churn by period';
+COMMENT ON FUNCTION public.get_subscription_revenue_by_tier IS 'Function to get subscription revenue by tier';
+COMMENT ON FUNCTION public.get_subscription_revenue_by_period IS 'Function to get subscription revenue by period';
+
+-- Add this migration to the migrations table
+INSERT INTO public.migrations (name, applied_at)
+VALUES ('016_subscription_analytics_functions.sql', NOW())
+ON CONFLICT (name) DO NOTHING;

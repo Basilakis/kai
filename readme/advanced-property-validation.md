@@ -24,8 +24,6 @@ The Advanced Property Validation feature consists of the following components:
 - **validation_rule_dependencies**: Stores relationships between composite validation rules and their component rules
 - **validation_results**: Stores validation results for analytics purposes
 
-For detailed information about the database schema, see [Validation Database Schema](./validation-database-schema.md).
-
 ### Types
 
 The following validation rule types are supported:

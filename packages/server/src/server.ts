@@ -402,24 +402,9 @@ const startServer = async (): Promise<void> => {
     await dbService.initialize();
     logger.info('Database service initialized successfully');
 
-    // Apply database migrations
-    try {
-      // First apply the execute_sql function migration
-      const executeSqlMigration = 'create_execute_sql_function.sql';
-      await DatabaseMigration.applyMigration(executeSqlMigration);
-
-      // Then apply all other pending migrations
-      const appliedMigrations = await DatabaseMigration.applyPendingMigrations();
-      if (appliedMigrations.length > 0) {
-        logger.info(`Applied ${appliedMigrations.length} database migrations:`, { migrations: appliedMigrations });
-      } else {
-        logger.info('No pending database migrations to apply');
-      }
-    } catch (migrationError) {
-      logger.error('Failed to apply database migrations:', migrationError);
-      // Don't throw here - we can still start the server even if migrations fail
-      // Some features may be degraded but system can still function
-    }
+    // Database migrations are now handled by the Supabase migration system
+    // and are applied during deployment using the run-migrations.ts script
+    logger.info('Database migrations are handled by the Supabase migration system');
   } catch (error) {
     logger.error('Failed to initialize database service:', error);
     // Don't throw here - we can still start the server without DB
