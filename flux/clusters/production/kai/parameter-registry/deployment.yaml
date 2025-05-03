@@ -110,27 +110,6 @@ spec:
           claimName: parameter-registry-pvc
 ---
 apiVersion: v1
-kind: Service
-metadata:
-  name: parameter-registry
-  labels:
-    app: parameter-registry
-    component: ml-ops
-spec:
-  selector:
-    app: parameter-registry
-  ports:
-  - port: 80
-    targetPort: 5000
-    protocol: TCP
-    name: http
-  - port: 9100
-    targetPort: 9100
-    protocol: TCP
-    name: metrics
-  type: ClusterIP
----
-apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: parameter-registry-pvc
