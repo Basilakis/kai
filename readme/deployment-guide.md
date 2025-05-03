@@ -1778,17 +1778,9 @@ kubectl apply -n argo -f https://github.com/argoproj/argo-workflows/releases/dow
 kubectl apply -f kubernetes/argo-rbac.yaml
 ```
 
-#### Deploying with the Deployment Script
+#### Deploying with GitOps
 
-The KAI ML Platform includes a dedicated deployment script that handles all aspects of the deployment process:
-
-```bash
-# Basic deployment
-./kubernetes/deploy.sh
-
-# With custom parameters
-./kubernetes/deploy.sh --context=kai-ml-cluster --registry=your-registry.example.com --tag=v1.2.3
-```
+The KAI ML Platform uses a GitOps approach with Flux for deployments. The CI/CD pipeline updates image tags in the GitOps repository, and Flux automatically applies these changes to the Kubernetes cluster.
 
 The script supports several options:
 - `--context=<context>`: Kubernetes context to use
@@ -1833,37 +1825,24 @@ The deployment includes the following main components:
    - MultiModal Pattern Recognition template (`multimodal-pattern-recognition-template.yaml`)
    - Domain-Specific Networks template (`domain-specific-networks-template.yaml`)
 
-#### Enhanced Deployment Script
+#### GitOps-Based Deployment
 
-The `kubernetes/deploy.sh` script has been refactored to provide better environment support, backup capabilities, and rollback features:
-
-```bash
-# Deploy to staging environment
-./kubernetes/deploy.sh --context=kai-staging-cluster --registry=your-registry.example.com --tag=v1.2.3 --env=staging
-
-# Deploy to production environment
-./kubernetes/deploy.sh --context=kai-production-cluster --registry=your-registry.example.com --tag=v1.2.3 --env=production
-
-# Rollback to a previous deployment (e.g., after a failed deployment)
-./kubernetes/deploy.sh --context=kai-production-cluster --env=production --rollback=20250412153022
-```
-
-The enhanced script includes:
+The deployment process now uses a GitOps approach with Flux CD:
 
 1. **Environment-Specific Configuration**:
-   - Uses the `--env` parameter to specify target environment
-   - Applies environment-specific variables (replicas, resources, etc.)
-   - Supports different namespace per environment (e.g., `kai-system-staging` vs `kai-system`)
+   - Environment-specific configuration is stored in the GitOps repository
+   - Different environments (staging, production) have separate directories in the GitOps repository
+   - Each environment has its own set of Kubernetes manifests and Helm releases
 
-2. **Automatic Backup**:
-   - Creates timestamped backups of all resources before applying changes
-   - Stores backups in `./kubernetes/backups/<environment>/<timestamp>/`
-   - Maintains the 5 most recent backups for each environment
+2. **Automatic Deployment**:
+   - The CI/CD pipeline updates image tags in the GitOps repository
+   - Flux automatically detects changes and applies them to the cluster
+   - No manual deployment steps are required
 
 3. **Rollback Capability**:
-   - Provides the `--rollback` parameter to restore to a previous state
-   - Applies backed-up manifests in the correct order
-   - Provides confirmation and verification of rollback success
+   - Flux provides built-in rollback capabilities
+   - Rollbacks can be performed by reverting changes in the GitOps repository
+   - The history of all deployments is tracked in Git
 
 4. **Environment-Specific Directories**:
    - Checks for environment-specific configuration files first:
@@ -1915,22 +1894,32 @@ helm-charts/
         └── configmap.yaml  # ConfigMap template
 ```
 
-##### Deploying with Helm Charts
+##### Helm Charts with Flux
 
-A Helm-based deployment script `helm-charts/helm-deploy.sh` provides a user-friendly interface:
+The deployment uses Helm charts managed by Flux through HelmRelease resources:
 
-```bash
-# Deploy to staging environment
-./helm-charts/helm-deploy.sh --context=kai-staging-cluster --registry=your-registry.example.com --tag=v1.2.3 --env=staging --release=kai-staging
-
-# Deploy to production environment
-./helm-charts/helm-deploy.sh --context=kai-production-cluster --registry=your-registry.example.com --tag=v1.2.3 --env=production --release=kai-production
-
-# View release history
-./helm-charts/helm-deploy.sh --list-versions --release=kai-production
-
-# Rollback to a previous release version
-./helm-charts/helm-deploy.sh --context=kai-production-cluster --env=production --release=kai-production --rollback=3
+```yaml
+# Example HelmRelease in the GitOps repository
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: kai-api
+  namespace: flux-system
+spec:
+  interval: 5m
+  chart:
+    spec:
+      chart: ./helm-charts/kai-api
+      sourceRef:
+        kind: GitRepository
+        name: kai-platform
+        namespace: flux-system
+  values:
+    image:
+      repository: registry.example.com/kai/api
+      tag: v1.2.3
+    environment: production
+    replicas: 3
 ```
 
 ##### Resource Allocation by Environment

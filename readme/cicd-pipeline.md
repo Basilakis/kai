@@ -109,7 +109,7 @@ The CI/CD pipeline is now broken down into these reusable workflow files:
        inputs:
          node-version:
            type: string
-           default: '16'
+           default: '20'
          python-version:
            type: string
            default: '3.9'
@@ -189,7 +189,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # Steps to build and push the ML base image
-      
+
   # Then build all service images in parallel
   build-service-images:
     name: Build Service Images
@@ -228,7 +228,7 @@ jobs:
           path: gitops
           token: ${{ secrets.gitops_pat }}
           ref: staging
-          
+
       - name: Update image tags in HelmReleases
         # Steps to update and commit changes
 ```
@@ -355,16 +355,16 @@ The workflow implementation includes:
   run: |
     echo "Monitoring production deployment health for 5 minutes..."
     FAILURES=0
-    
+
     for i in {1..30}; do
       # Health check logic for critical services
       # ...
-      
+
       if [ $FAILURES -ge 5 ]; then
         echo "health_status=degraded" >> $GITHUB_OUTPUT
         break
       fi
-      
+
       sleep 10
     done
 
@@ -472,6 +472,93 @@ The Kubernetes deployment now uses Helm charts for improved maintainability and 
    - Comprehensive rollback including all related resources
    - Detailed history for auditing deployment changes
 
+## Environment Variables and Secrets
+
+The CI/CD pipeline uses a variety of environment variables and secrets to configure the deployment process. These are defined in the GitHub repository secrets and used across the workflows.
+
+### Environment Variables
+
+These environment variables are commonly used across workflows:
+
+| Variable | Description | Example Value |
+|----------|-------------|---------------|
+| `DEPLOY_ENV` | Target deployment environment | `staging` or `production` |
+| `TAG_SUFFIX` | Suffix for Docker image tags | `staging` or `latest` |
+| `VERCEL_ARGS` | Arguments for Vercel deployments | `--prod` |
+| `API_URL` | URL for the API service | `https://api.kai.example.com` |
+| `TEST_SCRIPT` | Script to run for tests | `test:e2e` |
+| `KUBE_CONTEXT` | Kubernetes context to use | `kubernetes-cluster1` |
+
+### Required Secrets
+
+The following secrets should be configured in your GitHub repository:
+
+#### Docker Registry
+- `DOCKER_USERNAME`: Username for Docker registry
+- `DOCKER_PASSWORD`: Password for Docker registry
+- `DOCKER_REGISTRY`: Docker registry URL
+
+#### Kubernetes
+- `DIGITALOCEAN_ACCESS_TOKEN`: Digital Ocean API token
+- `CLUSTER_NAME`: Base name for Kubernetes cluster (e.g., "kai")
+- `DO_REGION`: Digital Ocean region (e.g., "ams3")
+- `KUBE_CONFIG_DATA`: Base64-encoded Kubernetes config (if not using DO provisioning)
+
+#### Application
+- `DOMAIN_NAME`: Domain name for the application (e.g., "kai-platform.com")
+- `ADMIN_EMAIL`: Email for SSL certificate notifications
+- `MONGODB_URI`: MongoDB connection string
+- `JWT_SECRET`: Secret for JWT tokens
+- `OPENAI_API_KEY`: OpenAI API key
+- `REDIS_PASSWORD`: Password for Redis
+
+#### Supabase
+- `SUPABASE_URL_PRODUCTION`, `SUPABASE_KEY_PRODUCTION`, `SUPABASE_ANON_KEY_PRODUCTION`: Supabase production credentials
+- `SUPABASE_URL_STAGING`, `SUPABASE_KEY_STAGING`, `SUPABASE_ANON_KEY_STAGING`: Supabase staging credentials
+
+#### Payment Processing
+- `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`: Stripe payment credentials
+
+#### Frontend Deployment
+- `VERCEL_TOKEN`, `VERCEL_ORG_ID`: Vercel credentials
+- `VERCEL_PROJECT_ID_CLIENT`, `VERCEL_PROJECT_ID_ADMIN`: Vercel project IDs
+
+#### Notifications
+- `SLACK_WEBHOOK`: Slack notification webhook URL
+
+## Removed Legacy Workflows and Scripts
+
+As the CI/CD system has evolved, several workflows and scripts have been removed in favor of more modern approaches:
+
+### Removed Workflows
+
+- **workflow-env.yml**: This was a reference file that documented environment variables but never actually ran. This information has been moved to this documentation file.
+
+- **dependency-scanner.yml**: This workflow has been replaced by the more advanced `dependency-update-testing.yml` which includes additional features like creating PRs for safe updates and running targeted tests.
+
+### Removed Scripts
+
+The following scripts have been removed as they are no longer needed with the current GitOps approach:
+
+#### General Deployment Scripts
+
+- **helm-charts/helm-deploy.sh**: Removed in favor of Flux GitOps
+
+#### RAG System Deployment Scripts
+
+The following scripts for the RAG system deployment have been removed as they are now superseded by the GitHub Actions workflow in `.github/workflows/enhanced-rag.yml`:
+
+- **deploy-rag.sh**: Manual deployment script for the RAG system
+- **rag-deployment-pipeline.sh**: Orchestrates the RAG deployment process
+- **build-push-rag.sh**: Builds and pushes RAG Docker images
+- **verify-rag-deployment.sh**: Verifies the RAG deployment
+- **monitor-rag-performance.sh**: Monitors RAG system performance
+- **monitor-rag-api.sh**: Monitors RAG API performance
+
+### Current Deployment Approach
+
+All deployments are now handled through the GitOps approach with Flux. In case of emergency where the GitOps approach is not working, the deployment can be performed manually using kubectl and Helm commands directly, following the patterns established in the CI/CD workflows.
+
 ## Flux GitOps Integration
 
 The CI/CD pipeline now integrates with Flux CD, providing a GitOps approach to Kubernetes deployments:
@@ -507,7 +594,7 @@ update-gitops:
   steps:
     - name: Checkout GitOps repository
       # Checkout the GitOps repository...
-      
+
     - name: Update image tags in HelmReleases
       # Update image tags and commit changes...
 ```

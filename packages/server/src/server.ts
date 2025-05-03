@@ -132,6 +132,7 @@ import multilingualDictionariesRoutes from './routes/multilingual-dictionaries.r
 import classificationRoutes from './routes/classification.routes';
 import visualReferencesRoutes from './routes/visual-references.routes';
 import validationRoutes from './routes/validation.routes';
+import propertyTemplateRoutes from './routes/propertyTemplate.routes';
 import { scheduleSessionCleanup } from './controllers/agents.controller';
 
 // Import new feature routes
@@ -225,6 +226,7 @@ app.use('/api/multilingual', multilingualDictionariesRoutes);
 app.use('/api/classification', classificationRoutes);
 app.use('/api/visual-references', visualReferencesRoutes);
 app.use('/api/validation', validationRoutes);
+app.use('/api/property-templates', propertyTemplateRoutes);
 
 // Register new feature routes
 app.use('/api/auth', noCacheHeaders, authEnhancedRoutes); // Enhanced auth features

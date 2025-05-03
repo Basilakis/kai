@@ -11,10 +11,9 @@ import {
   getMaterialById,
   searchMaterials,
   findSimilarMaterials,
-  createMaterial,
-  updateMaterial,
   deleteMaterial
 } from '../models/material.model';
+import { materialService } from '../services/material/materialService';
 import { recognizeMaterial } from '@kai/ml';
 import { logger } from '../utils/logger';
 import multer from 'multer';
@@ -514,7 +513,11 @@ router.post(
       createdBy: req.user?.id
     };
 
-    const material = await createMaterial(materialData);
+    const material = await materialService.createMaterial(materialData, {
+      applyInheritance: true,
+      applyDefaults: true,
+      overrideExisting: false
+    });
 
     res.status(201).json({
       success: true,
@@ -544,10 +547,49 @@ router.put(
       throw new ApiError(404, `Material not found with id ${req.params.id}`);
     }
 
-    const updatedMaterial = await updateMaterial(materialId, {
+    const updatedMaterial = await materialService.updateMaterial(materialId, {
       ...req.body,
       updatedAt: new Date()
+    }, {
+      applyInheritance: true,
+      applyDefaults: true,
+      overrideExisting: false
     });
+
+    res.status(200).json({
+      success: true,
+      data: updatedMaterial
+    });
+  })
+);
+
+/**
+ * @route   POST /api/materials/:id/apply-inheritance
+ * @desc    Apply property inheritance to a material
+ * @access  Private (Admin, Manager)
+ */
+router.post(
+  '/:id/apply-inheritance',
+  authMiddleware,
+  authorizeRoles(['admin', 'manager']),
+  asyncHandler(async (req: Request, res: Response) => {
+    const materialId = req.params.id;
+    if (!materialId) {
+      throw new ApiError(400, 'Material ID is required');
+    }
+
+    const material = await getMaterialById(materialId);
+
+    if (!material) {
+      throw new ApiError(404, `Material not found with id ${req.params.id}`);
+    }
+
+    const options = {
+      applyDefaults: req.body.applyDefaults !== undefined ? req.body.applyDefaults : true,
+      overrideExisting: req.body.overrideExisting !== undefined ? req.body.overrideExisting : false
+    };
+
+    const updatedMaterial = await materialService.applyInheritance(materialId, options);
 
     res.status(200).json({
       success: true,

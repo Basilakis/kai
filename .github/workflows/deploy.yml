@@ -47,7 +47,7 @@ jobs:
     name: Build and Test
     uses: ./.github/workflows/build-test.yml
     with:
-      node-version: '16'
+      node-version: '20'
       python-version: '3.9'
 
   # Build Docker images - reusable workflow

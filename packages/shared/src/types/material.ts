@@ -1,9 +1,9 @@
 /**
  * Material Types
- * 
+ *
  * Type definitions for material data structures with Zod validation schemas
  * and extension mechanisms for package-specific customization.
- * 
+ *
  * This file serves as the central source of truth for all material-related types
  * across all packages. Each package can extend these base types through the
  * provided extension mechanisms.
@@ -141,7 +141,7 @@ export const TechnicalSpecsSchema = z.object({
   slipResistance: z.string().optional(),
   waterAbsorption: z.number().optional(),
   fireRating: z.string().optional(),
-  
+
   // Additional type-specific properties
   additionalProperties: z.record(z.string(), z.unknown()).optional()
 }).catchall(z.unknown());
@@ -161,16 +161,16 @@ export const MaterialCoreSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
   type: z.string(),
-  
+
   // Tracking
   createdBy: z.string().optional(),
   createdAt: z.date(),
   updatedAt: z.date(),
-  
+
   // Search and indexing
   vectorRepresentation: z.array(z.number()).optional(),
   tags: z.array(z.string()).optional(),
-  
+
   // Organization
   manufacturer: z.string().optional(),
   collectionId: z.string().optional(),
@@ -198,7 +198,12 @@ export const MaterialCoreSchema = z.object({
 
   // Metadata
   metadata: z.record(z.string(), z.unknown()).optional(),
-  metadataConfidence: z.record(z.string(), z.number()).optional()
+  metadataConfidence: z.record(z.string(), z.number()).optional(),
+
+  // Property inheritance
+  propertyTemplateIds: z.array(z.string()).optional(),
+  inheritedProperties: z.record(z.string(), z.unknown()).optional(),
+  propertyOverrides: z.record(z.string(), z.unknown()).optional()
 });
 
 // Core Material type - defined explicitly to avoid inference issues
@@ -229,6 +234,11 @@ export interface MaterialCore {
   images?: any[];
   metadata?: Record<string, unknown>;
   metadataConfidence?: Record<string, number>;
+
+  // Property inheritance
+  propertyTemplateIds?: string[];
+  inheritedProperties?: Record<string, unknown>;
+  propertyOverrides?: Record<string, unknown>;
 }
 
 /**
@@ -248,21 +258,21 @@ export interface Material extends MaterialCore {
 export interface MaterialWithRelations extends Material {
   // Creator
   creator?: User;
-  
+
   // Collection relationships
   collections?: Array<{
     id: string;
     name: string;
     type?: string;
   }>;
-  
+
   // Category
   category?: {
     id: string;
     name: string;
     path?: string;
   };
-  
+
   // Related materials
   relatedMaterials?: {
     similar?: string[];
@@ -309,22 +319,22 @@ export const MaterialMetadataSchema = z.object({
   extractionDate: z.date().optional(),
   confidence: z.number().min(0).max(1).optional(),
   processingTime: z.number().optional(),
-  
+
   // Versioning
   changeDescription: z.string().optional(),
   version: z.number().optional(),
-  
+
   // Additional metadata
   technicalNotes: z.string().optional(),
   certifications: z.array(z.string()).optional(),
-  
+
   // Sustainability information
   sustainability: z.object({
     score: z.number().min(0).max(100).optional(),
     attributes: z.array(z.string()).optional(),
     notes: z.string().optional()
   }).optional(),
-  
+
   // Pricing information
   pricing: z.object({
     currency: z.string().optional(),
@@ -333,7 +343,7 @@ export const MaterialMetadataSchema = z.object({
     priceRange: z.tuple([z.number(), z.number()]).optional(),
     discountAvailable: z.boolean().optional()
   }).optional(),
-  
+
   // Availability information
   availability: z.object({
     inStock: z.boolean().optional(),
@@ -355,7 +365,7 @@ export type MaterialMetadata = z.infer<typeof MaterialMetadataSchema>;
 export const SearchOptionsSchema = z.object({
   // Text search
   query: z.string().optional(),
-  
+
   // Filters
   materialType: z.union([
     z.string(),
@@ -373,26 +383,26 @@ export const SearchOptionsSchema = z.object({
     z.string(),
     z.array(z.string())
   ]).optional(),
-  
+
   // Dimension filters
   dimensions: z.object({
     min: z.record(z.string(), z.number()).optional(),
     max: z.record(z.string(), z.number()).optional()
   }).optional(),
-  
+
   // Tags
   tags: z.array(z.string()).optional(),
-  
+
   // Pagination
   limit: z.number().positive().optional().default(10),
   skip: z.number().nonnegative().optional().default(0),
-  
+
   // Sorting
   sort: z.object({
     field: z.string(),
     direction: z.enum(['asc', 'desc'])
   }).optional(),
-  
+
   // Advanced options
   includeVectors: z.boolean().optional(),
   confidence: z.number().min(0).max(1).optional(),
@@ -411,11 +421,11 @@ export const HybridSearchOptionsSchema = z.object({
   // Weight balance between text and vector search
   textWeight: z.number().min(0).max(1).optional().default(0.5),
   vectorWeight: z.number().min(0).max(1).optional().default(0.5),
-  
+
   // Limits and thresholds
   limit: z.number().positive().optional().default(10),
   threshold: z.number().min(0).max(1).optional().default(0.7),
-  
+
   // Filters
   materialType: z.union([
     z.string(),
@@ -430,17 +440,17 @@ export type HybridSearchOptions = z.infer<typeof HybridSearchOptionsSchema>;
 
 /**
  * Extension type for creating package-specific Material extensions
- * 
+ *
  * This is the primary mechanism for extending the base Material type
  * with package-specific fields and functionality.
- * 
+ *
  * @example
  * // In server package
  * export interface ServerMaterial extends ExtendMaterial<{
  *   databaseId: string;
  *   indexStatus: 'pending' | 'indexed' | 'failed';
  * }> {}
- * 
+ *
  * // In client package
  * export interface ClientMaterial extends ExtendMaterial<{
  *   thumbnailUrl: string;
@@ -455,7 +465,7 @@ export type ExtendMaterial<T extends Record<string, unknown>> = Material & T;
 
 /**
  * Server-specific Material base type
- * 
+ *
  * Contains common database-related fields for server-side material models.
  * Server package should extend this with additional fields as needed.
  */
@@ -463,15 +473,15 @@ export interface ServerMaterialBase extends Material {
   // MongoDB-specific fields
   _id?: string;
   __v?: number;
-  
+
   // Database-specific tracking
   indexedAt?: Date;
   lastRetrievedAt?: Date;
-  
+
   // Database statuses
   indexStatus?: 'pending' | 'indexed' | 'failed';
   processingStatus?: 'pending' | 'processing' | 'completed' | 'failed';
-  
+
   // Database metadata
   storageSize?: number;
   lastModifiedBy?: string;
@@ -479,7 +489,7 @@ export interface ServerMaterialBase extends Material {
 
 /**
  * Client-specific Material base type
- * 
+ *
  * Contains common UI-related fields for client-side material models.
  * Client package should extend this with additional fields as needed.
  */
@@ -488,20 +498,20 @@ export interface ClientMaterialBase extends Material {
   thumbnailUrl?: string;
   displayName?: string;
   displayImage?: string;
-  
+
   // UI state
   isFavorite?: boolean;
   isSelected?: boolean;
   isCompared?: boolean;
-  
+
   // Client-side caching
   lastViewedAt?: Date;
   cachedAt?: Date;
-  
+
   // Client-specific metadata
   localNotes?: string;
   userTags?: string[];
-  
+
   // UI presentation properties
   renderingSettings?: {
     quality: 'low' | 'medium' | 'high';
@@ -515,7 +525,7 @@ export interface ClientMaterialBase extends Material {
 
 /**
  * Validation function for material data
- * 
+ *
  * @param data Unknown data to validate against Material schema
  * @returns Result object with success flag, validated data or error
  */
@@ -534,7 +544,7 @@ export function validateMaterial(data: unknown): {
 
 /**
  * Validation function for material input data
- * 
+ *
  * @param data Unknown data to validate against MaterialInput schema
  * @returns Result object with success flag, validated data or error
  */
@@ -553,7 +563,7 @@ export function validateMaterialInput(data: unknown): {
 
 /**
  * Validation function for material update data
- * 
+ *
  * @param data Unknown data to validate against MaterialUpdate schema
  * @returns Result object with success flag, validated data or error
  */
@@ -572,16 +582,16 @@ export function validateMaterialUpdate(data: unknown): {
 
 /**
  * Type guard to check if an object is a Material
- * 
+ *
  * @param obj Object to check
  * @returns Type predicate indicating if the object is a Material
  */
 export function isMaterial(obj: unknown): obj is Material {
   if (!obj || typeof obj !== 'object') return false;
-  
+
   // Check for required Material properties
-  return 'id' in obj && 
-         'name' in obj && 
+  return 'id' in obj &&
+         'name' in obj &&
          'materialType' in obj &&
          'createdAt' in obj &&
          'updatedAt' in obj;
@@ -589,7 +599,7 @@ export function isMaterial(obj: unknown): obj is Material {
 
 /**
  * Convert a raw object to a Material
- * 
+ *
  * @param obj Raw object with material data
  * @returns Validated Material object or null if validation fails
  */
@@ -600,16 +610,16 @@ export function toMaterial(obj: unknown): Material | null {
 
 /**
  * Create a new Material with default values
- * 
+ *
  * @param input Partial material input data
  * @returns A new Material object with defaults for missing fields
  */
 export function createMaterial(input: Partial<MaterialInput>): Material {
   const now = new Date();
-  
+
   // Use type assertion to avoid property access errors
   const typedInput = input as any;
-  
+
   return {
     id: typedInput.id ?? crypto.randomUUID?.() ?? String(Date.now()),
     name: typedInput.name ?? 'Untitled Material',
