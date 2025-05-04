@@ -31,12 +31,15 @@ global:
   environment: "staging"  # Default environment
   namespace: "kai-system-staging"
   registry:
-    url: "registry.example.com"
+    url: "ghcr.io"
     username: ""
     password: ""
+  repository: "kai"  # GitHub repository name or organization/repository
   image:
     tag: "latest"
     pullPolicy: IfNotPresent
+  imagePullSecrets:
+    - name: github-container-registry
   labels:
     app: "kai-platform"
     environment: "staging"

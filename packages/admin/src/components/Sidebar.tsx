@@ -42,6 +42,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, closeSidebar }) => {
     { name: 'Image Recognition', href: '/image-recognition', icon: PhotographIcon },
     { name: 'Knowledge Base', href: '/knowledge-base', icon: DatabaseIcon },
     { name: 'Material Management', href: '/materials', icon: CubeIcon },
+    { name: 'Metadata Fields', href: '/metadata-fields', icon: DocumentTextIcon },
     { name: 'Visual Reference Library', href: '/visual-reference-library', icon: PhotographIcon },
     { name: 'Validation Rules', href: '/validation-rules', icon: DocumentTextIcon },
     { name: 'Models', href: '/models', icon: DatabaseIcon },

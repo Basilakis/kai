@@ -15,43 +15,59 @@ The Relationship-Aware Model Training and Search Enhancement features use the kn
 
 The Relationship-Aware Model Training feature consists of the following components:
 
-#### Relationship Feature Extractor
+#### Relationship-Aware Training Service
 
-The `relationshipFeatureExtractor` is responsible for:
+The `relationshipAwareTrainingService` is responsible for:
 
 - Extracting features from property relationships for AI model training
 - Generating training data with relationship-based features
-- Enhancing model predictions with relationship data
+- Training models with relationship-enhanced features
+- Evaluating model performance and relationship contribution
+- Managing training jobs and model registry
 
-#### Property Prediction Service
+#### Relationship Feature Extractor
 
-The `propertyPredictionService` is responsible for:
+The service includes feature extraction capabilities:
 
-- Training models to predict property values based on other properties
-- Using TensorFlow.js for model creation and training
-- Integrating relationship features into the prediction process
+- Extracting direct and indirect relationships from the Property Relationship Graph
+- Weighting relationships based on strength and relevance
+- Converting relationship data into model features
+- Handling different relationship types appropriately
+
+#### Model Training and Evaluation
+
+The service handles model training and evaluation:
+
+- Creating and training models with relationship features
+- Evaluating model performance with and without relationship features
+- Calculating feature importance and relationship contribution
+- Providing detailed performance metrics and insights
 
 #### API Endpoints
 
-The following API endpoints are available for property prediction:
+The following API endpoints are available for relationship-aware training:
 
-- `POST /api/ai/property-prediction/train`: Train a model to predict a property
-- `POST /api/ai/property-prediction/predict`: Predict a property value using a trained model
+- `POST /api/ai/relationship-aware-training/train`: Train a relationship-aware model
+- `GET /api/ai/relationship-aware-training/job/:jobId`: Get training job status
 
 ### Key Features
 
 1. **Relationship-Aware Feature Engineering**: The system extracts features from the Property Relationship Graph to enhance model training.
-2. **Synthetic Training Data Generation**: The system can generate synthetic training data based on relationship knowledge.
-3. **Enhanced Prediction Confidence**: Predictions are enhanced with relationship data to improve confidence.
-4. **Model Persistence and Management**: Trained models are stored and managed for future use.
+2. **Indirect Relationship Discovery**: The system can discover and utilize multi-hop relationships between properties.
+3. **Relationship Strength Weighting**: Relationships are weighted based on their strength and relevance to the target property.
+4. **Relationship Type Handling**: Different relationship types (correlation, dependency, compatibility, etc.) are handled appropriately.
+5. **Performance Comparison**: The system compares model performance with and without relationship features.
+6. **Feature Importance Analysis**: The system analyzes and visualizes the importance of different features, including relationship features.
+7. **Relationship Contribution Metrics**: The system provides metrics on how much relationships contribute to model performance.
+8. **Model Registry and Management**: Trained models are stored, versioned, and managed for future use.
 
 ### Usage Examples
 
-#### Training a Model
+#### Training a Relationship-Aware Model
 
 ```typescript
-// Train a model to predict finish based on other properties
-const modelId = await fetch('/api/ai/property-prediction/train', {
+// Train a relationship-aware model to predict finish based on other properties
+const result = await fetch('/api/ai/relationship-aware-training/train', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
@@ -61,41 +77,85 @@ const modelId = await fetch('/api/ai/property-prediction/train', {
     materialType: 'tile',
     targetProperty: 'finish',
     options: {
-      sampleSize: 1000,
+      includeRelationships: true,
+      relationshipTypes: ['correlates_with', 'depends_on', 'compatibility'],
+      relationshipStrengthThreshold: 0.3,
+      maxRelationshipDepth: 2,
+      useTransferLearning: true,
       epochs: 50,
       batchSize: 32,
+      learningRate: 0.001,
       validationSplit: 0.2
     }
   })
 });
+
+// Get training result
+const data = await result.json();
+console.log('Model ID:', data.result.modelId);
+console.log('Accuracy:', data.result.accuracy);
+console.log('Validation Accuracy:', data.result.validationAccuracy);
+console.log('Baseline Accuracy:', data.result.baselineAccuracy);
+console.log('Improvement:', data.result.improvementPercentage + '%');
 ```
 
-#### Predicting a Property Value
+#### Checking Training Job Status
 
 ```typescript
-// Predict finish based on other properties
-const prediction = await fetch('/api/ai/property-prediction/predict', {
-  method: 'POST',
+// Check training job status
+const status = await fetch(`/api/ai/relationship-aware-training/job/${jobId}`, {
+  method: 'GET',
   headers: {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${token}`
-  },
-  body: JSON.stringify({
-    modelId: 'model-id',
-    properties: {
-      material: 'porcelain',
-      color: 'white',
-      rRating: 'R11'
-    }
-  })
+  }
 });
 
-// Display predictions
-const result = await prediction.json();
-console.log('Predicted finishes:');
-result.predictions.forEach(pred => {
-  console.log(`- ${pred.value} (probability: ${pred.probability.toFixed(2)})`);
-});
+// Display job status
+const data = await status.json();
+console.log('Job Status:', data.status.status);
+console.log('Progress:', data.status.progress * 100 + '%');
+console.log('Created At:', new Date(data.status.createdAt).toLocaleString());
+console.log('Updated At:', new Date(data.status.updatedAt).toLocaleString());
+```
+
+#### Using the Relationship-Aware Training Form
+
+```tsx
+import { RelationshipAwareTrainingForm } from '../components/RelationshipAwareTraining';
+
+// In your component
+const handleTrainingComplete = (result) => {
+  console.log('Training completed:', result);
+  // Do something with the result
+};
+
+// In your render method
+return (
+  <RelationshipAwareTrainingForm onTrainingComplete={handleTrainingComplete} />
+);
+```
+
+#### Displaying Model Results
+
+```tsx
+import { RelationshipAwareModelResults } from '../components/RelationshipAwareTraining';
+
+// In your component
+const [modelResult, setModelResult] = useState(null);
+
+// After training is complete
+const handleTrainingComplete = (result) => {
+  setModelResult(result);
+};
+
+// In your render method
+return (
+  <>
+    <RelationshipAwareTrainingForm onTrainingComplete={handleTrainingComplete} />
+    {modelResult && <RelationshipAwareModelResults result={modelResult} />}
+  </>
+);
 ```
 
 ## Relationship-Enhanced Search
@@ -245,19 +305,29 @@ The Relationship-Enhanced Search feature can be integrated with the search inter
 
 These features provide several benefits:
 
-1. **Smarter Predictions**: AI models can make better predictions by leveraging relationship data
-2. **More Relevant Search**: Search results are more relevant due to relationship-based scoring
-3. **Better Recommendations**: Users receive better recommendations based on relationship data
-4. **Enhanced User Experience**: Users can find what they're looking for more easily
+1. **Improved AI Model Accuracy**: AI models can make better predictions by leveraging relationship data, with measurable improvements in accuracy.
+2. **Enhanced Feature Engineering**: Relationship data provides valuable features that might not be captured in the raw material properties.
+3. **Deeper Insights**: The system provides insights into which relationships are most important for predicting different properties.
+4. **More Relevant Search**: Search results are more relevant due to relationship-based scoring and query expansion.
+5. **Better Recommendations**: Users receive better recommendations based on relationship context and property correlations.
+6. **Enhanced User Experience**: Users can find what they're looking for more easily and discover related materials.
+7. **Continuous Improvement**: The feedback loop between AI models and relationship data creates a virtuous cycle of improvement.
+8. **Data Quality Enhancement**: Anomaly detection helps identify data quality issues and inconsistencies.
 
 ## Future Enhancements
 
 Potential future enhancements to these features:
 
-1. **Multi-Property Prediction**: Predict multiple properties simultaneously
-2. **Personalized Search**: Incorporate user preferences into relationship-based search
-3. **Feedback Loop**: Use user feedback to improve relationship data
-4. **Advanced Visualization**: Visualize relationship-based search results
+1. **Multi-Property Prediction**: Predict multiple properties simultaneously using a single model
+2. **Automated Relationship Discovery**: Automatically discover new relationships from data patterns
+3. **Real-time Model Updates**: Update models in real-time as new relationship data becomes available
+4. **Personalized Search**: Incorporate user preferences and behavior into relationship-based search
+5. **User Feedback Integration**: Use explicit user feedback to improve relationship data and model training
+6. **Advanced Visualization**: Provide more advanced visualizations of relationship impacts and model performance
+7. **Multi-Modal Relationship Learning**: Incorporate image and text data into relationship learning
+8. **Cross-Domain Relationships**: Extend relationship graph to include cross-domain relationships
+9. **Explainable AI**: Provide more detailed explanations of how relationships influence predictions
+10. **Distributed Training**: Support distributed training for larger models and datasets
 
 ## Conclusion
 

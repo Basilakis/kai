@@ -558,7 +558,7 @@ The GitHub Actions workflow seamlessly integrates with the Helm deployment syste
   run: |
     ./helm-charts/helm-deploy.sh \
       --context=${{ env.KUBE_CONTEXT }} \
-      --registry=${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }} \
+      --registry=ghcr.io/${{ github.repository }} \
       --tag=${{ github.sha }} \
       --env=${{ env.DEPLOY_ENV }} \
       --release=kai-${{ env.DEPLOY_ENV }}

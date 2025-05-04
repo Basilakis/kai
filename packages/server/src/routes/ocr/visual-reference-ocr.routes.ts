@@ -1,6 +1,6 @@
 /**
  * Visual Reference OCR Routes
- * 
+ *
  * API routes for enhancing OCR extraction using the Visual Reference Library
  */
 
@@ -23,21 +23,22 @@ router.post(
   asyncHandler(async (req, res) => {
     try {
       const { propertyName, extractedValue, imageUrl, materialType } = req.body;
-      
+
       if (!propertyName || !extractedValue || !imageUrl || !materialType) {
         return res.status(400).json({
           success: false,
           error: 'Missing required fields: propertyName, extractedValue, imageUrl, materialType'
         });
       }
-      
+
       const result = await visualReferenceOcrService.enhanceExtraction(
         propertyName,
         extractedValue,
         imageUrl,
-        materialType
+        materialType,
+        req.user.id
       );
-      
+
       res.json({
         success: true,
         result
@@ -63,20 +64,21 @@ router.post(
   asyncHandler(async (req, res) => {
     try {
       const { extractedProperties, imageUrl, materialType } = req.body;
-      
+
       if (!extractedProperties || !imageUrl || !materialType) {
         return res.status(400).json({
           success: false,
           error: 'Missing required fields: extractedProperties, imageUrl, materialType'
         });
       }
-      
+
       const results = await visualReferenceOcrService.enhanceMultipleExtractions(
         extractedProperties,
         imageUrl,
-        materialType
+        materialType,
+        req.user.id
       );
-      
+
       res.json({
         success: true,
         results
@@ -102,12 +104,12 @@ router.get(
   asyncHandler(async (req, res) => {
     try {
       const { propertyName, materialType } = req.params;
-      
+
       const patterns = await visualReferenceOcrService.getExtractionPatterns(
         propertyName,
         materialType
       );
-      
+
       res.json({
         success: true,
         patterns

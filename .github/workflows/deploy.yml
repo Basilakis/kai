@@ -23,7 +23,7 @@ on:
 # Environment variables are loaded from the .env file in the root directory
 # For sensitive information, use GitHub Secrets instead
 # The following secrets are expected to be configured in the repository:
-# - DOCKER_USERNAME, DOCKER_PASSWORD, DOCKER_REGISTRY: Docker registry credentials
+# - GITHUB_TOKEN: GitHub token for GitHub Container Registry
 # - DIGITALOCEAN_ACCESS_TOKEN: Digital Ocean API token
 # - CLUSTER_NAME: Base name for Kubernetes cluster (e.g., "kai")
 # - DO_REGION: Digital Ocean region (e.g., "ams3")
@@ -63,9 +63,8 @@ jobs:
       environment: ${{ github.ref == 'refs/heads/main' || github.event.inputs.environment == 'production' && 'production' || 'staging' }}
       tag-suffix: ${{ github.ref == 'refs/heads/main' || github.event.inputs.environment == 'production' && 'latest' || 'staging' }}
     secrets:
-      docker_username: ${{ secrets.DOCKER_USERNAME }}
-      docker_password: ${{ secrets.DOCKER_PASSWORD }}
-      docker_registry: ${{ secrets.DOCKER_REGISTRY }}
+      github_token: ${{ secrets.GITHUB_TOKEN }}
+      github_repository: ${{ github.repository }}
 
   # Provision infrastructure if needed
   provision-infrastructure-staging:
@@ -156,8 +155,8 @@ jobs:
       domain: 'staging.${{ secrets.DOMAIN_NAME }}'
       sha: ${{ github.sha }}
     secrets:
-      docker_registry: ${{ secrets.DOCKER_REGISTRY }}
-      docker_username: ${{ secrets.DOCKER_USERNAME }}
+      github_token: ${{ secrets.GITHUB_TOKEN }}
+      github_repository: ${{ secrets.GITHUB_REPOSITORY || github.repository }}
       slack_webhook: ${{ secrets.SLACK_WEBHOOK }}
 
   deploy-application-production:
@@ -172,8 +171,8 @@ jobs:
       domain: ${{ secrets.DOMAIN_NAME }}
       sha: ${{ github.sha }}
     secrets:
-      docker_registry: ${{ secrets.DOCKER_REGISTRY }}
-      docker_username: ${{ secrets.DOCKER_USERNAME }}
+      github_token: ${{ secrets.GITHUB_TOKEN }}
+      github_repository: ${{ secrets.GITHUB_REPOSITORY || github.repository }}
       slack_webhook: ${{ secrets.SLACK_WEBHOOK }}
 
   # Deploy frontend to Vercel

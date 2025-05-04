@@ -13,12 +13,10 @@ on:
         type: string
         default: ''
     secrets:
-      docker_username:
+      github_token:
         required: true
-      docker_password:
-        required: true
-      docker_registry:
-        required: true
+      github_repository:
+        required: false
 
 jobs:
   # First build the ML base image that other images depend on
@@ -36,12 +34,19 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
-      - name: Login to Container Registry
+      - name: Login to GitHub Container Registry
         uses: docker/login-action@v2
         with:
-          username: ${{ secrets.docker_username }}
-          password: ${{ secrets.docker_password }}
-          registry: ${{ secrets.docker_registry }}
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.github_token }}
+
+      - name: Prepare tags
+        id: prep
+        run: |
+          REPO="${{ secrets.github_repository || github.repository }}"
+          TAGS="ghcr.io/$REPO/kai-ml-base:${{ github.sha }},ghcr.io/$REPO/kai-ml-base:${{ env.TAG_SUFFIX }}"
+          echo "tags=$TAGS" >> $GITHUB_OUTPUT
 
       - name: Build and push ML base image
         uses: docker/build-push-action@v4
@@ -49,11 +54,9 @@ jobs:
           context: .
           file: ./Dockerfile.ml-base
           push: true
-          tags: |
-            ${{ secrets.docker_registry }}/${{ secrets.docker_username }}/kai-ml-base:${{ github.sha }}
-            ${{ secrets.docker_registry }}/${{ secrets.docker_username }}/kai-ml-base:${{ env.TAG_SUFFIX }}
-          cache-from: type=registry,ref=${{ secrets.docker_registry }}/${{ secrets.docker_username }}/kai-ml-base:${{ env.TAG_SUFFIX }}-cache
-          cache-to: type=registry,ref=${{ secrets.docker_registry }}/${{ secrets.docker_username }}/kai-ml-base:${{ env.TAG_SUFFIX }}-cache,mode=max
+          tags: ${{ steps.prep.outputs.tags }}
+          cache-from: type=registry,ref=ghcr.io/${{ secrets.github_repository || github.repository }}/kai-ml-base:${{ env.TAG_SUFFIX }}-cache
+          cache-to: type=registry,ref=ghcr.io/${{ secrets.github_repository || github.repository }}/kai-ml-base:${{ env.TAG_SUFFIX }}-cache,mode=max
           build-args: |
             BUILDKIT_INLINE_CACHE=1
             ENVIRONMENT=${{ env.DEPLOY_ENV }}
@@ -73,12 +76,19 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
-      - name: Login to Container Registry
+      - name: Login to GitHub Container Registry
         uses: docker/login-action@v2
         with:
-          username: ${{ secrets.docker_username }}
-          password: ${{ secrets.docker_password }}
-          registry: ${{ secrets.docker_registry }}
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.github_token }}
+
+      - name: Prepare tags
+        id: prep
+        run: |
+          REPO="${{ secrets.github_repository || github.repository }}"
+          TAGS="ghcr.io/$REPO/kai-node-base:${{ github.sha }},ghcr.io/$REPO/kai-node-base:${{ env.TAG_SUFFIX }}"
+          echo "tags=$TAGS" >> $GITHUB_OUTPUT
 
       - name: Build and push Node.js base image
         uses: docker/build-push-action@v4
@@ -86,11 +96,9 @@ jobs:
           context: .
           file: ./Dockerfile.node-base
           push: true
-          tags: |
-            ${{ secrets.docker_registry }}/${{ secrets.docker_username }}/kai-node-base:${{ github.sha }}
-            ${{ secrets.docker_registry }}/${{ secrets.docker_username }}/kai-node-base:${{ env.TAG_SUFFIX }}
-          cache-from: type=registry,ref=${{ secrets.docker_registry }}/${{ secrets.docker_username }}/kai-node-base:${{ env.TAG_SUFFIX }}-cache
-          cache-to: type=registry,ref=${{ secrets.docker_registry }}/${{ secrets.docker_username }}/kai-node-base:${{ env.TAG_SUFFIX }}-cache,mode=max
+          tags: ${{ steps.prep.outputs.tags }}
+          cache-from: type=registry,ref=ghcr.io/${{ secrets.github_repository || github.repository }}/kai-node-base:${{ env.TAG_SUFFIX }}-cache
+          cache-to: type=registry,ref=ghcr.io/${{ secrets.github_repository || github.repository }}/kai-node-base:${{ env.TAG_SUFFIX }}-cache,mode=max
           build-args: |
             BUILDKIT_INLINE_CACHE=1
             ENVIRONMENT=${{ env.DEPLOY_ENV }}
@@ -110,12 +118,19 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
-      - name: Login to Container Registry
+      - name: Login to GitHub Container Registry
         uses: docker/login-action@v2
         with:
-          username: ${{ secrets.docker_username }}
-          password: ${{ secrets.docker_password }}
-          registry: ${{ secrets.docker_registry }}
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.github_token }}
+
+      - name: Prepare tags
+        id: prep
+        run: |
+          REPO="${{ secrets.github_repository || github.repository }}"
+          TAGS="ghcr.io/$REPO/kai-python-base:${{ github.sha }},ghcr.io/$REPO/kai-python-base:${{ env.TAG_SUFFIX }}"
+          echo "tags=$TAGS" >> $GITHUB_OUTPUT
 
       - name: Build and push Python base image
         uses: docker/build-push-action@v4
@@ -123,11 +138,9 @@ jobs:
           context: .
           file: ./Dockerfile.python-base
           push: true
-          tags: |
-            ${{ secrets.docker_registry }}/${{ secrets.docker_username }}/kai-python-base:${{ github.sha }}
-            ${{ secrets.docker_registry }}/${{ secrets.docker_username }}/kai-python-base:${{ env.TAG_SUFFIX }}
-          cache-from: type=registry,ref=${{ secrets.docker_registry }}/${{ secrets.docker_username }}/kai-python-base:${{ env.TAG_SUFFIX }}-cache
-          cache-to: type=registry,ref=${{ secrets.docker_registry }}/${{ secrets.docker_username }}/kai-python-base:${{ env.TAG_SUFFIX }}-cache,mode=max
+          tags: ${{ steps.prep.outputs.tags }}
+          cache-from: type=registry,ref=ghcr.io/${{ secrets.github_repository || github.repository }}/kai-python-base:${{ env.TAG_SUFFIX }}-cache
+          cache-to: type=registry,ref=ghcr.io/${{ secrets.github_repository || github.repository }}/kai-python-base:${{ env.TAG_SUFFIX }}-cache,mode=max
           build-args: |
             BUILDKIT_INLINE_CACHE=1
             ENVIRONMENT=${{ env.DEPLOY_ENV }}
@@ -186,12 +199,19 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
-      - name: Login to Container Registry
+      - name: Login to GitHub Container Registry
         uses: docker/login-action@v2
         with:
-          username: ${{ secrets.docker_username }}
-          password: ${{ secrets.docker_password }}
-          registry: ${{ secrets.docker_registry }}
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.github_token }}
+
+      - name: Prepare tags
+        id: prep
+        run: |
+          REPO="${{ secrets.github_repository || github.repository }}"
+          TAGS="ghcr.io/$REPO/kai-${{ matrix.name }}:${{ github.sha }},ghcr.io/$REPO/kai-${{ matrix.name }}:${{ env.TAG_SUFFIX }}"
+          echo "tags=$TAGS" >> $GITHUB_OUTPUT
 
       - name: Build and push service image
         uses: docker/build-push-action@v4
@@ -199,14 +219,12 @@ jobs:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
           push: true
-          tags: |
-            ${{ secrets.docker_registry }}/${{ secrets.docker_username }}/kai-${{ matrix.name }}:${{ github.sha }}
-            ${{ secrets.docker_registry }}/${{ secrets.docker_username }}/kai-${{ matrix.name }}:${{ env.TAG_SUFFIX }}
-          cache-from: type=registry,ref=${{ secrets.docker_registry }}/${{ secrets.docker_username }}/kai-${{ matrix.name }}:${{ env.TAG_SUFFIX }}-cache
-          cache-to: type=registry,ref=${{ secrets.docker_registry }}/${{ secrets.docker_username }}/kai-${{ matrix.name }}:${{ env.TAG_SUFFIX }}-cache,mode=max
+          tags: ${{ steps.prep.outputs.tags }}
+          cache-from: type=registry,ref=ghcr.io/${{ secrets.github_repository || github.repository }}/kai-${{ matrix.name }}:${{ env.TAG_SUFFIX }}-cache
+          cache-to: type=registry,ref=ghcr.io/${{ secrets.github_repository || github.repository }}/kai-${{ matrix.name }}:${{ env.TAG_SUFFIX }}-cache,mode=max
           build-args: |
             BUILDKIT_INLINE_CACHE=1
             ENVIRONMENT=${{ env.DEPLOY_ENV }}
-            ML_BASE_IMAGE=${{ secrets.docker_registry }}/${{ secrets.docker_username }}/kai-ml-base:${{ env.TAG_SUFFIX }}
-            NODE_BASE_IMAGE=${{ secrets.docker_registry }}/${{ secrets.docker_username }}/kai-node-base:${{ env.TAG_SUFFIX }}
-            PYTHON_BASE_IMAGE=${{ secrets.docker_registry }}/${{ secrets.docker_username }}/kai-python-base:${{ env.TAG_SUFFIX }}
+            ML_BASE_IMAGE=ghcr.io/${{ secrets.github_repository || github.repository }}/kai-ml-base:${{ env.TAG_SUFFIX }}
+            NODE_BASE_IMAGE=ghcr.io/${{ secrets.github_repository || github.repository }}/kai-node-base:${{ env.TAG_SUFFIX }}
+            PYTHON_BASE_IMAGE=ghcr.io/${{ secrets.github_repository || github.repository }}/kai-python-base:${{ env.TAG_SUFFIX }}

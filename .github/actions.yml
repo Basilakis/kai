@@ -14,9 +14,6 @@ runtime:
 
   # Repository secrets
   secrets:
-    DOCKER_USERNAME: username
-    DOCKER_PASSWORD: password
-    DOCKER_REGISTRY: registry.example.com
     KUBE_CONFIG_DATA: base64-encoded-kubeconfig
     SUPABASE_URL_PRODUCTION: https://production.supabase.co
     SUPABASE_KEY_PRODUCTION: production-key

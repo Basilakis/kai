@@ -19,10 +19,8 @@ These variables are set during workflow execution:
 
 These secrets need to be configured in the repository settings:
 
-### Docker Registry Credentials
-- `DOCKER_USERNAME`: Docker registry username
-- `DOCKER_PASSWORD`: Docker registry password
-- `DOCKER_REGISTRY`: Docker registry URL
+### GitHub Container Registry
+- `GITHUB_TOKEN`: GitHub token with `write:packages` permission (automatically provided by GitHub Actions)
 
 ### Kubernetes Configuration
 - `KUBE_CONFIG_DATA`: Base64-encoded Kubernetes config

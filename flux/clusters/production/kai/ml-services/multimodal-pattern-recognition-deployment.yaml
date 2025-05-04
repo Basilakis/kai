@@ -28,7 +28,7 @@ spec:
     spec:
       containers:
       - name: multimodal-pattern-recognition
-        image: ${REGISTRY_URL}/kai/multimodal-pattern-recognition:latest
+        image: ghcr.io/basilakis/kai/multimodal-pattern-recognition:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 8000
@@ -196,7 +196,7 @@ data:
             "name": "clip-vit-base-patch32",
             "description": "CLIP Vision Encoder",
             "minGPUMemory": "8GB",
-            "recommendedGPUMemory": "16GB" 
+            "recommendedGPUMemory": "16GB"
           }
         ],
         "text": [

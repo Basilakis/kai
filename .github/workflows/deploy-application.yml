@@ -17,9 +17,13 @@ on:
         type: string
     secrets:
       docker_registry:
-        required: true
+        required: false
       docker_username:
+        required: false
+      github_token:
         required: true
+      github_repository:
+        required: false
       slack_webhook:
         required: false
 
@@ -30,23 +34,53 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-      
+
       - name: Set up Helm
         uses: azure/setup-helm@v3
         with:
           version: 'v3.10.0'
-      
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Create GitHub Container Registry secret
+        run: |
+          # Check if secret already exists
+          if ! kubectl get secret github-container-registry -n kai-system &>/dev/null; then
+            # Create the secret
+            kubectl create secret docker-registry github-container-registry \
+              --docker-server=ghcr.io \
+              --docker-username=${{ github.repository_owner }} \
+              --docker-password=${{ secrets.github_token }} \
+              --docker-email=${{ github.actor }}@users.noreply.github.com \
+              -n kai-system
+            echo "Created GitHub Container Registry secret"
+          else
+            # Update the secret
+            kubectl create secret docker-registry github-container-registry \
+              --docker-server=ghcr.io \
+              --docker-username=${{ github.repository_owner }} \
+              --docker-password=${{ secrets.github_token }} \
+              --docker-email=${{ github.actor }}@users.noreply.github.com \
+              -n kai-system \
+              --dry-run=client -o yaml | kubectl apply -f -
+            echo "Updated GitHub Container Registry secret"
+          fi
+
       - name: Deploy with Helm
         run: |
           # Update Helm repos
           helm repo update
-          
+
           # Create values override file
           cat > values-override.yaml << EOF
           global:
             environment: ${{ inputs.environment }}
-            imageRegistry: ${{ secrets.docker_registry }}/${{ secrets.docker_username }}
-            imageTag: ${{ inputs.sha }}
+            registry:
+              url: "ghcr.io"
+            repository: ${{ secrets.github_repository || github.repository }}
+            image:
+              tag: ${{ inputs.sha }}
             domain: ${{ inputs.domain }}
             ingress:
               enabled: true
@@ -63,28 +97,28 @@ jobs:
                   hosts:
                     - api.${{ inputs.domain }}
           EOF
-          
+
           # Deploy using Helm
           helm upgrade --install kai ./helm-charts/kai \
             --namespace kai-system \
             --values ./helm-charts/kai/values-${{ inputs.environment }}.yaml \
             --values values-override.yaml
-      
+
       - name: Verify deployment
         run: |
           # Wait for deployments to be ready
           kubectl -n kai-system rollout status deployment/api-server
           kubectl -n kai-system rollout status deployment/coordinator-service
-          
+
           # Check if services are running
           kubectl -n kai-system get services
-          
+
           # Check if ingress is configured
           kubectl -n kai-system get ingress
-          
+
           # Check if certificates are issued
           kubectl -n kai-system get certificates
-      
+
       - name: Run database migrations
         run: |
           # Create a temporary pod to run migrations
@@ -99,8 +133,10 @@ jobs:
               spec:
                 containers:
                 - name: migrations
-                  image: ${{ secrets.docker_registry }}/${{ secrets.docker_username }}/kai-api:${{ inputs.sha }}
+                  image: ghcr.io/${{ secrets.github_repository || github.repository }}/kai-api:${{ inputs.sha }}
                   command: ["node", "scripts/run-migrations.js"]
+                imagePullSecrets:
+                - name: github-container-registry
                   env:
                   - name: MONGODB_URI
                     valueFrom:
@@ -110,12 +146,12 @@ jobs:
                 restartPolicy: Never
             backoffLimit: 4
           EOF
-          
+
           kubectl apply -f migration-job.yaml
-          
+
           # Wait for migrations to complete
           kubectl -n kai-system wait --for=condition=complete job/database-migrations --timeout=120s
-      
+
       - name: Notify deployment status
         if: secrets.slack_webhook != ''
         uses: rtCamp/action-slack-notify@v2

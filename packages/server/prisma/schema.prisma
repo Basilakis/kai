@@ -1,0 +1,48 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Visual Property Reference models
+model VisualPropertyReference {
+  id             String                      @id @default(uuid()) @db.Uuid
+  propertyName   String
+  materialType   String
+  displayName    String?
+  description    String?
+  previewImage   String?
+  modelPath      String?
+  modelAccuracy  Float?
+  lastTrainedAt  DateTime?
+  metadata       Json?
+  createdAt      DateTime                    @default(now())
+  updatedAt      DateTime                    @default(now())
+  references     VisualPropertyReferenceItem[]
+
+  @@unique([propertyName, materialType])
+  @@map("VisualPropertyReference")
+}
+
+model VisualPropertyReferenceItem {
+  id           String                 @id @default(uuid()) @db.Uuid
+  referenceId  String                 @db.Uuid
+  imagePath    String
+  propertyValue String
+  metadata     Json?
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @default(now())
+  reference    VisualPropertyReference @relation(fields: [referenceId], references: [id], onDelete: Cascade)
+
+  @@index([referenceId])
+  @@index([propertyValue])
+  @@map("VisualPropertyReferenceItem")
+}
+
+// Add other models as needed

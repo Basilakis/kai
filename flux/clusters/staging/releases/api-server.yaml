@@ -20,7 +20,7 @@ spec:
   values:
     # Image tag will be updated by CI/CD
     image:
-      repository: "{{ .Values.global.registry.url }}/{{ .Values.global.registry.username }}/kai-api-server" # Construct full image path
+      repository: "ghcr.io/basilakis/kai/api-server" # Use GitHub Container Registry
       # tag: is set by CI/CD pipeline in this file
 
     # Staging specific overrides (can be empty if defaults are fine)

@@ -1176,6 +1176,132 @@ class MCPClientService {
   }
 
   /**
+   * Compare images using MCP
+   * @param userId User ID
+   * @param imagePath Path to the image being compared
+   * @param referenceUrls URLs of reference images to compare with
+   * @returns Comparison results with similarity scores
+   */
+  public async compareImages(
+    userId: string,
+    imagePath: string,
+    referenceUrls: string[]
+  ): Promise<{
+    comparisons: Array<{
+      referenceUrl: string;
+      similarity: number;
+    }>;
+  }> {
+    // Check if MCP is available
+    const mcpAvailable = await this.isMCPAvailable();
+    if (!mcpAvailable) {
+      throw new Error('MCP server is not available');
+    }
+
+    // Check if user has enough credits
+    const hasEnoughCredits = await creditService.hasEnoughCreditsForService(
+      userId,
+      MCPServiceKey.IMAGE_ANALYSIS,
+      1 // 1 credit per comparison batch
+    );
+
+    if (!hasEnoughCredits) {
+      throw new Error('Insufficient credits');
+    }
+
+    try {
+      // Create form data with image
+      const formData = new FormData();
+      formData.append('image', fs.createReadStream(imagePath));
+      formData.append('reference_urls', JSON.stringify(referenceUrls));
+
+      // Send request to server
+      const startTime = Date.now();
+      const response = await axios.post(`${MCP_SERVER_URL}/api/v1/image/compare`, formData, {
+        headers: {
+          ...formData.getHeaders(),
+          'X-User-ID': userId
+        }
+      });
+
+      const duration = Date.now() - startTime;
+      logger.debug(`MCP image comparison completed in ${duration}ms`);
+
+      return {
+        comparisons: response.data.comparisons || []
+      };
+    } catch (error) {
+      logger.error('Error comparing images with MCP', { error });
+      throw error;
+    }
+  }
+
+  /**
+   * Find similar visual references using MCP
+   * @param userId User ID
+   * @param imagePath Path to the image being processed
+   * @param propertyName Property name to search for
+   * @param materialType Material type to search for
+   * @returns Similar visual references with similarity scores
+   */
+  public async findSimilarReferences(
+    userId: string,
+    imagePath: string,
+    propertyName: string,
+    materialType: string
+  ): Promise<{
+    similarReferences: Array<{
+      propertyValue: string;
+      referenceUrl: string;
+      similarity: number;
+    }>;
+  }> {
+    // Check if MCP is available
+    const mcpAvailable = await this.isMCPAvailable();
+    if (!mcpAvailable) {
+      throw new Error('MCP server is not available');
+    }
+
+    // Check if user has enough credits
+    const hasEnoughCredits = await creditService.hasEnoughCreditsForService(
+      userId,
+      MCPServiceKey.IMAGE_ANALYSIS,
+      2 // 2 credits for similarity search
+    );
+
+    if (!hasEnoughCredits) {
+      throw new Error('Insufficient credits');
+    }
+
+    try {
+      // Create form data with image
+      const formData = new FormData();
+      formData.append('image', fs.createReadStream(imagePath));
+      formData.append('property_name', propertyName);
+      formData.append('material_type', materialType);
+
+      // Send request to server
+      const startTime = Date.now();
+      const response = await axios.post(`${MCP_SERVER_URL}/api/v1/image/similar-references`, formData, {
+        headers: {
+          ...formData.getHeaders(),
+          'X-User-ID': userId
+        }
+      });
+
+      const duration = Date.now() - startTime;
+      logger.debug(`MCP similar references search completed in ${duration}ms`);
+
+      return {
+        similarReferences: response.data.similar_references || []
+      };
+    } catch (error) {
+      logger.error('Error finding similar references with MCP', { error });
+      throw error;
+    }
+  }
+
+  /**
    * Perform multi-modal search using MCP
    * @param userId User ID
    * @param options Search options

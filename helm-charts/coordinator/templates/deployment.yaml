@@ -30,9 +30,13 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: {{ include "coordinator.serviceAccountName" . }}
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
       - name: coordinator
-        image: "{{ .Values.global.registry.url }}/kai/coordinator-service:{{ .Values.global.image.tag }}"
+        image: "{{ .Values.global.registry.url }}/{{ .Values.global.repository | default "kai" }}/kai-coordinator-service:{{ .Values.global.image.tag }}"
         imagePullPolicy: {{ .Values.global.image.pullPolicy }}
         ports:
         - containerPort: 8080

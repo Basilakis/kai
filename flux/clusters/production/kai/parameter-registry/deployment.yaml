@@ -27,7 +27,7 @@ spec:
     spec:
       containers:
       - name: parameter-registry
-        image: ${REGISTRY_URL}/kai/parameter-registry:latest
+        image: ghcr.io/basilakis/kai/parameter-registry:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 5000
@@ -248,7 +248,7 @@ spec:
         spec:
           containers:
           - name: backup
-            image: ${REGISTRY_URL}/kai/parameter-registry-backup:latest
+            image: ghcr.io/basilakis/kai/parameter-registry-backup:latest
             command: ["python", "/app/backup.py"]
             env:
             - name: BACKUP_DESTINATION

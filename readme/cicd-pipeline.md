@@ -67,9 +67,7 @@ jobs:
       environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
       tag-suffix: ${{ github.ref == 'refs/heads/main' && 'latest' || 'staging' }}
     secrets:
-      docker_username: ${{ secrets.DOCKER_USERNAME }}
-      docker_password: ${{ secrets.DOCKER_PASSWORD }}
-      docker_registry: ${{ secrets.DOCKER_REGISTRY }}
+      github_token: ${{ secrets.GITHUB_TOKEN }}
 
   # Deploy to staging or production using environment-specific workflows
   deploy-staging:
@@ -649,10 +647,8 @@ The workflow requires the following secrets to be set in your GitHub repository:
 ### Digital Ocean Kubernetes Secrets
 - `KUBE_CONFIG_DATA`: Base64-encoded kubeconfig file for your Kubernetes cluster
 
-### Container Registry Secrets
-- `DOCKER_USERNAME`: Docker Hub username or container registry username
-- `DOCKER_PASSWORD`: Docker Hub password or container registry password
-- `DOCKER_REGISTRY`: Container registry URL (e.g., docker.io, ghcr.io)
+### GitHub Container Registry
+- `GITHUB_TOKEN`: GitHub token with `write:packages` permission (automatically provided by GitHub Actions)
 
 ### Database and API Secrets
 - `SUPABASE_URL_STAGING`: Supabase project URL for staging environment migrations

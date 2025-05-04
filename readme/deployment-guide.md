@@ -27,6 +27,8 @@ This comprehensive guide covers the fully automated deployment process for the K
   - [Deployment Issues](#deployment-issues)
   - [Kubernetes Issues](#kubernetes-issues)
   - [SSL Certificate Issues](#ssl-certificate-issues)
+  - [Docker Issues](#docker-issues)
+  - [GitHub Container Registry Integration](#github-container-registry-integration)
 - [Performance Optimization](#performance-optimization)
 
 ## Overview
@@ -202,10 +204,9 @@ Before running the deployment workflow, you need to add the following secrets to
 - `CLUSTER_NAME`: Base name for your Kubernetes cluster (e.g., "kai")
 - `DO_REGION`: Region for your cluster (e.g., "ams3")
 
-#### Docker Registry Secrets
-- `DOCKER_REGISTRY`: Your Docker registry URL (e.g., "registry.digitalocean.com")
-- `DOCKER_USERNAME`: Your Docker registry username
-- `DOCKER_PASSWORD`: Your Docker registry password
+#### GitHub Container Registry Secrets
+- `GITHUB_TOKEN`: GitHub token with `write:packages` permission (automatically provided by GitHub Actions)
+- `GITHUB_REPOSITORY`: (Optional) GitHub repository name if different from the current repository
 
 #### Domain and SSL Secrets
 - `DOMAIN_NAME`: Your domain name (e.g., "kai-platform.com")
@@ -424,12 +425,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
-      - name: Login to Docker Registry
+      - name: Login to GitHub Container Registry
         uses: docker/login-action@v2
         with:
-          registry: ${{ secrets.DOCKER_REGISTRY }}
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push API server
         uses: docker/build-push-action@v4
@@ -438,8 +439,8 @@ jobs:
           file: packages/server/Dockerfile
           push: true
           tags: |
-            ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-api:${{ github.sha }}
-            ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-api:latest
+            ghcr.io/${{ github.repository }}/kai-api:${{ github.sha }}
+            ghcr.io/${{ github.repository }}/kai-api:latest
 
       - name: Build and push Coordinator service
         uses: docker/build-push-action@v4
@@ -448,8 +449,8 @@ jobs:
           file: packages/coordinator/Dockerfile
           push: true
           tags: |
-            ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-coordinator:${{ github.sha }}
-            ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-coordinator:latest
+            ghcr.io/${{ github.repository }}/kai-coordinator:${{ github.sha }}
+            ghcr.io/${{ github.repository }}/kai-coordinator:latest
 
       - name: Build and push ML services
         uses: docker/build-push-action@v4
@@ -458,8 +459,8 @@ jobs:
           file: packages/ml/Dockerfile
           push: true
           tags: |
-            ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-ml:${{ github.sha }}
-            ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-ml:latest
+            ghcr.io/${{ github.repository }}/kai-ml:${{ github.sha }}
+            ghcr.io/${{ github.repository }}/kai-ml:latest
 
       - name: Build and push Notification service
         uses: docker/build-push-action@v4
@@ -468,8 +469,8 @@ jobs:
           file: packages/notification/Dockerfile
           push: true
           tags: |
-            ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-notification:${{ github.sha }}
-            ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-notification:latest
+            ghcr.io/${{ github.repository }}/kai-notification:${{ github.sha }}
+            ghcr.io/${{ github.repository }}/kai-notification:latest
 
   provision-infrastructure:
     name: Provision Kubernetes Cluster
@@ -745,8 +746,11 @@ jobs:
           cat > values-override.yaml << EOF
           global:
             environment: ${{ env.ENVIRONMENT }}
-            imageRegistry: ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}
-            imageTag: ${{ github.sha }}
+            registry:
+              url: "ghcr.io"
+            repository: ${{ github.repository }}
+            image:
+              tag: ${{ github.sha }}
             domain: ${{ secrets.DOMAIN_NAME }}
             ingress:
               enabled: true
@@ -799,7 +803,7 @@ jobs:
               spec:
                 containers:
                 - name: migrations
-                  image: ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-api:${{ github.sha }}
+                  image: ghcr.io/${{ github.repository }}/kai-api:${{ github.sha }}
                   command: ["node", "scripts/run-migrations.js"]
                   env:
                   - name: MONGODB_URI
@@ -2893,12 +2897,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
-      - name: Login to Container Registry
+      - name: Login to GitHub Container Registry
         uses: docker/login-action@v2
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-          registry: ${{ secrets.DOCKER_REGISTRY }}
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push image
         uses: docker/build-push-action@v4
@@ -2907,10 +2911,10 @@ jobs:
           file: ${{ matrix.dockerfile }}
           push: true
           tags: |
-            ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-${{ matrix.name }}:${{ github.sha }}
-            ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-${{ matrix.name }}:${{ env.TAG_SUFFIX }}
-          cache-from: type=registry,ref=${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-${{ matrix.name }}:${{ env.TAG_SUFFIX }}-cache
-          cache-to: type=registry,ref=${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/kai-${{ matrix.name }}:${{ env.TAG_SUFFIX }}-cache,mode=max
+            ghcr.io/${{ github.repository }}/kai-${{ matrix.name }}:${{ github.sha }}
+            ghcr.io/${{ github.repository }}/kai-${{ matrix.name }}:${{ env.TAG_SUFFIX }}
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}/kai-${{ matrix.name }}:${{ env.TAG_SUFFIX }}-cache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository }}/kai-${{ matrix.name }}:${{ env.TAG_SUFFIX }}-cache,mode=max
           build-args: |
             BUILDKIT_INLINE_CACHE=1
             ENVIRONMENT=${{ env.DEPLOY_ENV }}
@@ -2983,7 +2987,7 @@ jobs:
 
           # Apply the deployment with environment parameter
           chmod +x ./kubernetes/deploy.sh
-          ./kubernetes/deploy.sh --context=${{ env.KUBE_CONTEXT }} --registry=${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }} --tag=${{ github.sha }} --env=${{ env.DEPLOY_ENV }}
+          ./kubernetes/deploy.sh --context=${{ env.KUBE_CONTEXT }} --registry=ghcr.io/${{ github.repository }} --tag=${{ github.sha }} --env=${{ env.DEPLOY_ENV }}
 
           echo "deployment_id=$(date +%s)" >> $GITHUB_OUTPUT
 
@@ -3075,9 +3079,7 @@ update-gitops:
 
 The pipeline uses the following secrets, which should be set in your GitHub repository:
 
-- `DOCKER_USERNAME`: Docker Hub or container registry username
-- `DOCKER_PASSWORD`: Docker Hub or container registry password
-- `DOCKER_REGISTRY`: Container registry URL (e.g., `docker.io` or `gcr.io`)
+- `GITHUB_TOKEN`: GitHub token with `write:packages` permission (automatically provided by GitHub Actions)
 - `KUBE_CONFIG_DATA`: Base64-encoded Kubernetes config file
 - `VERCEL_TOKEN`: Vercel API token
 - `VERCEL_ORG_ID`: Vercel organization ID
@@ -4015,6 +4017,90 @@ This section provides solutions for common issues you might encounter during dep
    - Use multi-stage builds to reduce final image size
    - Minimize the number of RUN instructions
    - Clean up package caches in the same layer they're created
+
+### GitHub Container Registry Integration
+
+The KAI Platform CI/CD pipeline can push Docker images to both your existing Docker registry and GitHub Container Registry (ghcr.io), providing redundancy and leveraging GitHub's integrated container registry features.
+
+#### Benefits of GitHub Container Registry
+
+- Tight integration with GitHub repositories
+- Simplified authentication using GitHub tokens
+- Free storage for public repositories
+- Improved security with GitHub's vulnerability scanning
+
+#### Configuration for GitHub Container Registry
+
+1. **Required GitHub Secrets**:
+   - `GITHUB_TOKEN` - This is automatically provided by GitHub Actions, but it needs the correct permissions
+
+2. **Permissions Setup**:
+   - Go to your repository on GitHub
+   - Navigate to Settings > Actions > General
+   - Scroll down to "Workflow permissions"
+   - Select "Read and write permissions"
+   - Save the changes
+
+#### Image Naming Convention
+
+Images pushed to GitHub Container Registry follow this naming convention:
+
+```
+ghcr.io/{owner}/{repository}/kai-{service-name}:{tag}
+```
+
+For example:
+```
+ghcr.io/your-org/kai/kai-api-server:latest
+```
+
+#### Using GitHub Container Registry Images
+
+**In Kubernetes**:
+
+1. Create a Kubernetes secret with your GitHub credentials:
+
+```bash
+kubectl create secret docker-registry github-container-registry \
+  --docker-server=ghcr.io \
+  --docker-username=YOUR_GITHUB_USERNAME \
+  --docker-password=YOUR_GITHUB_TOKEN \
+  --docker-email=YOUR_EMAIL
+```
+
+2. Reference this secret in your pod specifications:
+
+```yaml
+spec:
+  imagePullSecrets:
+  - name: github-container-registry
+  containers:
+  - name: app
+    image: ghcr.io/your-org/kai/kai-api-server:latest
+```
+
+**In Docker Compose**:
+
+```yaml
+services:
+  api-server:
+    image: ghcr.io/your-org/kai/kai-api-server:latest
+```
+
+And authenticate with Docker before pulling:
+
+```bash
+echo $GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
+```
+
+#### Troubleshooting GitHub Container Registry
+
+If you encounter issues with GitHub Container Registry:
+
+1. Verify that your GitHub token has the correct permissions
+2. Check that the repository visibility settings allow for the package visibility you want
+3. Ensure you're properly authenticated when pulling images
+4. Check the GitHub Actions logs for specific error messages
 
 ### Performance Issues
 

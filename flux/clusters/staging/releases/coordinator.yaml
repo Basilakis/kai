@@ -17,7 +17,7 @@ spec:
   values:
     replicaCount: 1
     image:
-      repository: "${REGISTRY_URL}/coordinator"
+      repository: "ghcr.io/basilakis/kai/coordinator-service"
       tag: "${IMAGE_TAG}"
     resources:
       limits:

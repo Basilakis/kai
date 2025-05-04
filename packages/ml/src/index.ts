@@ -2,7 +2,7 @@
  * Main entry point for the ML package
  * This file exports the functions that will be used by the server package
  * to interact with the ML components
- * 
+ *
  * The ML package provides functionality for:
  * - PDF processing and image extraction
  * - Material recognition using feature-based and ML-based approaches
@@ -23,6 +23,38 @@ import * as os from 'os';
 import { GaussianSplattingBridge } from './gaussian-splatting-bridge';
 import { ImprovedTextTo3DBridge } from './improved-text-to-3d-bridge';
 import { MaterialXBridge } from './materialx-bridge';
+import {
+  trainModelForMaterialType,
+  trainModelsForMaterialTypes,
+  prepareTrainingDataForMaterialType,
+  MaterialSpecificTrainingOptions
+} from './material-specific-training';
+import {
+  getMetadataFieldsByMaterialType,
+  createTrainingDataStructure,
+  prepareTrainingConfigForMaterialType,
+  MetadataField
+} from './utils/metadata-field-utils';
+import {
+  detectMaterialTypeFromText,
+  detectMaterialTypeFromImage,
+  detectMaterialType,
+  MaterialType,
+  MaterialTypeDetectionResult
+} from './utils/material-type-detector';
+import {
+  extractValueFromOCR,
+  extractMetadataFromOCR,
+  OcrExtractionResult
+} from './utils/material-specific-ocr';
+import {
+  trainModelForProperty,
+  trainModelsForProperties,
+  prepareDatasetForProperty,
+  predictPropertyFromImage,
+  PropertySpecificTrainingOptions,
+  PropertySpecificTrainingResult
+} from './property-specific-training';
 
 // Define the path to the Python scripts
 const PYTHON_SCRIPTS_DIR = path.join(__dirname, '../python');
@@ -295,17 +327,17 @@ export async function extractFromPDF(
 ): Promise<PDFExtractionResult> {
   return new Promise((resolve, reject) => {
     // Ensure the output directory exists
-    const outputDir = typeof options === 'string' 
-      ? options 
+    const outputDir = typeof options === 'string'
+      ? options
       : options.outputDir;
-      
+
     if (!fs.existsSync(outputDir)) {
       fs.mkdirSync(outputDir, { recursive: true });
     }
-    
+
     // Handle options
-    const extractionOptions = typeof options === 'string' 
-      ? { outputDir, extractText: true, extractImages: true } 
+    const extractionOptions = typeof options === 'string'
+      ? { outputDir, extractText: true, extractImages: true }
       : options;
 
     // Run the Python script for PDF extraction
@@ -315,7 +347,7 @@ export async function extractFromPDF(
       pdfPath,
       extractionOptions.outputDir
     ];
-    
+
     // Add optional arguments if provided
     if (typeof options !== 'string') {
       if (options.extractText !== undefined) {
@@ -337,7 +369,7 @@ export async function extractFromPDF(
         args.push('--min-image-size', options.minImageSize.toString());
       }
     }
-    
+
     const pythonProcess = spawn('python', args);
 
     let resultData = '';
@@ -515,9 +547,9 @@ export async function generateImageEmbedding(
     adaptive?: boolean;
     qualityThreshold?: number;
   } = {}
-): Promise<{ 
-  vector: number[]; 
-  dimensions: number; 
+): Promise<{
+  vector: number[];
+  dimensions: number;
   method?: string;
   initial_method?: string;
   quality_scores?: Record<string, number>;
@@ -542,23 +574,23 @@ export async function generateImageEmbedding(
     if (options.materialId) {
       args.push('--material-id', options.materialId);
     }
-    
+
     // Add adaptive parameters
     args.push('--adaptive');
-    
+
     // Add quality threshold if specified
     if (options.qualityThreshold) {
       args.push('--quality-threshold', options.qualityThreshold.toString());
     }
-    
+
     // Add cache directory for performance history
     // Use __dirname instead of process.cwd() for TypeScript compatibility
     const cacheDir = path.join(__dirname, '..', '..', 'data', 'embedding-cache');
     args.push('--cache-dir', cacheDir);
-    
+
     // Ensure cache directory exists
     fs.mkdirSync(cacheDir, { recursive: true });
-    
+
     const pythonProcess = spawn('python', args);
 
     let resultData = '';
@@ -945,7 +977,7 @@ export async function segmentImage(
     const minTileSize = options.minTileSize || 0.05;
     const maxTiles = options.maxTiles || 10;
     const visualize = options.visualize || false;
-    
+
     // Run the Python script for image segmentation
     const scriptPath = path.join(PYTHON_SCRIPTS_DIR, 'image_segmentation.py');
     const args = [
@@ -956,11 +988,11 @@ export async function segmentImage(
       '--min-tile-size', minTileSize.toString(),
       '--max-tiles', maxTiles.toString()
     ];
-    
+
     if (visualize) {
       args.push('--visualize');
     }
-    
+
     const pythonProcess = spawn('python', args);
 
     let resultData = '';
@@ -1010,15 +1042,15 @@ export async function storeFeedback(
       '--recognition-id', options.recognitionId,
       '--feedback-type', options.feedbackType
     ];
-    
+
     if (options.materialId) {
       args.push('--material-id', options.materialId);
     }
-    
+
     if (options.userNotes) {
       args.push('--notes', options.userNotes);
     }
-    
+
     const pythonProcess = spawn('python', args);
 
     let resultData = '';
@@ -1063,14 +1095,14 @@ export async function adjustRecognitionResult(
     // Create temporary file for the result
     const tempDir = os.tmpdir();
     const resultPath = path.join(tempDir, `result_${Date.now()}.json`);
-    
+
     try {
       fs.writeFileSync(resultPath, resultJson);
     } catch (error) {
       reject(new Error(`Failed to write temporary result file: ${error}`));
       return;
     }
-    
+
     // Run the Python script for result adjustment
     const scriptPath = path.join(PYTHON_SCRIPTS_DIR, 'feedback_loop.py');
     const pythonProcess = spawn('python', [
@@ -1100,7 +1132,7 @@ export async function adjustRecognitionResult(
       } catch (e) {
         // Ignore cleanup errors
       }
-      
+
       if (code !== 0) {
         reject(new Error(`Result adjustment failed with code ${code}: ${errorData}`));
         return;
@@ -1174,7 +1206,7 @@ export async function optimizeRecognition(
     const useCache = options.useCache !== false;
     const useParallel = options.useParallel !== false;
     const optimizeImage = options.optimizeImage !== false;
-    
+
     // Run the Python script for optimized recognition
     const scriptPath = path.join(PYTHON_SCRIPTS_DIR, 'performance_optimizer.py');
     const args = [
@@ -1183,19 +1215,19 @@ export async function optimizeRecognition(
       '--image-path', imagePath,
       '--model-type', modelType
     ];
-    
+
     if (!useCache) {
       args.push('--no-cache');
     }
-    
+
     if (!useParallel) {
       args.push('--no-parallel');
     }
-    
+
     if (!optimizeImage) {
       args.push('--no-image-opt');
     }
-    
+
     const pythonProcess = spawn('python', args);
 
     let resultData = '';
@@ -1248,21 +1280,21 @@ export async function fuseConfidenceScores(
     // Set default options
     const method = options.method || 'adaptive';
     const alpha = options.alpha || 0.5;
-    
+
     // Create temporary files for results
     const tempDir = path.join(os.tmpdir(), 'kai-ml-fusion');
     if (!fs.existsSync(tempDir)) {
       fs.mkdirSync(tempDir, { recursive: true });
     }
-    
+
     const featureResultsPath = path.join(tempDir, 'feature_results.json');
     const mlResultsPath = path.join(tempDir, 'ml_results.json');
     const outputPath = path.join(tempDir, 'fused_results.json');
-    
+
     // Write results to temporary files
     fs.writeFileSync(featureResultsPath, JSON.stringify(featureResults));
     fs.writeFileSync(mlResultsPath, JSON.stringify(mlResults));
-    
+
     // Prepare command arguments
     const args = [
       path.join(PYTHON_SCRIPTS_DIR, 'confidence_fusion.py'),
@@ -1272,22 +1304,22 @@ export async function fuseConfidenceScores(
       '--alpha', alpha.toString(),
       '--output', outputPath
     ];
-    
+
     // Add image path if provided
     if (options.imagePath) {
       args.push('--image-path', options.imagePath);
     }
-    
+
     // Run the Python script for confidence fusion
     const pythonProcess = spawn('python', args);
-    
+
     let errorData = '';
-    
+
     // Collect error data from stderr
     pythonProcess.stderr.on('data', (data: Buffer) => {
       errorData += data.toString();
     });
-    
+
     // Handle process completion
     pythonProcess.on('close', (code: number | null) => {
       if (code !== 0) {
@@ -1301,17 +1333,17 @@ export async function fuseConfidenceScores(
         } catch (e) {
           // Ignore cleanup errors
         }
-        
+
         reject(new Error(`Confidence fusion failed with code ${code}: ${errorData}`));
         return;
       }
-      
+
       try {
         // Read the output file
         const resultData = fs.readFileSync(outputPath, 'utf8');
         // Ensure we have a string for JSON.parse
         const result = JSON.parse(resultData.toString()) as ConfidenceFusionResult;
-        
+
         // Clean up temporary files
         try {
           fs.unlinkSync(featureResultsPath);
@@ -1320,7 +1352,7 @@ export async function fuseConfidenceScores(
         } catch (e) {
           // Ignore cleanup errors
         }
-        
+
         resolve(result);
       } catch (error) {
         // Clean up temporary files
@@ -1333,7 +1365,7 @@ export async function fuseConfidenceScores(
         } catch (e) {
           // Ignore cleanup errors
         }
-        
+
         reject(new Error(`Failed to parse confidence fusion result: ${error}`));
       }
     });
@@ -1365,21 +1397,21 @@ export async function recognizeMaterialEnhanced(
       maxResults: options.maxResults
     });
   }
-  
+
   // Run feature-based recognition
   const featureResults = await recognizeMaterial(imagePath, {
     modelType: 'feature-based',
     confidenceThreshold: options.confidenceThreshold || 0.6,
     maxResults: options.maxResults || 10 // Get more results for fusion
   });
-  
+
   // Run ML-based recognition
   const mlResults = await recognizeMaterial(imagePath, {
     modelType: 'ml-based',
     confidenceThreshold: options.confidenceThreshold || 0.6,
     maxResults: options.maxResults || 10 // Get more results for fusion
   });
-  
+
   // Fuse the results
   return fuseConfidenceScores(featureResults, mlResults, {
     method: options.fusionMethod || 'adaptive',
@@ -1396,7 +1428,7 @@ export default {
   recognizeMaterial,
   trainModel,
   generateImageEmbedding,
-  
+
   // New functions
   generateFeatureDescriptors,
   trainNeuralNetwork,
@@ -1405,23 +1437,23 @@ export default {
   visualizeSearchResults,
   fuseConfidenceScores,
   recognizeMaterialEnhanced,
-  
+
   // Image segmentation functions
   segmentImage,
-  
+
   // Feedback loop functions
   storeFeedback,
   adjustRecognitionResult,
   getPerformanceMetrics,
-  
+
   // Performance optimization functions
   optimizeRecognition,
-  
+
   // Crawler data integration functions
   prepareCrawlerDataForTraining,
   validateCrawlerDataset,
   trainModelWithCrawlerData,
-  
+
   // 3D reconstruction and visualization
   GaussianSplattingBridge,
   ImprovedTextTo3DBridge
@@ -1443,7 +1475,7 @@ export async function prepareCrawlerDataForTraining(
     if (!fs.existsSync(options.outputDir)) {
       fs.mkdirSync(options.outputDir, { recursive: true });
     }
-    
+
     // Run the Python script for crawler data preparation
     const scriptPath = path.join(PYTHON_SCRIPTS_DIR, 'crawler_adapter.py');
     const args = [
@@ -1452,19 +1484,19 @@ export async function prepareCrawlerDataForTraining(
       '--manifest-path', options.manifestPath,
       '--output-dir', options.outputDir
     ];
-    
+
     if (options.minImagesPerClass) {
       args.push('--min-images', options.minImagesPerClass.toString());
     }
-    
+
     if (options.targetWidth) {
       args.push('--target-width', options.targetWidth.toString());
     }
-    
+
     if (options.targetHeight) {
       args.push('--target-height', options.targetHeight.toString());
     }
-    
+
     const pythonProcess = spawn('python', args);
 
     let resultData = '';
@@ -1513,7 +1545,7 @@ export async function validateCrawlerDataset(
       'validate',
       '--dataset-path', datasetPath
     ];
-    
+
     const pythonProcess = spawn('python', args);
 
     let resultData = '';
@@ -1563,7 +1595,7 @@ export async function trainModelWithCrawlerData(
             reject(new Error(`Invalid crawler dataset: ${validation.message || 'Validation failed'}`));
             return;
           }
-          
+
           if (options.validateOnly) {
             // Resolve with a partial result since we're just validating
             resolve({
@@ -1585,12 +1617,12 @@ export async function trainModelWithCrawlerData(
           return;
         });
     }
-    
+
     // Ensure the output directory exists
     if (!fs.existsSync(options.outputDir)) {
       fs.mkdirSync(options.outputDir, { recursive: true });
     }
-    
+
     // Train using the standard neural network training function
     // The crawler adapter already prepared the data in the right format
     return trainNeuralNetwork(
@@ -1617,9 +1649,9 @@ export async function trainModelWithCrawlerData(
         training_completed: true,
         timestamp: new Date().toISOString()
       };
-      
+
       fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
-      
+
       // Return the training result
       resolve(result);
     })
@@ -1628,3 +1660,37 @@ export async function trainModelWithCrawlerData(
     });
   });
 }
+
+// Export material-specific training functions
+export {
+  trainModelForMaterialType,
+  trainModelsForMaterialTypes,
+  prepareTrainingDataForMaterialType,
+  MaterialSpecificTrainingOptions,
+  getMetadataFieldsByMaterialType,
+  createTrainingDataStructure,
+  prepareTrainingConfigForMaterialType,
+  MetadataField
+};
+
+// Export material-specific OCR functions
+export {
+  detectMaterialTypeFromText,
+  detectMaterialTypeFromImage,
+  detectMaterialType,
+  MaterialType,
+  MaterialTypeDetectionResult,
+  extractValueFromOCR,
+  extractMetadataFromOCR,
+  OcrExtractionResult
+};
+
+// Export property-specific training functions
+export {
+  trainModelForProperty,
+  trainModelsForProperties,
+  prepareDatasetForProperty,
+  predictPropertyFromImage,
+  PropertySpecificTrainingOptions,
+  PropertySpecificTrainingResult
+};
