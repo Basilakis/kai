@@ -120,7 +120,8 @@ Access to specific platform functionalities is controlled at the module level:
   { "name": "api", "enabled": false },
   { "name": "pdf", "enabled": true },
   { "name": "crawler", "enabled": false },
-  { "name": "mlTraining", "enabled": false }
+  { "name": "mlTraining", "enabled": false },
+  { "name": "materialPromotion", "enabled": false }
 ]
 ```
 

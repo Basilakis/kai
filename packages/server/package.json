@@ -15,7 +15,8 @@
     "lint": "eslint . --ext .js,.ts",
     "check-api-endpoints": "ts-node src/scripts/check-unregistered-endpoints.ts",
     "register-api-endpoints": "ts-node src/scripts/register-api-endpoints.ts",
-    "setup-api-access": "ts-node src/scripts/setup-api-access-control.ts"
+    "setup-api-access": "ts-node src/scripts/setup-api-access-control.ts",
+    "post-deployment": "ts-node src/scripts/post-deployment.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.374.0",

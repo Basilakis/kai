@@ -119,7 +119,7 @@ jobs:
           # Check if certificates are issued
           kubectl -n kai-system get certificates
 
-      - name: Run database migrations
+      - name: Run database migrations and post-deployment tasks
         run: |
           # Create a temporary pod to run migrations
           cat > migration-job.yaml << EOF
@@ -151,6 +151,70 @@ jobs:
 
           # Wait for migrations to complete
           kubectl -n kai-system wait --for=condition=complete job/database-migrations --timeout=120s
+
+          # Run post-deployment tasks
+          cat > post-deployment-job.yaml << EOF
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: post-deployment-tasks
+            namespace: kai-system
+          spec:
+            template:
+              spec:
+                containers:
+                - name: post-deployment
+                  image: ghcr.io/${{ secrets.github_repository || github.repository }}/kai-api:${{ inputs.sha }}
+                  command: ["node", "scripts/run-post-deployment.js"]
+                  env:
+                  - name: NODE_ENV
+                    value: "${{ inputs.environment }}"
+                  - name: SUPABASE_URL_PRODUCTION
+                    valueFrom:
+                      secretKeyRef:
+                        name: kai-secrets
+                        key: supabase-url-production
+                        optional: true
+                  - name: SUPABASE_KEY_PRODUCTION
+                    valueFrom:
+                      secretKeyRef:
+                        name: kai-secrets
+                        key: supabase-key-production
+                        optional: true
+                  - name: SUPABASE_URL_STAGING
+                    valueFrom:
+                      secretKeyRef:
+                        name: kai-secrets
+                        key: supabase-url-staging
+                        optional: true
+                  - name: SUPABASE_KEY_STAGING
+                    valueFrom:
+                      secretKeyRef:
+                        name: kai-secrets
+                        key: supabase-key-staging
+                        optional: true
+                  - name: SUPABASE_URL
+                    valueFrom:
+                      secretKeyRef:
+                        name: kai-secrets
+                        key: supabase-url
+                        optional: true
+                  - name: SUPABASE_KEY
+                    valueFrom:
+                      secretKeyRef:
+                        name: kai-secrets
+                        key: supabase-key
+                        optional: true
+                imagePullSecrets:
+                - name: github-container-registry
+                restartPolicy: Never
+            backoffLimit: 4
+          EOF
+
+          kubectl apply -f post-deployment-job.yaml
+
+          # Wait for post-deployment tasks to complete
+          kubectl -n kai-system wait --for=condition=complete job/post-deployment-tasks --timeout=120s
 
       - name: Notify deployment status
         if: secrets.slack_webhook != ''

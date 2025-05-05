@@ -118,9 +118,9 @@ With the recently added features, the architecture has been extended:
 │         │           └────────────────┘  │ - Domain-Specific Networks      │  │
 │         │                               │ - Relationship-Aware Training   │  │
 │         │                               │ - Material Property Analytics   │  │
-│         ▼                               │                                 │  │
-│  ┌─────────────────┐                    └─────────────────────────────────┘  │
-│  │ Email/SMS/Push  │                                                         │
+│         ▼                               │ - Material Promotion System     │  │
+│  ┌─────────────────┐                    │                                 │  │
+│  │ Email/SMS/Push  │                    └─────────────────────────────────┘  │
 │  │ Delivery        │     ┌─────────────────────────────────────────────┐     │
 │  │ Services        │     │                                             │     │
 │  └─────────────────┘     │ API Server                                  │     │
@@ -129,6 +129,7 @@ With the recently added features, the architecture has been extended:
 │                          │ - Material Comparison Engine                 │     │
 │                          │ - Property Inheritance System                │     │
 │                          │ - Subscription Management with Stripe        │     │
+│                          │ - Factory Material Promotion API             │     │
 │                          │                                             │     │
 │                          └─────────────────────────────────────────────┘     │
 │                                                                              │
@@ -4041,6 +4042,32 @@ The deployment process follows these steps:
 8. **Frontend is deployed** to Vercel
 9. **Deployment is verified** with comprehensive health checks
 10. **Notification is sent** upon completion
+
+### Feature-Specific Deployment Notes
+
+#### Post-Deployment Process
+
+The deployment process includes a post-deployment phase that runs after database migrations are applied. This phase is used for tasks that need to be performed after the application is deployed and the database schema is updated, such as:
+
+- Registering modules with the subscription system
+- Registering API endpoints with the network access control system
+- Initializing default data
+- Updating configuration settings
+
+The post-deployment process is implemented as a Kubernetes job that runs the `run-post-deployment.js` script. This script executes all necessary post-deployment tasks defined in `post-deployment.ts`.
+
+**How to Add New Post-Deployment Tasks:**
+
+1. Add your task to the `runPostDeploymentTasks` function in `packages/server/src/scripts/post-deployment.ts`
+2. The task will be automatically executed during the deployment process
+
+**Example: Material Promotion System**
+
+The Material Promotion System uses the post-deployment process to:
+- Register the `materialPromotion` module with the subscription system
+- Register the material promotion API endpoints with the network access control system
+
+After deployment, you need to enable the `materialPromotion` module for the appropriate factory subscription tiers through the admin panel.
 
 ### Scaling the Application
 

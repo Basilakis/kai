@@ -134,6 +134,35 @@ The system provides detailed analytics for factories:
    - All promotion-related activities are logged
    - Credit transactions provide a clear audit trail
 
+## System Integration
+
+The Material Promotion System integrates with several existing systems:
+
+### Module-Based Access Control Integration
+
+The system is implemented as a module in the Module-Based Access Control system:
+- Factory routes use the `requireModuleAccess('materialPromotion')` middleware
+- Factory subscription tiers include the module (disabled by default)
+- The module can be enabled/disabled per subscription tier through the admin panel
+
+### API Endpoints
+
+The system exposes the following API endpoints:
+- `GET /api/factory/materials` - Get factory materials that can be promoted
+- `GET /api/factory/promotions` - Get all promotions for the factory
+- `GET /api/factory/promotions/:id` - Get a specific promotion
+- `POST /api/factory/promotions` - Create a new promotion (allocate credits)
+- `PUT /api/factory/promotions/:id/status` - Update a promotion's status
+- `GET /api/factory/promotions/analytics` - Get promotion analytics
+
+### 3D Model Generation Integration
+
+The material promotion system integrates with the 3D model generation process:
+- When a 3D model is generated, the system checks for promoted materials that match the requested material type
+- There's a 1/3 chance of selecting a promoted material when a match is found
+- The system tracks impressions (when a promoted material is considered) and usage (when a promoted material is actually used)
+- The selection is weighted by the number of credits allocated to each promotion
+
 ## Future Enhancements
 
 Potential future enhancements to the Material Promotion System:
