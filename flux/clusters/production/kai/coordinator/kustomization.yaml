@@ -8,3 +8,5 @@ resources:
   - ./deployment.yaml
   - ./hpa.yaml
   - ./pdb.yaml
+  - ./workflow-templates/relationship-aware-training-template.yaml
+  - ./workflow-templates/material-property-analytics-template.yaml

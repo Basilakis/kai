@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-server
+spec:
+  template:
+    spec:
+      containers:
+      - name: api-server
+        env:
+        - name: RECOMMENDATION_ENGINE_ENABLED
+          valueFrom:
+            configMapKeyRef:
+              name: recommendation-engine-config
+              key: recommendation_engine_enabled
+        - name: RECOMMENDATION_CACHE_SIZE
+          valueFrom:
+            configMapKeyRef:
+              name: recommendation-engine-config
+              key: recommendation_cache_size
+        - name: RECOMMENDATION_REFRESH_INTERVAL
+          valueFrom:
+            configMapKeyRef:
+              name: recommendation-engine-config
+              key: recommendation_refresh_interval
+        - name: RECOMMENDATION_MAX_CONCURRENT_JOBS
+          valueFrom:
+            configMapKeyRef:
+              name: recommendation-engine-config
+              key: recommendation_max_concurrent_jobs
+        - name: RECOMMENDATION_SIMILARITY_THRESHOLD
+          valueFrom:
+            configMapKeyRef:
+              name: recommendation-engine-config
+              key: recommendation_similarity_threshold
+        volumeMounts:
+        - name: recommendation-config
+          mountPath: /app/config/recommendation
+          readOnly: true
+      volumes:
+      - name: recommendation-config
+        configMap:
+          name: recommendation-engine-config

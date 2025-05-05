@@ -1,0 +1,343 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: relationship-aware-training-template
+spec:
+  entrypoint: relationship-aware-training
+  arguments:
+    parameters:
+    - name: materialType
+      description: "Material type to train on"
+    - name: targetProperty
+      description: "Target property to predict"
+    - name: includeRelationships
+      description: "Whether to include relationships in training"
+      default: "true"
+    - name: relationshipTypes
+      description: "Types of relationships to include"
+      default: "correlates_with,depends_on,compatibility"
+    - name: relationshipStrengthThreshold
+      description: "Minimum relationship strength to include"
+      default: "0.3"
+    - name: maxRelationshipDepth
+      description: "Maximum depth for indirect relationships"
+      default: "2"
+    - name: useTransferLearning
+      description: "Whether to use transfer learning"
+      default: "true"
+    - name: epochs
+      description: "Number of training epochs"
+      default: "50"
+    - name: batchSize
+      description: "Training batch size"
+      default: "32"
+    - name: learningRate
+      description: "Learning rate for training"
+      default: "0.001"
+    - name: validationSplit
+      description: "Fraction of data to use for validation"
+      default: "0.2"
+    - name: qualityTier
+      description: "Quality tier for the job"
+      default: "high"
+  
+  templates:
+  - name: relationship-aware-training
+    inputs:
+      parameters:
+      - name: materialType
+      - name: targetProperty
+      - name: includeRelationships
+      - name: relationshipTypes
+      - name: relationshipStrengthThreshold
+      - name: maxRelationshipDepth
+      - name: useTransferLearning
+      - name: epochs
+      - name: batchSize
+      - name: learningRate
+      - name: validationSplit
+      - name: qualityTier
+    
+    dag:
+      tasks:
+      - name: prepare-data
+        template: prepare-data
+        arguments:
+          parameters:
+          - name: materialType
+            value: "{{inputs.parameters.materialType}}"
+          - name: targetProperty
+            value: "{{inputs.parameters.targetProperty}}"
+          - name: includeRelationships
+            value: "{{inputs.parameters.includeRelationships}}"
+          - name: relationshipTypes
+            value: "{{inputs.parameters.relationshipTypes}}"
+          - name: relationshipStrengthThreshold
+            value: "{{inputs.parameters.relationshipStrengthThreshold}}"
+          - name: maxRelationshipDepth
+            value: "{{inputs.parameters.maxRelationshipDepth}}"
+      
+      - name: train-model
+        dependencies: [prepare-data]
+        template: train-model
+        arguments:
+          parameters:
+          - name: materialType
+            value: "{{inputs.parameters.materialType}}"
+          - name: targetProperty
+            value: "{{inputs.parameters.targetProperty}}"
+          - name: useTransferLearning
+            value: "{{inputs.parameters.useTransferLearning}}"
+          - name: epochs
+            value: "{{inputs.parameters.epochs}}"
+          - name: batchSize
+            value: "{{inputs.parameters.batchSize}}"
+          - name: learningRate
+            value: "{{inputs.parameters.learningRate}}"
+          - name: validationSplit
+            value: "{{inputs.parameters.validationSplit}}"
+          - name: datasetPath
+            value: "{{tasks.prepare-data.outputs.parameters.datasetPath}}"
+          - name: qualityTier
+            value: "{{inputs.parameters.qualityTier}}"
+      
+      - name: evaluate-model
+        dependencies: [train-model]
+        template: evaluate-model
+        arguments:
+          parameters:
+          - name: modelId
+            value: "{{tasks.train-model.outputs.parameters.modelId}}"
+          - name: datasetPath
+            value: "{{tasks.prepare-data.outputs.parameters.datasetPath}}"
+      
+      - name: register-model
+        dependencies: [evaluate-model]
+        template: register-model
+        arguments:
+          parameters:
+          - name: modelId
+            value: "{{tasks.train-model.outputs.parameters.modelId}}"
+          - name: materialType
+            value: "{{inputs.parameters.materialType}}"
+          - name: targetProperty
+            value: "{{inputs.parameters.targetProperty}}"
+          - name: accuracy
+            value: "{{tasks.evaluate-model.outputs.parameters.accuracy}}"
+          - name: validationAccuracy
+            value: "{{tasks.evaluate-model.outputs.parameters.validationAccuracy}}"
+          - name: baselineAccuracy
+            value: "{{tasks.evaluate-model.outputs.parameters.baselineAccuracy}}"
+          - name: improvementPercentage
+            value: "{{tasks.evaluate-model.outputs.parameters.improvementPercentage}}"
+  
+  - name: prepare-data
+    inputs:
+      parameters:
+      - name: materialType
+      - name: targetProperty
+      - name: includeRelationships
+      - name: relationshipTypes
+      - name: relationshipStrengthThreshold
+      - name: maxRelationshipDepth
+    
+    outputs:
+      parameters:
+      - name: datasetPath
+        valueFrom:
+          path: /tmp/dataset-path
+    
+    container:
+      image: ${REGISTRY_URL}/kai/relationship-aware-training:latest
+      command: ["/bin/sh", "-c"]
+      args:
+      - |
+        set -e
+        echo "Preparing dataset for {{inputs.parameters.materialType}} - {{inputs.parameters.targetProperty}}"
+        
+        # Call the data preparation API
+        DATASET_PATH=$(curl -s -X POST \
+          http://relationship-aware-training:8000/api/prepare-data \
+          -H "Content-Type: application/json" \
+          -d '{
+            "materialType": "{{inputs.parameters.materialType}}",
+            "targetProperty": "{{inputs.parameters.targetProperty}}",
+            "includeRelationships": {{inputs.parameters.includeRelationships}},
+            "relationshipTypes": "{{inputs.parameters.relationshipTypes}}",
+            "relationshipStrengthThreshold": {{inputs.parameters.relationshipStrengthThreshold}},
+            "maxRelationshipDepth": {{inputs.parameters.maxRelationshipDepth}}
+          }' | jq -r '.datasetPath')
+        
+        echo "Dataset prepared at: $DATASET_PATH"
+        echo $DATASET_PATH > /tmp/dataset-path
+      
+      resources:
+        requests:
+          cpu: "1"
+          memory: "4Gi"
+        limits:
+          cpu: "2"
+          memory: "8Gi"
+  
+  - name: train-model
+    inputs:
+      parameters:
+      - name: materialType
+      - name: targetProperty
+      - name: useTransferLearning
+      - name: epochs
+      - name: batchSize
+      - name: learningRate
+      - name: validationSplit
+      - name: datasetPath
+      - name: qualityTier
+    
+    outputs:
+      parameters:
+      - name: modelId
+        valueFrom:
+          path: /tmp/model-id
+    
+    container:
+      image: ${REGISTRY_URL}/kai/relationship-aware-training:latest
+      command: ["/bin/sh", "-c"]
+      args:
+      - |
+        set -e
+        echo "Training model for {{inputs.parameters.materialType}} - {{inputs.parameters.targetProperty}}"
+        
+        # Call the training API
+        MODEL_ID=$(curl -s -X POST \
+          http://relationship-aware-training:8000/api/train \
+          -H "Content-Type: application/json" \
+          -d '{
+            "materialType": "{{inputs.parameters.materialType}}",
+            "targetProperty": "{{inputs.parameters.targetProperty}}",
+            "useTransferLearning": {{inputs.parameters.useTransferLearning}},
+            "epochs": {{inputs.parameters.epochs}},
+            "batchSize": {{inputs.parameters.batchSize}},
+            "learningRate": {{inputs.parameters.learningRate}},
+            "validationSplit": {{inputs.parameters.validationSplit}},
+            "datasetPath": "{{inputs.parameters.datasetPath}}"
+          }' | jq -r '.modelId')
+        
+        echo "Model trained with ID: $MODEL_ID"
+        echo $MODEL_ID > /tmp/model-id
+      
+      resources:
+        requests:
+          cpu: "4"
+          memory: "16Gi"
+          nvidia.com/gpu: 1
+        limits:
+          cpu: "8"
+          memory: "32Gi"
+          nvidia.com/gpu: 1
+      
+      nodeSelector:
+        gpu-type: nvidia-l40s
+  
+  - name: evaluate-model
+    inputs:
+      parameters:
+      - name: modelId
+      - name: datasetPath
+    
+    outputs:
+      parameters:
+      - name: accuracy
+        valueFrom:
+          path: /tmp/accuracy
+      - name: validationAccuracy
+        valueFrom:
+          path: /tmp/validation-accuracy
+      - name: baselineAccuracy
+        valueFrom:
+          path: /tmp/baseline-accuracy
+      - name: improvementPercentage
+        valueFrom:
+          path: /tmp/improvement-percentage
+    
+    container:
+      image: ${REGISTRY_URL}/kai/relationship-aware-training:latest
+      command: ["/bin/sh", "-c"]
+      args:
+      - |
+        set -e
+        echo "Evaluating model {{inputs.parameters.modelId}}"
+        
+        # Call the evaluation API
+        RESULT=$(curl -s -X POST \
+          http://relationship-aware-training:8000/api/evaluate \
+          -H "Content-Type: application/json" \
+          -d '{
+            "modelId": "{{inputs.parameters.modelId}}",
+            "datasetPath": "{{inputs.parameters.datasetPath}}"
+          }')
+        
+        # Extract metrics
+        ACCURACY=$(echo $RESULT | jq -r '.accuracy')
+        VALIDATION_ACCURACY=$(echo $RESULT | jq -r '.validationAccuracy')
+        BASELINE_ACCURACY=$(echo $RESULT | jq -r '.baselineAccuracy')
+        IMPROVEMENT_PERCENTAGE=$(echo $RESULT | jq -r '.improvementPercentage')
+        
+        echo "Accuracy: $ACCURACY"
+        echo "Validation Accuracy: $VALIDATION_ACCURACY"
+        echo "Baseline Accuracy: $BASELINE_ACCURACY"
+        echo "Improvement: $IMPROVEMENT_PERCENTAGE%"
+        
+        echo $ACCURACY > /tmp/accuracy
+        echo $VALIDATION_ACCURACY > /tmp/validation-accuracy
+        echo $BASELINE_ACCURACY > /tmp/baseline-accuracy
+        echo $IMPROVEMENT_PERCENTAGE > /tmp/improvement-percentage
+      
+      resources:
+        requests:
+          cpu: "2"
+          memory: "8Gi"
+        limits:
+          cpu: "4"
+          memory: "16Gi"
+  
+  - name: register-model
+    inputs:
+      parameters:
+      - name: modelId
+      - name: materialType
+      - name: targetProperty
+      - name: accuracy
+      - name: validationAccuracy
+      - name: baselineAccuracy
+      - name: improvementPercentage
+    
+    container:
+      image: ${REGISTRY_URL}/kai/relationship-aware-training:latest
+      command: ["/bin/sh", "-c"]
+      args:
+      - |
+        set -e
+        echo "Registering model {{inputs.parameters.modelId}}"
+        
+        # Call the registration API
+        curl -s -X POST \
+          http://relationship-aware-training:8000/api/register \
+          -H "Content-Type: application/json" \
+          -d '{
+            "modelId": "{{inputs.parameters.modelId}}",
+            "materialType": "{{inputs.parameters.materialType}}",
+            "targetProperty": "{{inputs.parameters.targetProperty}}",
+            "accuracy": {{inputs.parameters.accuracy}},
+            "validationAccuracy": {{inputs.parameters.validationAccuracy}},
+            "baselineAccuracy": {{inputs.parameters.baselineAccuracy}},
+            "improvementPercentage": {{inputs.parameters.improvementPercentage}}
+          }'
+        
+        echo "Model registered successfully"
+      
+      resources:
+        requests:
+          cpu: "500m"
+          memory: "1Gi"
+        limits:
+          cpu: "1"
+          memory: "2Gi"

@@ -1,0 +1,62 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: relationship-aware-training-job
+spec:
+  template:
+    spec:
+      containers:
+      - name: relationship-aware-training-job
+        image: ${REGISTRY_URL}/kai/relationship-aware-training-job:latest
+        resources:
+          requests:
+            cpu: "8"
+            memory: "32Gi"
+            nvidia.com/gpu: 1
+          limits:
+            cpu: "16"
+            memory: "64Gi"
+            nvidia.com/gpu: 1
+        env:
+        - name: LOG_LEVEL
+          value: "info"
+        - name: MATERIAL_TYPE
+          value: "tile"
+        - name: TARGET_PROPERTY
+          value: "finish"
+        - name: INCLUDE_RELATIONSHIPS
+          value: "true"
+        - name: RELATIONSHIP_TYPES
+          value: "correlates_with,depends_on,compatibility"
+        - name: RELATIONSHIP_STRENGTH_THRESHOLD
+          value: "0.3"
+        - name: MAX_RELATIONSHIP_DEPTH
+          value: "2"
+        - name: USE_TRANSFER_LEARNING
+          value: "true"
+        - name: EPOCHS
+          value: "50"
+        - name: BATCH_SIZE
+          value: "32"
+        - name: LEARNING_RATE
+          value: "0.001"
+        - name: VALIDATION_SPLIT
+          value: "0.2"
+        - name: OUTPUT_DIR
+          value: "/models/relationship-aware-output"
+        volumeMounts:
+        - name: models-volume
+          mountPath: /models
+        - name: datasets-volume
+          mountPath: /datasets
+      volumes:
+      - name: models-volume
+        persistentVolumeClaim:
+          claimName: relationship-models-pvc
+      - name: datasets-volume
+        persistentVolumeClaim:
+          claimName: ml-datasets-pvc
+      restartPolicy: Never
+      nodeSelector:
+        gpu-type: nvidia-l40s
+      runtimeClassName: nvidia-gpu

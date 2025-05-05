@@ -9,30 +9,30 @@ data:
   # Redis configuration
   redis_host: "redis-master.kai.svc.cluster.local"
   redis_port: "6379"
-  
+
   # Workflow configuration
   workflow_namespace: "kai"
   workflow_archive_ttl: "168h"  # Keep workflow history for 7 days
-  
+
   # Logging configuration
   log_level: "info"
   log_format: "json"
-  
+
   # Resource allocation settings
   resource_quota_mode: "fair-share"
   enable_preemption: "true"
-  
+
   # Caching configuration
   enable_caching: "true"
   cache_ttl: "24h"
-  
+
   # Autoscaling configuration
   enable_autoscaling: "true"
   scale_down_delay: "10m"
-  
+
   # Priority configuration
   default_priority: "medium"
-  
+
   # Task queue configuration
   task_queue_config: |
     {
@@ -51,7 +51,7 @@ data:
         }
       }
     }
-  
+
   # Quality tiers configuration
   quality_tiers: |
     {
@@ -98,9 +98,9 @@ data:
         "gpu_class": "nvidia-h100"
       }
     }
-  
+
   # New Features Configuration
-  
+
   # Notification System Configuration
   notification_system: |
     {
@@ -121,7 +121,7 @@ data:
         "timeoutMs": 5000
       }
     }
-  
+
   # Parameter Registry Configuration
   parameter_registry: |
     {
@@ -132,7 +132,7 @@ data:
       "defaultParameterSet": "standard",
       "historyRetentionDays": 90
     }
-  
+
   # ML Features Configuration
   ml_features: |
     {
@@ -158,16 +158,39 @@ data:
         },
         "maxConcurrent": 4,
         "supportedDomains": ["wood", "metal", "fabric", "stone", "ceramic", "composite"]
+      },
+      "relationshipAwareTraining": {
+        "enabled": true,
+        "workflowTemplate": "relationship-aware-training-template",
+        "minQualityTier": "high",
+        "resourceQuotas": {
+          "cpu": 8,
+          "memory": "32Gi",
+          "gpu": 1
+        },
+        "maxConcurrent": 2,
+        "supportedMaterialTypes": ["tile", "wood", "stone", "laminate", "vinyl", "carpet", "metal", "glass", "concrete", "ceramic", "porcelain"]
+      },
+      "materialPropertyAnalytics": {
+        "enabled": true,
+        "workflowTemplate": "material-property-analytics-template",
+        "minQualityTier": "medium",
+        "resourceQuotas": {
+          "cpu": 4,
+          "memory": "8Gi",
+          "gpu": 0
+        },
+        "maxConcurrent": 5
       }
     }
-  
+
   # GPU Resource Management
   gpu_resources: |
     {
       "classes": {
         "nvidia-l40s": {
           "priority": 10,
-          "models": ["multimodal-pattern-recognition", "domain-specific-networks"]
+          "models": ["multimodal-pattern-recognition", "domain-specific-networks", "relationship-aware-training"]
         },
         "nvidia-h100": {
           "priority": 20,
@@ -183,7 +206,7 @@ data:
     }
   # Workflow templates path
   workflow_templates_path: "/etc/coordinator/config/workflow-templates"
-  
+
   # Monitoring configuration
   prometheus_enabled: "true"
   tracing_enabled: "true"

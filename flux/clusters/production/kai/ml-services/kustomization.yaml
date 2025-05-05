@@ -3,3 +3,6 @@ kind: Kustomization
 resources:
   - ./domain-specific-networks-deployment.yaml
   - ./multimodal-pattern-recognition-deployment.yaml
+  - ./relationship-aware-training-deployment.yaml
+  - ./relationship-aware-training-job.yaml
+  - ./relationship-aware-training-hpa.yaml

@@ -15,3 +15,5 @@ resources:
   - ./parameter-registry/
   - ./wasm-compiler/
   - ./workflows/
+  - ./analytics/
+  - ./api-server/

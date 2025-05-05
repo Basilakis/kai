@@ -1,0 +1,259 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: material-property-analytics-template
+spec:
+  entrypoint: material-property-analytics
+  arguments:
+    parameters:
+    - name: analysisType
+      description: "Type of analysis to perform (distribution, trends, correlation, anomalies)"
+    - name: property
+      description: "Property to analyze"
+    - name: materialType
+      description: "Material type to analyze (optional)"
+      default: ""
+    - name: timeUnit
+      description: "Time unit for trend analysis (day, week, month, year)"
+      default: "month"
+    - name: property2
+      description: "Second property for correlation analysis"
+      default: ""
+    - name: threshold
+      description: "Threshold for anomaly detection"
+      default: "2.5"
+    - name: qualityTier
+      description: "Quality tier for the job"
+      default: "medium"
+  
+  templates:
+  - name: material-property-analytics
+    inputs:
+      parameters:
+      - name: analysisType
+      - name: property
+      - name: materialType
+      - name: timeUnit
+      - name: property2
+      - name: threshold
+      - name: qualityTier
+    
+    dag:
+      tasks:
+      - name: prepare-data
+        template: prepare-data
+        arguments:
+          parameters:
+          - name: analysisType
+            value: "{{inputs.parameters.analysisType}}"
+          - name: property
+            value: "{{inputs.parameters.property}}"
+          - name: materialType
+            value: "{{inputs.parameters.materialType}}"
+          - name: property2
+            value: "{{inputs.parameters.property2}}"
+      
+      - name: perform-analysis
+        dependencies: [prepare-data]
+        template: perform-analysis
+        arguments:
+          parameters:
+          - name: analysisType
+            value: "{{inputs.parameters.analysisType}}"
+          - name: property
+            value: "{{inputs.parameters.property}}"
+          - name: materialType
+            value: "{{inputs.parameters.materialType}}"
+          - name: timeUnit
+            value: "{{inputs.parameters.timeUnit}}"
+          - name: property2
+            value: "{{inputs.parameters.property2}}"
+          - name: threshold
+            value: "{{inputs.parameters.threshold}}"
+          - name: datasetPath
+            value: "{{tasks.prepare-data.outputs.parameters.datasetPath}}"
+          - name: qualityTier
+            value: "{{inputs.parameters.qualityTier}}"
+      
+      - name: store-results
+        dependencies: [perform-analysis]
+        template: store-results
+        arguments:
+          parameters:
+          - name: analysisType
+            value: "{{inputs.parameters.analysisType}}"
+          - name: property
+            value: "{{inputs.parameters.property}}"
+          - name: materialType
+            value: "{{inputs.parameters.materialType}}"
+          - name: resultPath
+            value: "{{tasks.perform-analysis.outputs.parameters.resultPath}}"
+  
+  - name: prepare-data
+    inputs:
+      parameters:
+      - name: analysisType
+      - name: property
+      - name: materialType
+      - name: property2
+    
+    outputs:
+      parameters:
+      - name: datasetPath
+        valueFrom:
+          path: /tmp/dataset-path
+    
+    container:
+      image: ${REGISTRY_URL}/kai/material-property-analytics:latest
+      command: ["/bin/sh", "-c"]
+      args:
+      - |
+        set -e
+        echo "Preparing dataset for {{inputs.parameters.analysisType}} analysis of {{inputs.parameters.property}}"
+        
+        # Call the data preparation API
+        DATASET_PATH=$(curl -s -X POST \
+          http://material-property-analytics:8000/api/prepare-data \
+          -H "Content-Type: application/json" \
+          -d '{
+            "analysisType": "{{inputs.parameters.analysisType}}",
+            "property": "{{inputs.parameters.property}}",
+            "materialType": "{{inputs.parameters.materialType}}",
+            "property2": "{{inputs.parameters.property2}}"
+          }' | jq -r '.datasetPath')
+        
+        echo "Dataset prepared at: $DATASET_PATH"
+        echo $DATASET_PATH > /tmp/dataset-path
+      
+      resources:
+        requests:
+          cpu: "500m"
+          memory: "1Gi"
+        limits:
+          cpu: "1"
+          memory: "2Gi"
+  
+  - name: perform-analysis
+    inputs:
+      parameters:
+      - name: analysisType
+      - name: property
+      - name: materialType
+      - name: timeUnit
+      - name: property2
+      - name: threshold
+      - name: datasetPath
+      - name: qualityTier
+    
+    outputs:
+      parameters:
+      - name: resultPath
+        valueFrom:
+          path: /tmp/result-path
+    
+    container:
+      image: ${REGISTRY_URL}/kai/material-property-analytics:latest
+      command: ["/bin/sh", "-c"]
+      args:
+      - |
+        set -e
+        echo "Performing {{inputs.parameters.analysisType}} analysis of {{inputs.parameters.property}}"
+        
+        # Call the appropriate analysis API based on analysis type
+        case "{{inputs.parameters.analysisType}}" in
+          "distribution")
+            RESULT_PATH=$(curl -s -X POST \
+              http://material-property-analytics:8000/api/analyze/distribution \
+              -H "Content-Type: application/json" \
+              -d '{
+                "property": "{{inputs.parameters.property}}",
+                "materialType": "{{inputs.parameters.materialType}}",
+                "datasetPath": "{{inputs.parameters.datasetPath}}"
+              }' | jq -r '.resultPath')
+            ;;
+          "trends")
+            RESULT_PATH=$(curl -s -X POST \
+              http://material-property-analytics:8000/api/analyze/trends \
+              -H "Content-Type: application/json" \
+              -d '{
+                "property": "{{inputs.parameters.property}}",
+                "materialType": "{{inputs.parameters.materialType}}",
+                "timeUnit": "{{inputs.parameters.timeUnit}}",
+                "datasetPath": "{{inputs.parameters.datasetPath}}"
+              }' | jq -r '.resultPath')
+            ;;
+          "correlation")
+            RESULT_PATH=$(curl -s -X POST \
+              http://material-property-analytics:8000/api/analyze/correlation \
+              -H "Content-Type: application/json" \
+              -d '{
+                "property1": "{{inputs.parameters.property}}",
+                "property2": "{{inputs.parameters.property2}}",
+                "materialType": "{{inputs.parameters.materialType}}",
+                "datasetPath": "{{inputs.parameters.datasetPath}}"
+              }' | jq -r '.resultPath')
+            ;;
+          "anomalies")
+            RESULT_PATH=$(curl -s -X POST \
+              http://material-property-analytics:8000/api/analyze/anomalies \
+              -H "Content-Type: application/json" \
+              -d '{
+                "property": "{{inputs.parameters.property}}",
+                "materialType": "{{inputs.parameters.materialType}}",
+                "threshold": {{inputs.parameters.threshold}},
+                "datasetPath": "{{inputs.parameters.datasetPath}}"
+              }' | jq -r '.resultPath')
+            ;;
+          *)
+            echo "Unknown analysis type: {{inputs.parameters.analysisType}}"
+            exit 1
+            ;;
+        esac
+        
+        echo "Analysis completed, results at: $RESULT_PATH"
+        echo $RESULT_PATH > /tmp/result-path
+      
+      resources:
+        requests:
+          cpu: "1"
+          memory: "2Gi"
+        limits:
+          cpu: "4"
+          memory: "8Gi"
+  
+  - name: store-results
+    inputs:
+      parameters:
+      - name: analysisType
+      - name: property
+      - name: materialType
+      - name: resultPath
+    
+    container:
+      image: ${REGISTRY_URL}/kai/material-property-analytics:latest
+      command: ["/bin/sh", "-c"]
+      args:
+      - |
+        set -e
+        echo "Storing results for {{inputs.parameters.analysisType}} analysis of {{inputs.parameters.property}}"
+        
+        # Call the storage API
+        curl -s -X POST \
+          http://material-property-analytics:8000/api/store-results \
+          -H "Content-Type: application/json" \
+          -d '{
+            "analysisType": "{{inputs.parameters.analysisType}}",
+            "property": "{{inputs.parameters.property}}",
+            "materialType": "{{inputs.parameters.materialType}}",
+            "resultPath": "{{inputs.parameters.resultPath}}"
+          }'
+        
+        echo "Results stored successfully"
+      
+      resources:
+        requests:
+          cpu: "500m"
+          memory: "1Gi"
+        limits:
+          cpu: "1"
+          memory: "2Gi"

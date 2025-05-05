@@ -1,0 +1,168 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: material-property-analytics
+  labels:
+    app: material-property-analytics
+    component: analytics
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: material-property-analytics
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: material-property-analytics
+        component: analytics
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9100"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: material-property-analytics
+        image: ${REGISTRY_URL}/kai/material-property-analytics:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8000
+          name: http
+        - containerPort: 9100
+          name: metrics
+        resources:
+          requests:
+            cpu: "1000m"
+            memory: "2Gi"
+          limits:
+            cpu: "4000m"
+            memory: "8Gi"
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: material-property-analytics-config
+              key: log_level
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: material-property-analytics-config
+              key: redis_host
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: material-property-analytics-config
+              key: redis_port
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: material-property-analytics-secrets
+              key: redis_password
+        - name: MAX_CONCURRENT_JOBS
+          valueFrom:
+            configMapKeyRef:
+              name: material-property-analytics-config
+              key: max_concurrent_jobs
+        - name: JOB_TIMEOUT_SECONDS
+          valueFrom:
+            configMapKeyRef:
+              name: material-property-analytics-config
+              key: job_timeout_seconds
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        volumeMounts:
+        - name: config-volume
+          mountPath: /app/config
+          readOnly: true
+        - name: analytics-data
+          mountPath: /data
+      volumes:
+      - name: config-volume
+        configMap:
+          name: material-property-analytics-config
+      - name: analytics-data
+        persistentVolumeClaim:
+          claimName: analytics-data-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: material-property-analytics
+  labels:
+    app: material-property-analytics
+    component: analytics
+spec:
+  selector:
+    app: material-property-analytics
+  ports:
+  - port: 80
+    targetPort: 8000
+    protocol: TCP
+    name: http
+  - port: 9100
+    targetPort: 9100
+    protocol: TCP
+    name: metrics
+  type: ClusterIP
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: analytics-data-pvc
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: managed-premium
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: material-property-analytics-config
+data:
+  log_level: "info"
+  redis_host: "redis-master.kai.svc.cluster.local"
+  redis_port: "6379"
+  max_concurrent_jobs: "5"
+  job_timeout_seconds: "3600"  # 1 hour
+  analytics_config.json: |
+    {
+      "distributionAnalysis": {
+        "enabled": true,
+        "maxCategories": 50,
+        "binStrategy": "auto"
+      },
+      "trendAnalysis": {
+        "enabled": true,
+        "timeUnits": ["day", "week", "month", "year"],
+        "defaultTimeUnit": "month"
+      },
+      "correlationAnalysis": {
+        "enabled": true,
+        "minDataPoints": 10,
+        "significanceThreshold": 0.3
+      },
+      "anomalyDetection": {
+        "enabled": true,
+        "defaultZScoreThreshold": 2.5,
+        "minSampleSize": 20
+      }
+    }
