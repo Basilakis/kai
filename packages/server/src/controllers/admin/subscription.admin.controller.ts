@@ -1,6 +1,6 @@
 /**
  * Admin Subscription Controller
- * 
+ *
  * This controller handles admin operations for subscription management,
  * including tier management, user subscription management, and analytics.
  */
@@ -14,7 +14,10 @@ import {
   getTierById,
   createTier,
   updateTier,
-  deleteTier
+  deleteTier,
+  getUserTypesForTier,
+  associateTierWithUserType,
+  disassociateTierFromUserType
 } from '../../models/subscriptionTier.model';
 import {
   getUserSubscription,
@@ -36,7 +39,7 @@ import stripeService from '../../services/payment/stripeService';
 export const getAllSubscriptionTiers = async (req: Request, res: Response) => {
   try {
     const tiers = await getAllTiers();
-    
+
     res.status(200).json({
       success: true,
       count: tiers.length,
@@ -56,13 +59,13 @@ export const getAllSubscriptionTiers = async (req: Request, res: Response) => {
 export const getSubscriptionTierById = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    
+
     const tier = await getTierById(id);
-    
+
     if (!tier) {
       throw new ApiError(404, 'Subscription tier not found');
     }
-    
+
     res.status(200).json({
       success: true,
       data: tier
@@ -84,10 +87,10 @@ export const getSubscriptionTierById = async (req: Request, res: Response) => {
 export const createSubscriptionTier = async (req: Request, res: Response) => {
   try {
     const tierData = req.body;
-    
+
     // Create tier
     const tier = await createTier(tierData);
-    
+
     // If tier has a price and no Stripe product/price, create them
     if (tier.price > 0 && !tier.stripePriceId && stripeService.isStripeConfigured()) {
       try {
@@ -97,7 +100,7 @@ export const createSubscriptionTier = async (req: Request, res: Response) => {
           tier.description,
           { tierId: tier.id }
         );
-        
+
         // Create Stripe price
         const price = await stripeService.createPrice(
           product.id,
@@ -109,13 +112,13 @@ export const createSubscriptionTier = async (req: Request, res: Response) => {
           },
           { tierId: tier.id }
         );
-        
+
         // Update tier with Stripe IDs
         await updateTier(tier.id, {
           stripeProductId: product.id,
           stripePriceId: price.id
         });
-        
+
         // Update the returned tier object
         tier.stripeProductId = product.id;
         tier.stripePriceId = price.id;
@@ -124,7 +127,7 @@ export const createSubscriptionTier = async (req: Request, res: Response) => {
         // Continue without Stripe integration
       }
     }
-    
+
     res.status(201).json({
       success: true,
       data: tier
@@ -144,17 +147,17 @@ export const updateSubscriptionTier = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const tierData = req.body;
-    
+
     // Get existing tier
     const existingTier = await getTierById(id);
-    
+
     if (!existingTier) {
       throw new ApiError(404, 'Subscription tier not found');
     }
-    
+
     // Update tier
     const updatedTier = await updateTier(id, tierData);
-    
+
     // If price changed and Stripe is configured, update Stripe price
     if (
       tierData.price !== undefined &&
@@ -174,12 +177,12 @@ export const updateSubscriptionTier = async (req: Request, res: Response) => {
           },
           { tierId: id }
         );
-        
+
         // Update tier with new Stripe price ID
         await updateTier(id, {
           stripePriceId: price.id
         });
-        
+
         // Update the returned tier object
         updatedTier.stripePriceId = price.id;
       } catch (stripeError) {
@@ -187,7 +190,7 @@ export const updateSubscriptionTier = async (req: Request, res: Response) => {
         // Continue without Stripe integration
       }
     }
-    
+
     res.status(200).json({
       success: true,
       data: updatedTier
@@ -209,14 +212,14 @@ export const updateSubscriptionTier = async (req: Request, res: Response) => {
 export const deleteSubscriptionTier = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    
+
     // Check if tier exists
     const tier = await getTierById(id);
-    
+
     if (!tier) {
       throw new ApiError(404, 'Subscription tier not found');
     }
-    
+
     // Check if tier has active subscriptions
     const { data, error } = await (supabaseClient.getClient()
       .from('user_subscriptions') as any)
@@ -224,18 +227,18 @@ export const deleteSubscriptionTier = async (req: Request, res: Response) => {
       .eq('tierId', id)
       .eq('status', 'active')
       .limit(1);
-    
+
     if (error) {
       throw new Error(`Error checking active subscriptions: ${error.message}`);
     }
-    
+
     if (data && data.length > 0) {
       throw new ApiError(400, 'Cannot delete tier with active subscriptions');
     }
-    
+
     // Delete tier
     await deleteTier(id);
-    
+
     res.status(200).json({
       success: true,
       message: 'Subscription tier deleted successfully'
@@ -260,7 +263,7 @@ export const getAllUserSubscriptions = async (req: Request, res: Response) => {
     const offset = parseInt(req.query.offset as string) || 0;
     const search = req.query.search as string || '';
     const status = req.query.status as string || 'all';
-    
+
     // Build query
     let query = (supabaseClient.getClient()
       .from('user_subscriptions') as any)
@@ -271,24 +274,24 @@ export const getAllUserSubscriptions = async (req: Request, res: Response) => {
       `)
       .order('createdAt', { ascending: false })
       .range(offset, offset + limit - 1);
-    
+
     // Add status filter if not 'all'
     if (status !== 'all') {
       query = query.eq('status', status);
     }
-    
+
     // Add search filter if provided
     if (search) {
       // Search by user ID or email
       query = query.or(`user.id.eq.${search},user.email.ilike.%${search}%`);
     }
-    
+
     const { data, error } = await query;
-    
+
     if (error) {
       throw new Error(`Error fetching user subscriptions: ${error.message}`);
     }
-    
+
     res.status(200).json({
       success: true,
       count: data.length,
@@ -308,7 +311,7 @@ export const getAllUserSubscriptions = async (req: Request, res: Response) => {
 export const getUserSubscriptionById = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    
+
     const { data, error } = await (supabaseClient.getClient()
       .from('user_subscriptions') as any)
       .select(`
@@ -318,14 +321,14 @@ export const getUserSubscriptionById = async (req: Request, res: Response) => {
       `)
       .eq('id', id)
       .single();
-    
+
     if (error) {
       if (error.code === 'PGRST116') {
         throw new ApiError(404, 'User subscription not found');
       }
       throw new Error(`Error fetching user subscription: ${error.message}`);
     }
-    
+
     res.status(200).json({
       success: true,
       data
@@ -347,27 +350,27 @@ export const getUserSubscriptionById = async (req: Request, res: Response) => {
 export const getUserSubscriptionByUserId = async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
-    
+
     const subscription = await getUserSubscription(userId);
-    
+
     if (!subscription) {
       throw new ApiError(404, 'User subscription not found');
     }
-    
+
     // Get tier details
     const tier = await getTierById(subscription.tierId);
-    
+
     // Get user details
     const { data: user, error: userError } = await (supabaseClient.getClient()
       .from('users') as any)
       .select('id, email, first_name, last_name, credits')
       .eq('id', userId)
       .single();
-    
+
     if (userError) {
       throw new Error(`Error fetching user: ${userError.message}`);
     }
-    
+
     res.status(200).json({
       success: true,
       data: {
@@ -394,21 +397,21 @@ export const updateUserSubscription = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const updates = req.body;
-    
+
     // Get subscription
     const { data: subscription, error } = await (supabaseClient.getClient()
       .from('user_subscriptions') as any)
       .select('*')
       .eq('id', id)
       .single();
-    
+
     if (error) {
       if (error.code === 'PGRST116') {
         throw new ApiError(404, 'User subscription not found');
       }
       throw new Error(`Error fetching user subscription: ${error.message}`);
     }
-    
+
     // Update subscription
     const { data: updatedSubscription, error: updateError } = await (supabaseClient.getClient()
       .from('user_subscriptions') as any)
@@ -416,11 +419,11 @@ export const updateUserSubscription = async (req: Request, res: Response) => {
       .eq('id', id)
       .select()
       .single();
-    
+
     if (updateError) {
       throw new Error(`Error updating user subscription: ${updateError.message}`);
     }
-    
+
     // If status changed and subscription has Stripe subscription ID, update Stripe
     if (
       updates.status &&
@@ -447,7 +450,7 @@ export const updateUserSubscription = async (req: Request, res: Response) => {
         // Continue without Stripe integration
       }
     }
-    
+
     res.status(200).json({
       success: true,
       data: updatedSubscription
@@ -470,24 +473,24 @@ export const cancelUserSubscription = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { cancelAtPeriodEnd = true } = req.body;
-    
+
     // Get subscription
     const { data: subscription, error } = await (supabaseClient.getClient()
       .from('user_subscriptions') as any)
       .select('*')
       .eq('id', id)
       .single();
-    
+
     if (error) {
       if (error.code === 'PGRST116') {
         throw new ApiError(404, 'User subscription not found');
       }
       throw new Error(`Error fetching user subscription: ${error.message}`);
     }
-    
+
     // Cancel subscription
     const updatedSubscription = await cancelSubscription(subscription.userId, cancelAtPeriodEnd);
-    
+
     res.status(200).json({
       success: true,
       data: updatedSubscription
@@ -510,26 +513,26 @@ export const changeUserSubscriptionTier = async (req: Request, res: Response) =>
   try {
     const { id } = req.params;
     const { newTierId, prorate = true } = req.body;
-    
+
     // Get subscription
     const { data: subscription, error } = await (supabaseClient.getClient()
       .from('user_subscriptions') as any)
       .select('*')
       .eq('id', id)
       .single();
-    
+
     if (error) {
       if (error.code === 'PGRST116') {
         throw new ApiError(404, 'User subscription not found');
       }
       throw new Error(`Error fetching user subscription: ${error.message}`);
     }
-    
+
     // Change subscription tier
     const updatedSubscription = await changeSubscriptionPlan(subscription.userId, newTierId, {
       prorate
     });
-    
+
     res.status(200).json({
       success: true,
       data: updatedSubscription
@@ -552,19 +555,19 @@ export const addCreditsToUser = async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
     const { amount, description, type = 'adjustment' } = req.body;
-    
+
     // Validate input
     if (!amount || amount <= 0) {
       throw new ApiError(400, 'Invalid credit amount');
     }
-    
+
     if (!description) {
       throw new ApiError(400, 'Description is required');
     }
-    
+
     // Add credits
     const result = await addCredits(userId, amount, description, type);
-    
+
     res.status(200).json({
       success: true,
       message: `Added ${amount} credits to user ${userId}`,
@@ -589,10 +592,10 @@ export const getUserCreditHistory = async (req: Request, res: Response) => {
     const { userId } = req.params;
     const limit = parseInt(req.query.limit as string) || 10;
     const offset = parseInt(req.query.offset as string) || 0;
-    
+
     // Get credit transactions
     const transactions = await getCreditTransactions(userId, limit, offset);
-    
+
     res.status(200).json({
       success: true,
       count: transactions.length,
@@ -707,6 +710,101 @@ export const getSubscriptionStateTransitions = async (req: Request, res: Respons
   });
 };
 
+/**
+ * Get user types for a subscription tier
+ * @route GET /api/admin/subscriptions/tiers/:id/user-types
+ * @access Admin
+ */
+export const getTierUserTypes = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    // Check if tier exists
+    const tier = await getTierById(id);
+
+    if (!tier) {
+      throw new ApiError(404, 'Subscription tier not found');
+    }
+
+    // Get user types for the tier
+    const userTypes = await getUserTypesForTier(id);
+
+    res.status(200).json({
+      success: true,
+      data: userTypes
+    });
+  } catch (error) {
+    logger.error(`Error in getTierUserTypes: ${error}`);
+    if (error instanceof ApiError) {
+      throw error;
+    }
+    throw new ApiError(500, 'Error fetching tier user types');
+  }
+};
+
+/**
+ * Update user types for a subscription tier
+ * @route PUT /api/admin/subscriptions/tiers/:id/user-types
+ * @access Admin
+ */
+export const updateTierUserTypes = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { userTypes } = req.body;
+
+    // Check if tier exists
+    const tier = await getTierById(id);
+
+    if (!tier) {
+      throw new ApiError(404, 'Subscription tier not found');
+    }
+
+    // Validate user types
+    if (!Array.isArray(userTypes)) {
+      throw new ApiError(400, 'User types must be an array');
+    }
+
+    // Validate each user type
+    for (const userType of userTypes) {
+      if (!['user', 'factory', 'b2b', 'admin'].includes(userType)) {
+        throw new ApiError(400, `Invalid user type: ${userType}. Must be one of: user, factory, b2b, admin`);
+      }
+    }
+
+    // Get current user types
+    const currentUserTypes = await getUserTypesForTier(id);
+
+    // Remove associations that are no longer needed
+    for (const currentType of currentUserTypes) {
+      if (!userTypes.includes(currentType)) {
+        await disassociateTierFromUserType(id, currentType);
+      }
+    }
+
+    // Add new associations
+    for (const newType of userTypes) {
+      if (!currentUserTypes.includes(newType)) {
+        await associateTierWithUserType(id, newType);
+      }
+    }
+
+    // Get updated user types
+    const updatedUserTypes = await getUserTypesForTier(id);
+
+    res.status(200).json({
+      success: true,
+      message: 'Tier user types updated successfully',
+      data: updatedUserTypes
+    });
+  } catch (error) {
+    logger.error(`Error in updateTierUserTypes: ${error}`);
+    if (error instanceof ApiError) {
+      throw error;
+    }
+    throw new ApiError(500, 'Error updating tier user types');
+  }
+};
+
 export default {
   getAllSubscriptionTiers,
   getSubscriptionTierById,
@@ -727,5 +825,7 @@ export default {
   getSubscriptionRevenueAnalytics,
   getSubscriptionTierVersions,
   createSubscriptionTierVersion,
-  getSubscriptionStateTransitions
+  getSubscriptionStateTransitions,
+  getTierUserTypes,
+  updateTierUserTypes
 };

@@ -19,6 +19,7 @@ import serviceCostRoutes from './admin/serviceCost.admin.routes';
 import notificationAdminRoutes from './admin/notification.admin.routes'; // Import new routes
 import webhookAdminRoutes from './admin/webhook.admin.routes'; // Import new routes
 import kubernetesRoutes from './admin/kubernetes.admin.routes'; // Import Kubernetes routes
+import userTypeRoutes from './admin/userType.admin.routes'; // Import user type routes
 
 // Import services for dashboard stats
 import analyticsService from '../services/analytics/analyticsService';
@@ -171,6 +172,7 @@ router.use('/service-costs', serviceCostRoutes);
 router.use('/notifications', notificationAdminRoutes); // Mount new routes
 router.use('/webhooks', webhookAdminRoutes); // Mount new routes
 router.use('/kubernetes', kubernetesRoutes); // Mount Kubernetes routes
+router.use('/user-types', userTypeRoutes); // Mount user type routes
 
 /**
  * @route   GET /api/admin/dashboard

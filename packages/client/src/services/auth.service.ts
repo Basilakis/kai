@@ -1,6 +1,6 @@
 /**
  * Authentication Service
- * 
+ *
  * Handles token management and authentication state
  */
 
@@ -16,6 +16,7 @@ export interface User {
   username: string;
   email: string;
   role: string;
+  userType: string;
 }
 
 /**
@@ -48,7 +49,7 @@ export const clearAuthToken = (): void => {
 export const getAuthUser = (): User | null => {
   const userJson = localStorage.getItem(USER_KEY);
   if (!userJson) return null;
-  
+
   try {
     return JSON.parse(userJson) as User;
   } catch (error) {
@@ -91,23 +92,23 @@ export const isTokenExpired = (token: string): boolean => {
   try {
     // Split the token
     const parts = token.split('.');
-    
+
     // Check if we have a valid token with 3 parts (header.payload.signature)
     if (parts.length !== 3) {
       console.error('Invalid token format');
       return true;
     }
-    
+
     // Get the payload part (index 1)
     const base64Payload = parts[1];
     if (!base64Payload) {
       console.error('Token payload is missing');
       return true;
     }
-    
+
     // Parse the token payload
     const payload = JSON.parse(atob(base64Payload));
-    
+
     // Check if the token is expired
     return payload.exp * 1000 < Date.now();
   } catch (error) {
@@ -140,7 +141,26 @@ export const hasRole = (role: string): boolean => {
  * @returns Whether the user is an admin
  */
 export const isAdmin = (): boolean => {
-  return hasRole('admin');
+  return hasRole('admin') || getUserType() === 'admin';
+};
+
+/**
+ * Get the user's type from the stored user data
+ * @returns The user's type or null if not authenticated
+ */
+export const getUserType = (): string | null => {
+  const user = getAuthUser();
+  return user?.userType || null;
+};
+
+/**
+ * Check if the user has a specific type
+ * @param type The user type to check for ('user', 'factory', 'b2b', 'admin')
+ * @returns Whether the user has the specified type
+ */
+export const hasUserType = (type: string): boolean => {
+  const userType = getUserType();
+  return userType === type;
 };
 
 /**
@@ -149,7 +169,7 @@ export const isAdmin = (): boolean => {
 export const logout = (): void => {
   clearAuthToken();
   clearAuthUser();
-  
+
   // You might want to redirect to login page or refresh the page here
   // window.location.href = '/login';
 };

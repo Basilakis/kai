@@ -18,13 +18,14 @@ Key capabilities:
 
 The system follows a layered architecture that integrates with existing authentication:
 
-1. **Authentication Layer**: Validates user identity via Supabase Auth
-2. **Subscription Layer**: Verifies subscription status and tier permissions
-3. **Payment Processing Layer**: Handles payments and subscription billing via Stripe
-4. **Credit Management Layer**: Manages user credits for premium features
-5. **Access Control Layer**: Enforces module-specific permissions
-6. **Rate Limiting Layer**: Controls API usage based on tier limits
-7. **Analytics Layer**: Tracks usage patterns and subscription metrics
+1. **Authentication Layer**: Validates user identity via Supabase Auth and determines user type
+2. **User Type Layer**: Categorizes users as regular users, factories, b2b, or admin
+3. **Subscription Layer**: Verifies subscription status and tier permissions based on user type
+4. **Payment Processing Layer**: Handles payments and subscription billing via Stripe
+5. **Credit Management Layer**: Manages user credits for premium features
+6. **Access Control Layer**: Enforces module-specific permissions
+7. **Rate Limiting Layer**: Controls API usage based on tier limits
+8. **Analytics Layer**: Tracks usage patterns and subscription metrics
 
 ## Core Components
 
@@ -49,7 +50,21 @@ Tiers are stored in the `subscription_tiers` table in Supabase and offer differe
 | Enterprise | Full access for organizations | Unlimited access to all features, maximum API limits |
 | Custom | Tailored solutions for specific needs | Custom configuration of all modules and limits |
 
-### 2. User Subscriptions
+### 2. User Types
+
+The system supports different types of users, each with access to specific subscription tiers:
+
+- **User**: Regular end users of the application
+- **Factory**: Factory/manufacturer users with specialized access
+- **B2B**: Business-to-business users with specialized access
+- **Admin**: Administrators with full access to the system
+
+Special cases:
+- The email `basiliskan@gmail.com` is automatically assigned the `admin` user type when registering
+- Admins can convert regular users to factory or b2b users through the admin panel
+- Each user type has access to different subscription tiers tailored to their needs
+
+### 3. User Subscriptions
 
 User subscriptions link users to their selected subscription tier and track usage metrics:
 
@@ -57,6 +72,7 @@ User subscriptions link users to their selected subscription tier and track usag
 - **Stripe Integration**: Customer ID, subscription ID, payment method ID
 - **Billing Details**: Payment method, billing cycle, current period start/end
 - **Usage Tracking**: API requests count, storage usage, module-specific usage
+- **User Type**: The type of user (user, factory, b2b, admin) which determines available subscription tiers
 
 The subscription state machine manages the lifecycle of subscriptions with the following states:
 - **Active**: Subscription is active and paid
@@ -66,7 +82,7 @@ The subscription state machine manages the lifecycle of subscriptions with the f
 - **Incomplete**: Subscription creation is incomplete
 - **Paused**: Subscription is temporarily paused
 
-### 3. Credit System
+### 4. Credit System
 
 The credit system allows users to purchase and use credits for premium features:
 
@@ -80,7 +96,7 @@ Credits can be:
 - Purchased separately
 - Used for various actions (e.g., generating 3D models, running agents)
 
-### 4. Stripe Integration
+### 5. Stripe Integration
 
 The system integrates with Stripe for payment processing:
 
@@ -90,7 +106,7 @@ The system integrates with Stripe for payment processing:
 - **Webhook Handling**: Processing Stripe events for subscription lifecycle management
 - **Invoice Management**: Generating and managing invoices
 
-### 5. Module-Based Access Control
+### 6. Module-Based Access Control
 
 Access to specific platform functionalities is controlled at the module level:
 
@@ -110,7 +126,7 @@ Access to specific platform functionalities is controlled at the module level:
 
 This granular approach allows for flexible tier configuration and precise access control.
 
-### 6. Plan Versioning
+### 7. Plan Versioning
 
 The plan versioning system allows for the creation and management of different versions of subscription plans:
 
@@ -122,7 +138,7 @@ The plan versioning system allows for the creation and management of different v
 
 This enables tracking changes to subscription tiers and applying them at specific times.
 
-### 7. Analytics and Reporting
+### 8. Analytics and Reporting
 
 The analytics system provides insights into subscription metrics, revenue, user behavior, and resource utilization:
 
@@ -242,6 +258,7 @@ The subscription system uses the following database tables:
    - support_level: String
    - is_public: Boolean
    - custom_features: JSONB array
+   - user_types: JSONB array (user types that can access this tier)
    - created_at: Timestamp
    - updated_at: Timestamp
 
@@ -306,6 +323,13 @@ The subscription system uses the following database tables:
    - metadata: JSONB object
    - created_at: Timestamp
 
+7. **subscription_tier_user_types**
+   - id: UUID primary key
+   - tier_id: UUID foreign key to subscription_tiers
+   - user_type: String enum ('user', 'factory', 'b2b', 'admin')
+   - created_at: Timestamp
+   - updated_at: Timestamp
+
 ## Frontend Implementation
 
 ### User Interface Components
@@ -341,11 +365,17 @@ The subscription system uses the following database tables:
    - Creates and edits subscription tiers
    - Configures module access, API limits, and resource limits
    - Sets pricing and billing intervals
+   - Specifies which user types can access the tier
 
-3. **SubscriptionAnalyticsChart** (`packages/admin/src/components/subscription/SubscriptionAnalyticsChart.tsx`)
+3. **UserTypeManagement** (`packages/admin/src/components/user/UserTypeManagement.tsx`)
+   - Displays users with their current types
+   - Allows changing a user's type between user, factory, b2b, and admin
+   - Shows available subscription tiers for each user type
+
+4. **SubscriptionAnalyticsChart** (`packages/admin/src/components/subscription/SubscriptionAnalyticsChart.tsx`)
    - Displays subscription analytics in chart form
    - Shows revenue, subscriber counts, and churn rate
-   - Visualizes subscription distribution
+   - Visualizes subscription distribution by user type
 
 ### Pages
 
@@ -358,6 +388,12 @@ The subscription system uses the following database tables:
    - Main subscription management page for admins
    - Manages subscription tiers and user subscriptions
    - Displays subscription analytics
+   - Configures which user types can access each tier
+
+3. **Admin User Type Page** (`packages/admin/src/pages/user-types/index.tsx`)
+   - Manages user types (user, factory, b2b, admin)
+   - Allows changing a user's type
+   - Shows subscription tiers available for each user type
 
 ## Stripe Integration
 
@@ -474,7 +510,8 @@ const newTier = {
   maxTeamMembers: 5,
   maxMoodboards: 20,
   supportLevel: "priority",
-  isPublic: true
+  isPublic: true,
+  userTypes: ["user", "factory"] // This tier is available for regular users and factories
 };
 
 // Create the tier
@@ -531,26 +568,46 @@ if (hasAccess) {
 }
 ```
 
+### Managing User Types
+
+```typescript
+// Example: Changing a user's type
+const updatedUser = await updateUserType(
+  userId,
+  'factory',
+  {
+    reason: 'User requested factory access',
+    approvedBy: adminId
+  }
+);
+
+// Example: Getting subscription tiers for a user type
+const factoryTiers = await getSubscriptionTiersByUserType('factory');
+
+// Example: Associating a tier with a user type
+const result = await associateTierWithUserType(tierId, 'b2b');
+```
+
 ### Tracking API Usage
 
 ```typescript
 // Example: Tracking API usage
 app.use('/api/external', async (req, res, next) => {
   const userId = req.user.id;
-  
+
   // Check if user has reached the limit
   const hasReachedLimit = await hasReachedApiLimit(userId);
-  
+
   if (hasReachedLimit) {
-    return res.status(429).json({ 
+    return res.status(429).json({
       error: 'Rate limit exceeded',
       message: 'Please upgrade your subscription for higher limits'
     });
   }
-  
+
   // Track the API usage
   await trackApiUsage(userId);
-  
+
   // Continue with the request
   next();
 });
@@ -570,10 +627,12 @@ app.use('/api/external', async (req, res, next) => {
 3. **Default Tiers**
    - Create default subscription tiers during initial deployment
    - Ensure a free tier exists for new users
+   - Configure which user types can access each tier
 
 4. **User Migration**
    - Associate existing users with appropriate subscription tiers
    - Initialize credit balances for existing users
+   - Assign appropriate user types to existing users
 
 ## Security Considerations
 
@@ -596,6 +655,8 @@ app.use('/api/external', async (req, res, next) => {
    - Restrict tier management to admin users only
    - Log all changes to subscription tiers and user subscriptions
    - Implement proper audit trails for sensitive operations
+   - Secure user type changes with proper authorization checks
+   - Log all user type changes for audit purposes
 
 ## Best Practices
 
@@ -603,6 +664,7 @@ app.use('/api/external', async (req, res, next) => {
    - Provide clear information about subscription features and limits
    - Implement smooth upgrade/downgrade flows
    - Send notifications for important subscription events
+   - Show appropriate subscription tiers based on user type
 
 2. **Credit System**
    - Clearly communicate credit costs for different actions
@@ -614,19 +676,28 @@ app.use('/api/external', async (req, res, next) => {
    - Implement retry logic for failed payments
    - Provide clear error messages for payment issues
 
-4. **Analytics**
+4. **User Type Management**
+   - Provide clear information about the benefits of each user type
+   - Implement a smooth process for users to request type changes
+   - Ensure proper validation before changing user types
+   - Notify users when their type changes
+
+5. **Analytics**
    - Regularly review subscription metrics
    - Use analytics to inform pricing decisions
    - Monitor for unusual patterns or potential issues
+   - Track subscription distribution by user type
 
 ## Conclusion
 
 The Subscription Management System provides a comprehensive solution for managing subscriptions, payments, and access control. It integrates with Stripe for payment processing and offers a flexible, module-based access control system with tiered pricing and granular feature access.
 
 By implementing this system, you can:
-- Offer multiple subscription tiers with different features and limits
+- Support different user types (users, factories, b2b, admin) with specialized access
+- Offer multiple subscription tiers with different features and limits for each user type
 - Process payments securely using Stripe
 - Manage user credits for premium features
 - Track and enforce usage limits
 - Provide a seamless user experience for subscription management
 - Gain valuable insights into subscription metrics and user behavior
+- Easily manage user type changes through the admin panel

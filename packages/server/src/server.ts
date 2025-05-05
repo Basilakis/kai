@@ -151,6 +151,7 @@ import subscriptionEnhancedRoutes from './routes/subscription/index.routes';
 import creditRoutes from './routes/credit/index.routes';
 import notificationRoutes from './routes/notification.routes';
 import analyticsEnhancedRoutes from './routes/analytics/index.routes';
+import factoryRoutes from './routes/factory.routes';
 
 // Create Express app
 const app = express();
@@ -254,6 +255,7 @@ app.use('/api/subscriptions', subscriptionEnhancedRoutes); // Enhanced subscript
 app.use('/api/credits', noCacheHeaders, creditRoutes); // Credit system features
 app.use('/api/notifications', noCacheHeaders, notificationRoutes); // Notification system
 app.use('/api/analytics', analyticsEnhancedRoutes); // Enhanced analytics features
+app.use('/api/factory', authMiddleware, factoryRoutes); // Factory features
 
 /**
  * @openapi

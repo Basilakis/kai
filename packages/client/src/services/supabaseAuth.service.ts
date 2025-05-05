@@ -1,6 +1,6 @@
 /**
  * Supabase Authentication Service
- * 
+ *
  * Provides authentication functions using Supabase Auth
  * including social login providers (Google, Facebook, X/Twitter)
  */
@@ -20,6 +20,7 @@ export interface SupabaseUser {
   avatar_url?: string;
   provider?: string;
   role?: string;
+  user_type?: 'user' | 'factory' | 'b2b' | 'admin';
 }
 
 /**
@@ -61,7 +62,8 @@ export const signUp = async (
       username: data.user.email?.split('@')[0] || '',
       avatar_url: data.user.user_metadata?.avatar_url,
       provider: 'email',
-      role: 'user'
+      role: data.user.email === 'basiliskan@gmail.com' ? 'admin' : 'user',
+      user_type: data.user.email === 'basiliskan@gmail.com' ? 'admin' : 'user'
     };
 
     // Store session
@@ -72,8 +74,8 @@ export const signUp = async (
     return { user, error: null };
   } catch (err) {
     console.error('Signup error:', err);
-    return { 
-      user: null, 
+    return {
+      user: null,
       error: { message: err instanceof Error ? err.message : 'An unknown error occurred during signup' }
     };
   }
@@ -119,7 +121,8 @@ export const signIn = async (
       avatar_url: data.user.user_metadata?.avatar_url,
       full_name: data.user.user_metadata?.full_name,
       provider: 'email',
-      role: data.user.app_metadata?.role || 'user'
+      role: data.user.app_metadata?.role || 'user',
+      user_type: data.user.app_metadata?.user_type || 'user'
     };
 
     // Store session
@@ -130,8 +133,8 @@ export const signIn = async (
     return { user, error: null };
   } catch (err) {
     console.error('Login error:', err);
-    return { 
-      user: null, 
+    return {
+      user: null,
       error: { message: err instanceof Error ? err.message : 'An unknown error occurred during login' }
     };
   }
@@ -175,7 +178,7 @@ export const signInWithSocialProvider = async (
 export const signOut = async (): Promise<{ error: AuthError | null }> => {
   try {
     const { error } = await supabaseClient.getClient().auth.signOut();
-    
+
     if (error) {
       return { error: { message: error.message } };
     }
@@ -187,7 +190,7 @@ export const signOut = async (): Promise<{ error: AuthError | null }> => {
     return { error: null };
   } catch (err) {
     console.error('Logout error:', err);
-    return { 
+    return {
       error: { message: err instanceof Error ? err.message : 'An unknown error occurred during logout' }
     };
   }
@@ -199,7 +202,7 @@ export const signOut = async (): Promise<{ error: AuthError | null }> => {
  */
 export const getCurrentSession = async (): Promise<Session | null> => {
   const { data, error } = await supabaseClient.getClient().auth.getSession();
-  
+
   if (error) {
     console.error('Error getting session:', error);
     return null;
@@ -214,7 +217,7 @@ export const getCurrentSession = async (): Promise<Session | null> => {
  */
 export const getCurrentUser = async (): Promise<SupabaseUser | null> => {
   const { data, error } = await supabaseClient.getClient().auth.getUser();
-  
+
   if (error || !data?.user) {
     return null;
   }
@@ -227,7 +230,8 @@ export const getCurrentUser = async (): Promise<SupabaseUser | null> => {
     avatar_url: data.user.user_metadata?.avatar_url,
     full_name: data.user.user_metadata?.full_name,
     provider: data.user.app_metadata?.provider || 'email',
-    role: data.user.app_metadata?.role || 'user'
+    role: data.user.app_metadata?.role || 'user',
+    user_type: data.user.app_metadata?.user_type || 'user'
   };
 
   return user;
@@ -250,7 +254,7 @@ export const resetPassword = async (email: string): Promise<{ error: AuthError |
     return { error: null };
   } catch (err) {
     console.error('Password reset error:', err);
-    return { 
+    return {
       error: { message: err instanceof Error ? err.message : 'An unknown error occurred during password reset' }
     };
   }
@@ -273,7 +277,7 @@ export const updatePassword = async (newPassword: string): Promise<{ error: Auth
     return { error: null };
   } catch (err) {
     console.error('Password update error:', err);
-    return { 
+    return {
       error: { message: err instanceof Error ? err.message : 'An unknown error occurred during password update' }
     };
   }
@@ -291,7 +295,8 @@ const handleSession = (session: Session, user: SupabaseUser) => {
     id: user.id,
     username: user.username || user.email.split('@')[0] || '',
     email: user.email,
-    role: user.role || 'user'
+    role: user.role || 'user',
+    userType: user.user_type || 'user'
   });
 };
 
@@ -303,17 +308,17 @@ const handleSession = (session: Session, user: SupabaseUser) => {
 export const setupTokenRefresh = (): (() => void) => {
   // Check token validity every 5 minutes
   const REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutes in milliseconds
-  
+
   const refreshToken = async () => {
     try {
       const session = await getCurrentSession();
-      
+
       if (session) {
         // Calculate time until token expires (in seconds)
-        const expiresIn = session.expires_at ? 
-          session.expires_at - Math.floor(Date.now() / 1000) : 
+        const expiresIn = session.expires_at ?
+          session.expires_at - Math.floor(Date.now() / 1000) :
           0;
-        
+
         // If token expires in less than 10 minutes, refresh it
         if (expiresIn < 600) {
           const { error } = await supabaseClient.getClient().auth.refreshSession();
@@ -326,13 +331,13 @@ export const setupTokenRefresh = (): (() => void) => {
       console.error('Token refresh error:', err);
     }
   };
-  
+
   // Set up interval to check and refresh token
   const intervalId = setInterval(refreshToken, REFRESH_INTERVAL);
-  
+
   // Also refresh on page focus
   window.addEventListener('focus', refreshToken);
-  
+
   // Provide cleanup function if needed
   return () => {
     clearInterval(intervalId);

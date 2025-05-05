@@ -18,7 +18,11 @@ import {
   getSubscriptionTierById as getTierById,
   createSubscriptionTier,
   updateSubscriptionTier,
-  deleteSubscriptionTier
+  deleteSubscriptionTier,
+  getSubscriptionTiersByUserType,
+  associateTierWithUserType,
+  disassociateTierFromUserType,
+  getUserTypesForTier
   // Removed unused SubscriptionTier import
 } from '../models/subscriptionTier.model';
 
@@ -64,8 +68,19 @@ export const getSubscriptionTiers = async (req: Request, res: Response) => {
     // Check if user is admin
     const isAdmin = req.user?.role === 'admin';
 
-    // Get all tiers (include non-public only for admins)
-    const tiers = await getAllSubscriptionTiers(isAdmin);
+    // Get user type from query params or from user object
+    const userTypeParam = req.query.userType as string;
+    const userType = userTypeParam || req.user?.userType || 'user';
+
+    // Get tiers based on user type or admin status
+    let tiers;
+    if (isAdmin && !userTypeParam) {
+      // Admins see all tiers by default
+      tiers = await getAllSubscriptionTiers(true);
+    } else {
+      // Filter tiers by user type
+      tiers = await getSubscriptionTiersByUserType(userType, isAdmin);
+    }
 
     // Filter out sensitive information for non-admins
     const filteredTiers = isAdmin
@@ -98,6 +113,7 @@ export const getSubscriptionTiers = async (req: Request, res: Response) => {
     res.status(200).json({
       success: true,
       count: filteredTiers.length,
+      userType: userType,
       data: filteredTiers
     });
   } catch (error) {
@@ -192,12 +208,18 @@ export const createTier = async (req: Request, res: Response) => {
       maxTeamMembers,
       supportLevel,
       customFeatures,
-      isPublic
+      isPublic,
+      userTypes
     } = req.body;
 
     // Validate required fields
     if (!name || !description || price === undefined || !currency || !moduleAccess || !apiLimits || !supportLevel) {
       throw new ApiError(400, 'Missing required fields');
+    }
+
+    // Validate user types if provided
+    if (userTypes && (!Array.isArray(userTypes) || userTypes.some(type => !['user', 'factory', 'b2b', 'admin'].includes(type)))) {
+      throw new ApiError(400, 'User types must be an array containing only valid types: user, factory, b2b, admin');
     }
 
     // Validate module access
@@ -229,8 +251,16 @@ export const createTier = async (req: Request, res: Response) => {
       maxTeamMembers,
       supportLevel,
       customFeatures,
+      userTypes,
       isPublic: isPublic !== undefined ? isPublic : true // Default to true
     });
+
+    // Associate tier with user types if provided
+    if (userTypes && userTypes.length > 0) {
+      for (const userType of userTypes) {
+        await associateTierWithUserType(tier.id, userType);
+      }
+    }
 
     res.status(201).json({
       success: true,
@@ -266,7 +296,8 @@ export const updateTier = async (req: Request, res: Response) => {
       maxTeamMembers,
       supportLevel,
       customFeatures,
-      isPublic
+      isPublic,
+      userTypes
     } = req.body;
 
     // Check if tier exists
@@ -305,6 +336,11 @@ export const updateTier = async (req: Request, res: Response) => {
       }
     }
 
+    // Validate user types if provided
+    if (userTypes && (!Array.isArray(userTypes) || userTypes.some(type => !['user', 'factory', 'b2b', 'admin'].includes(type)))) {
+      throw new ApiError(400, 'User types must be an array containing only valid types: user, factory, b2b, admin');
+    }
+
     // Update tier
     if (!id) {
       throw new ApiError(400, 'Subscription tier ID is required');
@@ -321,8 +357,29 @@ export const updateTier = async (req: Request, res: Response) => {
       maxTeamMembers,
       supportLevel,
       customFeatures,
+      userTypes,
       isPublic
     });
+
+    // Update user type associations if provided
+    if (userTypes) {
+      // Get current user types
+      const currentUserTypes = await getUserTypesForTier(id);
+
+      // Remove associations that are no longer needed
+      for (const currentType of currentUserTypes) {
+        if (!userTypes.includes(currentType)) {
+          await disassociateTierFromUserType(id, currentType);
+        }
+      }
+
+      // Add new associations
+      for (const newType of userTypes) {
+        if (!currentUserTypes.includes(newType)) {
+          await associateTierWithUserType(id, newType);
+        }
+      }
+    }
 
     res.status(200).json({
       success: true,
@@ -456,6 +513,15 @@ export const updateUserSubscriptionTier = async (req: Request, res: Response) =>
 
     if (!tier.isPublic && req.user.role !== 'admin') {
       throw new ApiError(403, 'This subscription tier is not available');
+    }
+
+    // Check if tier is available for the user's type
+    const userType = req.user.userType || 'user';
+    const tierUserTypes = await getUserTypesForTier(tierId);
+
+    // If the tier has user type restrictions and the user's type is not included
+    if (tierUserTypes.length > 0 && !tierUserTypes.includes(userType) && req.user.role !== 'admin') {
+      throw new ApiError(403, `This subscription tier is not available for ${userType} accounts`);
     }
 
     // Get user's current subscription

@@ -1,6 +1,6 @@
 /**
  * Admin Subscription Routes
- * 
+ *
  * This file defines routes for admin management of subscription tiers, user subscriptions,
  * and subscription analytics.
  */
@@ -220,6 +220,27 @@ router.post(
 router.get(
   '/users/:id/transitions',
   asyncHandler(subscriptionAdminController.getSubscriptionStateTransitions)
+);
+
+// Tier User Types
+/**
+ * @route   GET /api/admin/subscriptions/tiers/:id/user-types
+ * @desc    Get user types for a subscription tier
+ * @access  Admin
+ */
+router.get(
+  '/tiers/:id/user-types',
+  asyncHandler(subscriptionAdminController.getTierUserTypes)
+);
+
+/**
+ * @route   PUT /api/admin/subscriptions/tiers/:id/user-types
+ * @desc    Update user types for a subscription tier
+ * @access  Admin
+ */
+router.put(
+  '/tiers/:id/user-types',
+  asyncHandler(subscriptionAdminController.updateTierUserTypes)
 );
 
 export default router;

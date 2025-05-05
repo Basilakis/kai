@@ -12,6 +12,7 @@ export interface User {
   lastName?: string;
   displayName?: string;
   role: UserRole;
+  userType: UserType;
   permissions: Permission[];
   organization?: Organization;
   preferences?: UserPreferences;
@@ -25,7 +26,7 @@ export interface User {
 /**
  * Represents the role of a user
  */
-export type UserRole = 
+export type UserRole =
   | 'admin'
   | 'manager'
   | 'user'
@@ -34,11 +35,20 @@ export type UserRole =
 /**
  * Represents the status of a user
  */
-export type UserStatus = 
+export type UserStatus =
   | 'active'
   | 'inactive'
   | 'suspended'
   | 'pending';
+
+/**
+ * Represents the type of user in the system
+ */
+export type UserType =
+  | 'user'     // Regular end user
+  | 'factory'  // Factory/manufacturer user
+  | 'b2b'      // Business-to-business user
+  | 'admin';   // Administrator
 
 /**
  * Represents a permission in the system
@@ -97,6 +107,7 @@ export interface Subscription {
   price?: number;
   currency?: string;
   features?: string[];
+  userTypes?: UserType[]; // The user types this subscription is available for
 }
 
 /**
