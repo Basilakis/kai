@@ -20,6 +20,14 @@ import notificationAdminRoutes from './admin/notification.admin.routes'; // Impo
 import webhookAdminRoutes from './admin/webhook.admin.routes'; // Import new routes
 import kubernetesRoutes from './admin/kubernetes.admin.routes'; // Import Kubernetes routes
 import userTypeRoutes from './admin/userType.admin.routes'; // Import user type routes
+import promptRoutes from './admin/prompt.admin.routes'; // Import prompt routes
+import promptMonitoringRoutes from './admin/prompt.monitoring.routes'; // Import prompt monitoring routes
+import promptABTestingRoutes from './admin/prompt.abtesting.routes'; // Import prompt A/B testing routes
+import promptSegmentationRoutes from './admin/prompt.segmentation.routes'; // Import prompt segmentation routes
+import promptMLRoutes from './admin/prompt.ml.routes'; // Import prompt ML routes
+import promptStatisticalRoutes from './admin/prompt.statistical.routes'; // Import prompt statistical routes
+import promptOptimizationRoutes from './admin/prompt.optimization.routes'; // Import prompt optimization routes
+import promptIntegrationRoutes from './admin/prompt.integration.routes'; // Import prompt integration routes
 
 // Import services for dashboard stats
 import analyticsService from '../services/analytics/analyticsService';
@@ -173,6 +181,14 @@ router.use('/notifications', notificationAdminRoutes); // Mount new routes
 router.use('/webhooks', webhookAdminRoutes); // Mount new routes
 router.use('/kubernetes', kubernetesRoutes); // Mount Kubernetes routes
 router.use('/user-types', userTypeRoutes); // Mount user type routes
+router.use('/prompts', promptRoutes); // Mount prompt routes
+router.use('/prompt-monitoring', promptMonitoringRoutes); // Mount prompt monitoring routes
+router.use('/prompt-abtesting', promptABTestingRoutes); // Mount prompt A/B testing routes
+router.use('/prompt-segmentation', promptSegmentationRoutes); // Mount prompt segmentation routes
+router.use('/prompt-ml', promptMLRoutes); // Mount prompt ML routes
+router.use('/prompt-statistical', promptStatisticalRoutes); // Mount prompt statistical routes
+router.use('/prompt-optimization', promptOptimizationRoutes); // Mount prompt optimization routes
+router.use('/prompt-integration', promptIntegrationRoutes); // Mount prompt integration routes
 
 /**
  * @route   GET /api/admin/dashboard

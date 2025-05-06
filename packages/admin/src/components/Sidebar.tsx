@@ -46,6 +46,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, closeSidebar }) => {
     { name: 'Visual Reference Library', href: '/visual-reference-library', icon: PhotographIcon },
     { name: 'Validation Rules', href: '/validation-rules', icon: DocumentTextIcon },
     { name: 'Models', href: '/models', icon: DatabaseIcon },
+    { name: 'System Prompts', href: '/prompts', icon: DocumentTextIcon },
+    { name: 'Prompt Monitoring', href: '/prompts/monitoring', icon: ChartBarIcon },
     { name: 'Training Monitor', href: '/training', icon: ChartBarIcon },
     { name: 'Training Status', href: '/training-status', icon: ChartBarIcon },
     { name: 'Datasets', href: '/datasets', icon: DatabaseIcon },

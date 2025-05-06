@@ -87,3 +87,7 @@ Additional documentation can be found in the following locations:
 - Package-specific documentation (moved to this central location)
 - Code comments for implementation details
 - API documentation generated from code
+
+## Documentation Tools
+
+- [Documentation Consolidation](./documentation-consolidation.md) - Automated system for generating consolidated DOCX documentation

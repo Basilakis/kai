@@ -6,6 +6,29 @@ This document provides guidance on how to effectively interact with KAI's agent 
 
 KAI agents are specialized AI assistants designed to help with specific tasks. Each agent has expertise in a particular domain, such as material science, project planning, or image recognition. When communicating with agents, use natural language to express your needs and questions.
 
+## Agent Prompts Management
+
+Agent prompts are now managed through the admin panel's prompt management system. This allows administrators to customize the behavior of agents without modifying code.
+
+### Accessing the Prompt Management System
+
+To access the prompt management system:
+
+1. Log in to the admin panel
+2. Navigate to "System Prompts" in the sidebar
+3. Filter by "Agent" type to see all agent-related prompts
+
+### Customizing Agent Prompts
+
+To customize an agent prompt:
+
+1. Find the prompt you want to customize
+2. Click the Edit button
+3. Make your changes
+4. Click Save
+
+For more detailed information on the prompt management system, see the [Prompt Management System documentation](../../../../readme/prompt-management.md).
+
 ### Basic Interaction
 
 Simply type your question or request, and the agent will respond with the most relevant and helpful information. For example:
@@ -103,12 +126,12 @@ The hybrid search implementation combines multiple embedding approaches with tra
            model="text-embedding-ada-002"
        )
        return response['data'][0]['embedding']
-   
+
    # SBERT Example (Current Implementation)
    def get_sbert_embedding(text):
        model = SentenceTransformer('all-MiniLM-L6-v2')
        return model.encode(text)
-   
+
    # Universal Sentence Encoder Example
    def get_use_embedding(text):
        use_model = hub.load("https://tfhub.dev/google/universal-sentence-encoder/4")
@@ -141,11 +164,11 @@ The hybrid search implementation combines multiple embedding approaches with tra
        # Stage 1: Fast recall with vector search
        embedding = embedding_model.encode(query)
        candidates = vector_db.search(embedding, limit=limit*3)
-       
+
        # Stage 2: Re-rank with more precise methods
        documents = [retrieve_document(id) for id in candidates]
        reranked = text_reranker.rerank(query, documents)
-       
+
        return reranked[:limit]
    ```
 

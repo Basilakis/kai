@@ -37,34 +37,34 @@ graph TD
         TypeScriptBridge --> PythonBridge[Python Bridge Handler]
         Response[Response to User] <-- Results --- TypeScriptBridge
     end
-    
+
     subgraph RAGSystem[RAG System Core]
         PythonBridge --> |Query| UnifiedService[Unified RAG Service]
-        
+
         UnifiedService --> Embedding[Enhanced Text Embeddings]
         Embedding -->|Vector| Retrieval[Hybrid Retrieval System]
-        
+
         Retrieval --> |Materials & Knowledge| ContextAssembly[Context Assembly System]
-        
+
         ContextAssembly --> |Structured Context| GenerativeEnhancer[Generative Enhancement Layer]
-        
+
         GenerativeEnhancer --> |Enhanced Response| UnifiedService
-        
+
         UnifiedService -.->|Cache Results| Cache[(Cache)]
         UnifiedService <-.->|Check Cache| Cache
     end
-    
+
     subgraph Storage
         Retrieval <--> |Vector Search| SupabaseVectors[(Supabase pgvector)]
         Retrieval <--> |Knowledge Lookup| KnowledgeBase[(Knowledge Base)]
         ContextAssembly <--> |Relationships| KnowledgeGraph[(Knowledge Graph)]
     end
-    
+
     classDef system fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
     classDef storage fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
     classDef frontend fill:#fff3e0,stroke:#e65100,stroke-width:2px;
     classDef component fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px;
-    
+
     class UnifiedService,Cache system;
     class SupabaseVectors,KnowledgeBase,KnowledgeGraph storage;
     class UserQuery,TypeScriptBridge,PythonBridge,Response frontend;
@@ -802,15 +802,27 @@ def _format_context(self, materials, knowledge_items, relationships):
 
 ## Prompt Engineering
 
-The RAG system uses several prompts for different aspects of the generative enhancement. Each can be customized to change the system's behavior.
+The RAG system uses several prompts for different aspects of the generative enhancement. These prompts can now be managed through the admin panel's prompt management system.
+
+### Prompt Management System
+
+The prompt management system provides a centralized way to manage all AI prompts used in the RAG system, including:
+
+- Material-specific prompts
+- Explanation prompts
+- Similarity prompts
+- Application prompts
+
+For detailed information on using the prompt management system, see the [Prompt Management System documentation](./prompt-management.md).
 
 ### Prompt Locations
 
-All prompts are located in `packages/ml/python/generative_enhancer.py` within the following methods:
+Prompts are stored in the database and managed through the admin panel. The original prompt templates can be found in:
 
-- `_build_explanation_prompt` - For material explanations
-- `_build_similarity_prompt` - For similarity comparisons
-- `_build_application_prompt` - For application recommendations
+- `packages/ml/python/generative_enhancer.py` - For generative enhancement prompts
+- `packages/ml/python/material_specific_prompts.py` - For material-specific prompts
+
+The system now uses `packages/ml/python/material_specific_prompts_db.py` to fetch prompts from the database.
 
 ### Prompt Structure
 
@@ -821,18 +833,28 @@ Each prompt has two parts:
 
 ### Customizing Prompts
 
-To customize a prompt:
+To customize a prompt, use the prompt management system in the admin panel:
+
+1. Navigate to "System Prompts" in the admin sidebar
+2. Find the prompt you want to customize
+3. Click the Edit button
+4. Make your changes
+5. Click Save
+
+You can also still modify the prompts directly in the code:
 
 1. Edit `packages/ml/python/generative_enhancer.py`
 2. Modify the relevant `_build_*_prompt` method
 3. Update both system and user prompts as needed
+
+However, using the admin panel is recommended as it allows for changes without code deployment.
 
 Example of customizing the explanation prompt:
 
 ```python
 def _build_explanation_prompt(self, context: ContextData, query: str) -> Dict[str, str]:
     # Format materials data...
-    
+
     # Customize system prompt
     system_prompt = f"""
     You are an expert materials scientist. Use only the provided context to explain
@@ -840,20 +862,20 @@ def _build_explanation_prompt(self, context: ContextData, query: str) -> Dict[st
     and cost-effectiveness. When information is not available, acknowledge the limitations.
     Always cite sources for specific facts using [Source: Name] format.
     """
-    
+
     # Customize user prompt
     user_prompt = f"""
     Based on the provided information, explain each material's properties and suitability for: {query}
-    
+
     Focus specifically on these aspects:
     1. Durability and long-term performance
     2. Installation complexity and requirements
     3. Cost considerations (initial and lifetime)
     4. Environmental impact and sustainability
-    
+
     {context_text}
     """
-    
+
     return {
         "system": system_prompt,
         "user": user_prompt
@@ -1689,7 +1711,7 @@ DEFAULT_CONFIG = {
     "max_cache_size": 1000,
     "timeout": 30,  # seconds
     "max_concurrent_requests": 10,
-    
+
     # Embedding configuration
     "embedding": {
         "default_model": "sentence-transformers/all-MiniLM-L6-v2",
@@ -1700,7 +1722,7 @@ DEFAULT_CONFIG = {
         "pooling_method": "mean",  # or "max", "cls"
         "batch_size": 32
     },
-    
+
     # Retrieval configuration
     "retrieval": {
         "max_results": 10,
@@ -1713,7 +1735,7 @@ DEFAULT_CONFIG = {
         "top_k_stage1": 50,  # initial retrieval before re-ranking
         "diversify_results": True,
     },
-    
+
     # Context assembly configuration
     "assembly": {
         "include_relationships": True,
@@ -1724,7 +1746,7 @@ DEFAULT_CONFIG = {
         "prioritize_recency": True,
         "include_sources": True
     },
-    
+
     # Generation configuration
     "generation": {
         "model": "gpt-4",
@@ -1738,7 +1760,7 @@ DEFAULT_CONFIG = {
         "include_confidence_scores": True,
         "structured_response": True
     },
-    
+
     # Tracking configuration
     "tracking_enabled": True,
     "log_level": "info",
