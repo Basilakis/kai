@@ -77,7 +77,8 @@ cat > package.json << 'EOL'
   },
   "devDependencies": {
     "@docusaurus/module-type-aliases": "3.7.0",
-    "@docusaurus/types": "3.7.0"
+    "@docusaurus/types": "3.7.0",
+    "typescript": "5.3.3"
   },
   "browserslist": {
     "production": [
@@ -269,25 +270,37 @@ cd kai-docs-temp
 # Fix workspace protocol references in package.json
 sed -i 's/"workspace:\*"/"*"/g' package.json
 
-# Check if yarn is installed, use it if available
-if command -v yarn &> /dev/null; then
-    # Use Yarn Berry which handles workspace protocol better
-    yarn set version berry
+# Remove problematic dependencies that don't exist
+sed -i '/"@repo\/typescript-config": "\*"/d' package.json
 
-    # Create .yarnrc.yml to configure Yarn
-    cat > .yarnrc.yml << 'EOL'
-nodeLinker: node-modules
-npmRegistryServer: "https://registry.npmjs.org/"
-unsafeHttpWhitelist:
-  - registry.npmjs.org
+# Create a basic tsconfig.json file
+cat > tsconfig.json << 'EOL'
+{
+  "compilerOptions": {
+    "target": "es2020",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "noFallthroughCasesInSwitch": true,
+    "module": "esnext",
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx"
+  },
+  "include": ["src", "docs"]
+}
 EOL
 
-    yarn install
-    yarn build
-else
-    npm install
-    npm run build
-fi
+# Install dependencies directly without using package.json
+npm install --no-save @docusaurus/core@3.7.0 @docusaurus/preset-classic@3.7.0 @mdx-js/react@3.0.0 clsx@2.1.0 prism-react-renderer@2.3.1 react@18.2.0 react-dom@18.2.0 typescript@5.3.3
+
+# Use npx to run Docusaurus commands directly
+npx docusaurus build
 
 echo "Documentation site built successfully!"
 echo ""
