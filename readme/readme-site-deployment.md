@@ -17,7 +17,7 @@ The deployment process:
 
 To manually deploy the documentation site:
 
-1. Make sure you have Node.js installed
+1. Make sure you have Node.js 20 or later installed
 2. Run the deployment script:
 
 ```bash
@@ -48,10 +48,9 @@ The repository includes a GitHub Actions workflow that automatically deploys the
 To set up automated deployment:
 
 1. Push this repository to GitHub
-2. Create a Personal Access Token (PAT) with `repo` permissions
-3. Add the token as a repository secret named `DOCS_DEPLOY_TOKEN`
-4. The workflow will automatically run when changes are pushed to the `/readme/` folder
-5. You can also manually trigger the workflow from the Actions tab
+2. The built-in GITHUB_TOKEN should have sufficient permissions for deployment
+3. The workflow will automatically run when changes are pushed to the `/readme/` folder
+4. You can also manually trigger the workflow from the Actions tab
 
 ## Customization
 
@@ -71,6 +70,15 @@ To customize the Docusaurus site:
 2. Modify the theme, navigation, or other settings
 3. Run the deployment script again
 
+## Technology Stack
+
+The documentation site is built using:
+
+1. **Docusaurus 3.7** - The latest version of Docusaurus, providing modern features and improved performance
+2. **React 18** - For interactive UI components
+3. **Node.js 20** - For optimal compatibility with modern JavaScript features
+4. **Yarn** - For dependency management
+
 ## Troubleshooting
 
 If you encounter issues with the deployment:
@@ -84,19 +92,19 @@ If you encounter issues with the deployment:
 
 #### EUNSUPPORTEDPROTOCOL Error
 
-If you see an error like `npm error code EUNSUPPORTEDPROTOCOL` or `Unsupported URL Type "workspace:"`, this is because Docusaurus uses workspace protocol references in its package.json file. The deployment script automatically fixes this by:
+If you see an error like `npm error code EUNSUPPORTEDPROTOCOL` or `Unsupported URL Type "workspace:"`, this is because some Docusaurus templates use workspace protocol references in the package.json file. Our solution avoids this issue by:
 
-1. Replacing `"workspace:*"` with `"*"` in the package.json file
-2. Using Yarn instead of npm for installation (Yarn handles these references better)
+1. Creating a custom Docusaurus setup from scratch instead of using the default template
+2. Using ES modules syntax instead of CommonJS
+3. Using Yarn instead of npm for installation when available
 
-This fix is applied automatically in both the GitHub Actions workflow and the local deployment script.
+This approach completely avoids the workspace protocol issue and provides a modern, stable deployment process.
 
 ## Requirements
 
-- Node.js 16 or higher
+- Node.js 20 or higher
 - Git
 - GitHub account with permissions to create repositories
-- Personal Access Token with `repo` permissions (for automated deployment)
 
 ## Additional Resources
 

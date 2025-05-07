@@ -2,9 +2,9 @@ const fs = require('fs');
 const path = require('path');
 
 // Source and destination directories
-const sourceDir = './readme';
-const destDir = './kai-docs-temp/docs';
-const categoriesFile = './kai-docs-temp/categories.json';
+const sourceDir = '.';  // Since we're now running from within the readme folder
+const destDir = '../kai-docs-temp/docs';
+const categoriesFile = '../kai-docs-temp/categories.json';
 
 // Create destination directory if it doesn't exist
 if (!fs.existsSync(destDir)) {
@@ -203,11 +203,11 @@ function generateSidebar() {
       });
     }
 
-    const sidebarContent = `
-module.exports = ${JSON.stringify(sidebar, null, 2)};
+    const sidebarContent = `/** @type {import('@docusaurus/plugin-content-docs').SidebarsConfig} */
+export default ${JSON.stringify(sidebar, null, 2)};
 `;
 
-    fs.writeFileSync('./kai-docs-temp/sidebars.js', sidebarContent);
+    fs.writeFileSync('../kai-docs-temp/sidebars.js', sidebarContent);
     return true;
   } catch (error) {
     console.error('Error generating sidebar:', error);
