@@ -287,7 +287,26 @@ jobs:
             sed -i '1,6s/Guide$/Guide"/g' ai-ml/rag-system.md
 
             # Fix the syntax error around line 1039 (unexpected character)
-            sed -i '1030,1050s/<[0-9][0-9]*:[0-9][0-9]*>/<span>&lt;\1:\2&gt;<\/span>/g' ai-ml/rag-system.md
+            # Create a Python script to fix the file
+            cat > fix_rag_system.py << 'EOF'
+import re
+
+# Read the file
+with open('ai-ml/rag-system.md', 'r') as f:
+    content = f.read()
+
+# Replace problematic angle brackets with HTML entities
+content = re.sub(r'<(\d+):(\d+)>', r'&lt;\1:\2&gt;', content)
+
+# Write the file back
+with open('ai-ml/rag-system.md', 'w') as f:
+    f.write(content)
+
+print("Fixed rag-system.md")
+EOF
+
+            # Run the Python script
+            python3 fix_rag_system.py
 
             # Show the result
             echo "Fixed front matter:"
@@ -305,6 +324,37 @@ jobs:
           echo "Fixing image references in markdown files..."
           find . -name "*.md" -exec sed -i 's|docs/docs/images/|/img/docs/images/|g' {} \;
           find . -name "*.md" -exec sed -i 's|docs/3d/docs/images/|/img/3d/docs/images/|g' {} \;
+
+          # Create a Python script to fix all MDX syntax issues
+          cat > fix_mdx_syntax.py << 'EOF'
+import re
+import os
+import glob
+
+def fix_mdx_file(file_path):
+    with open(file_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+
+    # Replace problematic angle brackets with HTML entities
+    content = re.sub(r'<(\d+):(\d+)>', r'&lt;\1:\2&gt;', content)
+
+    # Replace other potentially problematic syntax
+    content = re.sub(r'<([a-zA-Z0-9_]+)@([a-zA-Z0-9_]+)>', r'&lt;\1@\2&gt;', content)
+
+    with open(file_path, 'w', encoding='utf-8') as f:
+        f.write(content)
+
+    print(f"Fixed MDX syntax in {file_path}")
+
+# Process all markdown files
+for md_file in glob.glob('./**/*.md', recursive=True):
+    fix_mdx_file(md_file)
+
+print("Fixed MDX syntax in all files")
+EOF
+
+          # Run the Python script
+          python3 fix_mdx_syntax.py
 
           # List all fixed files
           echo "Files with titles containing colons:"
