@@ -330,14 +330,14 @@ const categories = {
 // Function to process a markdown file
 function processMarkdownFile(filePath, destPath) {
   let content = fs.readFileSync(filePath, 'utf8');
-  
+
   // Extract the title from the first heading or use the filename
   let title = path.basename(filePath, '.md').replace(/-/g, ' ');
   const titleMatch = content.match(/^#\s+(.+)$/m);
   if (titleMatch) {
     title = titleMatch[1];
   }
-  
+
   // Add frontmatter
   const frontmatter = `---
 id: ${path.basename(filePath, '.md')}
@@ -346,7 +346,7 @@ sidebar_label: ${title}
 ---
 
 `;
-  
+
   // Write the processed content to the destination
   fs.writeFileSync(destPath, frontmatter + content);
 }
@@ -355,7 +355,7 @@ sidebar_label: ${title}
 function processReadmeFiles() {
   // Create a map to track which files have been categorized
   const processedFiles = new Set();
-  
+
   // Process files by category
   for (const [category, files] of Object.entries(categories)) {
     // Create category directory
@@ -363,7 +363,7 @@ function processReadmeFiles() {
     if (!fs.existsSync(categoryDir)) {
       fs.mkdirSync(categoryDir, { recursive: true });
     }
-    
+
     // Process files in this category
     for (const file of files) {
       const sourcePath = path.join(sourceDir, file);
@@ -374,24 +374,24 @@ function processReadmeFiles() {
       }
     }
   }
-  
+
   // Process any remaining files not explicitly categorized
   const files = fs.readdirSync(sourceDir);
   for (const file of files) {
     if (file.endsWith('.md') && !processedFiles.has(file)) {
       const sourcePath = path.join(sourceDir, file);
       const destPath = path.join(destDir, 'other', file);
-      
+
       // Create 'other' directory if it doesn't exist
       if (!fs.existsSync(path.join(destDir, 'other'))) {
         fs.mkdirSync(path.join(destDir, 'other'), { recursive: true });
       }
-      
+
       processMarkdownFile(sourcePath, destPath);
       categories.other.push(file);
     }
   }
-  
+
   // Create an intro.md file
   const introContent = `---
 id: intro
@@ -426,9 +426,9 @@ The documentation is organized into the following sections:
 
 Use the sidebar to navigate through the documentation.
 `;
-  
+
   fs.writeFileSync(path.join(destDir, 'intro.md'), introContent);
-  
+
   // Save the categories for sidebar generation
   fs.writeFileSync(categoriesFile, JSON.stringify(categories, null, 2));
 }
@@ -436,32 +436,32 @@ Use the sidebar to navigate through the documentation.
 // Generate the sidebar configuration
 function generateSidebar() {
   const categories = JSON.parse(fs.readFileSync(categoriesFile, 'utf8'));
-  
+
   const sidebar = {
     tutorialSidebar: [
       'intro',
     ]
   };
-  
+
   for (const [category, files] of Object.entries(categories)) {
     if (files.length === 0) continue;
-    
+
     const categoryItems = files.map(file => {
       const id = path.basename(file, '.md');
       return `${category}/${id}`;
     });
-    
+
     sidebar.tutorialSidebar.push({
       type: 'category',
       label: category.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
       items: categoryItems,
     });
   }
-  
+
   const sidebarContent = `
 module.exports = ${JSON.stringify(sidebar, null, 2)};
 `;
-  
+
   fs.writeFileSync('./kai-docs-temp/sidebars.js', sidebarContent);
 }
 
@@ -539,10 +539,12 @@ echo "Documentation site built successfully!"
 echo ""
 echo "To deploy the site to GitHub Pages:"
 echo "1. Push this repository to GitHub"
-echo "2. Set up GitHub Actions with the necessary permissions"
-echo "3. Create a personal access token with repo permissions"
-echo "4. Add the token as a secret named GITHUB_TOKEN in your repository settings"
-echo "5. Run the GitHub Actions workflow manually or push changes to the readme folder"
+echo "2. Make sure GitHub Actions is enabled for your repository"
+echo "3. The built-in GITHUB_TOKEN should have sufficient permissions for deployment"
+echo "4. Run the GitHub Actions workflow manually from the Actions tab or push changes to the readme folder"
 echo ""
 echo "You can also test the site locally by running:"
 echo "cd kai-docs-temp && npm run start"
+echo ""
+echo "Note: If you're deploying to a different repository, you'll need to create a personal access token"
+echo "with repo permissions and add it as a secret named GITHUB_TOKEN in your repository settings."

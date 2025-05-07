@@ -11,6 +11,15 @@ if (!fs.existsSync(destDir)) {
   fs.mkdirSync(destDir, { recursive: true });
 }
 
+// Function to check if a file exists
+function fileExists(filePath) {
+  try {
+    return fs.statSync(filePath).isFile();
+  } catch (err) {
+    return false;
+  }
+}
+
 // Categories for organizing documentation
 const categories = {
   'getting-started': ['README.md', 'main-readme.md', 'folder-structure.md'],
@@ -42,33 +51,50 @@ const categories = {
 
 // Function to process a markdown file
 function processMarkdownFile(filePath, destPath) {
-  let content = fs.readFileSync(filePath, 'utf8');
-  
-  // Extract the title from the first heading or use the filename
-  let title = path.basename(filePath, '.md').replace(/-/g, ' ');
-  const titleMatch = content.match(/^#\s+(.+)$/m);
-  if (titleMatch) {
-    title = titleMatch[1];
+  if (!fileExists(filePath)) {
+    console.log(`Warning: File ${filePath} does not exist, skipping.`);
+    return false;
   }
-  
-  // Add frontmatter
-  const frontmatter = `---
+
+  try {
+    let content = fs.readFileSync(filePath, 'utf8');
+
+    // Extract the title from the first heading or use the filename
+    let title = path.basename(filePath, '.md').replace(/-/g, ' ');
+    const titleMatch = content.match(/^#\s+(.+)$/m);
+    if (titleMatch) {
+      title = titleMatch[1];
+    }
+
+    // Add frontmatter
+    const frontmatter = `---
 id: ${path.basename(filePath, '.md')}
 title: ${title}
 sidebar_label: ${title}
 ---
 
 `;
-  
-  // Write the processed content to the destination
-  fs.writeFileSync(destPath, frontmatter + content);
+
+    // Create directory if it doesn't exist
+    const destDir = path.dirname(destPath);
+    if (!fs.existsSync(destDir)) {
+      fs.mkdirSync(destDir, { recursive: true });
+    }
+
+    // Write the processed content to the destination
+    fs.writeFileSync(destPath, frontmatter + content);
+    return true;
+  } catch (error) {
+    console.error(`Error processing file ${filePath}:`, error);
+    return false;
+  }
 }
 
 // Process all markdown files in the readme directory
 function processReadmeFiles() {
   // Create a map to track which files have been categorized
   const processedFiles = new Set();
-  
+
   // Process files by category
   for (const [category, files] of Object.entries(categories)) {
     // Create category directory
@@ -76,7 +102,7 @@ function processReadmeFiles() {
     if (!fs.existsSync(categoryDir)) {
       fs.mkdirSync(categoryDir, { recursive: true });
     }
-    
+
     // Process files in this category
     for (const file of files) {
       const sourcePath = path.join(sourceDir, file);
@@ -87,24 +113,24 @@ function processReadmeFiles() {
       }
     }
   }
-  
+
   // Process any remaining files not explicitly categorized
   const files = fs.readdirSync(sourceDir);
   for (const file of files) {
     if (file.endsWith('.md') && !processedFiles.has(file)) {
       const sourcePath = path.join(sourceDir, file);
       const destPath = path.join(destDir, 'other', file);
-      
+
       // Create 'other' directory if it doesn't exist
       if (!fs.existsSync(path.join(destDir, 'other'))) {
         fs.mkdirSync(path.join(destDir, 'other'), { recursive: true });
       }
-      
+
       processMarkdownFile(sourcePath, destPath);
       categories.other.push(file);
     }
   }
-  
+
   // Create an intro.md file
   const introContent = `---
 id: intro
@@ -139,47 +165,74 @@ The documentation is organized into the following sections:
 
 Use the sidebar to navigate through the documentation.
 `;
-  
+
   fs.writeFileSync(path.join(destDir, 'intro.md'), introContent);
-  
+
   // Save the categories for sidebar generation
   fs.writeFileSync(categoriesFile, JSON.stringify(categories, null, 2));
 }
 
 // Generate the sidebar configuration
 function generateSidebar() {
-  const categories = JSON.parse(fs.readFileSync(categoriesFile, 'utf8'));
-  
-  const sidebar = {
-    tutorialSidebar: [
-      'intro',
-    ]
-  };
-  
-  for (const [category, files] of Object.entries(categories)) {
-    if (files.length === 0) continue;
-    
-    const categoryItems = files.map(file => {
-      const id = path.basename(file, '.md');
-      return `${category}/${id}`;
-    });
-    
-    sidebar.tutorialSidebar.push({
-      type: 'category',
-      label: category.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
-      items: categoryItems,
-    });
-  }
-  
-  const sidebarContent = `
+  try {
+    if (!fs.existsSync(categoriesFile)) {
+      console.error(`Categories file ${categoriesFile} does not exist.`);
+      return false;
+    }
+
+    const categories = JSON.parse(fs.readFileSync(categoriesFile, 'utf8'));
+
+    const sidebar = {
+      tutorialSidebar: [
+        'intro',
+      ]
+    };
+
+    for (const [category, files] of Object.entries(categories)) {
+      if (files.length === 0) continue;
+
+      const categoryItems = files.map(file => {
+        const id = path.basename(file, '.md');
+        return `${category}/${id}`;
+      });
+
+      sidebar.tutorialSidebar.push({
+        type: 'category',
+        label: category.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+        items: categoryItems,
+      });
+    }
+
+    const sidebarContent = `
 module.exports = ${JSON.stringify(sidebar, null, 2)};
 `;
-  
-  fs.writeFileSync('./kai-docs-temp/sidebars.js', sidebarContent);
+
+    fs.writeFileSync('./kai-docs-temp/sidebars.js', sidebarContent);
+    return true;
+  } catch (error) {
+    console.error('Error generating sidebar:', error);
+    return false;
+  }
 }
 
 // Main execution
-processReadmeFiles();
-generateSidebar();
+try {
+  console.log('Starting to process readme files...');
 
-console.log('Readme files processed successfully!');
+  // Check if source directory exists
+  if (!fs.existsSync(sourceDir)) {
+    console.error(`Source directory ${sourceDir} does not exist.`);
+    process.exit(1);
+  }
+
+  processReadmeFiles();
+
+  if (generateSidebar()) {
+    console.log('Readme files processed successfully!');
+  } else {
+    console.warn('Readme files processed with warnings.');
+  }
+} catch (error) {
+  console.error('Error processing readme files:', error);
+  process.exit(1);
+}
