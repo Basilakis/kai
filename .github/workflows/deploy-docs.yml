@@ -36,11 +36,19 @@ jobs:
           mkdir -p kai-docs-temp/docs
           node process-readme-files.js
 
+      - name: Fix workspace protocol in package.json
+        run: |
+          cd kai-docs-temp
+          # Replace workspace:* with * in package.json to avoid EUNSUPPORTEDPROTOCOL error
+          sed -i 's/"workspace:\*"/"*"/g' package.json
+
       - name: Build documentation site
         run: |
           cd kai-docs-temp
-          npm install
-          npm run build
+          # Use yarn instead of npm to handle dependencies better
+          npm install -g yarn
+          yarn install
+          yarn build
 
       - name: Deploy to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@v4

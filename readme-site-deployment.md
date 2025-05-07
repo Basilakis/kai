@@ -80,6 +80,17 @@ If you encounter issues with the deployment:
 3. Check the GitHub Actions logs for any errors
 4. Ensure the repository settings allow GitHub Pages deployment
 
+### Common Issues
+
+#### EUNSUPPORTEDPROTOCOL Error
+
+If you see an error like `npm error code EUNSUPPORTEDPROTOCOL` or `Unsupported URL Type "workspace:"`, this is because Docusaurus uses workspace protocol references in its package.json file. The deployment script automatically fixes this by:
+
+1. Replacing `"workspace:*"` with `"*"` in the package.json file
+2. Using Yarn instead of npm for installation (Yarn handles these references better)
+
+This fix is applied automatically in both the GitHub Actions workflow and the local deployment script.
+
 ## Requirements
 
 - Node.js 16 or higher

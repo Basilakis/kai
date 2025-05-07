@@ -529,11 +529,22 @@ EOL
 echo "Processing readme files..."
 node process-readme-files.js
 
+# Fix workspace protocol in package.json
+echo "Fixing workspace protocol in package.json..."
+cd kai-docs-temp
+# Replace workspace:* with * in package.json to avoid EUNSUPPORTEDPROTOCOL error
+sed -i 's/"workspace:\*"/"*"/g' package.json
+
 # Build the Docusaurus site
 echo "Building Docusaurus site..."
-cd kai-docs-temp
-npm install
-npm run build
+# Check if yarn is installed, use it if available
+if command -v yarn &> /dev/null; then
+    yarn install
+    yarn build
+else
+    npm install
+    npm run build
+fi
 
 echo "Documentation site built successfully!"
 echo ""
