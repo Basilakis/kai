@@ -174,9 +174,9 @@ jobs:
             tagline: "Comprehensive documentation for the KAI project",
             favicon: "img/favicon.ico",
             url: "https://basilakis.github.io",
-            baseUrl: "/kai-readme.github.io/",
+            baseUrl: "/",
             organizationName: "Basilakis",
-            projectName: "kai-readme.github.io",
+            projectName: "basilakis.github.io",
             trailingSlash: false,
             onBrokenLinks: "warn",
             onBrokenMarkdownLinks: "warn",
@@ -345,5 +345,5 @@ jobs:
           token: ${{ secrets.DOCS_DEPLOY_TOKEN }}
           branch: gh-pages
           folder: kai-docs-temp/build
-          repository-name: Basilakis/kai-readme.github.io
+          repository-name: Basilakis/basilakis.github.io
           clean: true
