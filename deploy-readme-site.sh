@@ -38,135 +38,184 @@ fi
 mkdir -p "$TEMP_DIR"
 cd "$TEMP_DIR"
 
-# Initialize a new Docusaurus site
-echo "Initializing Docusaurus site..."
-npx create-docusaurus@latest . classic --typescript
+# Create a Docusaurus site from scratch
+echo "Creating Docusaurus site from scratch..."
 
-# Clean up default content
-echo "Cleaning up default content..."
-rm -rf ./docs/*
-rm -rf ./blog/*
-rm -rf ./src/pages/*
-
-# Create a custom index page
-cat > ./src/pages/index.js << 'EOL'
-import React from 'react';
-import clsx from 'clsx';
-import Link from '@docusaurus/Link';
-import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
-import Layout from '@theme/Layout';
-import HomepageFeatures from '@site/src/components/HomepageFeatures';
-
-import styles from './index.module.css';
-
-function HomepageHeader() {
-  const {siteConfig} = useDocusaurusContext();
-  return (
-    <header className={clsx('hero hero--primary', styles.heroBanner)}>
-      <div className="container">
-        <h1 className="hero__title">{siteConfig.title}</h1>
-        <p className="hero__subtitle">{siteConfig.tagline}</p>
-        <div className={styles.buttons}>
-          <Link
-            className="button button--secondary button--lg"
-            to="/docs/intro">
-            Documentation
-          </Link>
-        </div>
-      </div>
-    </header>
-  );
-}
-
-export default function Home() {
-  const {siteConfig} = useDocusaurusContext();
-  return (
-    <Layout
-      title={`${siteConfig.title}`}
-      description="KAI Documentation">
-      <HomepageHeader />
-      <main>
-        <HomepageFeatures />
-      </main>
-    </Layout>
-  );
+# Initialize a new package.json
+cat > package.json << 'EOL'
+{
+  "name": "kai-documentation",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "docusaurus": "docusaurus",
+    "start": "docusaurus start",
+    "build": "docusaurus build",
+    "swizzle": "docusaurus swizzle",
+    "deploy": "docusaurus deploy",
+    "clear": "docusaurus clear",
+    "serve": "docusaurus serve",
+    "write-translations": "docusaurus write-translations",
+    "write-heading-ids": "docusaurus write-heading-ids"
+  },
+  "dependencies": {
+    "@docusaurus/core": "^2.4.3",
+    "@docusaurus/preset-classic": "^2.4.3",
+    "@mdx-js/react": "^1.6.22",
+    "clsx": "^1.2.1",
+    "prism-react-renderer": "^1.3.5",
+    "react": "^17.0.2",
+    "react-dom": "^17.0.2"
+  },
+  "browserslist": {
+    "production": [
+      ">0.5%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "engines": {
+    "node": ">=16.14"
+  }
 }
 EOL
 
-# Create a custom homepage features component
-mkdir -p ./src/components
-cat > ./src/components/HomepageFeatures/index.js << 'EOL'
-import React from 'react';
-import clsx from 'clsx';
-import styles from './styles.module.css';
+# Create basic Docusaurus config
+cat > docusaurus.config.js << 'EOL'
+// @ts-check
+const lightCodeTheme = require('prism-react-renderer/themes/github');
+const darkCodeTheme = require('prism-react-renderer/themes/dracula');
 
-const FeatureList = [
-  {
-    title: 'Comprehensive Documentation',
-    description: (
-      <>
-        Access all KAI documentation in one place with easy navigation.
-      </>
-    ),
+/** @type {import('@docusaurus/types').Config} */
+const config = {
+  title: 'KAI Documentation',
+  tagline: 'Comprehensive documentation for the KAI project',
+  favicon: 'img/favicon.ico',
+  url: 'https://basilakis.github.io',
+  baseUrl: '/kai-readme.github.io/',
+  organizationName: 'Basilakis',
+  projectName: 'kai-readme.github.io',
+  trailingSlash: false,
+  onBrokenLinks: 'warn',
+  onBrokenMarkdownLinks: 'warn',
+  i18n: {
+    defaultLocale: 'en',
+    locales: ['en'],
   },
-  {
-    title: 'Searchable Content',
-    description: (
-      <>
-        Find what you need quickly with our powerful search functionality.
-      </>
-    ),
-  },
-  {
-    title: 'Always Up-to-Date',
-    description: (
-      <>
-        Documentation is automatically updated from the main repository.
-      </>
-    ),
-  },
-];
+  presets: [
+    [
+      'classic',
+      /** @type {import('@docusaurus/preset-classic').Options} */
+      ({
+        docs: {
+          sidebarPath: require.resolve('./sidebars.js'),
+          routeBasePath: '/',
+        },
+        blog: false,
+        theme: {
+          customCss: require.resolve('./src/css/custom.css'),
+        },
+      }),
+    ],
+  ],
+  themeConfig:
+    /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
+    ({
+      navbar: {
+        title: 'KAI Documentation',
+        logo: {
+          alt: 'KAI Logo',
+          src: 'img/logo.svg',
+        },
+        items: [
+          {
+            href: 'https://github.com/Basilakis/kai',
+            label: 'GitHub',
+            position: 'right',
+          },
+        ],
+      },
+      footer: {
+        style: 'dark',
+        links: [
+          {
+            title: 'More',
+            items: [
+              {
+                label: 'GitHub',
+                href: 'https://github.com/Basilakis/kai',
+              },
+            ],
+          },
+        ],
+        copyright: `Copyright © ${new Date().getFullYear()} KAI Project. Built with Docusaurus.`,
+      },
+      prism: {
+        theme: lightCodeTheme,
+        darkTheme: darkCodeTheme,
+      },
+    }),
+};
 
-function Feature({title, description}) {
-  return (
-    <div className={clsx('col col--4')}>
-      <div className="text--center padding-horiz--md">
-        <h3>{title}</h3>
-        <p>{description}</p>
-      </div>
-    </div>
-  );
+module.exports = config;
+EOL
+
+# Create directories
+mkdir -p docs src/css static/img
+
+# Create custom CSS
+cat > src/css/custom.css << 'EOL'
+/**
+ * Any CSS included here will be global. The classic template
+ * bundles Infima by default. Infima is a CSS framework designed to
+ * work well for content-centric websites.
+ */
+
+/* You can override the default Infima variables here. */
+:root {
+  --ifm-color-primary: #2e8555;
+  --ifm-color-primary-dark: #29784c;
+  --ifm-color-primary-darker: #277148;
+  --ifm-color-primary-darkest: #205d3b;
+  --ifm-color-primary-light: #33925d;
+  --ifm-color-primary-lighter: #359962;
+  --ifm-color-primary-lightest: #3cad6e;
+  --ifm-code-font-size: 95%;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
 }
 
-export default function HomepageFeatures() {
-  return (
-    <section className={styles.features}>
-      <div className="container">
-        <div className="row">
-          {FeatureList.map((props, idx) => (
-            <Feature key={idx} {...props} />
-          ))}
-        </div>
-      </div>
-    </section>
-  );
+/* For readability concerns, you should choose a lighter palette in dark mode. */
+[data-theme='dark'] {
+  --ifm-color-primary: #25c2a0;
+  --ifm-color-primary-dark: #21af90;
+  --ifm-color-primary-darker: #1fa588;
+  --ifm-color-primary-darkest: #1a8870;
+  --ifm-color-primary-light: #29d5b0;
+  --ifm-color-primary-lighter: #32d8b4;
+  --ifm-color-primary-lightest: #4fddbf;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
 }
 EOL
 
-# Create styles for the homepage features
-mkdir -p ./src/components/HomepageFeatures
-mv ./src/components/HomepageFeatures/index.js ./src/components/HomepageFeatures/
-cat > ./src/components/HomepageFeatures/styles.module.css << 'EOL'
-.features {
-  display: flex;
-  align-items: center;
-  padding: 2rem 0;
-  width: 100%;
-}
+# Create placeholder logo
+cat > static/img/logo.svg << 'EOL'
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <rect width="200" height="200" fill="#2e8555" />
+  <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="Arial" font-size="72" fill="white">KAI</text>
+</svg>
 EOL
 
-# Update docusaurus.config.js
-cat > ./docusaurus.config.js << 'EOL'
+# Create empty sidebars.js
+cat > sidebars.js << 'EOL'
+module.exports = {
+  tutorialSidebar: []
+};
+EOL
 // @ts-check
 // Note: type annotations allow type checking and IDEs autocompletion
 
