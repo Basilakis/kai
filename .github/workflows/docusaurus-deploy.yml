@@ -252,61 +252,30 @@ jobs:
           # Additional fix for any problematic files
           cd ../kai-docs-temp/docs
 
-          # Fix the specific problematic file by recreating it
+          # Fix the specific problematic file directly
           if [ -f "ai-ml/rag-system.md" ]; then
-            echo "Recreating ai-ml/rag-system.md with proper front matter..."
+            echo "Fixing ai-ml/rag-system.md..."
 
-            # Get the content without front matter (skip first 6 lines)
-            CONTENT=$(tail -n +6 ai-ml/rag-system.md)
-
-            # Create new file with proper front matter
-            echo '---
-id: rag-system
-title: "RAG System: Architecture, Enhancements, and Integration Guide"
-sidebar_label: "RAG System: Architecture, Enhancements, and Integration Guide"
----' > ai-ml/rag-system.md
-
-            # Append the original content
-            echo "$CONTENT" >> ai-ml/rag-system.md
+            # Use sed to directly fix the front matter
+            sed -i '1,6s/title: RAG System: Architecture/title: "RAG System: Architecture/g' ai-ml/rag-system.md
+            sed -i '1,6s/sidebar_label: RAG System: Architecture/sidebar_label: "RAG System: Architecture/g' ai-ml/rag-system.md
+            sed -i '1,6s/Guide$/Guide"/g' ai-ml/rag-system.md
 
             # Show the result
-            echo "New front matter:"
+            echo "Fixed front matter:"
             cat ai-ml/rag-system.md | head -5
           fi
 
-          # Check for any other problematic files and fix them
-          echo "Checking for other problematic files..."
-          for file in $(find . -name "*.md"); do
-            # Check if the file has a colon in the title without quotes
-            if grep -q '^title: [^"].*:.*[^"]$' "$file"; then
-              echo "Found problematic title in $file"
+          # Fix all files with a simpler approach
+          echo "Fixing all markdown files with potential YAML issues..."
 
-              # Extract the title
-              TITLE=$(grep '^title:' "$file" | sed 's/^title: //')
+          # Add quotes around any title or sidebar_label containing a colon
+          find . -name "*.md" -exec sed -i '1,6s/^title: \([^"]*\):\([^"]*\)$/title: "\1:\2"/g' {} \;
+          find . -name "*.md" -exec sed -i '1,6s/^sidebar_label: \([^"]*\):\([^"]*\)$/sidebar_label: "\1:\2"/g' {} \;
 
-              # Replace with quoted version
-              sed -i "s/^title: $TITLE/title: \"$TITLE\"/" "$file"
-
-              # Show the result
-              echo "Fixed title in $file:"
-              grep '^title:' "$file"
-            fi
-
-            # Check if the file has a colon in the sidebar_label without quotes
-            if grep -q '^sidebar_label: [^"].*:.*[^"]$' "$file"; then
-              echo "Found problematic sidebar_label in $file"
-
-              # Extract the sidebar_label
-              LABEL=$(grep '^sidebar_label:' "$file" | sed 's/^sidebar_label: //')
-
-              # Replace with quoted version
-              sed -i "s/^sidebar_label: $LABEL/sidebar_label: \"$LABEL\"/" "$file"
-
-              # Show the result
-              echo "Fixed sidebar_label in $file:"
-              grep '^sidebar_label:' "$file"
-            fi
-          done
+          # List all fixed files
+          echo "Files with titles containing colons:"
+          grep -l "title: \".*:.*\"" $(find . -name "*.md") || echo "None found"
 
       - name: Install Docusaurus dependencies
         run: |
