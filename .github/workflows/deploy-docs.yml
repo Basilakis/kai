@@ -1,11 +1,9 @@
-name: Deploy Documentation
+name: Deploy Readme Documentation
 
 on:
   push:
     branches:
       - main
-    paths:
-      - 'readme/**'
   workflow_dispatch:
 
 jobs:
