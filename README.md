@@ -4,7 +4,7 @@ Kai is a comprehensive full-stack application for material recognition and catal
 
 ## Documentation
 
-All detailed documentation is available in the `readme` folder:
+All detailed documentation is available in the `readme` folder. For a history of changes and updates to the project, see the [CHANGELOG.md](./CHANGELOG.md) file.
 
 - [Project Structure](./readme/folder-structure.md) - Organization and component interactions
 - [Material Recognition](./readme/material-recognition.md) - ML-powered material identification

@@ -158,10 +158,41 @@ jobs:
             <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="Arial" font-size="72" fill="white">KAI</text>
           </svg>' > static/img/logo.svg
 
-          # Create empty sidebars.js
+          # Create sidebars.js with changelog
           echo '/** @type {import("@docusaurus/plugin-content-docs").SidebarsConfig} */
           export default {
-            tutorialSidebar: []
+            docs: [
+              {
+                type: "category",
+                label: "Getting Started",
+                items: ["getting-started/main-readme"]
+              },
+              {
+                type: "category",
+                label: "Features",
+                items: ["features/moodboard-feature"]
+              },
+              {
+                type: "category",
+                label: "AI/ML",
+                items: ["ai-ml/rag-system", "ai-ml/ml-documentation"]
+              },
+              {
+                type: "category",
+                label: "Materials",
+                items: ["materials/enhanced-material-expert"]
+              },
+              {
+                type: "category",
+                label: "Agents",
+                items: ["agents/recognition-assistant"]
+              },
+              {
+                type: "category",
+                label: "Other",
+                items: ["other/system-updates-summary", "other/huggingface-integration", "other/mcp-integration", "other/prompt-management", "changelog"]
+              }
+            ]
           };' > sidebars.js
 
           # Create Docusaurus config file
@@ -251,6 +282,43 @@ jobs:
 
           # Create basic directory structure
           mkdir -p ../kai-docs-temp/static/img
+
+          # Create changelog.md file
+          cat > ../kai-docs-temp/docs/changelog.md << 'EOF'
+---
+id: changelog
+title: "Changelog"
+sidebar_label: "Changelog"
+---
+
+# Changelog
+
+This file contains all notable changes to the KAI project.
+
+## [Unreleased]
+
+### Added
+- Documentation site with Docusaurus
+- Comprehensive documentation for all major features
+- Sidebar navigation with categorized documentation
+
+### Changed
+- Migrated from simple markdown files to a full documentation website
+- Improved organization of documentation files
+
+### Fixed
+- Fixed various formatting issues in documentation
+- Resolved broken links and references
+
+## [1.0.0] - 2023-01-01
+
+### Added
+- Initial release of KAI
+- Core functionality for materials management
+- Basic AI/ML capabilities
+- User authentication and authorization
+- API endpoints for core features
+EOF
 
           # Additional fix for any problematic files
           cd ../kai-docs-temp/docs
