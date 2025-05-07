@@ -280,8 +280,8 @@ jobs:
           find . -name "*.md" -exec sed -i '1,6s/^title: \([^"]*\):\([^"]*\)$/title: "\1:\2"/g' {} \;
           find . -name "*.md" -exec sed -i '1,6s/^sidebar_label: \([^"]*\):\([^"]*\)$/sidebar_label: "\1:\2"/g' {} \;
 
-          # Remove all image references from markdown files
-          echo "Removing all image references from markdown files..."
+          # Remove all image references and fix specific issues
+          echo "Removing all image references and fixing specific issues..."
 
           # Remove any line containing an image reference
           find . -name "*.md" -exec sed -i '/!\[.*\](.*)/d' {} \;
@@ -289,11 +289,37 @@ jobs:
           # Also remove any HTML img tags
           find . -name "*.md" -exec sed -i '/<img.*>/d' {} \;
 
+          # Fix the specific issue with prompt-management.md (material_type not defined)
+          if [ -f "other/prompt-management.md" ]; then
+            echo "Fixing other/prompt-management.md..."
+            # Remove any JavaScript code or references to material_type
+            sed -i 's/material_type/\"material_type\"/g' other/prompt-management.md
+            sed -i 's/{material_type}/material_type/g' other/prompt-management.md
+            # As a fallback, also remove any JSX/JavaScript code blocks
+            sed -i '/{:.*/d' other/prompt-management.md
+            sed -i '/```jsx/,/```/d' other/prompt-management.md
+            sed -i '/```javascript/,/```/d' other/prompt-management.md
+          fi
+
           # Fix any other problematic files with simple sed commands
           echo "Fixing any other problematic files..."
 
           # Remove any lines with problematic angle bracket patterns
           find . -name "*.md" -exec sed -i 's/<[0-9]\+:[0-9]\+>/REMOVED_PROBLEMATIC_TAG/g' {} \;
+
+          # Fix common JavaScript/JSX issues in all markdown files
+          echo "Fixing common JavaScript/JSX issues in all markdown files..."
+
+          # Remove any JSX/JavaScript code blocks that might cause issues
+          find . -name "*.md" -exec sed -i '/```jsx/,/```/d' {} \;
+          find . -name "*.md" -exec sed -i '/```javascript/,/```/d' {} \;
+          find . -name "*.md" -exec sed -i '/```js/,/```/d' {} \;
+
+          # Remove any curly braces that might be interpreted as JSX expressions
+          find . -name "*.md" -exec sed -i 's/{[^}]*}//g' {} \;
+
+          # Remove any HTML-like tags that might be interpreted as JSX components
+          find . -name "*.md" -exec sed -i 's/<[A-Z][^>]*>.*<\/[A-Z][^>]*>//g' {} \;
 
           # Note: We're only removing image references, not the files themselves
 
