@@ -66,11 +66,16 @@ function processMarkdownFile(filePath, destPath) {
       title = titleMatch[1];
     }
 
+    // Escape special characters in YAML by adding quotes
+    // If title contains any of these characters: : { } [ ] , & * # ? | - < > = ! % @ \ it needs quotes
+    const needsQuotes = /[:{}[\],&*#?|<>=!%@\\]/.test(title);
+    const safeTitle = needsQuotes ? `"${title.replace(/"/g, '\\"')}"` : title;
+
     // Add frontmatter
     const frontmatter = `---
 id: ${path.basename(filePath, '.md')}
-title: ${title}
-sidebar_label: ${title}
+title: ${safeTitle}
+sidebar_label: ${safeTitle}
 ---
 
 `;
