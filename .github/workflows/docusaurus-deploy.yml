@@ -274,6 +274,15 @@ jobs:
             <text x="400" y="200" font-family="Arial" font-size="24" text-anchor="middle">Placeholder Image</text>
           </svg>' > ../kai-docs-temp/static/img/3d/docs/images/threejs-viewer-architecture.png
 
+          # Copy the placeholder images to the docs directory as well (for direct references)
+          mkdir -p ../kai-docs-temp/docs/docs/images
+          mkdir -p ../kai-docs-temp/docs/3d/docs/images
+
+          cp ../kai-docs-temp/static/img/docs/images/training-monitor-architecture.png ../kai-docs-temp/docs/docs/images/
+          cp ../kai-docs-temp/static/img/docs/images/dependency-management-architecture.png ../kai-docs-temp/docs/docs/images/
+          cp ../kai-docs-temp/static/img/docs/images/subscription-tier-system.png ../kai-docs-temp/docs/docs/images/
+          cp ../kai-docs-temp/static/img/3d/docs/images/threejs-viewer-architecture.png ../kai-docs-temp/docs/3d/docs/images/
+
           # Additional fix for any problematic files
           cd ../kai-docs-temp/docs
 
@@ -304,8 +313,18 @@ jobs:
 
           # Fix image references in markdown files
           echo "Fixing image references in markdown files..."
+
+          # First approach: Replace with static path
           find . -name "*.md" -exec sed -i 's|docs/docs/images/|/img/docs/images/|g' {} \;
           find . -name "*.md" -exec sed -i 's|docs/3d/docs/images/|/img/3d/docs/images/|g' {} \;
+
+          # Second approach: Remove problematic image references completely
+          find . -name "*.md" -exec sed -i '/!\[.*\](docs\/docs\/images\/.*)/d' {} \;
+          find . -name "*.md" -exec sed -i '/!\[.*\](docs\/3d\/docs\/images\/.*)/d' {} \;
+
+          # Third approach: Replace image tags with a placeholder text
+          find . -name "*.md" -exec sed -i 's/!\[.*\](docs\/docs\/images\/.*)/[Image: Placeholder for diagram]/g' {} \;
+          find . -name "*.md" -exec sed -i 's/!\[.*\](docs\/3d\/docs\/images\/.*)/[Image: Placeholder for diagram]/g' {} \;
 
           # Fix any other problematic files with simple sed commands
           echo "Fixing any other problematic files..."
