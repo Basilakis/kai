@@ -18,10 +18,13 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '20.x'
+          registry-url: 'https://registry.npmjs.org'
 
       - name: Install Yarn
-        run: npm install -g yarn
+        run: |
+          npm install -g yarn
+          yarn set version stable
 
       - name: Create documentation site from scratch
         run: |
@@ -47,17 +50,17 @@ jobs:
               "write-heading-ids": "docusaurus write-heading-ids"
             },
             "dependencies": {
-              "@docusaurus/core": "^3.7.0",
-              "@docusaurus/preset-classic": "^3.7.0",
-              "@mdx-js/react": "^3.0.0",
-              "clsx": "^2.1.0",
-              "prism-react-renderer": "^2.3.1",
-              "react": "^18.2.0",
-              "react-dom": "^18.2.0"
+              "@docusaurus/core": "3.7.0",
+              "@docusaurus/preset-classic": "3.7.0",
+              "@mdx-js/react": "3.0.0",
+              "clsx": "2.1.0",
+              "prism-react-renderer": "2.3.1",
+              "react": "18.2.0",
+              "react-dom": "18.2.0"
             },
             "devDependencies": {
-              "@docusaurus/module-type-aliases": "^3.7.0",
-              "@docusaurus/types": "^3.7.0"
+              "@docusaurus/module-type-aliases": "3.7.0",
+              "@docusaurus/types": "3.7.0"
             },
             "browserslist": {
               "production": [
@@ -234,6 +237,7 @@ jobs:
       - name: Install dependencies
         run: |
           npm install fs-extra
+          npm install @docusaurus/core@3.7.0 @docusaurus/preset-classic@3.7.0 react@18.2.0 react-dom@18.2.0
 
       - name: Process readme files
         run: |
@@ -244,6 +248,22 @@ jobs:
       - name: Build documentation site
         run: |
           cd kai-docs-temp
+
+          # Fix workspace protocol references in package.json
+          sed -i 's/"workspace:\*"/"*"/g' package.json
+
+          # Use Yarn Berry which handles workspace protocol better
+          yarn set version berry
+
+          # Create .yarnrc.yml to configure Yarn
+          cat > .yarnrc.yml << 'EOL'
+          nodeLinker: node-modules
+          npmRegistryServer: "https://registry.npmjs.org/"
+          unsafeHttpWhitelist:
+            - registry.npmjs.org
+          EOL
+
+          # Install dependencies and build
           yarn install
           yarn build
 

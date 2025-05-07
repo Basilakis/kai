@@ -67,17 +67,17 @@ cat > package.json << 'EOL'
     "write-heading-ids": "docusaurus write-heading-ids"
   },
   "dependencies": {
-    "@docusaurus/core": "^3.7.0",
-    "@docusaurus/preset-classic": "^3.7.0",
-    "@mdx-js/react": "^3.0.0",
-    "clsx": "^2.1.0",
-    "prism-react-renderer": "^2.3.1",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "@docusaurus/core": "3.7.0",
+    "@docusaurus/preset-classic": "3.7.0",
+    "@mdx-js/react": "3.0.0",
+    "clsx": "2.1.0",
+    "prism-react-renderer": "2.3.1",
+    "react": "18.2.0",
+    "react-dom": "18.2.0"
   },
   "devDependencies": {
-    "@docusaurus/module-type-aliases": "^3.7.0",
-    "@docusaurus/types": "^3.7.0"
+    "@docusaurus/module-type-aliases": "3.7.0",
+    "@docusaurus/types": "3.7.0"
   },
   "browserslist": {
     "production": [
@@ -266,8 +266,22 @@ echo "Script has already been executed above."
 echo "Building Docusaurus site..."
 cd kai-docs-temp
 
+# Fix workspace protocol references in package.json
+sed -i 's/"workspace:\*"/"*"/g' package.json
+
 # Check if yarn is installed, use it if available
 if command -v yarn &> /dev/null; then
+    # Use Yarn Berry which handles workspace protocol better
+    yarn set version berry
+
+    # Create .yarnrc.yml to configure Yarn
+    cat > .yarnrc.yml << 'EOL'
+nodeLinker: node-modules
+npmRegistryServer: "https://registry.npmjs.org/"
+unsafeHttpWhitelist:
+  - registry.npmjs.org
+EOL
+
     yarn install
     yarn build
 else
