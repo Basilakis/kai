@@ -249,10 +249,35 @@ jobs:
           cd readme
           node process-readme-files.js
 
+          # Create images directory structure
+          mkdir -p ../kai-docs-temp/static/img/docs/images
+          mkdir -p ../kai-docs-temp/static/img/3d/docs/images
+
+          # Create placeholder images for missing files
+          echo '<svg width="800" height="400" xmlns="http://www.w3.org/2000/svg">
+            <rect width="800" height="400" fill="#f0f0f0" />
+            <text x="400" y="200" font-family="Arial" font-size="24" text-anchor="middle">Placeholder Image</text>
+          </svg>' > ../kai-docs-temp/static/img/docs/images/training-monitor-architecture.png
+
+          echo '<svg width="800" height="400" xmlns="http://www.w3.org/2000/svg">
+            <rect width="800" height="400" fill="#f0f0f0" />
+            <text x="400" y="200" font-family="Arial" font-size="24" text-anchor="middle">Placeholder Image</text>
+          </svg>' > ../kai-docs-temp/static/img/docs/images/dependency-management-architecture.png
+
+          echo '<svg width="800" height="400" xmlns="http://www.w3.org/2000/svg">
+            <rect width="800" height="400" fill="#f0f0f0" />
+            <text x="400" y="200" font-family="Arial" font-size="24" text-anchor="middle">Placeholder Image</text>
+          </svg>' > ../kai-docs-temp/static/img/docs/images/subscription-tier-system.png
+
+          echo '<svg width="800" height="400" xmlns="http://www.w3.org/2000/svg">
+            <rect width="800" height="400" fill="#f0f0f0" />
+            <text x="400" y="200" font-family="Arial" font-size="24" text-anchor="middle">Placeholder Image</text>
+          </svg>' > ../kai-docs-temp/static/img/3d/docs/images/threejs-viewer-architecture.png
+
           # Additional fix for any problematic files
           cd ../kai-docs-temp/docs
 
-          # Fix the specific problematic file directly
+          # Fix the specific problematic files directly
           if [ -f "ai-ml/rag-system.md" ]; then
             echo "Fixing ai-ml/rag-system.md..."
 
@@ -260,6 +285,9 @@ jobs:
             sed -i '1,6s/title: RAG System: Architecture/title: "RAG System: Architecture/g' ai-ml/rag-system.md
             sed -i '1,6s/sidebar_label: RAG System: Architecture/sidebar_label: "RAG System: Architecture/g' ai-ml/rag-system.md
             sed -i '1,6s/Guide$/Guide"/g' ai-ml/rag-system.md
+
+            # Fix the syntax error around line 1039 (unexpected character)
+            sed -i '1030,1050s/<[0-9][0-9]*:[0-9][0-9]*>/<span>&lt;\1:\2&gt;<\/span>/g' ai-ml/rag-system.md
 
             # Show the result
             echo "Fixed front matter:"
@@ -272,6 +300,11 @@ jobs:
           # Add quotes around any title or sidebar_label containing a colon
           find . -name "*.md" -exec sed -i '1,6s/^title: \([^"]*\):\([^"]*\)$/title: "\1:\2"/g' {} \;
           find . -name "*.md" -exec sed -i '1,6s/^sidebar_label: \([^"]*\):\([^"]*\)$/sidebar_label: "\1:\2"/g' {} \;
+
+          # Fix image references in markdown files
+          echo "Fixing image references in markdown files..."
+          find . -name "*.md" -exec sed -i 's|docs/docs/images/|/img/docs/images/|g' {} \;
+          find . -name "*.md" -exec sed -i 's|docs/3d/docs/images/|/img/3d/docs/images/|g' {} \;
 
           # List all fixed files
           echo "Files with titles containing colons:"
