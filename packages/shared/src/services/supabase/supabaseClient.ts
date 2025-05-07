@@ -1,6 +1,8 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { logger } from '../../utils/logger';
-import { config } from '../../utils/config';
+import { createLogger } from '../../utils/unified-logger';
+import { config } from '../../utils/unified-config';
+
+const logger = createLogger('SupabaseClient');
 
 /**
  * Configuration options for the Supabase client

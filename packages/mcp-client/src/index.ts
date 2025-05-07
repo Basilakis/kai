@@ -22,9 +22,11 @@
  *   confidenceThreshold: 0.7
  * });
  * ```
+ *
+ * This client is now built on top of the unified API client from the shared package.
  */
 
-import axios, { AxiosInstance, AxiosResponse } from 'axios';
+import { ApiClient, ApiClientConfig } from '@kai/shared';
 import FormData from 'form-data';
 import * as fs from 'fs';
 
@@ -210,24 +212,24 @@ export interface AgentMessage {
 /**
  * Client for the Model Context Protocol server
  */
-export class MCPClient {
-  private client: AxiosInstance;
-  // Store the base URL for potential future use and debugging
-  private baseUrl: string;
-
+export class MCPClient extends ApiClient {
   /**
    * Create a new MCP client
    *
    * @param baseUrl - Base URL of the MCP server
+   * @param config - Additional API client configuration
    */
-  constructor(baseUrl: string) {
-    this.baseUrl = baseUrl;
-    this.client = axios.create({
+  constructor(baseUrl: string, config?: Partial<ApiClientConfig>) {
+    super({
       baseURL: baseUrl,
-      timeout: 30000,
+      timeout: config?.timeout || 30000,
       headers: {
         'Content-Type': 'application/json',
+        ...config?.headers
       },
+      useAuth: config?.useAuth || false,
+      retryCount: config?.retryCount || 3,
+      retryDelay: config?.retryDelay || 1000
     });
   }
 
@@ -237,8 +239,7 @@ export class MCPClient {
    * @returns Server information
    */
   async getServerInfo(): Promise<Record<string, any>> {
-    const response = await this.client.get('/');
-    return response.data;
+    return this.get('/');
   }
 
   /**
@@ -247,8 +248,7 @@ export class MCPClient {
    * @returns Health check result
    */
   async checkHealth(): Promise<{ status: string; timestamp: number }> {
-    const response = await this.client.get('/health');
-    return response.data;
+    return this.get('/health');
   }
 
   /**
@@ -257,8 +257,7 @@ export class MCPClient {
    * @returns List of model information
    */
   async listModels(): Promise<ModelInfo[]> {
-    const response = await this.client.get('/api/v1/models');
-    return response.data;
+    return this.get('/api/v1/models');
   }
 
   /**
@@ -268,8 +267,7 @@ export class MCPClient {
    * @returns Model information
    */
   async getModelInfo(modelId: string): Promise<ModelInfo> {
-    const response = await this.client.get(`/api/v1/models/${modelId}`);
-    return response.data;
+    return this.get(`/api/v1/models/${modelId}`);
   }
 
   /**
@@ -279,8 +277,7 @@ export class MCPClient {
    * @returns Model context
    */
   async getModelContext(modelId: string): Promise<ModelContext> {
-    const response = await this.client.get(`/api/v1/models/${modelId}/context`);
-    return response.data;
+    return this.get(`/api/v1/models/${modelId}/context`);
   }
 
   /**
@@ -291,8 +288,7 @@ export class MCPClient {
    * @returns Success response
    */
   async updateModelContext(modelId: string, context: ModelContext): Promise<{ status: string; message: string }> {
-    const response = await this.client.put(`/api/v1/models/${modelId}/context`, context);
-    return response.data;
+    return this.put(`/api/v1/models/${modelId}/context`, context);
   }
 
   /**
@@ -326,14 +322,12 @@ export class MCPClient {
       formData.append('options', JSON.stringify(serverOptions));
     }
 
-    // Send request to server
-    const response = await this.client.post('/api/v1/recognize', formData, {
+    // Use the uploadFile method from the base class
+    return this.post('/api/v1/recognize', formData, {
       headers: {
         ...formData.getHeaders(),
       },
     });
-
-    return response.data;
   }
 
   /**
@@ -367,14 +361,12 @@ export class MCPClient {
       formData.append('options', JSON.stringify(serverOptions));
     }
 
-    // Send request to server
-    const response = await this.client.post('/api/v1/recognize', formData, {
+    // Use the post method from the base class
+    return this.post('/api/v1/recognize', formData, {
       headers: {
         ...formData.getHeaders(),
       },
     });
-
-    return response.data;
   }
 
   /**
@@ -384,12 +376,11 @@ export class MCPClient {
    * @returns Success response
    */
   async sendAgentMessage(message: AgentMessage): Promise<{ status: string }> {
-    const response = await this.client.post('/api/v1/agent/message', {
+    return this.post('/api/v1/agent/message', {
       message_type: message.message_type,
       content: message.content,
       timestamp: message.timestamp || Date.now() / 1000,
     });
-    return response.data;
   }
 
   /**
@@ -399,10 +390,9 @@ export class MCPClient {
    * @returns Agent messages
    */
   async getAgentMessages(maxWait: number = 1.0): Promise<{ messages: any[]; count: number }> {
-    const response = await this.client.get('/api/v1/agent/messages', {
-      params: { max_wait: maxWait },
+    return this.get('/api/v1/agent/messages', {
+      max_wait: maxWait
     });
-    return response.data;
   }
 
   /**
@@ -416,15 +406,7 @@ export class MCPClient {
   async callEndpoint<T>(endpoint: string, data: any): Promise<T> {
     // Construct the full URL path
     const urlPath = `/api/v1/${endpoint}`;
-    try {
-      const response: AxiosResponse<T> = await this.client.post(urlPath, data);
-      return response.data;
-    } catch (error) {
-      // Improve error handling slightly by logging and re-throwing
-      console.error(`Error calling MCP endpoint ${urlPath}:`, error);
-      // Consider wrapping the error or extracting more details from axios error
-      throw error;
-    }
+    return this.post<T>(urlPath, data);
   }
 }
 

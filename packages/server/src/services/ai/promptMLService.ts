@@ -184,11 +184,13 @@ export class PromptMLService {
 
   /**
    * Train ML model
+   * @param userId User ID
    * @param modelId Model ID
    * @param trainingData Optional training data (if not provided, will use query from model)
    * @returns Model version ID
    */
   async trainModel(
+    userId: string,
     modelId: string,
     trainingData?: { promptId: string; features: Record<string, number>; successRate: number }[]
   ): Promise<string> {
@@ -208,15 +210,45 @@ export class PromptMLService {
       // Extract features and labels
       const { features, labels } = this.prepareTrainingData(trainingData);
 
-      // Create and train the model
-      const tfModel = this.createTFModel(model.modelParameters);
-      await this.trainTFModel(tfModel, features, labels, model.modelParameters);
+      // Train the model based on type
+      let trainedModel: any;
+      let trainingMetrics: Record<string, any>;
+      let modelBuffer: Buffer;
 
-      // Evaluate the model
-      const metrics = await this.evaluateModel(tfModel, features, labels);
-
-      // Save the model
-      const modelBuffer = await this.serializeModel(tfModel);
+      switch (model.modelType) {
+        case 'neural_network':
+          ({ trainedModel, trainingMetrics } = await this.trainNeuralNetwork(model.modelParameters, features, labels));
+          modelBuffer = await this.serializeModel(trainedModel);
+          break;
+        case 'lstm':
+          ({ trainedModel, trainingMetrics } = await this.trainNeuralNetwork(
+            { ...model.modelParameters, modelType: 'lstm' },
+            features,
+            labels
+          ));
+          modelBuffer = await this.serializeModel(trainedModel);
+          break;
+        case 'transformer':
+          ({ trainedModel, trainingMetrics } = await this.trainNeuralNetwork(
+            { ...model.modelParameters, modelType: 'transformer' },
+            features,
+            labels
+          ));
+          modelBuffer = await this.serializeModel(trainedModel);
+          break;
+        case 'random_forest':
+          ({ trainedModel, trainingMetrics } = await this.trainRandomForest(model.modelParameters, features, labels));
+          modelBuffer = Buffer.from(JSON.stringify(trainedModel));
+          break;
+        case 'gradient_boosting':
+          ({ trainedModel, trainingMetrics } = await this.trainGradientBoosting(model.modelParameters, features, labels));
+          modelBuffer = Buffer.from(JSON.stringify(trainedModel));
+          break;
+        default:
+          // Default to neural network
+          ({ trainedModel, trainingMetrics } = await this.trainNeuralNetwork(model.modelParameters, features, labels));
+          modelBuffer = await this.serializeModel(trainedModel);
+      }
 
       // Get the next version number
       const { data: versionData, error: versionError } = await supabaseClient.getClient()
@@ -239,10 +271,10 @@ export class PromptMLService {
           model_id: modelId,
           version_number: nextVersionNumber,
           model_data: modelBuffer,
-          accuracy: metrics.accuracy,
-          precision: metrics.precision,
-          recall: metrics.recall,
-          f1_score: metrics.f1Score,
+          accuracy: trainingMetrics.accuracy,
+          precision: trainingMetrics.precision,
+          recall: trainingMetrics.recall,
+          f1_score: trainingMetrics.f1Score,
           is_active: true,
           created_by: model.createdBy
         })
@@ -257,7 +289,7 @@ export class PromptMLService {
       await supabaseClient.getClient()
         .from('prompt_ml_models')
         .update({
-          training_metrics: metrics,
+          training_metrics: trainingMetrics,
           updated_at: new Date()
         })
         .eq('id', modelId);
@@ -271,12 +303,14 @@ export class PromptMLService {
 
   /**
    * Predict prompt success
+   * @param userId User ID
    * @param promptId Prompt ID
    * @param promptContent Prompt content
    * @param promptType Prompt type
    * @returns Prediction data
    */
   async predictPromptSuccess(
+    userId: string,
     promptId: string,
     promptContent: string,
     promptType: string
@@ -297,6 +331,7 @@ export class PromptMLService {
       }
 
       const modelId = modelData.id;
+      const modelType = modelData.model_type;
 
       // Get the active version of this model
       const { data: versionData, error: versionError } = await supabaseClient.getClient()
@@ -314,19 +349,39 @@ export class PromptMLService {
 
       const modelVersionId = versionData.id;
 
-      // Load the model if not already loaded
-      if (!this.models.has(modelVersionId)) {
-        const model = await this.loadModel(versionData.model_data);
-        this.models.set(modelVersionId, model);
-      }
-
       // Extract features from the prompt
       const { features, featureVector } = this.extractFeatures(promptContent, promptType);
 
-      // Make prediction
-      const tfModel = this.models.get(modelVersionId)!;
-      const prediction = await tfModel.predict(tf.tensor2d([featureVector])) as tf.Tensor;
-      const predictedSuccessRate = (await prediction.data())[0] * 100;
+      // Make prediction based on model type
+      let predictedSuccessRate: number;
+
+      if (modelType === 'random_forest' || modelType === 'gradient_boosting') {
+        // For traditional ML models, load from JSON
+        if (!this.models.has(modelVersionId)) {
+          const modelData = JSON.parse(versionData.model_data.toString());
+          this.models.set(modelVersionId, modelData);
+        }
+
+        const classifier = this.models.get(modelVersionId)!;
+
+        // Convert feature vector to array
+        const featureArray = featureVector;
+
+        // Make prediction
+        const prediction = classifier.predict([featureArray]);
+        predictedSuccessRate = prediction[0] * 100;
+      } else {
+        // For neural network models, load TensorFlow model
+        if (!this.models.has(modelVersionId)) {
+          const model = await this.loadModel(versionData.model_data);
+          this.models.set(modelVersionId, model);
+        }
+
+        // Make prediction with TensorFlow model
+        const tfModel = this.models.get(modelVersionId)!;
+        const prediction = await tfModel.predict(tf.tensor2d([featureVector])) as tf.Tensor;
+        predictedSuccessRate = (await prediction.data())[0] * 100;
+      }
 
       // Calculate confidence based on model metrics and prediction value
       const confidence = this.calculateConfidence(predictedSuccessRate, versionData.accuracy);
@@ -358,12 +413,14 @@ export class PromptMLService {
 
   /**
    * Generate improvement suggestions
+   * @param userId User ID
    * @param promptId Prompt ID
    * @param promptContent Prompt content
    * @param promptType Prompt type
    * @returns Array of improvement suggestions
    */
   async generateImprovementSuggestions(
+    userId: string,
     promptId: string,
     promptContent: string,
     promptType: string
@@ -426,10 +483,11 @@ export class PromptMLService {
 
   /**
    * Apply improvement suggestion
+   * @param userId User ID
    * @param suggestionId Suggestion ID
    * @returns Updated prompt content
    */
-  async applyImprovementSuggestion(suggestionId: string): Promise<string> {
+  async applyImprovementSuggestion(userId: string, suggestionId: string): Promise<string> {
     try {
       // Get the suggestion
       const { data: suggestionData, error: suggestionError } = await supabaseClient.getClient()
@@ -539,10 +597,31 @@ export class PromptMLService {
    * @returns TensorFlow model
    */
   private createTFModel(modelParameters: Record<string, any>): tf.LayersModel {
+    const modelType = modelParameters.modelType || 'neural_network';
+
+    switch (modelType) {
+      case 'neural_network':
+        return this.createNeuralNetwork(modelParameters);
+      case 'lstm':
+        return this.createLSTM(modelParameters);
+      case 'transformer':
+        return this.createTransformer(modelParameters);
+      default:
+        return this.createNeuralNetwork(modelParameters);
+    }
+  }
+
+  /**
+   * Create neural network model
+   * @param modelParameters Model parameters
+   * @returns Neural network model
+   */
+  private createNeuralNetwork(modelParameters: Record<string, any>): tf.LayersModel {
     const inputShape = [modelParameters.inputDimension || 10];
     const hiddenLayers = modelParameters.hiddenLayers || [64, 32];
     const activation = modelParameters.activation || 'relu';
     const outputActivation = modelParameters.outputActivation || 'sigmoid';
+    const dropoutRate = modelParameters.dropoutRate || 0;
 
     const model = tf.sequential();
 
@@ -553,12 +632,22 @@ export class PromptMLService {
       activation
     }));
 
+    // Add dropout if specified
+    if (dropoutRate > 0) {
+      model.add(tf.layers.dropout({ rate: dropoutRate }));
+    }
+
     // Hidden layers
     for (let i = 1; i < hiddenLayers.length; i++) {
       model.add(tf.layers.dense({
         units: hiddenLayers[i],
         activation
       }));
+
+      // Add dropout if specified
+      if (dropoutRate > 0) {
+        model.add(tf.layers.dropout({ rate: dropoutRate }));
+      }
     }
 
     // Output layer
@@ -571,6 +660,130 @@ export class PromptMLService {
     model.compile({
       optimizer: modelParameters.optimizer || 'adam',
       loss: modelParameters.loss || 'meanSquaredError',
+      metrics: ['accuracy']
+    });
+
+    return model;
+  }
+
+  /**
+   * Create LSTM model
+   * @param modelParameters Model parameters
+   * @returns LSTM model
+   */
+  private createLSTM(modelParameters: Record<string, any>): tf.LayersModel {
+    const inputShape = [modelParameters.sequenceLength || 10, modelParameters.inputDimension || 10];
+    const lstmUnits = modelParameters.lstmUnits || [64, 32];
+    const activation = modelParameters.activation || 'tanh';
+    const recurrentActivation = modelParameters.recurrentActivation || 'hardSigmoid';
+    const outputActivation = modelParameters.outputActivation || 'sigmoid';
+    const dropoutRate = modelParameters.dropoutRate || 0;
+    const recurrentDropoutRate = modelParameters.recurrentDropoutRate || 0;
+
+    const model = tf.sequential();
+
+    // Input LSTM layer
+    model.add(tf.layers.lstm({
+      inputShape,
+      units: lstmUnits[0],
+      activation,
+      recurrentActivation,
+      returnSequences: lstmUnits.length > 1,
+      dropout: dropoutRate,
+      recurrentDropout: recurrentDropoutRate
+    }));
+
+    // Additional LSTM layers
+    for (let i = 1; i < lstmUnits.length; i++) {
+      model.add(tf.layers.lstm({
+        units: lstmUnits[i],
+        activation,
+        recurrentActivation,
+        returnSequences: i < lstmUnits.length - 1,
+        dropout: dropoutRate,
+        recurrentDropout: recurrentDropoutRate
+      }));
+    }
+
+    // Dense output layer
+    model.add(tf.layers.dense({
+      units: 1,
+      activation: outputActivation
+    }));
+
+    // Compile the model
+    model.compile({
+      optimizer: modelParameters.optimizer || 'adam',
+      loss: modelParameters.loss || 'meanSquaredError',
+      metrics: ['accuracy']
+    });
+
+    return model;
+  }
+
+  /**
+   * Create Transformer model
+   * @param modelParameters Model parameters
+   * @returns Transformer model
+   */
+  private createTransformer(modelParameters: Record<string, any>): tf.LayersModel {
+    const inputShape = [modelParameters.sequenceLength || 10, modelParameters.inputDimension || 10];
+    const headSize = modelParameters.headSize || 64;
+    const numHeads = modelParameters.numHeads || 4;
+    const ffDim = modelParameters.ffDim || 128;
+    const numTransformerBlocks = modelParameters.numTransformerBlocks || 2;
+    const mlpUnits = modelParameters.mlpUnits || [64, 32];
+    const dropoutRate = modelParameters.dropoutRate || 0.1;
+    const outputActivation = modelParameters.outputActivation || 'sigmoid';
+
+    const inputs = tf.input({ shape: [inputShape[0], inputShape[1]] });
+
+    // Create transformer blocks
+    let x = inputs;
+    for (let i = 0; i < numTransformerBlocks; i++) {
+      // Multi-head attention
+      const attention = tf.layers.multiHeadAttention({
+        numHeads,
+        keyDim: headSize
+      }).apply(x) as tf.SymbolicTensor;
+
+      // Add & normalize
+      const add1 = tf.layers.add().apply([x, attention]) as tf.SymbolicTensor;
+      const layerNorm1 = tf.layers.layerNormalization().apply(add1) as tf.SymbolicTensor;
+
+      // Feed-forward network
+      const ffn1 = tf.layers.dense({ units: ffDim, activation: 'relu' }).apply(layerNorm1) as tf.SymbolicTensor;
+      const ffn2 = tf.layers.dense({ units: inputShape[1] }).apply(ffn1) as tf.SymbolicTensor;
+
+      // Add & normalize
+      const add2 = tf.layers.add().apply([layerNorm1, ffn2]) as tf.SymbolicTensor;
+      x = tf.layers.layerNormalization().apply(add2) as tf.SymbolicTensor;
+
+      // Apply dropout
+      if (dropoutRate > 0) {
+        x = tf.layers.dropout({ rate: dropoutRate }).apply(x) as tf.SymbolicTensor;
+      }
+    }
+
+    // Global average pooling
+    x = tf.layers.globalAveragePooling1D().apply(x) as tf.SymbolicTensor;
+
+    // MLP head
+    for (const units of mlpUnits) {
+      x = tf.layers.dense({ units, activation: 'relu' }).apply(x) as tf.SymbolicTensor;
+      if (dropoutRate > 0) {
+        x = tf.layers.dropout({ rate: dropoutRate }).apply(x) as tf.SymbolicTensor;
+      }
+    }
+
+    // Output layer
+    const outputs = tf.layers.dense({ units: 1, activation: outputActivation }).apply(x) as tf.SymbolicTensor;
+
+    // Create and compile model
+    const model = tf.model({ inputs, outputs });
+    model.compile({
+      optimizer: modelParameters.optimizer || 'adam',
+      loss: modelParameters.loss || 'binaryCrossentropy',
       metrics: ['accuracy']
     });
 
@@ -605,6 +818,401 @@ export class PromptMLService {
         }
       }
     });
+  }
+
+  /**
+   * Train neural network
+   * @param modelParameters Model parameters
+   * @param features Features tensor
+   * @param labels Labels tensor
+   * @returns Trained model and metrics
+   */
+  private async trainNeuralNetwork(
+    modelParameters: Record<string, any>,
+    features: tf.Tensor2D,
+    labels: tf.Tensor2D
+  ): Promise<{ trainedModel: any; trainingMetrics: Record<string, any> }> {
+    try {
+      // Create model
+      const model = this.createNeuralNetwork(modelParameters);
+
+      // Apply transfer learning if specified
+      if (modelParameters.transferLearning && modelParameters.baseModelId) {
+        await this.applyTransferLearning(model, modelParameters.baseModelId);
+      }
+
+      // Split data for validation if needed
+      let trainFeatures = features;
+      let trainLabels = labels;
+      let valFeatures: tf.Tensor2D | null = null;
+      let valLabels: tf.Tensor2D | null = null;
+
+      if (modelParameters.useValidationSet) {
+        const validationSplit = modelParameters.validationSplit || 0.2;
+        const splitIndex = Math.floor(features.shape[0] * (1 - validationSplit));
+
+        // Split the data
+        trainFeatures = features.slice([0, 0], [splitIndex, features.shape[1]]) as tf.Tensor2D;
+        trainLabels = labels.slice([0, 0], [splitIndex, labels.shape[1]]) as tf.Tensor2D;
+        valFeatures = features.slice([splitIndex, 0], [-1, features.shape[1]]) as tf.Tensor2D;
+        valLabels = labels.slice([splitIndex, 0], [-1, labels.shape[1]]) as tf.Tensor2D;
+      }
+
+      // Train model
+      const epochs = modelParameters.epochs || 100;
+      const batchSize = modelParameters.batchSize || 32;
+      const validationSplit = modelParameters.useValidationSet ? 0 : (modelParameters.validationSplit || 0.2);
+
+      const callbacks = [
+        tf.callbacks.earlyStopping({
+          monitor: 'val_loss',
+          patience: modelParameters.earlyStoppingPatience || 10,
+          minDelta: 0.001,
+          verbose: 1
+        })
+      ];
+
+      if (modelParameters.useLearningRateScheduler) {
+        callbacks.push(
+          tf.callbacks.learningRateScheduler((epoch) => {
+            const initialLr = modelParameters.learningRate || 0.001;
+            const decay = modelParameters.learningRateDecay || 0.1;
+            return initialLr * Math.pow(decay, Math.floor(epoch / 10));
+          })
+        );
+      }
+
+      const history = await model.fit(
+        trainFeatures,
+        trainLabels,
+        {
+          epochs,
+          batchSize,
+          validationSplit,
+          validationData: modelParameters.useValidationSet ? [valFeatures, valLabels] : undefined,
+          callbacks: {
+            onEpochEnd: (epoch, logs) => {
+              logger.debug(`Epoch ${epoch}: loss = ${logs?.loss}, accuracy = ${logs?.acc}`);
+            },
+            ...callbacks
+          }
+        }
+      );
+
+      // Evaluate model
+      const metrics = await this.evaluateModel(model, features, labels);
+
+      // Calculate feature importance if requested
+      let featureImportance = {};
+      if (modelParameters.calculateFeatureImportance) {
+        featureImportance = await this.calculateFeatureImportance(model, features, labels);
+      }
+
+      // Add training history to metrics
+      const trainingMetrics = {
+        ...metrics,
+        history: {
+          loss: history.history.loss,
+          accuracy: history.history.acc,
+          valLoss: history.history.val_loss,
+          valAccuracy: history.history.val_acc
+        },
+        featureImportance
+      };
+
+      return {
+        trainedModel: model,
+        trainingMetrics
+      };
+    } catch (error) {
+      logger.error(`Failed to train neural network: ${error}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Apply transfer learning from a base model
+   * @param model Target model
+   * @param baseModelId Base model ID
+   */
+  private async applyTransferLearning(model: tf.LayersModel, baseModelId: string): Promise<void> {
+    try {
+      // Get the base model
+      const { data, error } = await supabaseClient.getClient()
+        .from('prompt_ml_model_versions')
+        .select('model_data')
+        .eq('model_id', baseModelId)
+        .eq('is_active', true)
+        .order('version_number', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (error) {
+        throw new Error(`Failed to get base model: ${error.message}`);
+      }
+
+      if (!data) {
+        throw new Error(`Base model not found: ${baseModelId}`);
+      }
+
+      // Load the base model
+      const baseModel = await this.loadModel(data.model_data);
+
+      // Copy weights from base model to target model
+      // Only copy weights for layers with matching shapes
+      const baseWeights = baseModel.getWeights();
+      const targetWeights = model.getWeights();
+
+      for (let i = 0; i < Math.min(baseWeights.length, targetWeights.length); i++) {
+        const baseWeight = baseWeights[i];
+        const targetWeight = targetWeights[i];
+
+        // Check if shapes match
+        if (baseWeight.shape.toString() === targetWeight.shape.toString()) {
+          targetWeight.assign(baseWeight);
+        }
+      }
+
+      // Set the weights on the target model
+      model.setWeights(targetWeights);
+    } catch (error) {
+      logger.error(`Failed to apply transfer learning: ${error}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Calculate feature importance
+   * @param model Trained model
+   * @param features Features tensor
+   * @param labels Labels tensor
+   * @returns Feature importance scores
+   */
+  private async calculateFeatureImportance(
+    model: tf.LayersModel,
+    features: tf.Tensor2D,
+    labels: tf.Tensor2D
+  ): Promise<Record<string, number>> {
+    try {
+      // Get baseline prediction
+      const baseline = model.predict(features) as tf.Tensor;
+      const baselineValues = await baseline.data();
+
+      // Get feature names
+      const featureCount = features.shape[1];
+      const featureNames = Array.from({ length: featureCount }, (_, i) => `feature_${i}`);
+
+      // Calculate importance for each feature
+      const importance: Record<string, number> = {};
+
+      for (let i = 0; i < featureCount; i++) {
+        // Create a copy of features with the current feature permuted
+        const permutedFeatures = features.clone();
+        const featureValues = await features.slice([0, i], [-1, 1]).data();
+
+        // Shuffle the feature values
+        const shuffledValues = tf.tensor1d(this.shuffleArray(Array.from(featureValues)));
+
+        // Replace the feature column with shuffled values
+        const updated = permutedFeatures.slice([0, i], [-1, 1]).assign(shuffledValues.reshape([-1, 1]));
+
+        // Predict with permuted features
+        const permutedPrediction = model.predict(permutedFeatures) as tf.Tensor;
+        const permutedValues = await permutedPrediction.data();
+
+        // Calculate mean absolute difference
+        let totalDiff = 0;
+        for (let j = 0; j < baselineValues.length; j++) {
+          totalDiff += Math.abs(baselineValues[j] - permutedValues[j]);
+        }
+
+        // Store importance score
+        importance[featureNames[i]] = totalDiff / baselineValues.length;
+
+        // Clean up tensors
+        permutedFeatures.dispose();
+        shuffledValues.dispose();
+        permutedPrediction.dispose();
+      }
+
+      // Clean up baseline tensor
+      baseline.dispose();
+
+      return importance;
+    } catch (error) {
+      logger.error(`Failed to calculate feature importance: ${error}`);
+      return {};
+    }
+  }
+
+  /**
+   * Shuffle array
+   * @param array Array to shuffle
+   * @returns Shuffled array
+   */
+  private shuffleArray<T>(array: T[]): T[] {
+    const result = [...array];
+    for (let i = result.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [result[i], result[j]] = [result[j], result[i]];
+    }
+    return result;
+  }
+
+  /**
+   * Train Random Forest model
+   * @param modelParameters Model parameters
+   * @param features Features array
+   * @param labels Labels array
+   * @returns Trained model and metrics
+   */
+  private async trainRandomForest(
+    modelParameters: Record<string, any>,
+    features: tf.Tensor2D,
+    labels: tf.Tensor2D
+  ): Promise<{ trainedModel: any; trainingMetrics: Record<string, any> }> {
+    try {
+      // Convert tensors to arrays
+      const featureArrays = await features.array();
+      const labelArrays = await labels.array();
+      const labelValues = labelArrays.map(l => l[0]);
+
+      // Split data into training and validation sets
+      const validationSplit = modelParameters.validationSplit || 0.2;
+      const splitIndex = Math.floor(featureArrays.length * (1 - validationSplit));
+
+      const trainFeatures = featureArrays.slice(0, splitIndex);
+      const trainLabels = labelValues.slice(0, splitIndex);
+      const valFeatures = featureArrays.slice(splitIndex);
+      const valLabels = labelValues.slice(splitIndex);
+
+      // Create and train Random Forest model
+      const RandomForest = require('ml-random-forest');
+
+      const rfOptions = {
+        seed: 42,
+        nEstimators: modelParameters.nEstimators || 100,
+        maxDepth: modelParameters.maxDepth || 10,
+        minSamplesSplit: modelParameters.minSamplesSplit || 2,
+        maxFeatures: modelParameters.maxFeatures || 'sqrt',
+        replacement: modelParameters.replacement !== false,
+        treeOptions: {
+          gainFunction: modelParameters.gainFunction || 'gini',
+          maxDepth: modelParameters.maxDepth || 10,
+          minNumSamples: modelParameters.minNumSamples || 3
+        }
+      };
+
+      // Train the model
+      const classifier = new RandomForest.RandomForestClassifier(rfOptions);
+      classifier.train(trainFeatures, trainLabels.map(l => l > 0.5 ? 1 : 0));
+
+      // Make predictions on validation set
+      const predictions = classifier.predict(valFeatures);
+
+      // Calculate metrics
+      const metrics = this.calculateMetrics(predictions, valLabels.map(l => l > 0.5 ? 1 : 0));
+
+      return {
+        trainedModel: classifier,
+        trainingMetrics: metrics
+      };
+    } catch (error) {
+      logger.error(`Failed to train Random Forest model: ${error}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Train Gradient Boosting model
+   * @param modelParameters Model parameters
+   * @param features Features array
+   * @param labels Labels array
+   * @returns Trained model and metrics
+   */
+  private async trainGradientBoosting(
+    modelParameters: Record<string, any>,
+    features: tf.Tensor2D,
+    labels: tf.Tensor2D
+  ): Promise<{ trainedModel: any; trainingMetrics: Record<string, any> }> {
+    try {
+      // Convert tensors to arrays
+      const featureArrays = await features.array();
+      const labelArrays = await labels.array();
+      const labelValues = labelArrays.map(l => l[0]);
+
+      // Split data into training and validation sets
+      const validationSplit = modelParameters.validationSplit || 0.2;
+      const splitIndex = Math.floor(featureArrays.length * (1 - validationSplit));
+
+      const trainFeatures = featureArrays.slice(0, splitIndex);
+      const trainLabels = labelValues.slice(0, splitIndex);
+      const valFeatures = featureArrays.slice(splitIndex);
+      const valLabels = labelValues.slice(splitIndex);
+
+      // Create and train Gradient Boosting model
+      const GradientBoosting = require('ml-gradient-boosting');
+
+      const gbOptions = {
+        seed: 42,
+        nEstimators: modelParameters.nEstimators || 100,
+        maxDepth: modelParameters.maxDepth || 5,
+        minSamplesSplit: modelParameters.minSamplesSplit || 2,
+        maxFeatures: modelParameters.maxFeatures || 'sqrt',
+        learningRate: modelParameters.learningRate || 0.1,
+        subsample: modelParameters.subsample || 1.0,
+        treeOptions: {
+          gainFunction: modelParameters.gainFunction || 'gini',
+          maxDepth: modelParameters.maxDepth || 5,
+          minNumSamples: modelParameters.minNumSamples || 3
+        }
+      };
+
+      // Train the model
+      const classifier = new GradientBoosting.GradientBoostingClassifier(gbOptions);
+      classifier.train(trainFeatures, trainLabels.map(l => l > 0.5 ? 1 : 0));
+
+      // Make predictions on validation set
+      const predictions = classifier.predict(valFeatures);
+
+      // Calculate metrics
+      const metrics = this.calculateMetrics(predictions, valLabels.map(l => l > 0.5 ? 1 : 0));
+
+      return {
+        trainedModel: classifier,
+        trainingMetrics: metrics
+      };
+    } catch (error) {
+      logger.error(`Failed to train Gradient Boosting model: ${error}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Calculate metrics for traditional ML models
+   * @param predictions Predicted values
+   * @param actual Actual values
+   * @returns Metrics object
+   */
+  private calculateMetrics(predictions: number[], actual: number[]): Record<string, number> {
+    let truePositives = 0;
+    let falsePositives = 0;
+    let trueNegatives = 0;
+    let falseNegatives = 0;
+
+    for (let i = 0; i < predictions.length; i++) {
+      if (predictions[i] === 1 && actual[i] === 1) truePositives++;
+      if (predictions[i] === 1 && actual[i] === 0) falsePositives++;
+      if (predictions[i] === 0 && actual[i] === 0) trueNegatives++;
+      if (predictions[i] === 0 && actual[i] === 1) falseNegatives++;
+    }
+
+    const accuracy = (truePositives + trueNegatives) / predictions.length;
+    const precision = truePositives / (truePositives + falsePositives) || 0;
+    const recall = truePositives / (truePositives + falseNegatives) || 0;
+    const f1Score = 2 * precision * recall / (precision + recall) || 0;
+
+    return { accuracy, precision, recall, f1Score };
   }
 
   /**
@@ -714,19 +1322,84 @@ export class PromptMLService {
       exclamationCount: (promptContent.match(/!/g) || []).length,
       uppercaseRatio: promptContent.split('').filter(c => c.match(/[A-Z]/)).length / promptContent.length,
       numericRatio: promptContent.split('').filter(c => c.match(/[0-9]/)).length / promptContent.length,
-      specialCharRatio: promptContent.split('').filter(c => c.match(/[^a-zA-Z0-9\s]/)).length / promptContent.length
+      specialCharRatio: promptContent.split('').filter(c => c.match(/[^a-zA-Z0-9\s]/)).length / promptContent.length,
+      sentenceCount: (promptContent.match(/[.!?]+\s+|\n|$/g) || []).length,
+      avgSentenceLength: promptContent.length / ((promptContent.match(/[.!?]+\s+|\n|$/g) || []).length || 1),
+      paragraphCount: (promptContent.match(/\n\s*\n/g) || []).length + 1,
+      bulletPointCount: (promptContent.match(/^[\s]*[-*•][\s]+/gm) || []).length,
+      numberListCount: (promptContent.match(/^[\s]*\d+\.[\s]+/gm) || []).length
     };
+
+    // Structural features
+    features.hasHeadings = /^#+\s+.+$/m.test(promptContent) ? 1 : 0;
+    features.hasCodeBlocks = /```[\s\S]*?```/.test(promptContent) ? 1 : 0;
+    features.hasQuotes = /^>[\s\S]*?$/m.test(promptContent) ? 1 : 0;
+    features.hasLinks = /\[.*?\]\(.*?\)/.test(promptContent) ? 1 : 0;
+    features.hasEmphasis = /\*\*.*?\*\*|\*.*?\*|__.*?__|_.*?_/.test(promptContent) ? 1 : 0;
+    features.structureScore = features.hasHeadings + features.hasCodeBlocks + features.hasQuotes +
+                             features.hasLinks + features.hasEmphasis +
+                             (features.bulletPointCount > 0 ? 1 : 0) +
+                             (features.numberListCount > 0 ? 1 : 0);
+
+    // Readability metrics
+    features.fleschKincaidScore = this.calculateFleschKincaidScore(promptContent);
+    features.fogIndex = this.calculateFogIndex(promptContent);
+
+    // Semantic features
+    features.exampleCount = this.countExamples(promptContent);
+    features.definitionCount = this.countDefinitions(promptContent);
+    features.conditionalCount = this.countConditionals(promptContent);
+    features.instructionCount = this.countInstructions(promptContent);
 
     // Advanced features based on prompt type
     if (promptType === 'material_specific') {
-      features.materialTerms = this.countTerms(promptContent, ['material', 'texture', 'color', 'pattern', 'finish']);
+      // Material-specific terms
+      const materialTerms = [
+        'material', 'texture', 'color', 'pattern', 'finish', 'surface', 'grain', 'tone',
+        'hue', 'shade', 'tint', 'gloss', 'matte', 'satin', 'rough', 'smooth', 'polished',
+        'natural', 'synthetic', 'organic', 'inorganic', 'composite', 'blend', 'mixture',
+        'ceramic', 'metal', 'wood', 'glass', 'plastic', 'fabric', 'leather', 'stone',
+        'concrete', 'brick', 'tile', 'marble', 'granite', 'quartz', 'limestone', 'slate'
+      ];
+      features.materialTerms = this.countTerms(promptContent, materialTerms);
+      features.materialTermRatio = features.materialTerms / features.wordCount;
       features.instructionClarity = this.calculateInstructionClarity(promptContent);
+      features.specificationDetail = this.calculateSpecificationDetail(promptContent);
+      features.visualDescriptors = this.countVisualDescriptors(promptContent);
     } else if (promptType === 'agent') {
-      features.agentTerms = this.countTerms(promptContent, ['agent', 'task', 'goal', 'action', 'decision']);
+      // Agent-specific terms
+      const agentTerms = [
+        'agent', 'task', 'goal', 'action', 'decision', 'plan', 'strategy', 'objective',
+        'mission', 'target', 'outcome', 'result', 'success', 'failure', 'constraint',
+        'requirement', 'condition', 'environment', 'state', 'observation', 'perception',
+        'knowledge', 'belief', 'intention', 'desire', 'preference', 'utility', 'reward',
+        'penalty', 'cost', 'benefit', 'risk', 'uncertainty', 'probability', 'likelihood'
+      ];
+      features.agentTerms = this.countTerms(promptContent, agentTerms);
+      features.agentTermRatio = features.agentTerms / features.wordCount;
       features.contextRichness = this.calculateContextRichness(promptContent);
+      features.goalClarity = this.calculateGoalClarity(promptContent);
+      features.constraintSpecificity = this.calculateConstraintSpecificity(promptContent);
     } else if (promptType === 'rag') {
-      features.ragTerms = this.countTerms(promptContent, ['document', 'reference', 'source', 'information', 'context']);
+      // RAG-specific terms
+      const ragTerms = [
+        'document', 'reference', 'source', 'information', 'context', 'retrieve', 'search',
+        'query', 'find', 'locate', 'extract', 'summarize', 'analyze', 'compare', 'contrast',
+        'database', 'knowledge base', 'corpus', 'collection', 'repository', 'archive',
+        'index', 'catalog', 'library', 'resource', 'material', 'content', 'data', 'text',
+        'article', 'paper', 'book', 'chapter', 'section', 'paragraph', 'sentence', 'phrase'
+      ];
+      features.ragTerms = this.countTerms(promptContent, ragTerms);
+      features.ragTermRatio = features.ragTerms / features.wordCount;
       features.queryClarity = this.calculateQueryClarity(promptContent);
+      features.searchSpecificity = this.calculateSearchSpecificity(promptContent);
+      features.contextualConstraints = this.countContextualConstraints(promptContent);
+    } else if (promptType === 'general') {
+      // General purpose features
+      features.instructionClarity = this.calculateInstructionClarity(promptContent);
+      features.contextRichness = this.calculateContextRichness(promptContent);
+      features.queryClarity = this.calculateQueryClarity(promptContent);
+      features.generalPurposeScore = (features.instructionClarity + features.contextRichness + features.queryClarity) / 3;
     }
 
     // Convert to feature vector
@@ -734,6 +1407,345 @@ export class PromptMLService {
     const featureVector = featureNames.map(name => features[name]);
 
     return { features, featureVector };
+  }
+
+  /**
+   * Calculate Flesch-Kincaid readability score
+   * @param text Text to analyze
+   * @returns Flesch-Kincaid score
+   */
+  private calculateFleschKincaidScore(text: string): number {
+    const sentences = text.split(/[.!?]+\s+|\n|$/).filter(s => s.trim().length > 0);
+    const words = text.split(/\s+/).filter(w => w.trim().length > 0);
+    const syllables = words.reduce((count, word) => count + this.countSyllables(word), 0);
+
+    if (sentences.length === 0 || words.length === 0) return 0;
+
+    // Flesch-Kincaid formula: 206.835 - 1.015 * (words / sentences) - 84.6 * (syllables / words)
+    const score = 206.835 - 1.015 * (words.length / sentences.length) - 84.6 * (syllables / words.length);
+
+    // Normalize to 0-10 range
+    return Math.max(0, Math.min(10, score / 10));
+  }
+
+  /**
+   * Calculate Gunning Fog Index
+   * @param text Text to analyze
+   * @returns Gunning Fog Index
+   */
+  private calculateFogIndex(text: string): number {
+    const sentences = text.split(/[.!?]+\s+|\n|$/).filter(s => s.trim().length > 0);
+    const words = text.split(/\s+/).filter(w => w.trim().length > 0);
+
+    if (sentences.length === 0 || words.length === 0) return 0;
+
+    // Count complex words (3+ syllables)
+    const complexWords = words.filter(word => this.countSyllables(word) >= 3);
+
+    // Gunning Fog formula: 0.4 * ((words / sentences) + 100 * (complexWords / words))
+    const score = 0.4 * ((words.length / sentences.length) + 100 * (complexWords.length / words.length));
+
+    // Normalize to 0-10 range
+    return Math.max(0, Math.min(10, score / 20));
+  }
+
+  /**
+   * Count syllables in a word
+   * @param word Word to count syllables in
+   * @returns Syllable count
+   */
+  private countSyllables(word: string): number {
+    word = word.toLowerCase().replace(/[^a-z]/g, '');
+
+    // Special cases
+    if (word.length <= 3) return 1;
+
+    // Count vowel groups
+    const vowelGroups = word.match(/[aeiouy]+/g) || [];
+    let count = vowelGroups.length;
+
+    // Adjust for special cases
+    if (word.endsWith('e')) count--;
+    if (word.endsWith('le') && word.length > 2 && !['a', 'e', 'i', 'o', 'u', 'y'].includes(word[word.length - 3])) count++;
+    if (word.endsWith('es') || word.endsWith('ed')) count--;
+
+    // Ensure at least one syllable
+    return Math.max(1, count);
+  }
+
+  /**
+   * Count examples in text
+   * @param text Text to analyze
+   * @returns Example count
+   */
+  private countExamples(text: string): number {
+    const examplePatterns = [
+      /for example/gi,
+      /e\.g\./gi,
+      /such as/gi,
+      /like this:/gi,
+      /example:/gi,
+      /here's an example/gi,
+      /for instance/gi
+    ];
+
+    return examplePatterns.reduce((count, pattern) => {
+      const matches = text.match(pattern) || [];
+      return count + matches.length;
+    }, 0);
+  }
+
+  /**
+   * Count definitions in text
+   * @param text Text to analyze
+   * @returns Definition count
+   */
+  private countDefinitions(text: string): number {
+    const definitionPatterns = [
+      /is defined as/gi,
+      /refers to/gi,
+      /means/gi,
+      /is a/gi,
+      /are a/gi,
+      /definition:/gi,
+      /:\s*[A-Z]/g
+    ];
+
+    return definitionPatterns.reduce((count, pattern) => {
+      const matches = text.match(pattern) || [];
+      return count + matches.length;
+    }, 0);
+  }
+
+  /**
+   * Count conditionals in text
+   * @param text Text to analyze
+   * @returns Conditional count
+   */
+  private countConditionals(text: string): number {
+    const conditionalPatterns = [
+      /if\s+.+\s+then/gi,
+      /if\s+.+,/gi,
+      /when\s+.+,/gi,
+      /unless/gi,
+      /otherwise/gi,
+      /in case/gi,
+      /assuming/gi,
+      /provided that/gi
+    ];
+
+    return conditionalPatterns.reduce((count, pattern) => {
+      const matches = text.match(pattern) || [];
+      return count + matches.length;
+    }, 0);
+  }
+
+  /**
+   * Count instructions in text
+   * @param text Text to analyze
+   * @returns Instruction count
+   */
+  private countInstructions(text: string): number {
+    const instructionPatterns = [
+      /please/gi,
+      /should/gi,
+      /must/gi,
+      /need to/gi,
+      /have to/gi,
+      /required to/gi,
+      /^do\s+/gim,
+      /^don't\s+/gim,
+      /^avoid\s+/gim,
+      /^ensure\s+/gim
+    ];
+
+    return instructionPatterns.reduce((count, pattern) => {
+      const matches = text.match(pattern) || [];
+      return count + matches.length;
+    }, 0);
+  }
+
+  /**
+   * Calculate specification detail
+   * @param content Prompt content
+   * @returns Specification detail score
+   */
+  private calculateSpecificationDetail(content: string): number {
+    // Check for specific measurements
+    const hasMeasurements = /\d+\s*(mm|cm|m|inch|ft|px|%)/i.test(content);
+
+    // Check for color specifications
+    const hasColorSpecs = /#[0-9A-Fa-f]{3,6}|rgb\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\)/i.test(content);
+
+    // Check for material properties
+    const materialProperties = [
+      'density', 'hardness', 'strength', 'durability', 'flexibility',
+      'conductivity', 'resistance', 'reflectivity', 'opacity', 'transparency'
+    ];
+    const hasMaterialProps = this.countTerms(content, materialProperties) > 0;
+
+    // Check for comparison terms
+    const comparisonTerms = [
+      'similar to', 'like', 'resembling', 'comparable to', 'in contrast to',
+      'different from', 'unlike', 'versus', 'as opposed to'
+    ];
+    const hasComparisons = this.countTerms(content, comparisonTerms) > 0;
+
+    return (hasMeasurements ? 1 : 0) +
+           (hasColorSpecs ? 1 : 0) +
+           (hasMaterialProps ? 1 : 0) +
+           (hasComparisons ? 1 : 0);
+  }
+
+  /**
+   * Count visual descriptors
+   * @param content Prompt content
+   * @returns Visual descriptor count
+   */
+  private countVisualDescriptors(content: string): number {
+    const visualDescriptors = [
+      'shiny', 'matte', 'glossy', 'textured', 'smooth', 'rough', 'bumpy', 'grainy',
+      'polished', 'brushed', 'distressed', 'weathered', 'aged', 'new', 'fresh',
+      'bright', 'dark', 'light', 'vibrant', 'dull', 'faded', 'saturated', 'desaturated',
+      'transparent', 'translucent', 'opaque', 'reflective', 'non-reflective',
+      'patterned', 'solid', 'striped', 'spotted', 'checkered', 'floral', 'geometric'
+    ];
+
+    return this.countTerms(content, visualDescriptors);
+  }
+
+  /**
+   * Calculate goal clarity
+   * @param content Prompt content
+   * @returns Goal clarity score
+   */
+  private calculateGoalClarity(content: string): number {
+    // Check for goal statements
+    const goalStatements = [
+      'goal is', 'objective is', 'aim is', 'purpose is', 'task is',
+      'should achieve', 'needs to accomplish', 'must complete',
+      'success means', 'successful when'
+    ];
+    const hasGoalStatement = this.countTerms(content, goalStatements) > 0;
+
+    // Check for measurable outcomes
+    const measurableOutcomes = [
+      'measure', 'metric', 'kpi', 'indicator', 'benchmark',
+      'target', 'threshold', 'minimum', 'maximum', 'optimal'
+    ];
+    const hasMeasurableOutcomes = this.countTerms(content, measurableOutcomes) > 0;
+
+    // Check for time constraints
+    const timeConstraints = [
+      'by', 'within', 'before', 'after', 'during',
+      'deadline', 'timeframe', 'schedule', 'timeline'
+    ];
+    const hasTimeConstraints = this.countTerms(content, timeConstraints) > 0;
+
+    // Check for priority indicators
+    const priorityIndicators = [
+      'priority', 'important', 'critical', 'essential', 'crucial',
+      'primary', 'secondary', 'tertiary', 'first', 'last'
+    ];
+    const hasPriorityIndicators = this.countTerms(content, priorityIndicators) > 0;
+
+    return (hasGoalStatement ? 1 : 0) +
+           (hasMeasurableOutcomes ? 1 : 0) +
+           (hasTimeConstraints ? 1 : 0) +
+           (hasPriorityIndicators ? 1 : 0);
+  }
+
+  /**
+   * Calculate constraint specificity
+   * @param content Prompt content
+   * @returns Constraint specificity score
+   */
+  private calculateConstraintSpecificity(content: string): number {
+    // Check for constraint statements
+    const constraintStatements = [
+      'constraint', 'limitation', 'restriction', 'boundary', 'limit',
+      'cannot', 'must not', 'should not', 'avoid', 'prevent'
+    ];
+    const hasConstraintStatement = this.countTerms(content, constraintStatements) > 0;
+
+    // Check for resource limitations
+    const resourceLimitations = [
+      'budget', 'cost', 'time', 'resource', 'personnel',
+      'equipment', 'material', 'space', 'capacity'
+    ];
+    const hasResourceLimitations = this.countTerms(content, resourceLimitations) > 0;
+
+    // Check for rule specifications
+    const ruleSpecifications = [
+      'rule', 'policy', 'procedure', 'protocol', 'guideline',
+      'standard', 'regulation', 'law', 'code', 'requirement'
+    ];
+    const hasRuleSpecifications = this.countTerms(content, ruleSpecifications) > 0;
+
+    // Check for conditional constraints
+    const conditionalConstraints = [
+      'if', 'when', 'unless', 'only if', 'except when',
+      'provided that', 'assuming that', 'in case'
+    ];
+    const hasConditionalConstraints = this.countTerms(content, conditionalConstraints) > 0;
+
+    return (hasConstraintStatement ? 1 : 0) +
+           (hasResourceLimitations ? 1 : 0) +
+           (hasRuleSpecifications ? 1 : 0) +
+           (hasConditionalConstraints ? 1 : 0);
+  }
+
+  /**
+   * Calculate search specificity
+   * @param content Prompt content
+   * @returns Search specificity score
+   */
+  private calculateSearchSpecificity(content: string): number {
+    // Check for search terms
+    const searchTerms = [
+      'search for', 'find', 'locate', 'retrieve', 'get',
+      'query for', 'look up', 'seek', 'hunt for'
+    ];
+    const hasSearchTerms = this.countTerms(content, searchTerms) > 0;
+
+    // Check for specific entities
+    const specificEntities = /\"[^\"]+\"|\'[^\']+\'|\[[^\]]+\]|\([^\)]+\)/g;
+    const hasSpecificEntities = (content.match(specificEntities) || []).length > 0;
+
+    // Check for filter terms
+    const filterTerms = [
+      'filter', 'where', 'containing', 'that has', 'with',
+      'excluding', 'without', 'except', 'not including'
+    ];
+    const hasFilterTerms = this.countTerms(content, filterTerms) > 0;
+
+    // Check for sort/order terms
+    const sortTerms = [
+      'sort', 'order', 'rank', 'arrange', 'organize',
+      'by date', 'by relevance', 'by importance', 'ascending', 'descending'
+    ];
+    const hasSortTerms = this.countTerms(content, sortTerms) > 0;
+
+    return (hasSearchTerms ? 1 : 0) +
+           (hasSpecificEntities ? 1 : 0) +
+           (hasFilterTerms ? 1 : 0) +
+           (hasSortTerms ? 1 : 0);
+  }
+
+  /**
+   * Count contextual constraints
+   * @param content Prompt content
+   * @returns Contextual constraint count
+   */
+  private countContextualConstraints(content: string): number {
+    const contextualConstraints = [
+      'only from', 'limited to', 'restricted to', 'within the context of',
+      'in the domain of', 'in the field of', 'in the area of',
+      'from sources', 'from documents', 'from the database',
+      'published', 'authored', 'created', 'dated', 'between', 'after', 'before'
+    ];
+
+    return this.countTerms(content, contextualConstraints);
   }
 
   /**

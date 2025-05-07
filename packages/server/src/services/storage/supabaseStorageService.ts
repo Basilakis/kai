@@ -1,113 +1,30 @@
 /**
- * Supabase Storage Service
+ * Unified Storage Service Adapter
  *
- * This service is responsible for interacting with Supabase Storage for file storage.
- * It provides functionality to upload files, generate URLs, and manage
- * file storage in Supabase buckets.
+ * This file provides a compatibility layer for the unified storage service.
+ * It re-exports the unified storage service methods with the same interface
+ * as the old supabaseStorageService.ts file to minimize code changes.
  */
 
-import fs from 'fs';
+import { storage, createLogger } from '@kai/shared';
 import path from 'path';
-import { logger } from '../../utils/logger';
-import { supabase } from '../supabase/supabaseClient';
-import { handleSupabaseError, safeSupabaseOperation, retrySupabaseOperation } from '../../../../shared/src/utils/supabaseErrorHandler';
-import { uploadFile, downloadFile } from '../../../../shared/src/utils/supabaseHelpers';
-import { STORAGE } from '@kai/shared';
-// Import types
-import '../../../types/supabaseStorage';
 
-// Define default bucket names
-const DEFAULT_BUCKET = 'materials';
-const SUPABASE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || DEFAULT_BUCKET;
+const logger = createLogger('StorageServiceAdapter');
 
 /**
- * Get the configured storage bucket name from admin settings
- * Falls back to environment variable or default if not configured
+ * Get the default storage bucket
  *
- * @returns Promise with the bucket name
+ * @returns The default storage bucket name
  */
 async function getStorageBucket(): Promise<string> {
-  try {
-    // Attempt to get the bucket name from Supabase settings table using safe operation
-    const data = await safeSupabaseOperation(
-      () => supabase
-        .getClient()
-        .from('settings')
-        .select('value')
-        .eq('key', 'storageBucket')
-        .single(),
-      'getStorageBucket',
-      { defaultBucket: SUPABASE_BUCKET }
-    );
-
-    logger.info(`Using admin-configured storage bucket: ${data.value}`);
-    return data.value;
-  } catch (err) {
-    // If any error occurs, fall back to default bucket
-    logger.warn(`Error fetching storage bucket config, using default: ${SUPABASE_BUCKET}`);
-    return SUPABASE_BUCKET;
-  }
-}
-
-// TypeScript-safe Buffer utility
-const BufferUtil = {
-  // Use type assertion to avoid TypeScript "used as a value" errors
-  from: (arrayBuffer: ArrayBuffer): Uint8Array => {
-    // Use a reliable Uint8Array conversion that works in all environments
-    const uint8Array = new Uint8Array(arrayBuffer);
-
-    // Treat as Buffer for Node.js or Uint8Array for other environments
-    return uint8Array;
-  }
-};
-
-// Helper for Supabase Storage API methods that might not be available in all versions
-interface StorageClientWrapper {
-  getPublicUrl: (path: string) => { data: { publicUrl: string } };
-  createSignedUrl: (path: string, expiresIn: number) => Promise<{ data: { signedUrl: string }, error: any }>;
+  return storage['defaultBucket'] || 'materials';
 }
 
 /**
- * Get a wrapped storage client with fallbacks for potentially missing methods
- */
-function getStorageClient(bucket: string): StorageClientWrapper {
-  const storageClient = supabase.getClient().storage.from(bucket);
-
-  return {
-    getPublicUrl: (path: string) => {
-      // @ts-ignore - Handle potential API version differences
-      if (typeof storageClient.getPublicUrl === 'function') {
-        // @ts-ignore
-        return storageClient.getPublicUrl(path);
-      }
-
-      // Fallback implementation using URL patterns
-      const baseUrl = process.env.SUPABASE_URL || '';
-      const publicUrl = `${baseUrl}/storage/v1/object/public/${bucket}/${path}`;
-      return { data: { publicUrl } };
-    },
-    createSignedUrl: async (path: string, expiresIn: number) => {
-      // @ts-ignore - Handle potential API version differences
-      if (typeof storageClient.createSignedUrl === 'function') {
-        // @ts-ignore
-        return storageClient.createSignedUrl(path, expiresIn);
-      }
-
-      // Fallback implementation (limited functionality)
-      logger.warn(`Supabase Storage createSignedUrl not available, using fallback with limited security`);
-      const token = Math.random().toString(36).substring(2);
-      const baseUrl = process.env.SUPABASE_URL || '';
-      const signedUrl = `${baseUrl}/storage/v1/object/sign/${bucket}/${path}?token=${token}&expires=${Date.now() + expiresIn * 1000}`;
-      return { data: { signedUrl, path, token }, error: null };
-    }
-  };
-}
-
-/**
- * Upload a file to Supabase Storage
+ * Upload a file to storage
  *
  * @param filePath Path to the local file
- * @param storagePath Path in Supabase Storage bucket
+ * @param storagePath Path in storage bucket
  * @param options Upload options
  * @returns Promise with upload result
  */
@@ -121,77 +38,30 @@ export async function uploadToStorage(
   } = {}
 ): Promise<{ key: string; url: string }> {
   try {
-    // Validate file exists
-    if (!fs.existsSync(filePath)) {
-      throw new Error(`File not found: ${filePath}`);
-    }
+    logger.info(`Uploading file to storage: ${storagePath}`);
 
-    // Read file content
-    const fileContent = fs.readFileSync(filePath);
-
-    // Determine content type based on file extension if not provided
-    const contentType = options.contentType || getContentTypeFromExtension(filePath);
-
-    // Extract bucket and path from storagePath (format: 'bucket/path/to/file.ext')
-    const { bucket, path: fileSavePath } = await extractBucketAndPath(storagePath);
-
-    logger.info(`Uploading file to Supabase Storage: ${storagePath}`);
-
-    // Upload to Supabase Storage using retry operation for better reliability
-    await retrySupabaseOperation(
-      () => supabase
-        .getClient()
-        .storage
-        .from(bucket)
-        .upload(fileSavePath, fileContent, {
-          contentType,
-          upsert: true,
-          metadata: options.metadata || {}
-        }),
-      `uploadToStorage:${bucket}/${fileSavePath}`,
-      { maxRetries: 3, initialDelayMs: 1000 },
-      { contentType, fileSize: fileContent.length }
-    );
-
-    // Generate URL based on visibility
-    let url;
-    if (options.isPublic) {
-      // Generate public URL using wrapped client
-      const storageClient = getStorageClient(bucket);
-      const { data } = storageClient.getPublicUrl(fileSavePath);
-      url = data.publicUrl;
-    } else {
-      // Get signed URL with 1 hour expiry by default using wrapped client
-      const storageClient = getStorageClient(bucket);
-      const signedUrlData = await safeSupabaseOperation(
-        () => storageClient.createSignedUrl(fileSavePath, 3600),
-        `getSignedUrl:${bucket}/${fileSavePath}`,
-        { expiresIn: 3600 }
-      );
-
-      url = signedUrlData.signedUrl;
-    }
+    // Use the unified storage service
+    const result = await storage.uploadFile(filePath, storagePath, {
+      contentType: options.contentType,
+      metadata: options.metadata,
+      isPublic: options.isPublic
+    });
 
     return {
       key: storagePath,
-      url
+      url: result.url
     };
-  } catch (err) {
-    // Use enhanced error handling
-    const enhancedError = handleSupabaseError(
-      err,
-      'uploadToStorage',
-      { storagePath, contentType: options.contentType }
-    );
-    throw enhancedError;
+  } catch (error) {
+    logger.error(`Error uploading file to storage: ${error}`);
+    throw error;
   }
 }
 
 /**
- * Upload a buffer to Supabase Storage
+ * Upload a buffer to storage
  *
  * @param buffer Buffer to upload
- * @param storagePath Path in Supabase Storage bucket
+ * @param storagePath Path in storage bucket
  * @param options Upload options
  * @returns Promise with upload result
  */
@@ -205,55 +75,22 @@ export async function uploadBufferToStorage(
   } = {}
 ): Promise<{ key: string; url: string }> {
   try {
-    // Determine content type based on file extension if not provided
-    const contentType = options.contentType || getContentTypeFromExtension(storagePath);
+    logger.info(`Uploading buffer to storage: ${storagePath}`);
 
-    // Extract bucket and path from storagePath
-    const { bucket, path: fileSavePath } = await extractBucketAndPath(storagePath);
-
-    logger.info(`Uploading buffer to Supabase Storage: ${storagePath}`);
-
-    // Upload to Supabase Storage
-    const { data, error } = await supabaseClient
-      .getClient()
-      .storage
-      .from(bucket)
-      .upload(fileSavePath, buffer, {
-        contentType,
-        upsert: true,
-        metadata: options.metadata || {}
-      });
-
-    if (error) {
-      throw error;
-    }
-
-    // Generate URL based on visibility
-    let url;
-    if (options.isPublic) {
-      // Generate public URL using wrapped client
-      const storageClient = getStorageClient(bucket);
-      const { data } = storageClient.getPublicUrl(fileSavePath);
-      url = data.publicUrl;
-    } else {
-      // Get signed URL with 1 hour expiry by default using wrapped client
-      const storageClient = getStorageClient(bucket);
-      const { data: signedUrlData, error: signedUrlError } = await storageClient.createSignedUrl(fileSavePath, 3600);
-
-      if (signedUrlError) {
-        throw signedUrlError;
-      }
-
-      url = signedUrlData.signedUrl;
-    }
+    // Use the unified storage service
+    const result = await storage.uploadBuffer(buffer, storagePath, {
+      contentType: options.contentType,
+      metadata: options.metadata,
+      isPublic: options.isPublic
+    });
 
     return {
       key: storagePath,
-      url
+      url: result.url
     };
-  } catch (err) {
-    logger.error(`Error uploading buffer to Supabase Storage: ${err}`);
-    throw err;
+  } catch (error) {
+    logger.error(`Error uploading buffer to storage: ${error}`);
+    throw error;
   }
 }
 

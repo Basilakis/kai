@@ -13,6 +13,15 @@ import SearchFilterProvider from './src/providers/SearchFilterProvider';
 import SharingProvider from './src/providers/SharingProvider';
 import OfflineProvider from './src/providers/OfflineProvider';
 import { LanguageProvider } from './src/hooks/useLanguage';
+import { initializeServices } from './src/services';
+
+/**
+ * Initialize services before the browser renders
+ */
+export const onClientEntry = () => {
+  // Initialize all unified services
+  initializeServices();
+};
 
 /**
  * Wrap the app with all providers

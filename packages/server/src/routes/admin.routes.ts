@@ -29,6 +29,11 @@ import promptStatisticalRoutes from './admin/prompt.statistical.routes'; // Impo
 import promptOptimizationRoutes from './admin/prompt.optimization.routes'; // Import prompt optimization routes
 import promptIntegrationRoutes from './admin/prompt.integration.routes'; // Import prompt integration routes
 
+// Import new advanced prompt feature routes
+import promptMLAdvancedRoutes from './admin/prompt-ml'; // Import advanced prompt ML routes
+import promptOptimizationAdvancedRoutes from './admin/prompt-optimization'; // Import advanced prompt optimization routes
+import promptStatisticalAdvancedRoutes from './admin/prompt-statistical'; // Import advanced prompt statistical routes
+
 // Import services for dashboard stats
 import analyticsService from '../services/analytics/analyticsService';
 import subscriptionAnalytics from '../services/analytics/subscriptionAnalytics.service';
@@ -189,6 +194,11 @@ router.use('/prompt-ml', promptMLRoutes); // Mount prompt ML routes
 router.use('/prompt-statistical', promptStatisticalRoutes); // Mount prompt statistical routes
 router.use('/prompt-optimization', promptOptimizationRoutes); // Mount prompt optimization routes
 router.use('/prompt-integration', promptIntegrationRoutes); // Mount prompt integration routes
+
+// Mount new advanced prompt feature routes
+router.use('/prompt-ml/advanced', promptMLAdvancedRoutes); // Mount advanced prompt ML routes
+router.use('/prompt-optimization/advanced', promptOptimizationAdvancedRoutes); // Mount advanced prompt optimization routes
+router.use('/prompt-statistical/advanced', promptStatisticalAdvancedRoutes); // Mount advanced prompt statistical routes
 
 /**
  * @route   GET /api/admin/dashboard

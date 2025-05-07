@@ -1,9 +1,15 @@
 /**
  * KAI crewAI Integration
- * 
+ *
  * This module provides agent-based capabilities for the KAI platform
  * using crewAI for both frontend user interactions and backend processing.
  */
+
+// Initialize services
+import { initializeServices } from './services';
+
+// Initialize services on module load
+initializeServices();
 
 // Core exports
 export { initializeAgentSystem } from './core/agentSystem';
@@ -24,3 +30,6 @@ export * from './tools';
 
 // Utilities
 export * from './utils';
+
+// Services
+export * from './services';

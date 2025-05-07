@@ -1,6 +1,6 @@
 /**
  * Property-Specific Training Module
- * 
+ *
  * This module provides functions for training models to recognize specific material properties
  * from visual references. It's used as part of the Visual Reference Library feature.
  */
@@ -8,10 +8,12 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import { spawn } from 'child_process';
-import { logger } from './utils/logger';
-import { 
-  getMetadataFieldsByMaterialType, 
-  MetadataField 
+import { createLogger } from './services';
+
+const logger = createLogger('PropertySpecificTraining');
+import {
+  getMetadataFieldsByMaterialType,
+  MetadataField
 } from './utils/metadata-field-utils';
 import { MaterialType } from './utils/material-type-detector';
 
@@ -67,7 +69,7 @@ export interface PropertySpecificTrainingResult {
 
 /**
  * Train a model for a specific property
- * 
+ *
  * @param options Training options
  * @returns Promise with training results
  */
@@ -90,7 +92,7 @@ export async function trainModelForProperty(
     transferLearning = true,
     baseModel = 'efficientnet'
   } = options;
-  
+
   logger.info(`Starting property-specific training for ${propertyName} (${materialType})`, {
     propertyName,
     materialType,
@@ -98,30 +100,30 @@ export async function trainModelForProperty(
     epochs,
     batchSize
   });
-  
+
   try {
     // Get metadata field information
     const metadataFields = await getMetadataFieldsByMaterialType(materialType, apiBaseUrl, apiKey);
     const propertyField = metadataFields.find(field => field.name === propertyName);
-    
+
     if (!propertyField) {
       throw new Error(`Property ${propertyName} not found for material type ${materialType}`);
     }
-    
+
     logger.info(`Found metadata field for ${propertyName}`, {
       fieldType: propertyField.fieldType,
       isRequired: propertyField.isRequired,
       options: propertyField.options?.length || 0
     });
-    
+
     // Determine model type based on field type if not specified
     const inferredModelType = getModelTypeForField(propertyField);
     const finalModelType = modelType || inferredModelType;
-    
+
     // Create output directory if it doesn't exist
     const propertyOutputDir = path.join(modelOutputDir, materialType, propertyName);
     fs.mkdirSync(propertyOutputDir, { recursive: true });
-    
+
     // Save property metadata
     const metadataPath = path.join(propertyOutputDir, 'property_metadata.json');
     const propertyMetadata = {
@@ -134,12 +136,12 @@ export async function trainModelForProperty(
       unit: propertyField.unit,
       materialType
     };
-    
+
     fs.writeFileSync(metadataPath, JSON.stringify(propertyMetadata, null, 2));
-    
+
     // Run the Python script for property-specific training
     const scriptPath = path.join(PYTHON_SCRIPTS_DIR, 'property_specific_trainer.py');
-    
+
     return new Promise((resolve, reject) => {
       const pythonProcess = spawn('python', [
         scriptPath,
@@ -157,21 +159,21 @@ export async function trainModelForProperty(
         ...(transferLearning ? ['--transfer-learning'] : []),
         '--base-model', baseModel
       ]);
-      
+
       let resultData = '';
       let errorData = '';
-      
+
       // Collect data from stdout
       pythonProcess.stdout.on('data', (data: Buffer) => {
         resultData += data.toString();
       });
-      
+
       // Collect data from stderr
       pythonProcess.stderr.on('data', (data: Buffer) => {
         errorData += data.toString();
         logger.warn(`Training stderr: ${data.toString()}`);
       });
-      
+
       // Handle process completion
       pythonProcess.on('close', (code: number) => {
         if (code !== 0) {
@@ -179,21 +181,21 @@ export async function trainModelForProperty(
           reject(new Error(`Training process failed: ${errorData}`));
           return;
         }
-        
+
         try {
           // Parse the result
           const result = JSON.parse(resultData);
-          
+
           // Add property name and material type to result
           result.propertyName = propertyName;
           result.materialType = materialType;
-          
+
           logger.info(`Training completed successfully for ${propertyName} (${materialType})`, {
             accuracy: result.accuracy,
             loss: result.loss,
             trainingTime: result.trainingTime
           });
-          
+
           resolve(result);
         } catch (error) {
           logger.error('Failed to parse training result', { error, resultData });
@@ -209,7 +211,7 @@ export async function trainModelForProperty(
 
 /**
  * Train models for multiple properties
- * 
+ *
  * @param properties Array of property names to train models for
  * @param materialType Material type
  * @param baseOptions Base training options (without propertyName)
@@ -221,14 +223,14 @@ export async function trainModelsForProperties(
   baseOptions: Omit<PropertySpecificTrainingOptions, 'propertyName' | 'materialType'>
 ): Promise<Record<string, PropertySpecificTrainingResult>> {
   const results: Record<string, PropertySpecificTrainingResult> = {};
-  
+
   logger.info(`Starting training for ${properties.length} properties of ${materialType}`, { properties });
-  
+
   for (const propertyName of properties) {
     try {
       // Create property-specific output directory
       const propertyOutputDir = path.join(baseOptions.modelOutputDir, materialType, propertyName);
-      
+
       // Train model for this property
       const result = await trainModelForProperty({
         ...baseOptions,
@@ -236,7 +238,7 @@ export async function trainModelsForProperties(
         materialType,
         modelOutputDir: baseOptions.modelOutputDir
       });
-      
+
       results[propertyName] = result;
     } catch (error) {
       logger.error(`Error training model for ${propertyName}`, { error });
@@ -252,13 +254,13 @@ export async function trainModelsForProperties(
       } as any;
     }
   }
-  
+
   return results;
 }
 
 /**
  * Get appropriate model type for a metadata field
- * 
+ *
  * @param field Metadata field
  * @returns Model type ('classification', 'regression', or 'detection')
  */
@@ -267,10 +269,10 @@ function getModelTypeForField(field: MetadataField): 'classification' | 'regress
     case 'dropdown':
     case 'boolean':
       return 'classification';
-      
+
     case 'number':
       return 'regression';
-      
+
     case 'text':
     case 'textarea':
       // For text fields, we need to determine if it's a classification or detection task
@@ -278,15 +280,15 @@ function getModelTypeForField(field: MetadataField): 'classification' | 'regress
       if (field.options && field.options.length > 0) {
         return 'classification';
       }
-      
+
       // If the field has extraction patterns, it might be a detection task
       if (field.extractionPatterns && field.extractionPatterns.length > 0) {
         return 'detection';
       }
-      
+
       // Default to classification for text fields
       return 'classification';
-      
+
     default:
       return 'classification';
   }
@@ -294,7 +296,7 @@ function getModelTypeForField(field: MetadataField): 'classification' | 'regress
 
 /**
  * Prepare dataset for property-specific training
- * 
+ *
  * @param propertyName Property name
  * @param materialType Material type
  * @param inputDir Directory containing raw data
@@ -319,20 +321,20 @@ export async function prepareDatasetForProperty(
   valueRange?: { min: number; max: number };
 }> {
   logger.info(`Preparing dataset for ${propertyName} (${materialType})`, { inputDir, outputDir });
-  
+
   try {
     // Get metadata field information
     const metadataFields = await getMetadataFieldsByMaterialType(materialType, apiBaseUrl, apiKey);
     const propertyField = metadataFields.find(field => field.name === propertyName);
-    
+
     if (!propertyField) {
       throw new Error(`Property ${propertyName} not found for material type ${materialType}`);
     }
-    
+
     // Create property-specific output directory
     const propertyOutputDir = path.join(outputDir, materialType, propertyName);
     fs.mkdirSync(propertyOutputDir, { recursive: true });
-    
+
     // Save property metadata
     const metadataPath = path.join(propertyOutputDir, 'property_metadata.json');
     const propertyMetadata = {
@@ -345,12 +347,12 @@ export async function prepareDatasetForProperty(
       unit: propertyField.unit,
       materialType
     };
-    
+
     fs.writeFileSync(metadataPath, JSON.stringify(propertyMetadata, null, 2));
-    
+
     // Run the Python script for dataset preparation
     const scriptPath = path.join(PYTHON_SCRIPTS_DIR, 'property_dataset_preparer.py');
-    
+
     return new Promise((resolve, reject) => {
       const pythonProcess = spawn('python', [
         scriptPath,
@@ -360,21 +362,21 @@ export async function prepareDatasetForProperty(
         '--output-dir', propertyOutputDir,
         '--metadata-path', metadataPath
       ]);
-      
+
       let resultData = '';
       let errorData = '';
-      
+
       // Collect data from stdout
       pythonProcess.stdout.on('data', (data: Buffer) => {
         resultData += data.toString();
       });
-      
+
       // Collect data from stderr
       pythonProcess.stderr.on('data', (data: Buffer) => {
         errorData += data.toString();
         logger.warn(`Dataset preparation stderr: ${data.toString()}`);
       });
-      
+
       // Handle process completion
       pythonProcess.on('close', (code: number) => {
         if (code !== 0) {
@@ -382,19 +384,19 @@ export async function prepareDatasetForProperty(
           reject(new Error(`Dataset preparation process failed: ${errorData}`));
           return;
         }
-        
+
         try {
           // Parse the result
           const result = JSON.parse(resultData);
-          
+
           // Add property name and material type to result
           result.propertyName = propertyName;
           result.materialType = materialType;
-          
+
           logger.info(`Dataset preparation completed successfully for ${propertyName} (${materialType})`, {
             numSamples: result.numSamples
           });
-          
+
           resolve(result);
         } catch (error) {
           logger.error('Failed to parse dataset preparation result', { error, resultData });
@@ -410,7 +412,7 @@ export async function prepareDatasetForProperty(
 
 /**
  * Predict property value from image
- * 
+ *
  * @param propertyName Property name
  * @param materialType Material type
  * @param imagePath Path to image file
@@ -430,18 +432,18 @@ export async function predictPropertyFromImage(
   alternatives?: Array<{ value: any; confidence: number }>;
 }> {
   logger.info(`Predicting ${propertyName} for ${materialType} from image: ${imagePath}`);
-  
+
   try {
     // Get model path
     const modelPath = path.join(modelDir, materialType, propertyName);
-    
+
     if (!fs.existsSync(modelPath)) {
       throw new Error(`Model not found for ${propertyName} (${materialType})`);
     }
-    
+
     // Run the Python script for prediction
     const scriptPath = path.join(PYTHON_SCRIPTS_DIR, 'property_predictor.py');
-    
+
     return new Promise((resolve, reject) => {
       const pythonProcess = spawn('python', [
         scriptPath,
@@ -450,21 +452,21 @@ export async function predictPropertyFromImage(
         '--image', imagePath,
         '--model-dir', modelPath
       ]);
-      
+
       let resultData = '';
       let errorData = '';
-      
+
       // Collect data from stdout
       pythonProcess.stdout.on('data', (data: Buffer) => {
         resultData += data.toString();
       });
-      
+
       // Collect data from stderr
       pythonProcess.stderr.on('data', (data: Buffer) => {
         errorData += data.toString();
         logger.warn(`Prediction stderr: ${data.toString()}`);
       });
-      
+
       // Handle process completion
       pythonProcess.on('close', (code: number) => {
         if (code !== 0) {
@@ -472,20 +474,20 @@ export async function predictPropertyFromImage(
           reject(new Error(`Prediction process failed: ${errorData}`));
           return;
         }
-        
+
         try {
           // Parse the result
           const result = JSON.parse(resultData);
-          
+
           // Add property name and material type to result
           result.propertyName = propertyName;
           result.materialType = materialType;
-          
+
           logger.info(`Prediction completed successfully for ${propertyName} (${materialType})`, {
             value: result.value,
             confidence: result.confidence
           });
-          
+
           resolve(result);
         } catch (error) {
           logger.error('Failed to parse prediction result', { error, resultData });

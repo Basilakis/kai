@@ -1,0 +1,51 @@
+name: Deploy Documentation
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'readme/**'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          npm install fs-extra
+          npm install @docusaurus/core @docusaurus/preset-classic
+
+      - name: Process readme files
+        run: node process-readme-files.js
+
+      - name: Create Docusaurus site
+        run: |
+          npx create-docusaurus@latest kai-docs-temp classic --typescript
+          cp -r kai-docs-temp/docs/* kai-docs-temp/docs/
+          cp kai-docs-temp/sidebars.js kai-docs-temp/
+
+      - name: Build documentation site
+        run: |
+          cd kai-docs-temp
+          npm install
+          npm run build
+
+      - name: Deploy to GitHub Pages
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          token: ${{ secrets.DOCS_DEPLOY_TOKEN }}
+          branch: gh-pages
+          folder: kai-docs-temp/build
+          repository-name: Basilakis/kai-readme.github.io
+          clean: true

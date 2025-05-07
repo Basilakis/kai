@@ -16,6 +16,12 @@
  * - Improved text-to-3D generation
  */
 
+// Initialize services
+import { initializeServices } from './services';
+
+// Initialize services on module load
+initializeServices();
+
 import { spawn } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';

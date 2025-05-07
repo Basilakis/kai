@@ -22,6 +22,14 @@ The system uses machine learning models to predict prompt success and suggest im
 2. Generate improvement suggestions for existing prompts
 3. Automatically create variants for A/B testing
 
+#### Supported Model Types
+
+- **Neural Network**: Standard feedforward neural network for general-purpose prediction
+- **LSTM**: Long Short-Term Memory networks for sequence-based analysis
+- **Transformer**: Transformer-based models for complex pattern recognition
+- **Random Forest**: Tree-based ensemble method for robust classification
+- **Gradient Boosting**: Boosting-based ensemble method for high-accuracy prediction
+
 ### Feature Extraction
 
 The ML system extracts features from prompts, including:
@@ -30,6 +38,11 @@ The ML system extracts features from prompts, including:
 - Type-specific features (material terms, agent terms, etc.)
 - Structural features (sections, formatting, etc.)
 - Clarity metrics (instruction clarity, context richness, etc.)
+- Readability metrics (Flesch-Kincaid score, Gunning Fog Index, etc.)
+- Semantic features (examples, definitions, conditionals, instructions)
+- Visual descriptors (for material-specific prompts)
+- Goal clarity and constraint specificity (for agent prompts)
+- Search specificity and contextual constraints (for RAG prompts)
 
 ### Prediction and Suggestions
 
@@ -38,6 +51,7 @@ To use ML predictions and suggestions:
 ```typescript
 // Predict prompt success
 const prediction = await mlService.predictPromptSuccess(
+  userId,
   promptId,
   promptContent,
   promptType
@@ -45,13 +59,14 @@ const prediction = await mlService.predictPromptSuccess(
 
 // Generate improvement suggestions
 const suggestions = await mlService.generateImprovementSuggestions(
+  userId,
   promptId,
   promptContent,
   promptType
 );
 
 // Apply a suggestion
-const updatedContent = await mlService.applyImprovementSuggestion(suggestionId);
+const updatedContent = await mlService.applyImprovementSuggestion(userId, suggestionId);
 ```
 
 ### Training Models
@@ -59,8 +74,8 @@ const updatedContent = await mlService.applyImprovementSuggestion(suggestionId);
 To train a new ML model:
 
 ```typescript
-// Create a model
-const modelId = await mlService.createMLModel({
+// Create a neural network model
+const nnModelId = await mlService.createMLModel({
   name: 'Prompt Success Predictor',
   modelType: 'neural_network',
   modelParameters: {
@@ -72,14 +87,62 @@ const modelId = await mlService.createMLModel({
     loss: 'binaryCrossentropy',
     epochs: 100,
     batchSize: 32,
-    validationSplit: 0.2
+    validationSplit: 0.2,
+    dropoutRate: 0.2,
+    useLearningRateScheduler: true,
+    calculateFeatureImportance: true
   },
   trainingDataQuery: 'SELECT * FROM prompt_usage_analytics',
   isActive: true
 });
 
+// Create an LSTM model
+const lstmModelId = await mlService.createMLModel({
+  name: 'Sequence-Based Predictor',
+  modelType: 'lstm',
+  modelParameters: {
+    sequenceLength: 10,
+    inputDimension: 10,
+    lstmUnits: [64, 32],
+    activation: 'tanh',
+    recurrentActivation: 'hardSigmoid',
+    outputActivation: 'sigmoid',
+    dropoutRate: 0.2,
+    recurrentDropoutRate: 0.2
+  },
+  trainingDataQuery: 'SELECT * FROM prompt_usage_analytics',
+  isActive: false
+});
+
+// Create a Random Forest model
+const rfModelId = await mlService.createMLModel({
+  name: 'Robust Classifier',
+  modelType: 'random_forest',
+  modelParameters: {
+    nEstimators: 100,
+    maxDepth: 10,
+    minSamplesSplit: 2,
+    maxFeatures: 'sqrt',
+    gainFunction: 'gini'
+  },
+  trainingDataQuery: 'SELECT * FROM prompt_usage_analytics',
+  isActive: false
+});
+
 // Train the model
-const modelVersionId = await mlService.trainModel(modelId);
+const modelVersionId = await mlService.trainModel(userId, nnModelId);
+
+// Apply transfer learning
+const transferModelId = await mlService.createMLModel({
+  name: 'Transfer Learning Model',
+  modelType: 'neural_network',
+  modelParameters: {
+    transferLearning: true,
+    baseModelId: nnModelId,
+    finetuningEpochs: 20
+  },
+  isActive: false
+});
 ```
 
 ## Statistical Analysis
@@ -92,6 +155,26 @@ The statistical analysis system provides significance testing for A/B tests and 
 2. Chi-square tests for independence
 3. Confidence intervals
 4. P-values and significance determination
+5. Effect size calculations
+6. Power analysis for sample size determination
+
+### Correlation Analysis
+
+The system can analyze correlations between various factors:
+
+1. Correlation coefficients (Pearson, Spearman)
+2. Statistical significance of correlations
+3. Visualization of correlation matrices
+4. Factor relationship mapping
+
+### Trend Analysis
+
+The system provides trend analysis capabilities:
+
+1. Time series analysis with trend detection
+2. Seasonality identification
+3. Anomaly detection
+4. Forecasting with confidence intervals
 
 ### Analyzing Experiments
 
@@ -139,6 +222,10 @@ The system supports various optimization rules:
 3. **Segment-Specific**: Creates segment-specific prompts based on performance
 4. **ML Suggestion**: Applies ML suggestions to improve prompts
 5. **Scheduled Experiment**: Creates experiments on a schedule
+6. **Time-Based**: Activates different prompts based on time of day or day of week
+7. **User Feedback**: Optimizes prompts based on user feedback metrics
+8. **Context-Aware**: Adapts prompts based on contextual factors
+9. **Multi-Variant**: Tests multiple variants simultaneously
 
 ### Creating Rules
 
@@ -180,6 +267,10 @@ The system can integrate with various external systems:
 3. **Datadog**: For application performance monitoring
 4. **Elasticsearch**: For log analysis and search
 5. **Custom API**: For integration with custom systems
+6. **Google Analytics**: For user behavior tracking
+7. **Slack**: For notifications and alerts
+8. **Power BI**: For business intelligence reporting
+9. **Webhook**: For general-purpose integration
 
 ### Creating Integrations
 
@@ -272,67 +363,157 @@ const segments = await promptService.discoverSegments({
 });
 ```
 
+#### Discovery Methods
+
+The system supports multiple discovery methods:
+
+1. **Clustering**: Groups users based on similarity using K-means, DBSCAN, or hierarchical clustering
+2. **Decision Tree**: Identifies segments through decision tree splits based on key attributes
+3. **Association Rules**: Discovers patterns of associated behaviors and attributes
+4. **Behavioral Patterns**: Identifies common sequences of actions and interactions
+
 ## Admin UI
 
 The admin UI provides tools for managing all advanced features:
 
-### ML Dashboard
+### Advanced Prompt Features Dashboard
 
-- Train and manage ML models
-- View predictions and suggestions
-- Apply suggestions to prompts
+The admin panel now includes a comprehensive Advanced Prompt Features dashboard with the following tabs:
 
-### Statistical Analysis Dashboard
+#### ML Models Tab
 
-- Analyze experiment results
-- Compare segment performance
-- View significance metrics
+- Create and manage ML models of various types using the `MLModelForm` component
+- Train models with customizable parameters
+- View model performance metrics and version history with the `MLModelDetails` component
+- Compare models and analyze feature importance
 
-### Optimization Dashboard
+#### Predictions Tab
 
-- Create and manage optimization rules
-- View optimization actions
-- Execute rules and actions
+- Predict success rates for prompts before deployment
+- Visualize feature importance and impact
+- Get AI-generated improvement suggestions
+- Apply suggestions with one click
 
-### Integration Dashboard
+#### Statistical Analysis Tab
 
-- Create and manage integrations
-- Test connections
-- Create and execute data exports
+- Analyze experiment results with statistical significance testing
+- Compare segment performance with confidence intervals
+- Discover correlations between factors affecting prompt success
+- Analyze trends and forecast future performance
+
+#### Optimization Tab
+
+- Create and manage optimization rules of various types using the `OptimizationRuleForm` component
+- View optimization actions and their results with the `OptimizationRuleDetails` component
+- Execute rules manually or schedule automatic execution
+- Monitor rule performance over time
+
+#### Integrations Tab
+
+- Create and manage integrations with external systems
+- Test connections and troubleshoot issues
+- Create data exports with customizable parameters
+- Schedule regular exports to external systems
+
+#### Segment Discovery Tab
+
+- Discover user segments automatically using ML techniques
+- Visualize segment distribution and characteristics
+- Compare segment performance and identify opportunities
+- Save discovered segments for targeting
+
+### Admin UI Components
+
+The admin UI includes the following key components:
+
+#### MLModelForm
+
+A form component for creating and editing ML models with support for:
+- Different model types (Neural Network, LSTM, Transformer, Random Forest, Gradient Boosting)
+- Customizable model parameters
+- Training data configuration
+- Model activation/deactivation
+
+#### MLModelDetails
+
+A component for viewing detailed information about ML models, including:
+- Performance metrics (accuracy, precision, recall, F1 score, AUC)
+- Feature importance visualization
+- Version history
+- Training history
+- Confusion matrix
+
+#### OptimizationRuleForm
+
+A form component for creating and editing optimization rules with support for:
+- Different rule types (Low Success Rate, Champion/Challenger, Segment Specific, etc.)
+- Customizable rule parameters
+- Rule activation/deactivation
+
+#### OptimizationRuleDetails
+
+A component for viewing detailed information about optimization rules, including:
+- Rule parameters
+- Actions generated by the rule
+- Performance metrics
+- Execution history
 
 ## API Endpoints
 
 ### ML Endpoints
 
-- `GET /api/admin/prompt-ml`: Get all ML models
-- `GET /api/admin/prompt-ml/:modelId`: Get ML model by ID
-- `POST /api/admin/prompt-ml`: Create ML model
-- `POST /api/admin/prompt-ml/:modelId/train`: Train ML model
+- `GET /api/admin/prompt-ml/models`: Get all ML models
+- `GET /api/admin/prompt-ml/models/:modelId`: Get ML model by ID
+- `POST /api/admin/prompt-ml/models`: Create ML model
+- `PATCH /api/admin/prompt-ml/models/:modelId`: Update ML model
+- `POST /api/admin/prompt-ml/models/:modelId/train`: Train ML model
+- `GET /api/admin/prompt-ml/models/:modelId/versions`: Get model versions
+- `GET /api/admin/prompt-ml/models/:modelId/performance`: Get model performance metrics
+- `GET /api/admin/prompt-ml/predict`: Predict prompt success for new content
 - `GET /api/admin/prompt-ml/prompts/:promptId/predict`: Predict prompt success
 - `GET /api/admin/prompt-ml/prompts/:promptId/suggestions`: Generate improvement suggestions
 - `POST /api/admin/prompt-ml/suggestions/:suggestionId/apply`: Apply improvement suggestion
+- `GET /api/admin/prompt-ml/feature-importance`: Get feature importance analysis
 
 ### Statistical Endpoints
 
 - `GET /api/admin/prompt-statistical`: Get statistical analyses
 - `POST /api/admin/prompt-statistical/experiments/:experimentId/analyze`: Analyze experiment
 - `POST /api/admin/prompt-statistical/segments/compare`: Compare segments
+- `GET /api/admin/prompt-statistical/correlations`: Analyze correlations
+- `GET /api/admin/prompt-statistical/trends`: Analyze trends
+- `GET /api/admin/prompt-statistical/power-analysis`: Calculate required sample size
 
 ### Optimization Endpoints
 
 - `GET /api/admin/prompt-optimization/rules`: Get optimization rules
 - `POST /api/admin/prompt-optimization/rules`: Create optimization rule
+- `PATCH /api/admin/prompt-optimization/rules/:ruleId`: Update optimization rule
+- `GET /api/admin/prompt-optimization/rules/:ruleId`: Get rule details
+- `POST /api/admin/prompt-optimization/rules/:ruleId/execute`: Execute specific rule
 - `GET /api/admin/prompt-optimization/actions`: Get optimization actions
-- `POST /api/admin/prompt-optimization/rules/execute`: Execute optimization rules
+- `GET /api/admin/prompt-optimization/actions/:actionId`: Get action details
+- `POST /api/admin/prompt-optimization/rules/execute`: Execute all optimization rules
 - `POST /api/admin/prompt-optimization/actions/execute`: Execute pending actions
 
 ### Integration Endpoints
 
 - `GET /api/admin/prompt-integration`: Get integrations
 - `POST /api/admin/prompt-integration`: Create integration
+- `PATCH /api/admin/prompt-integration/:integrationId`: Update integration
 - `POST /api/admin/prompt-integration/:integrationId/test`: Test integration connection
+- `GET /api/admin/prompt-integration/exports`: Get data exports
 - `POST /api/admin/prompt-integration/exports`: Create data export
+- `GET /api/admin/prompt-integration/exports/:exportId`: Get export details
 - `POST /api/admin/prompt-integration/exports/execute`: Execute pending exports
+
+### Segment Discovery Endpoints
+
+- `POST /api/admin/prompt-segmentation/discover`: Discover segments
+- `GET /api/admin/prompt-segmentation/segments`: Get saved segments
+- `POST /api/admin/prompt-segmentation/segments/:segmentId/save`: Save discovered segment
+- `GET /api/admin/prompt-segmentation/segments/:segmentId`: Get segment details
+- `GET /api/admin/prompt-segmentation/segments/:segmentId/performance`: Get segment performance
 
 ## Best Practices
 
@@ -344,14 +525,27 @@ The admin UI provides tools for managing all advanced features:
 6. **Validate Suggestions**: Review ML suggestions before applying them
 7. **Segment Appropriately**: Use advanced segmentation to target specific user groups
 8. **Document Experiments**: Keep track of experiments and their results
+9. **Leverage Multiple Model Types**: Use different model types for different prediction tasks
+10. **Analyze Feature Importance**: Understand which features drive success
+11. **Implement Transfer Learning**: Use knowledge from one domain to improve another
+12. **Automate Routine Tasks**: Use optimization rules for repetitive optimization tasks
+13. **Integrate with External Systems**: Share data with other monitoring and analytics tools
+14. **Discover Hidden Segments**: Use ML to find segments you might not have considered
 
 ## Troubleshooting
 
-- **ML Model Not Training**: Check that you have sufficient training data
+- **ML Model Not Training**: Check that you have sufficient training data and appropriate parameters
+- **Model Performance Issues**: Try different model types or adjust hyperparameters
+- **Feature Importance Not Showing**: Ensure calculateFeatureImportance is enabled in model parameters
 - **Statistical Analysis Not Significant**: Increase sample size or run the experiment longer
+- **Correlation Analysis Showing Spurious Results**: Check for confounding variables
+- **Trend Analysis Not Accurate**: Ensure sufficient historical data and appropriate time granularity
 - **Optimization Rules Not Executing**: Check that rules are active and conditions are met
+- **Rule Actions Failing**: Review action logs and ensure necessary permissions
 - **Integration Not Working**: Test the connection and check credentials
+- **Data Exports Failing**: Verify export parameters and destination system availability
 - **Segments Not Matching Users**: Review segment criteria and check for overlaps
+- **Segment Discovery Not Finding Patterns**: Try different discovery methods or adjust parameters
 
 ## Conclusion
 

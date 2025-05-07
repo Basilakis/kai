@@ -1,14 +1,11 @@
 import * as React from 'react';
-import { 
-  signIn, 
-  signUp, 
-  signOut, 
-  getCurrentUser,
-  initAuthListener,
-  setupTokenRefresh,
-  SupabaseUser
-} from '../services/supabaseAuth.service';
-import { supabaseClient } from '../services/supabaseClient';
+import {
+  auth,
+  User as AuthUser,
+  createLogger
+} from '../services';
+
+const logger = createLogger('UserProvider');
 
 // User interface definition
 export interface UserProfile {
@@ -47,7 +44,6 @@ interface UserContextState {
 }
 
 // Create context with default values
-// @ts-ignore - React.createContext exists at runtime but TypeScript doesn't recognize it
 const UserContext = React.createContext<UserContextState>({
   user: null,
   isLoading: true,
@@ -66,7 +62,7 @@ interface UserProviderProps {
 
 /**
  * UserProvider Component
- * 
+ *
  * This provider handles user authentication, profile management, and personalization.
  * It provides user data and authentication methods to all child components.
  */
@@ -75,18 +71,18 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
   const [user, setUser] = React.useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = React.useState<boolean>(true);
 
-  // Convert Supabase user to our UserProfile format
-  const convertSupabaseUser = (supabaseUser: SupabaseUser): UserProfile => {
+  // Convert auth user to our UserProfile format
+  const convertAuthUser = (authUser: AuthUser): UserProfile => {
     return {
-      id: supabaseUser.id,
+      id: authUser.id,
       // Use a default username if email is undefined
-      username: supabaseUser.username || 
-                (supabaseUser.email ? supabaseUser.email.split('@')[0] : 'user') as string,
-      email: supabaseUser.email,
-      firstName: supabaseUser.full_name?.split(' ')[0] || '',
-      lastName: supabaseUser.full_name?.split(' ').slice(1).join(' ') || '',
-      avatarUrl: supabaseUser.avatar_url || '',
-      role: supabaseUser.role || 'user',
+      username: authUser.username ||
+                (authUser.email ? authUser.email.split('@')[0] : 'user') as string,
+      email: authUser.email || '',
+      firstName: authUser.fullName?.split(' ')[0] || '',
+      lastName: authUser.fullName?.split(' ').slice(1).join(' ') || '',
+      avatarUrl: authUser.avatarUrl || '',
+      role: authUser.roles?.[0] || 'user',
       preferences: {
         theme: 'light',
         notificationsEnabled: true,
@@ -98,28 +94,24 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
     };
   };
 
-  // Initialize auth listener, token refresh, and load user on mount
+  // Initialize auth and load user on mount
   React.useEffect(() => {
     let isMounted = true;
-    let tokenRefreshCleanup: (() => void) | null = null;
-    
+
     const loadUser = async () => {
       try {
         setIsLoading(true);
-        
-        // Get current user from Supabase
-        const supabaseUser = await getCurrentUser();
-        
-        if (supabaseUser && isMounted) {
+
+        // Get current user from unified auth service
+        const authUser = await auth.getUser();
+
+        if (authUser && isMounted) {
           // Convert to our UserProfile format
-          const userProfile = convertSupabaseUser(supabaseUser);
+          const userProfile = convertAuthUser(authUser);
           setUser(userProfile);
-          
-          // Setup token refresh when user is authenticated
-          tokenRefreshCleanup = setupTokenRefresh();
         }
       } catch (error) {
-        console.error('Failed to load user data:', error);
+        logger.error('Failed to load user data', error as Error);
       } finally {
         if (isMounted) {
           setIsLoading(false);
@@ -127,41 +119,12 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
       }
     };
 
-    // Setup auth state listener
-    const unsubscribe = initAuthListener((supabaseUser) => {
-      if (isMounted) {
-        if (supabaseUser) {
-          setUser(convertSupabaseUser(supabaseUser));
-          
-          // Setup token refresh when user is authenticated
-          if (!tokenRefreshCleanup) {
-            tokenRefreshCleanup = setupTokenRefresh();
-          }
-        } else {
-          setUser(null);
-          
-          // Cleanup token refresh when user logs out
-          if (tokenRefreshCleanup) {
-            tokenRefreshCleanup();
-            tokenRefreshCleanup = null;
-          }
-        }
-        setIsLoading(false);
-      }
-    });
-
     // Load initial user
     loadUser();
 
     // Cleanup
     return () => {
       isMounted = false;
-      unsubscribe();
-      
-      // Clean up token refresh
-      if (tokenRefreshCleanup) {
-        tokenRefreshCleanup();
-      }
     };
   }, []);
 
@@ -169,21 +132,24 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
   const login = async (email: string, password: string) => {
     try {
       setIsLoading(true);
-      
-      // Use real Supabase auth
-      const { user: supabaseUser, error } = await signIn(email, password);
-      
-      if (error) {
-        throw new Error(error.message);
+
+      // Use unified auth service
+      const result = await auth.login({
+        email,
+        password
+      });
+
+      if (result.error) {
+        throw result.error;
       }
-      
-      if (supabaseUser) {
+
+      if (result.user) {
         // Convert to our user format
-        const userProfile = convertSupabaseUser(supabaseUser);
+        const userProfile = convertAuthUser(result.user);
         setUser(userProfile);
       }
     } catch (error) {
-      console.error('Login failed:', error);
+      logger.error('Login failed', error as Error);
       throw error;
     } finally {
       setIsLoading(false);
@@ -194,29 +160,25 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
   const register = async (username: string, email: string, password: string) => {
     try {
       setIsLoading(true);
-      
-      // Use real Supabase auth
-      const { user: supabaseUser, error } = await signUp(email, password);
-      
-      if (error) {
-        throw new Error(error.message);
+
+      // Use unified auth service
+      const result = await auth.register({
+        username,
+        email,
+        password
+      });
+
+      if (result.error) {
+        throw result.error;
       }
-      
-      if (supabaseUser) {
-        // Update user metadata with username
-        // Cast to any to workaround type checking issue
-        const auth = supabaseClient.getClient().auth as any;
-        await auth.updateUser({
-          data: { username }
-        });
-        
+
+      if (result.user) {
         // Convert to our user format
-        const userProfile = convertSupabaseUser(supabaseUser);
-        userProfile.username = username;
+        const userProfile = convertAuthUser(result.user);
         setUser(userProfile);
       }
     } catch (error) {
-      console.error('Registration failed:', error);
+      logger.error('Registration failed', error as Error);
       throw error;
     } finally {
       setIsLoading(false);
@@ -227,17 +189,14 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
   const logout = async () => {
     try {
       setIsLoading(true);
-      
-      // Use real Supabase auth
-      const { error } = await signOut();
-      
-      if (error) {
-        console.error('Logout error:', error);
-      }
-      
+
+      // Use unified auth service
+      await auth.logout();
+
+      // Clear user state
       setUser(null);
     } catch (error) {
-      console.error('Logout failed:', error);
+      logger.error('Logout failed', error as Error);
     } finally {
       setIsLoading(false);
     }
@@ -247,50 +206,48 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
   const updateProfile = async (data: Partial<UserProfile>) => {
     try {
       setIsLoading(true);
-      
+
       if (!user) {
         throw new Error('User not authenticated');
       }
-      
-      // Use real Supabase auth and profile service
-      const userData: any = {};
-      
-      // Map our profile fields to Supabase user metadata
+
+      // Use unified auth service
+      const authUser = await auth.getUser();
+
+      if (!authUser) {
+        throw new Error('User not found');
+      }
+
+      // Map our profile fields to auth user fields
+      const updateData: Partial<AuthUser> = {};
+
       if (data.firstName || data.lastName) {
         const firstName = data.firstName || user.firstName || '';
         const lastName = data.lastName || user.lastName || '';
-        userData.full_name = [firstName, lastName].filter(Boolean).join(' ');
+        updateData.fullName = [firstName, lastName].filter(Boolean).join(' ');
       }
-      
+
       if (data.avatarUrl) {
-        userData.avatar_url = data.avatarUrl;
+        updateData.avatarUrl = data.avatarUrl;
       }
-      
+
       if (data.username) {
-        userData.username = data.username;
+        updateData.username = data.username;
       }
-      
-      // Update the Supabase user metadata
-      // Cast to any to workaround type checking issue
-      const auth = supabaseClient.getClient().auth as any;
-      const { error } = await auth.updateUser({
-        data: userData
-      });
-      
-      if (error) {
-        throw new Error(error.message);
-      }
-      
+
+      // Update the auth user
+      const updatedAuthUser = await auth.updateUser(updateData);
+
       // Update local user state
       const updatedUser = {
         ...user,
         ...data,
         updatedAt: new Date().toISOString(),
       } as UserProfile;
-      
+
       setUser(updatedUser);
     } catch (error) {
-      console.error('Profile update failed:', error);
+      logger.error('Profile update failed', error as Error);
       throw new Error('Failed to update profile');
     } finally {
       setIsLoading(false);
@@ -303,41 +260,23 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
     value: UserProfile['preferences'][T]
   ) => {
     if (!user) return;
-    
+
     try {
-      setIsLoading(true);
-      
-      // Update preference locally
-      const updatedPreferences = {
-        ...user.preferences,
-        [key]: value,
-      };
-      
+      // Update local state
       const updatedUser = {
         ...user,
-        preferences: updatedPreferences,
-        updatedAt: new Date().toISOString(),
+        preferences: {
+          ...user.preferences,
+          [key]: value
+        },
+        updatedAt: new Date().toISOString()
       };
-      
-      // Store preferences in Supabase user metadata
-      // Cast to any to workaround type checking issue
-      const auth = supabaseClient.getClient().auth as any;
-      const { error } = await auth.updateUser({
-        data: {
-          preferences: updatedPreferences
-        }
-      });
-      
-      if (error) {
-        throw new Error(error.message);
-      }
-      
+
       setUser(updatedUser);
+
+      // TODO: Sync with backend when preference storage is implemented
     } catch (error) {
-      console.error('Preference update failed:', error);
-      throw new Error('Failed to update preference');
-    } finally {
-      setIsLoading(false);
+      logger.error('Failed to update user preference', error as Error);
     }
   };
 
@@ -360,7 +299,6 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
 };
 
 // Custom hook for using the user context
-// @ts-ignore - React.useContext exists at runtime but TypeScript doesn't recognize it
 export const useUser = (): UserContextState => React.useContext(UserContext);
 
 export default UserProvider;
