@@ -249,39 +249,8 @@ jobs:
           cd readme
           node process-readme-files.js
 
-          # Create images directory structure
-          mkdir -p ../kai-docs-temp/static/img/docs/images
-          mkdir -p ../kai-docs-temp/static/img/3d/docs/images
-
-          # Create placeholder images for missing files
-          echo '<svg width="800" height="400" xmlns="http://www.w3.org/2000/svg">
-            <rect width="800" height="400" fill="#f0f0f0" />
-            <text x="400" y="200" font-family="Arial" font-size="24" text-anchor="middle">Placeholder Image</text>
-          </svg>' > ../kai-docs-temp/static/img/docs/images/training-monitor-architecture.png
-
-          echo '<svg width="800" height="400" xmlns="http://www.w3.org/2000/svg">
-            <rect width="800" height="400" fill="#f0f0f0" />
-            <text x="400" y="200" font-family="Arial" font-size="24" text-anchor="middle">Placeholder Image</text>
-          </svg>' > ../kai-docs-temp/static/img/docs/images/dependency-management-architecture.png
-
-          echo '<svg width="800" height="400" xmlns="http://www.w3.org/2000/svg">
-            <rect width="800" height="400" fill="#f0f0f0" />
-            <text x="400" y="200" font-family="Arial" font-size="24" text-anchor="middle">Placeholder Image</text>
-          </svg>' > ../kai-docs-temp/static/img/docs/images/subscription-tier-system.png
-
-          echo '<svg width="800" height="400" xmlns="http://www.w3.org/2000/svg">
-            <rect width="800" height="400" fill="#f0f0f0" />
-            <text x="400" y="200" font-family="Arial" font-size="24" text-anchor="middle">Placeholder Image</text>
-          </svg>' > ../kai-docs-temp/static/img/3d/docs/images/threejs-viewer-architecture.png
-
-          # Copy the placeholder images to the docs directory as well (for direct references)
-          mkdir -p ../kai-docs-temp/docs/docs/images
-          mkdir -p ../kai-docs-temp/docs/3d/docs/images
-
-          cp ../kai-docs-temp/static/img/docs/images/training-monitor-architecture.png ../kai-docs-temp/docs/docs/images/
-          cp ../kai-docs-temp/static/img/docs/images/dependency-management-architecture.png ../kai-docs-temp/docs/docs/images/
-          cp ../kai-docs-temp/static/img/docs/images/subscription-tier-system.png ../kai-docs-temp/docs/docs/images/
-          cp ../kai-docs-temp/static/img/3d/docs/images/threejs-viewer-architecture.png ../kai-docs-temp/docs/3d/docs/images/
+          # Create basic directory structure
+          mkdir -p ../kai-docs-temp/static/img
 
           # Additional fix for any problematic files
           cd ../kai-docs-temp/docs
@@ -311,26 +280,22 @@ jobs:
           find . -name "*.md" -exec sed -i '1,6s/^title: \([^"]*\):\([^"]*\)$/title: "\1:\2"/g' {} \;
           find . -name "*.md" -exec sed -i '1,6s/^sidebar_label: \([^"]*\):\([^"]*\)$/sidebar_label: "\1:\2"/g' {} \;
 
-          # Fix image references in markdown files
-          echo "Fixing image references in markdown files..."
+          # Remove all image references from markdown files
+          echo "Removing all image references from markdown files..."
 
-          # First approach: Replace with static path
-          find . -name "*.md" -exec sed -i 's|docs/docs/images/|/img/docs/images/|g' {} \;
-          find . -name "*.md" -exec sed -i 's|docs/3d/docs/images/|/img/3d/docs/images/|g' {} \;
+          # Remove any line containing an image reference
+          find . -name "*.md" -exec sed -i '/!\[.*\](.*)/d' {} \;
 
-          # Second approach: Remove problematic image references completely
-          find . -name "*.md" -exec sed -i '/!\[.*\](docs\/docs\/images\/.*)/d' {} \;
-          find . -name "*.md" -exec sed -i '/!\[.*\](docs\/3d\/docs\/images\/.*)/d' {} \;
-
-          # Third approach: Replace image tags with a placeholder text
-          find . -name "*.md" -exec sed -i 's/!\[.*\](docs\/docs\/images\/.*)/[Image: Placeholder for diagram]/g' {} \;
-          find . -name "*.md" -exec sed -i 's/!\[.*\](docs\/3d\/docs\/images\/.*)/[Image: Placeholder for diagram]/g' {} \;
+          # Also remove any HTML img tags
+          find . -name "*.md" -exec sed -i '/<img.*>/d' {} \;
 
           # Fix any other problematic files with simple sed commands
           echo "Fixing any other problematic files..."
 
           # Remove any lines with problematic angle bracket patterns
           find . -name "*.md" -exec sed -i 's/<[0-9]\+:[0-9]\+>/REMOVED_PROBLEMATIC_TAG/g' {} \;
+
+          # Note: We're only removing image references, not the files themselves
 
           # List all fixed files
           echo "Files with titles containing colons:"
