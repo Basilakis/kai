@@ -260,13 +260,11 @@ jobs:
             CONTENT=$(tail -n +6 ai-ml/rag-system.md)
 
             # Create new file with proper front matter
-            cat > ai-ml/rag-system.md << 'EOL'
----
+            echo '---
 id: rag-system
 title: "RAG System: Architecture, Enhancements, and Integration Guide"
 sidebar_label: "RAG System: Architecture, Enhancements, and Integration Guide"
----
-EOL
+---' > ai-ml/rag-system.md
 
             # Append the original content
             echo "$CONTENT" >> ai-ml/rag-system.md
