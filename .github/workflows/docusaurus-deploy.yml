@@ -143,7 +143,7 @@ jobs:
           </svg>' > static/img/logo.svg
 
           # Create sidebars.js file - simplified version without TypeScript annotations
-          cat > sidebars.js << 'EOF'
+          cat > sidebars.js << EOF
 // Simple sidebars config without TypeScript annotations
 const sidebars = {
   docs: [
@@ -190,7 +190,7 @@ module.exports = sidebars;
 EOF
 
           # Create Docusaurus config file - simplified version without TypeScript annotations
-          cat > docusaurus.config.js << 'EOF'
+          cat > docusaurus.config.js << EOF
 // Simple config without TypeScript annotations
 const config = {
   title: "KAI Documentation",
@@ -266,7 +266,7 @@ EOF
           mkdir -p kai-docs-temp/docs
 
           # Create introduction.md
-          cat > kai-docs-temp/docs/introduction.md << 'EOF'
+          cat > kai-docs-temp/docs/introduction.md << EOF
 ---
 id: introduction
 title: "Introduction to KAI"
@@ -280,7 +280,7 @@ Welcome to the KAI documentation. This documentation provides comprehensive info
 EOF
 
           # Create installation.md
-          cat > kai-docs-temp/docs/installation.md << 'EOF'
+          cat > kai-docs-temp/docs/installation.md << EOF
 ---
 id: installation
 title: "Installation"
@@ -293,7 +293,7 @@ This page provides instructions for installing the KAI platform.
 EOF
 
           # Create configuration.md
-          cat > kai-docs-temp/docs/configuration.md << 'EOF'
+          cat > kai-docs-temp/docs/configuration.md << EOF
 ---
 id: configuration
 title: "Configuration"
@@ -306,7 +306,7 @@ This page provides instructions for configuring the KAI platform.
 EOF
 
           # Create features-overview.md
-          cat > kai-docs-temp/docs/features-overview.md << 'EOF'
+          cat > kai-docs-temp/docs/features-overview.md << EOF
 ---
 id: features-overview
 title: "Features Overview"
