@@ -42,7 +42,7 @@ An advanced viewer extension that provides:
 <EnhancedThreeJsViewer
   modelUrl="path/to/model.splat"
   modelType="gaussian"
-  initialPosition={{ x: 0, y: 0, z: 5 }}
+  initialPosition={% raw %}{{ x: 0, y: 0, z: 5 }}{% endraw %}
   enableVR={true}
   enableAR={true}
   enableBVH={true}
@@ -61,23 +61,23 @@ interface EnhancedViewerOptions {
   // Rendering options
   renderMode: 'webgl' | 'webgl2' | 'webgpu';
   renderPipeline: 'forward' | 'deferred';
-  
+
   // Performance options
   enableInstancing: boolean;
   enableCompression: boolean;
-  
+
   // Feature options
   enableShadows: boolean;
   shadowType: 'basic' | 'pcss' | 'raytraced';
-  
+
   // Optimization options
   cullingStrategy: 'frustum' | 'occlusion' | 'hierarchical';
   lodStrategy: 'distance' | 'performance' | 'quality';
-  
+
   // Progressive loading
   progressiveLoadingEnabled: boolean;
   initialLoadQuality: 'low' | 'medium' | 'high';
-  
+
   // Gaussian splat options
   splatQuality: 'low' | 'medium' | 'high';
   adaptiveSplatRendering: boolean;
@@ -165,16 +165,16 @@ Advanced rendering optimization techniques:
 const occlusionSystem = new HierarchicalOcclusionCulling({
   // Use hardware queries when available
   useHardwareQueries: renderer.capabilities.hasFeature('occlusion-query'),
-  
+
   // How many frames to skip between full occlusion tests
   temporalCoherenceFrames: 5,
-  
+
   // Minimum object size to consider for culling (prevents culling small objects)
   minimumObjectSize: 0.5,
-  
+
   // Pre-compute visibility for static objects
   precomputeStaticVisibility: true,
-  
+
   // Debug visualization
   debugVisualization: false
 });
