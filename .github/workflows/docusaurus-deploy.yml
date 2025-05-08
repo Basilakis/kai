@@ -283,7 +283,14 @@ jobs:
         run: |
           mkdir -p kai-docs-temp/docs
           cd readme
+          # Add debug output to see what's happening
+          echo "Current directory: $(pwd)"
+          echo "Contents of current directory:"
+          ls -la
+          echo "Running process-readme-files.js..."
           node process-readme-files.js
+          echo "Process complete. Contents of kai-docs-temp/docs:"
+          ls -la ../kai-docs-temp/docs
 
           # Create basic directory structure
           mkdir -p ../kai-docs-temp/static/img
@@ -477,6 +484,17 @@ EOF
           cd kai-docs-temp
           # Use npx to run Docusaurus commands directly
           npx docusaurus build
+
+      - name: Debug before deployment
+        run: |
+          echo "Contents of kai-docs-temp/build directory:"
+          ls -la kai-docs-temp/build || echo "Build directory does not exist!"
+          echo "Checking if DOCS_DEPLOY_TOKEN is set:"
+          if [ -n "${{ secrets.DOCS_DEPLOY_TOKEN }}" ]; then
+            echo "Token is set (value hidden)"
+          else
+            echo "Token is NOT set!"
+          fi
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
