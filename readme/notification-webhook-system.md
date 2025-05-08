@@ -293,6 +293,7 @@ Email templates include both HTML and plain text versions with the following fea
 Example email template:
 
 ```handlebars
+{% raw %}
 Subject: {{subject}}
 
 <mjml>
@@ -301,9 +302,9 @@ Subject: {{subject}}
       <mj-column>
         <mj-text>
           Hello {{user.firstName}},
-          
+
           {{message}}
-          
+
           {{#if actionUrl}}
           <mj-button href="{{actionUrl}}">{{actionLabel}}</mj-button>
           {{/if}}
@@ -312,6 +313,7 @@ Subject: {{subject}}
     </mj-section>
   </mj-body>
 </mjml>
+{% endraw %}
 ```
 
 ### SMS Templates
@@ -325,7 +327,9 @@ SMS templates support:
 Example SMS template:
 
 ```handlebars
+{% raw %}
 {{message}} {{#if code}}Your code: {{code}}{{/if}} {{#if url}}Details: {{url}}{{/if}}
+{% endraw %}
 ```
 
 ### In-App Templates
@@ -339,6 +343,7 @@ In-app notification templates support:
 Example in-app template:
 
 ```handlebars
+{% raw %}
 {
   "title": "{{title}}",
   "message": "{{message}}",
@@ -347,6 +352,7 @@ Example in-app template:
   "actionLabel": "{{actionLabel}}",
   "expireAfter": "{{expireAfter}}"
 }
+{% endraw %}
 ```
 
 ### Webhook Templates
@@ -359,6 +365,7 @@ Webhook notification templates support:
 Example webhook template:
 
 ```handlebars
+{% raw %}
 {
   "event": "{{event}}",
   "timestamp": "{{timestamp}}",
@@ -368,6 +375,7 @@ Example webhook template:
     "version": "{{version}}"
   }
 }
+{% endraw %}
 ```
 
 ## Webhook Integration
