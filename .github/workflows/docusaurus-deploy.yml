@@ -1,64 +1,11 @@
-name: Docusaurus Deploy Documentation
+name: Docusaurus Site Builder
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'readme/**'
-      - 'readme/**/*'
-      - '.github/workflows/docusaurus-deploy.yml'
+  # Only run manually
   workflow_dispatch:
 
 jobs:
-  check_changes:
-    runs-on: ubuntu-latest
-    outputs:
-      should_run: ${{ steps.check_changes.outputs.should_run }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 2  # Fetch the current and previous commit
-
-      - name: Check if gh-pages branch exists
-        id: check_gh_pages
-        continue-on-error: true
-        run: |
-          # Check if the target repository exists and has a gh-pages branch
-          curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token ${{ secrets.DOCS_DEPLOY_TOKEN }}" https://api.github.com/repos/Basilakis/basilakis.github.io/branches/gh-pages | grep -q "200"
-          if [ $? -ne 0 ]; then
-            echo "First run detected - target repository or branch doesn't exist"
-            echo "should_run=true" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-      - name: Check for changes in readme folder
-        id: check_changes
-        run: |
-          if [ "${{ steps.check_gh_pages.outputs.should_run }}" == "true" ]; then
-            echo "First run detected - will proceed with deployment"
-            echo "should_run=true" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          # Get the list of changed files in the most recent commit
-          CHANGED_FILES=$(git diff --name-only HEAD^ HEAD)
-          echo "Changed files in the most recent commit:"
-          echo "$CHANGED_FILES"
-
-          # Check if any of the changed files are in the readme folder
-          if echo "$CHANGED_FILES" | grep -q "^readme/"; then
-            echo "Changes detected in readme folder - will proceed with deployment"
-            echo "should_run=true" >> $GITHUB_OUTPUT
-          else
-            echo "No changes detected in readme folder - skipping deployment"
-            echo "should_run=false" >> $GITHUB_OUTPUT
-          fi
-
-  deploy:
-    needs: check_changes
-    if: needs.check_changes.outputs.should_run == 'true'
+  build_docusaurus:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -74,32 +21,199 @@ jobs:
         run: |
           npm install -g fs-extra
 
-      # Commented out Docusaurus site creation as requested
-      # - name: Create Docusaurus site
-      #   run: |
-      #     # Create a temporary directory for the documentation site
-      #     mkdir -p kai-docs-temp
-      #     cd kai-docs-temp
-      #
-      #     # Create basic directories needed for the build
-      #     mkdir -p docs src/css static/img
-      #
-      #     # Note: We're skipping most of the Docusaurus setup since we don't need it if the repo already exists
-      #     # Just creating the minimal structure needed for the build to pass
-      #
-      #     # Create empty files to satisfy the build process
-      #     touch package.json
-      #     touch docusaurus.config.js
-      #     touch src/css/custom.css
-      #
-      #     cd ..
-
-      # Simple directory creation instead
-      - name: Create directory structure
+      - name: Create Docusaurus site
         run: |
-          # Create a temporary directory for the documentation files
-          mkdir -p kai-docs-temp/docs
-          mkdir -p kai-docs-temp/build
+          # Create a temporary directory for the documentation site
+          mkdir -p kai-docs-temp
+          cd kai-docs-temp
+
+          # Create basic directories needed for the build
+          mkdir -p docs src/css static/img
+
+          # Create a package.json file without workspace references
+          echo '{
+            "name": "kai-documentation",
+            "version": "1.0.0",
+            "private": true,
+            "scripts": {
+              "docusaurus": "docusaurus",
+              "start": "docusaurus start",
+              "build": "docusaurus build",
+              "swizzle": "docusaurus swizzle",
+              "deploy": "docusaurus deploy",
+              "clear": "docusaurus clear",
+              "serve": "docusaurus serve",
+              "write-translations": "docusaurus write-translations",
+              "write-heading-ids": "docusaurus write-heading-ids"
+            },
+            "dependencies": {
+              "@docusaurus/core": "3.7.0",
+              "@docusaurus/preset-classic": "3.7.0",
+              "@mdx-js/react": "3.0.0",
+              "clsx": "2.1.0",
+              "prism-react-renderer": "2.3.1",
+              "react": "18.2.0",
+              "react-dom": "18.2.0"
+            },
+            "devDependencies": {
+              "@docusaurus/module-type-aliases": "3.7.0",
+              "@docusaurus/types": "3.7.0",
+              "typescript": "5.3.3"
+            },
+            "browserslist": {
+              "production": [
+                ">0.5%",
+                "not dead",
+                "not op_mini all"
+              ],
+              "development": [
+                "last 1 chrome version",
+                "last 1 firefox version",
+                "last 1 safari version"
+              ]
+            },
+            "engines": {
+              "node": ">=18.0"
+            }
+          }' > package.json
+
+          # Create a basic tsconfig.json file
+          echo '{
+            "compilerOptions": {
+              "target": "es2020",
+              "lib": ["dom", "dom.iterable", "esnext"],
+              "allowJs": true,
+              "skipLibCheck": true,
+              "esModuleInterop": true,
+              "allowSyntheticDefaultImports": true,
+              "strict": true,
+              "forceConsistentCasingInFileNames": true,
+              "noFallthroughCasesInSwitch": true,
+              "module": "esnext",
+              "moduleResolution": "node",
+              "resolveJsonModule": true,
+              "isolatedModules": true,
+              "jsx": "react-jsx"
+            },
+            "include": ["src", "docs"]
+          }' > tsconfig.json
+
+          # Create custom CSS
+          echo '/**
+           * Any CSS included here will be global. The classic template
+           * bundles Infima by default. Infima is a CSS framework designed to
+           * work well for content-centric websites.
+           */
+
+          /* You can override the default Infima variables here. */
+          :root {
+            --ifm-color-primary: #2e8555;
+            --ifm-color-primary-dark: #29784c;
+            --ifm-color-primary-darker: #277148;
+            --ifm-color-primary-darkest: #205d3b;
+            --ifm-color-primary-light: #33925d;
+            --ifm-color-primary-lighter: #359962;
+            --ifm-color-primary-lightest: #3cad6e;
+            --ifm-code-font-size: 95%;
+            --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+          }
+
+          /* For readability concerns, you should choose a lighter palette in dark mode. */
+          [data-theme="dark"] {
+            --ifm-color-primary: #25c2a0;
+            --ifm-color-primary-dark: #21af90;
+            --ifm-color-primary-darker: #1fa588;
+            --ifm-color-primary-darkest: #1a8870;
+            --ifm-color-primary-light: #29d5b0;
+            --ifm-color-primary-lighter: #32d8b4;
+            --ifm-color-primary-lightest: #4fddbf;
+            --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+          }' > src/css/custom.css
+
+          # Create placeholder logo
+          echo '<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+            <rect width="200" height="200" fill="#2e8555" />
+            <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="Arial" font-size="72" fill="white">KAI</text>
+          </svg>' > static/img/logo.svg
+
+          # Create Docusaurus config file
+          echo '// @ts-check
+          import {themes as prismThemes} from "prism-react-renderer";
+
+          /** @type {import("@docusaurus/types").Config} */
+          const config = {
+            title: "KAI Documentation",
+            tagline: "Comprehensive documentation for the KAI project",
+            favicon: "img/favicon.ico",
+            url: "https://basilakis.github.io",
+            baseUrl: "/",
+            organizationName: "Basilakis",
+            projectName: "basilakis.github.io",
+            trailingSlash: false,
+            onBrokenLinks: "warn",
+            onBrokenMarkdownLinks: "warn",
+            i18n: {
+              defaultLocale: "en",
+              locales: ["en"],
+            },
+            presets: [
+              [
+                "classic",
+                /** @type {import("@docusaurus/preset-classic").Options} */
+                ({
+                  docs: {
+                    sidebarPath: "./sidebars.js",
+                    routeBasePath: "/",
+                  },
+                  blog: false,
+                  theme: {
+                    customCss: "./src/css/custom.css",
+                  },
+                }),
+              ],
+            ],
+            themeConfig:
+              /** @type {import("@docusaurus/preset-classic").ThemeConfig} */
+              ({
+                navbar: {
+                  title: "KAI Documentation",
+                  logo: {
+                    alt: "KAI Logo",
+                    src: "img/logo.svg",
+                  },
+                  items: [
+                    {
+                      href: "https://github.com/Basilakis/kai",
+                      label: "GitHub",
+                      position: "right",
+                    },
+                  ],
+                },
+                footer: {
+                  style: "dark",
+                  links: [
+                    {
+                      title: "More",
+                      items: [
+                        {
+                          label: "GitHub",
+                          href: "https://github.com/Basilakis/kai",
+                        },
+                      ],
+                    },
+                  ],
+                  copyright: `Copyright © ${new Date().getFullYear()} KAI Project. Last updated: ${new Date().toISOString().split('T')[0]}. Built with Docusaurus.`,
+                },
+                prism: {
+                  theme: prismThemes.github,
+                  darkTheme: prismThemes.dracula,
+                },
+              }),
+          };
+
+          export default config;' > docusaurus.config.js
+
+          cd ..
 
       - name: Process readme files
         run: |

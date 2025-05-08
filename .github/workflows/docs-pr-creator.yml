@@ -1,0 +1,171 @@
+name: Documentation PR Creator
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'readme/**'
+      - 'readme/**/*'
+      - '.github/workflows/docs-pr-creator.yml'
+  workflow_dispatch:
+
+jobs:
+  check_changes:
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.check_changes.outputs.should_run }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2  # Fetch the current and previous commit
+
+      - name: Check if gh-pages branch exists
+        id: check_gh_pages
+        continue-on-error: true
+        run: |
+          # Check if the target repository exists and has a gh-pages branch
+          curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token ${{ secrets.DOCS_DEPLOY_TOKEN }}" https://api.github.com/repos/Basilakis/basilakis.github.io/branches/gh-pages | grep -q "200"
+          if [ $? -ne 0 ]; then
+            echo "First run detected - target repository or branch doesn't exist"
+            echo "should_run=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+      - name: Check for changes in readme folder
+        id: check_changes
+        run: |
+          if [ "${{ steps.check_gh_pages.outputs.should_run }}" == "true" ]; then
+            echo "First run detected - will proceed with deployment"
+            echo "should_run=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Get the list of changed files in the most recent commit
+          CHANGED_FILES=$(git diff --name-only HEAD^ HEAD)
+          echo "Changed files in the most recent commit:"
+          echo "$CHANGED_FILES"
+
+          # Check if any of the changed files are in the readme folder
+          if echo "$CHANGED_FILES" | grep -q "^readme/"; then
+            echo "Changes detected in readme folder - will proceed with deployment"
+            echo "should_run=true" >> $GITHUB_OUTPUT
+          else
+            echo "No changes detected in readme folder - skipping deployment"
+            echo "should_run=false" >> $GITHUB_OUTPUT
+          fi
+
+  create_pr:
+    needs: check_changes
+    if: needs.check_changes.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: |
+          npm install -g fs-extra
+
+      - name: Create directory structure
+        run: |
+          # Create a temporary directory for the documentation files
+          mkdir -p kai-docs-temp/docs
+          mkdir -p kai-docs-temp/build
+
+      - name: Process readme files
+        run: |
+          cd readme
+          echo "Current directory: $(pwd)"
+          echo "Contents of current directory:"
+          ls -la
+          echo "Running process-readme-files.js..."
+          node process-readme-files.js
+          echo "Process complete. Contents of kai-docs-temp/docs:"
+          ls -la ../kai-docs-temp/docs
+
+      - name: Prepare files for PR
+        run: |
+          cd kai-docs-temp
+          echo "Checking docs directory structure:"
+          find docs -type d | sort
+
+          echo "Checking for prompt files:"
+          find docs -name "prompt*.md" | sort
+          
+          # Copy the docs directory directly to the build directory
+          cp -r docs/* build/
+          
+          echo "Build directory prepared. Contents:"
+          ls -la build
+
+      - name: Checkout target repository
+        uses: actions/checkout@v4
+        with:
+          repository: Basilakis/basilakis.github.io
+          token: ${{ secrets.DOCS_DEPLOY_TOKEN }}
+          path: target-repo
+
+      - name: Install GitHub CLI
+        run: |
+          echo "Installing GitHub CLI..."
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+          sudo apt update
+          sudo apt install gh
+
+      - name: Create Pull Request
+        run: |
+          # Generate a unique branch name
+          BRANCH_NAME="docs-update-$(date +%Y%m%d%H%M%S)"
+          echo "Branch name: $BRANCH_NAME"
+
+          # Create a new branch for the changes
+          cd target-repo
+          git checkout -b $BRANCH_NAME
+
+          # Copy the built files
+          echo "Removing existing files..."
+          rm -rf * || true
+
+          echo "Copying built files..."
+          cp -r ../kai-docs-temp/build/* .
+
+          echo "Contents after copying:"
+          ls -la
+
+          # Commit the changes
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+
+          echo "Adding files to git..."
+          git add .
+
+          echo "Committing changes..."
+          git commit -m "Deploy Documentation: ${{ github.event.head_commit.message }}"
+
+          echo "Pushing branch..."
+          git push origin $BRANCH_NAME
+
+          echo "Creating pull request..."
+          # Create a pull request using GitHub CLI
+          gh auth login --with-token <<< "${{ secrets.DOCS_DEPLOY_TOKEN }}"
+          gh pr create \
+            --title "Deploy Documentation: ${{ github.event.head_commit.message }}" \
+            --body "This PR was automatically created by the GitHub Actions workflow to update the documentation site.
+
+Changes included in this PR:
+- Updated documentation from the latest changes in the kai repository
+- Last commit: ${{ github.sha }}
+
+Please review and merge to update the documentation site." \
+            --repo Basilakis/basilakis.github.io \
+            --head $BRANCH_NAME \
+            --base gh-pages

@@ -15,7 +15,7 @@ The Kai system combines multiple AI technologies to provide powerful material re
 
 ### OCR System
 
-The OCR (Optical Character Recognition) system is built around Tesseract OCR with custom enhancements:
+The OCR (Optical Character Recognition) system is built around Tesseract OCR with custom enhancements added:
 
 #### Components:
 - **Tesseract OCR Engine** - Core text recognition capabilities
