@@ -4,10 +4,63 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'readme/**'
+      - 'readme/**/*'
+      - '.github/workflows/docusaurus-deploy.yml'
   workflow_dispatch:
 
 jobs:
+  check_changes:
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+    steps:
+      - name: Check if gh-pages branch exists and has content
+        id: check
+        run: |
+          # Try to clone the gh-pages branch of the target repository
+          git clone --depth 1 --branch gh-pages https://github.com/Basilakis/basilakis.github.io.git temp || FIRST_RUN=true
+
+          if [ "$FIRST_RUN" = true ]; then
+            # First run - gh-pages branch doesn't exist or is empty
+            echo "First run detected - will proceed with deployment"
+            echo "should_run=true" >> $GITHUB_OUTPUT
+          else
+            # Check if there are any changes in the readme directory
+            echo "Checking for changes in readme files..."
+
+            # Checkout the repository to check for changes
+            git clone --depth 1 https://github.com/Basilakis/kai.git kai-repo
+            cd kai-repo
+
+            # Get the last commit that modified the readme directory
+            LAST_COMMIT=$(git log -1 --format="%H" -- readme/)
+
+            # Get the last deployment commit from the gh-pages branch
+            cd ../temp
+            LAST_DEPLOYMENT=$(grep -o "Deploying to gh-pages from @ Basilakis/kai@[0-9a-f]*" -r . | head -1 | grep -o "[0-9a-f]*$" || echo "")
+
+            cd ..
+
+            if [ -z "$LAST_DEPLOYMENT" ] || [ "$LAST_COMMIT" != "$LAST_DEPLOYMENT" ]; then
+              # Either there's no previous deployment or the readme files have changed
+              echo "Changes detected - will proceed with deployment"
+              echo "should_run=true" >> $GITHUB_OUTPUT
+            else
+              # No changes detected
+              echo "No changes detected - skipping deployment"
+              echo "should_run=false" >> $GITHUB_OUTPUT
+            fi
+
+            # Clean up
+            rm -rf temp
+            rm -rf kai-repo
+          fi
+
   deploy:
+    needs: check_changes
+    if: needs.check_changes.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -496,14 +549,37 @@ EOF
             echo "Token is NOT set!"
           fi
 
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
-        with:
-          personal_token: ${{ secrets.DOCS_DEPLOY_TOKEN }}
-          external_repository: Basilakis/basilakis.github.io
-          publish_branch: gh-pages
-          publish_dir: ./kai-docs-temp/build
-          force_orphan: true
-          user_name: 'github-actions[bot]'
-          user_email: 'github-actions[bot]@users.noreply.github.com'
-          commit_message: 'Deploy Documentation: ${{ github.event.head_commit.message }}'
+      - name: Create Pull Request instead of direct push
+        run: |
+          # Clone the target repository
+          git clone https://x-access-token:${{ secrets.DOCS_DEPLOY_TOKEN }}@github.com/Basilakis/basilakis.github.io.git target-repo
+
+          # Create a new branch for the changes
+          cd target-repo
+          git checkout -b docs-update-$(date +%Y%m%d%H%M%S)
+
+          # Copy the built files
+          rm -rf * || true
+          cp -r ../kai-docs-temp/build/* .
+
+          # Commit the changes
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add .
+          git commit -m "Deploy Documentation: ${{ github.event.head_commit.message }}"
+
+          # Push the branch
+          git push origin HEAD
+
+          # Create a pull request using GitHub API
+          PR_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+          curl -X POST \
+            -H "Authorization: token ${{ secrets.DOCS_DEPLOY_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/Basilakis/basilakis.github.io/pulls \
+            -d '{
+              "title": "Deploy Documentation: ${{ github.event.head_commit.message }}",
+              "body": "This PR was automatically created by the GitHub Actions workflow to update the documentation site.\n\nChanges included in this PR:\n- Updated documentation from the latest changes in the kai repository\n- Last commit: ${{ github.sha }}\n\nPlease review and merge to update the documentation site.",
+              "head": "'$PR_BRANCH'",
+              "base": "gh-pages"
+            }'
