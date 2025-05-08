@@ -142,84 +142,191 @@ jobs:
             <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="Arial" font-size="72" fill="white">KAI</text>
           </svg>' > static/img/logo.svg
 
+          # Create sidebars.js file
+          cat > sidebars.js << 'EOF'
+/** @type {import('@docusaurus/plugin-content-docs').SidebarsConfig} */
+const sidebars = {
+  docs: [
+    {
+      type: 'category',
+      label: 'Introduction',
+      items: ['introduction'],
+    },
+    {
+      type: 'category',
+      label: 'Getting Started',
+      items: ['installation', 'configuration'],
+    },
+    {
+      type: 'category',
+      label: 'Features',
+      items: ['features-overview'],
+    },
+    {
+      type: 'category',
+      label: 'Prompts',
+      items: [
+        'prompt-library',
+        'prompt-abtesting-segmentation',
+        'prompt-advanced-features',
+        'prompt-management',
+        'prompt-success-tracking',
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Deployment',
+      items: ['deployment-guide', 'kubernetes-architecture', 'cicd-pipeline'],
+    },
+    {
+      type: 'category',
+      label: 'Other',
+      items: ['admin-panel', 'queue-system', 'notification-webhook-system'],
+    },
+  ],
+};
+
+export default sidebars;
+EOF
+
           # Create Docusaurus config file
-          echo '// @ts-check
-          import {themes as prismThemes} from "prism-react-renderer";
+          cat > docusaurus.config.js << 'EOF'
+// @ts-check
+import {themes as prismThemes} from "prism-react-renderer";
 
-          /** @type {import("@docusaurus/types").Config} */
-          const config = {
-            title: "KAI Documentation",
-            tagline: "Comprehensive documentation for the KAI project",
-            favicon: "img/favicon.ico",
-            url: "https://basilakis.github.io",
-            baseUrl: "/",
-            organizationName: "Basilakis",
-            projectName: "basilakis.github.io",
-            trailingSlash: false,
-            onBrokenLinks: "warn",
-            onBrokenMarkdownLinks: "warn",
-            i18n: {
-              defaultLocale: "en",
-              locales: ["en"],
-            },
-            presets: [
-              [
-                "classic",
-                /** @type {import("@docusaurus/preset-classic").Options} */
-                ({
-                  docs: {
-                    sidebarPath: "./sidebars.js",
-                    routeBasePath: "/",
-                  },
-                  blog: false,
-                  theme: {
-                    customCss: "./src/css/custom.css",
-                  },
-                }),
-              ],
+/** @type {import("@docusaurus/types").Config} */
+const config = {
+  title: "KAI Documentation",
+  tagline: "Comprehensive documentation for the KAI project",
+  favicon: "img/favicon.ico",
+  url: "https://basilakis.github.io",
+  baseUrl: "/",
+  organizationName: "Basilakis",
+  projectName: "basilakis.github.io",
+  trailingSlash: false,
+  onBrokenLinks: "warn",
+  onBrokenMarkdownLinks: "warn",
+  i18n: {
+    defaultLocale: "en",
+    locales: ["en"],
+  },
+  presets: [
+    [
+      "classic",
+      /** @type {import("@docusaurus/preset-classic").Options} */
+      ({
+        docs: {
+          sidebarPath: "./sidebars.js",
+          routeBasePath: "/",
+        },
+        blog: false,
+        theme: {
+          customCss: "./src/css/custom.css",
+        },
+      }),
+    ],
+  ],
+  themeConfig:
+    /** @type {import("@docusaurus/preset-classic").ThemeConfig} */
+    ({
+      navbar: {
+        title: "KAI Documentation",
+        logo: {
+          alt: "KAI Logo",
+          src: "img/logo.svg",
+        },
+        items: [
+          {
+            href: "https://github.com/Basilakis/kai",
+            label: "GitHub",
+            position: "right",
+          },
+        ],
+      },
+      footer: {
+        style: "dark",
+        links: [
+          {
+            title: "More",
+            items: [
+              {
+                label: "GitHub",
+                href: "https://github.com/Basilakis/kai",
+              },
             ],
-            themeConfig:
-              /** @type {import("@docusaurus/preset-classic").ThemeConfig} */
-              ({
-                navbar: {
-                  title: "KAI Documentation",
-                  logo: {
-                    alt: "KAI Logo",
-                    src: "img/logo.svg",
-                  },
-                  items: [
-                    {
-                      href: "https://github.com/Basilakis/kai",
-                      label: "GitHub",
-                      position: "right",
-                    },
-                  ],
-                },
-                footer: {
-                  style: "dark",
-                  links: [
-                    {
-                      title: "More",
-                      items: [
-                        {
-                          label: "GitHub",
-                          href: "https://github.com/Basilakis/kai",
-                        },
-                      ],
-                    },
-                  ],
-                  copyright: `Copyright © ${new Date().getFullYear()} KAI Project. Last updated: ${new Date().toISOString().split('T')[0]}. Built with Docusaurus.`,
-                },
-                prism: {
-                  theme: prismThemes.github,
-                  darkTheme: prismThemes.dracula,
-                },
-              }),
-          };
+          },
+        ],
+        copyright: `Copyright © ${new Date().getFullYear()} KAI Project. Last updated: ${new Date().toISOString().split('T')[0]}. Built with Docusaurus.`,
+      },
+      prism: {
+        theme: prismThemes.github,
+        darkTheme: prismThemes.dracula,
+      },
+    }),
+};
 
-          export default config;' > docusaurus.config.js
+export default config;
+EOF
 
           cd ..
+
+      - name: Create placeholder files
+        run: |
+          # Create placeholder files for the sidebar
+          mkdir -p kai-docs-temp/docs
+
+          # Create introduction.md
+          cat > kai-docs-temp/docs/introduction.md << 'EOF'
+---
+id: introduction
+title: "Introduction to KAI"
+sidebar_label: "Introduction"
+slug: /
+---
+
+# Introduction to KAI
+
+Welcome to the KAI documentation. This documentation provides comprehensive information about the KAI platform, its features, and how to use it.
+EOF
+
+          # Create installation.md
+          cat > kai-docs-temp/docs/installation.md << 'EOF'
+---
+id: installation
+title: "Installation"
+sidebar_label: "Installation"
+---
+
+# Installation
+
+This page provides instructions for installing the KAI platform.
+EOF
+
+          # Create configuration.md
+          cat > kai-docs-temp/docs/configuration.md << 'EOF'
+---
+id: configuration
+title: "Configuration"
+sidebar_label: "Configuration"
+---
+
+# Configuration
+
+This page provides instructions for configuring the KAI platform.
+EOF
+
+          # Create features-overview.md
+          cat > kai-docs-temp/docs/features-overview.md << 'EOF'
+---
+id: features-overview
+title: "Features Overview"
+sidebar_label: "Features Overview"
+---
+
+# Features Overview
+
+This page provides an overview of the features available in the KAI platform.
+EOF
 
       - name: Process readme files
         run: |
