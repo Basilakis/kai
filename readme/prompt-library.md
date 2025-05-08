@@ -130,7 +130,7 @@ When viewing a public prompt, you can:
 - **Authentication**: Integrated with the existing authentication system
 - **Database**: Uses Supabase for storage and RLS policies for security
 
-## Security
+## Security Checks
 
 - Row Level Security (RLS) policies ensure users can only access their own prompts or public prompts
 - Rating system is protected to prevent multiple ratings from the same user
