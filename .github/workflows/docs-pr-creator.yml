@@ -99,10 +99,10 @@ jobs:
 
           echo "Checking for prompt files:"
           find docs -name "prompt*.md" | sort
-          
+
           # Copy the docs directory directly to the build directory
           cp -r docs/* build/
-          
+
           echo "Build directory prepared. Contents:"
           ls -la build
 
@@ -159,13 +159,7 @@ jobs:
           gh auth login --with-token <<< "${{ secrets.DOCS_DEPLOY_TOKEN }}"
           gh pr create \
             --title "Deploy Documentation: ${{ github.event.head_commit.message }}" \
-            --body "This PR was automatically created by the GitHub Actions workflow to update the documentation site.
-
-Changes included in this PR:
-- Updated documentation from the latest changes in the kai repository
-- Last commit: ${{ github.sha }}
-
-Please review and merge to update the documentation site." \
+            --body "This PR was automatically created by the GitHub Actions workflow to update the documentation site. Changes include updates from the kai repository (commit: ${{ github.sha }})." \
             --repo Basilakis/basilakis.github.io \
             --head $BRANCH_NAME \
             --base gh-pages
