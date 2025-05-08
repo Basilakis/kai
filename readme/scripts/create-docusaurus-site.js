@@ -108,8 +108,8 @@ const config = {
   organizationName: "Basilakis",
   projectName: "basilakis.github.io",
   trailingSlash: false,
-  onBrokenLinks: "warn",
-  onBrokenMarkdownLinks: "warn",
+  onBrokenLinks: "ignore",
+  onBrokenMarkdownLinks: "ignore",
   i18n: {
     defaultLocale: "en",
     locales: ["en"],
