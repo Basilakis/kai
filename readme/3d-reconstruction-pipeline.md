@@ -8,7 +8,7 @@ This document outlines the 3D reconstruction pipeline implementation for the Cre
 - **HorizonNet + CubeMap**
   - Uses HorizonNet for accurate room boundary detection
   - CubeMap generation for complete room visualization
-  - Handles complex room geometries and layouts
+  - Handles complex room geometries and layouts 
   - Dependencies: `horizon-net>=1.0.0`
 
 ### 2. Depth Estimation
