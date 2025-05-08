@@ -347,117 +347,23 @@ EOF
           echo "Files with titles containing colons:"
           grep -l "title: \".*:.*\"" $(find . -name "*.md") || echo "None found"
 
-      - name: Prepare files for PR
+      - name: Install Docusaurus dependencies
         run: |
           cd kai-docs-temp
-          echo "Checking docs directory structure:"
-          find docs -type d | sort
+          npm install --no-save @docusaurus/core@3.7.0 @docusaurus/preset-classic@3.7.0 @mdx-js/react@3.0.0 clsx@2.1.0 prism-react-renderer@2.3.1 react@18.2.0 react-dom@18.2.0 typescript@5.3.3
 
-          echo "Checking for prompt files:"
-          find docs -name "prompt*.md" | sort
-
-          # Copy the docs directory directly to the build directory
-          cp -r docs/* build/
-
-          echo "Build directory prepared. Contents:"
-          ls -la build
-
-      - name: Debug before deployment
+      - name: Build Docusaurus site
         run: |
-          echo "Contents of kai-docs-temp/build directory:"
-          ls -la kai-docs-temp/build || echo "Build directory does not exist!"
-          echo "Checking if DOCS_DEPLOY_TOKEN is set:"
-          if [ -n "${{ secrets.DOCS_DEPLOY_TOKEN }}" ]; then
-            echo "Token is set (value hidden)"
-          else
-            echo "Token is NOT set!"
-          fi
+          cd kai-docs-temp
+          echo "Building Docusaurus site..."
+          npx docusaurus build
 
-      - name: Checkout target repository
-        uses: actions/checkout@v4
+          echo "Build complete. Contents of build directory:"
+          ls -la build || echo "Build directory does not exist!"
+
+      - name: Archive build artifacts
+        uses: actions/upload-artifact@v4
         with:
-          repository: Basilakis/basilakis.github.io
-          token: ${{ secrets.DOCS_DEPLOY_TOKEN }}
-          path: target-repo
-
-      - name: Debug build output
-        run: |
-          echo "Contents of kai-docs-temp directory:"
-          ls -la kai-docs-temp
-
-          echo "Contents of kai-docs-temp/build directory:"
-          ls -la kai-docs-temp/build || echo "Build directory does not exist!"
-
-          if [ ! -d "kai-docs-temp/build" ]; then
-            echo "ERROR: Build directory does not exist. The Docusaurus build may have failed."
-            exit 1
-          fi
-
-      - name: Install GitHub CLI
-        run: |
-          echo "Installing GitHub CLI..."
-          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-          sudo apt update
-          sudo apt install gh
-
-      # ===== THIS IS THE PULL REQUEST CREATION STEP =====
-      - name: Create Pull Request
-        run: |
-          echo "=========================================="
-          echo "CREATING PULL REQUEST TO GITHUB PAGES"
-          echo "=========================================="
-
-          # Generate a unique branch name
-          BRANCH_NAME="docs-update-$(date +%Y%m%d%H%M%S)"
-          echo "Branch name: $BRANCH_NAME"
-
-          # Create a new branch for the changes
-          cd target-repo
-          git checkout -b $BRANCH_NAME
-
-          # Copy the built files
-          echo "Removing existing files..."
-          rm -rf * || true
-
-          echo "Copying built files..."
-          cp -r ../kai-docs-temp/build/* .
-
-          echo "Contents after copying:"
-          ls -la
-
-          # Commit the changes
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
-
-          echo "Adding files to git..."
-          git add .
-
-          echo "Committing changes..."
-          git commit -m "Deploy Documentation: ${{ github.event.head_commit.message }}"
-
-          echo "Pushing branch..."
-          git push origin $BRANCH_NAME
-
-          echo "=========================================="
-          echo "CREATING PULL REQUEST USING GITHUB CLI"
-          echo "=========================================="
-
-          # Create a pull request using GitHub CLI
-          gh auth login --with-token <<< "${{ secrets.DOCS_DEPLOY_TOKEN }}"
-          gh pr create \
-            --title "Deploy Documentation: ${{ github.event.head_commit.message }}" \
-            --body "This PR was automatically created by the GitHub Actions workflow to update the documentation site.
-
-Changes included in this PR:
-- Updated documentation from the latest changes in the kai repository
-- Last commit: ${{ github.sha }}
-
-Please review and merge to update the documentation site." \
-            --repo Basilakis/basilakis.github.io \
-            --head $BRANCH_NAME \
-            --base gh-pages
-
-          echo "=========================================="
-          echo "PULL REQUEST CREATED SUCCESSFULLY"
-          echo "=========================================="
+          name: docusaurus-build
+          path: kai-docs-temp/build/
+          retention-days: 7
