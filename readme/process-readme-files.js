@@ -200,7 +200,7 @@ sidebar_label: "${title}"
 id: intro
 title: Introduction
 sidebar_label: Introduction
-slug: /intro
+slug: /
 ---
 
 # KAI Documentation
@@ -291,12 +291,18 @@ function generateSidebar() {
       });
     }
 
-    // Special case for changelog
-    sidebar.docs.push({
-      type: "category",
-      label: "Changelog",
-      items: ["CHANGELOG", "changelog/CHANGELOG"]
-    });
+    // Special case for changelog - only add if not already present
+    const hasChangelog = sidebar.docs.some(item =>
+      item.type === "category" && item.label === "Changelog"
+    );
+
+    if (!hasChangelog) {
+      sidebar.docs.push({
+        type: "category",
+        label: "Changelog",
+        items: ["CHANGELOG", "changelog/CHANGELOG"]
+      });
+    }
 
     const sidebarContent = `/** @type {import('@docusaurus/plugin-content-docs').SidebarsConfig} */
 export default ${JSON.stringify(sidebar, null, 2)};
