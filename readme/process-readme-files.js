@@ -118,7 +118,29 @@ function processReadmeFiles() {
         // Special handling for CHANGELOG.md - copy it to the root docs directory as well
         if (file === 'CHANGELOG.md') {
           const rootDestPath = path.join(destDir, file);
-          processMarkdownFile(sourcePath, rootDestPath);
+
+          // Read the content
+          let content = fs.readFileSync(sourcePath, 'utf8');
+
+          // Extract the title from the first heading or use the filename
+          let title = 'Changelog';
+          const titleMatch = content.match(/^#\s+(.+)$/m);
+          if (titleMatch) {
+            title = titleMatch[1];
+          }
+
+          // Add frontmatter
+          const frontmatter = `---
+id: CHANGELOG
+title: "${title}"
+sidebar_label: "${title}"
+---
+
+`;
+
+          // Write the processed content to the destination
+          fs.writeFileSync(rootDestPath, frontmatter + content);
+          console.log(`Processed CHANGELOG.md to root docs directory: ${rootDestPath}`);
         }
 
         const destPath = path.join(categoryDir, file);
@@ -150,7 +172,7 @@ function processReadmeFiles() {
 id: intro
 title: Introduction
 sidebar_label: Introduction
-slug: /
+slug: /intro
 ---
 
 # KAI Documentation
@@ -201,6 +223,11 @@ function generateSidebar() {
     // Create a custom sidebar configuration
     const sidebar = {
       docs: [
+        {
+          type: "doc",
+          label: "Introduction",
+          id: "intro"
+        },
         {
           type: "category",
           label: "Getting Started",

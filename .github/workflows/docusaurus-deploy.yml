@@ -30,6 +30,9 @@ jobs:
           cd readme
           node process-readme-files.js || echo "Warning: Some readme files may not have been processed correctly"
 
+          # Fix markdown links
+          node scripts/fix-markdown-links.js || echo "Warning: Some markdown links could not be fixed"
+
       - name: Install Docusaurus dependencies
         run: |
           cd kai-docs-temp

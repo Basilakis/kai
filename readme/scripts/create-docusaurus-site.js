@@ -201,7 +201,7 @@ const docs = [
 id: introduction
 title: "Introduction to KAI"
 sidebar_label: "Introduction"
-slug: /
+slug: /introduction
 ---
 
 # Introduction to KAI
