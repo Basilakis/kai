@@ -64,10 +64,10 @@ jobs:
     needs: build-and-test
     uses: ./.github/workflows/docker-build.yml
     with:
-      environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
-      tag-suffix: ${{ github.ref == 'refs/heads/main' && 'latest' || 'staging' }}
+      environment: {% raw %}${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}{% endraw %}
+      tag-suffix: {% raw %}${{ github.ref == 'refs/heads/main' && 'latest' || 'staging' }}{% endraw %}
     secrets:
-      github_token: ${{ secrets.GITHUB_TOKEN }}
+      github_token: {% raw %}${{ secrets.GITHUB_TOKEN }}{% endraw %}
 
   # Deploy to staging or production using environment-specific workflows
   deploy-staging:
@@ -76,7 +76,7 @@ jobs:
     if: github.ref == 'refs/heads/staging'
     uses: ./.github/workflows/deploy-staging.yml
     with:
-      sha: ${{ github.sha }}
+      sha: {% raw %}${{ github.sha }}{% endraw %}
     secrets: # Secrets passed to the workflow
       # Various secrets needed for deployment
 
@@ -86,7 +86,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     uses: ./.github/workflows/deploy-production.yml
     with:
-      sha: ${{ github.sha }}
+      sha: {% raw %}${{ github.sha }}{% endraw %}
     secrets: # Secrets passed to the workflow
       # Various secrets needed for deployment
 ```
@@ -307,7 +307,7 @@ This allows the workflow to be triggered with canary deployment parameters:
 deploy-production:
   uses: ./.github/workflows/deploy-production.yml
   with:
-    sha: ${{ github.sha }}
+    sha: {% raw %}${{ github.sha }}{% endraw %}
     canary: true
     canary_weight: 10
 ```
@@ -359,7 +359,7 @@ The workflow implementation includes:
       # ...
 
       if [ $FAILURES -ge 5 ]; then
-        echo "health_status=degraded" >> $GITHUB_OUTPUT
+        echo "health_status=degraded" >> {% raw %}$GITHUB_OUTPUT{% endraw %}
         break
       fi
 
@@ -367,11 +367,11 @@ The workflow implementation includes:
     done
 
 - name: Rollback if Needed
-  if: steps.health_check.outputs.health_status == 'degraded' && inputs.canary == 'true'
+  if: {% raw %}steps.health_check.outputs.health_status == 'degraded' && inputs.canary == 'true'{% endraw %}
   run: |
     echo "::warning::Production health checks failed, rolling back canary deployment"
     ./helm-charts/helm-deploy.sh \
-      --context=${{ env.KUBE_CONTEXT }} \
+      --context={% raw %}${{ env.KUBE_CONTEXT }}{% endraw %} \
       --env=production \
       --release=kai-production \
       --rollback
@@ -457,11 +457,11 @@ The Kubernetes deployment now uses Helm charts for improved maintainability and 
    - name: Deploy to Kubernetes with Helm
      run: |
        ./helm-charts/helm-deploy.sh \
-         --context=${{ inputs.kube-context }} \
-         --registry=${{ secrets.docker_registry }}/${{ secrets.docker_username }} \
-         --tag=${{ inputs.sha }} \
-         --env=${{ env.DEPLOY_ENV }} \
-         --release=kai-${{ env.DEPLOY_ENV }}
+         --context={% raw %}${{ inputs.kube-context }}{% endraw %} \
+         --registry={% raw %}${{ secrets.docker_registry }}/${{ secrets.docker_username }}{% endraw %} \
+         --tag={% raw %}${{ inputs.sha }}{% endraw %} \
+         --env={% raw %}${{ env.DEPLOY_ENV }}{% endraw %} \
+         --release=kai-{% raw %}${{ env.DEPLOY_ENV }}{% endraw %}
    ```
 
 5. **Improved Rollback**: The Helm-based rollback mechanism provides:
