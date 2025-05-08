@@ -387,9 +387,13 @@ jobs:
           echo "Creating pull request..."
           # Create a pull request using GitHub CLI
           gh auth login --with-token <<< "${{ secrets.DOCS_DEPLOY_TOKEN }}"
+
+          # Set PR body as a variable
+          PR_BODY="This PR was automatically created by the GitHub Actions workflow to update the documentation site. It includes updated documentation from the latest changes in the kai repository, triggered by a manual workflow run."
+
           gh pr create \
             --title "Deploy Documentation: ${{ github.event.inputs.deploy_message }}" \
-            --body "This PR was automatically created by the GitHub Actions workflow to update the documentation site. It includes updated documentation from the latest changes in the kai repository, triggered by a manual workflow run." \
+            --body "$PR_BODY" \
             --repo Basilakis/basilakis.github.io \
             --head $BRANCH_NAME \
             --base gh-pages
