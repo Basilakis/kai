@@ -74,24 +74,32 @@ jobs:
         run: |
           npm install -g fs-extra
 
-      - name: Create Docusaurus site
+      # Commented out Docusaurus site creation as requested
+      # - name: Create Docusaurus site
+      #   run: |
+      #     # Create a temporary directory for the documentation site
+      #     mkdir -p kai-docs-temp
+      #     cd kai-docs-temp
+      #
+      #     # Create basic directories needed for the build
+      #     mkdir -p docs src/css static/img
+      #
+      #     # Note: We're skipping most of the Docusaurus setup since we don't need it if the repo already exists
+      #     # Just creating the minimal structure needed for the build to pass
+      #
+      #     # Create empty files to satisfy the build process
+      #     touch package.json
+      #     touch docusaurus.config.js
+      #     touch src/css/custom.css
+      #
+      #     cd ..
+
+      # Simple directory creation instead
+      - name: Create directory structure
         run: |
-          # Create a temporary directory for the documentation site
-          mkdir -p kai-docs-temp
-          cd kai-docs-temp
-
-          # Create basic directories needed for the build
-          mkdir -p docs src/css static/img
-
-          # Note: We're skipping most of the Docusaurus setup since we don't need it if the repo already exists
-          # Just creating the minimal structure needed for the build to pass
-
-          # Create empty files to satisfy the build process
-          touch package.json
-          touch docusaurus.config.js
-          touch src/css/custom.css
-
-          cd ..
+          # Create a temporary directory for the documentation files
+          mkdir -p kai-docs-temp/docs
+          mkdir -p kai-docs-temp/build
 
       - name: Process readme files
         run: |
@@ -225,40 +233,19 @@ EOF
           echo "Files with titles containing colons:"
           grep -l "title: \".*:.*\"" $(find . -name "*.md") || echo "None found"
 
-      - name: Verify documentation files
+      - name: Prepare files for PR
         run: |
           cd kai-docs-temp
-          echo "Current directory: $(pwd)"
-          echo "Contents of current directory:"
-          ls -la
-
           echo "Checking docs directory structure:"
           find docs -type d | sort
 
           echo "Checking for prompt files:"
           find docs -name "prompt*.md" | sort
 
-      - name: Create build directory
-        run: |
-          cd kai-docs-temp
-          echo "Creating build directory instead of building Docusaurus site..."
-          mkdir -p build
+          # Copy the docs directory directly to the build directory
+          cp -r docs/* build/
 
-          # Just copy the docs directory to the build directory
-          cp -r docs build/
-
-          # Create an index.html file to redirect to the docs
-          echo '<!DOCTYPE html>
-          <html>
-            <head>
-              <meta http-equiv="refresh" content="0; url=/docs" />
-            </head>
-            <body>
-              Redirecting to documentation...
-            </body>
-          </html>' > build/index.html
-
-          echo "Build directory created. Contents:"
+          echo "Build directory prepared. Contents:"
           ls -la build
 
       - name: Debug before deployment
@@ -300,10 +287,16 @@ EOF
           sudo apt update
           sudo apt install gh
 
+      # ===== THIS IS THE PULL REQUEST CREATION STEP =====
       - name: Create Pull Request
         run: |
+          echo "=========================================="
+          echo "CREATING PULL REQUEST TO GITHUB PAGES"
+          echo "=========================================="
+
           # Generate a unique branch name
           BRANCH_NAME="docs-update-$(date +%Y%m%d%H%M%S)"
+          echo "Branch name: $BRANCH_NAME"
 
           # Create a new branch for the changes
           cd target-repo
@@ -332,7 +325,10 @@ EOF
           echo "Pushing branch..."
           git push origin $BRANCH_NAME
 
-          echo "Creating pull request..."
+          echo "=========================================="
+          echo "CREATING PULL REQUEST USING GITHUB CLI"
+          echo "=========================================="
+
           # Create a pull request using GitHub CLI
           gh auth login --with-token <<< "${{ secrets.DOCS_DEPLOY_TOKEN }}"
           gh pr create \
@@ -347,3 +343,7 @@ Please review and merge to update the documentation site." \
             --repo Basilakis/basilakis.github.io \
             --head $BRANCH_NAME \
             --base gh-pages
+
+          echo "=========================================="
+          echo "PULL REQUEST CREATED SUCCESSFULLY"
+          echo "=========================================="
