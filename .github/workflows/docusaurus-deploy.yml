@@ -142,117 +142,189 @@ jobs:
             <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="Arial" font-size="72" fill="white">KAI</text>
           </svg>' > static/img/logo.svg
 
-          # Create sidebars.js file - simplified version without TypeScript annotations
-          echo '// Simple sidebars config without TypeScript annotations' > sidebars.js
-          echo 'const sidebars = {' >> sidebars.js
-          echo '  docs: [' >> sidebars.js
-          echo '    {' >> sidebars.js
-          echo '      type: "category",' >> sidebars.js
-          echo '      label: "Introduction",' >> sidebars.js
-          echo '      items: ["introduction"],' >> sidebars.js
-          echo '    },' >> sidebars.js
-          echo '    {' >> sidebars.js
-          echo '      type: "category",' >> sidebars.js
-          echo '      label: "Getting Started",' >> sidebars.js
-          echo '      items: ["installation", "configuration"],' >> sidebars.js
-          echo '    },' >> sidebars.js
-          echo '    {' >> sidebars.js
-          echo '      type: "category",' >> sidebars.js
-          echo '      label: "Features",' >> sidebars.js
-          echo '      items: ["features-overview"],' >> sidebars.js
-          echo '    },' >> sidebars.js
-          echo '    {' >> sidebars.js
-          echo '      type: "category",' >> sidebars.js
-          echo '      label: "Prompts",' >> sidebars.js
-          echo '      items: [' >> sidebars.js
-          echo '        "prompt-library",' >> sidebars.js
-          echo '        "prompt-abtesting-segmentation",' >> sidebars.js
-          echo '        "prompt-advanced-features",' >> sidebars.js
-          echo '        "prompt-management",' >> sidebars.js
-          echo '        "prompt-success-tracking",' >> sidebars.js
-          echo '      ],' >> sidebars.js
-          echo '    },' >> sidebars.js
-          echo '    {' >> sidebars.js
-          echo '      type: "category",' >> sidebars.js
-          echo '      label: "Deployment",' >> sidebars.js
-          echo '      items: ["deployment-guide", "kubernetes-architecture", "cicd-pipeline"],' >> sidebars.js
-          echo '    },' >> sidebars.js
-          echo '    {' >> sidebars.js
-          echo '      type: "category",' >> sidebars.js
-          echo '      label: "Other",' >> sidebars.js
-          echo '      items: ["admin-panel", "queue-system", "notification-webhook-system"],' >> sidebars.js
-          echo '    },' >> sidebars.js
-          echo '  ],' >> sidebars.js
-          echo '};' >> sidebars.js
-          echo '' >> sidebars.js
-          echo 'module.exports = sidebars;' >> sidebars.js
+          # Create a script to generate the files
+          cat > create-docusaurus-files.js << 'EOF'
+const fs = require('fs');
+const path = require('path');
 
-          # Create Docusaurus config file - simplified version without TypeScript annotations
-          echo '// Simple config without TypeScript annotations' > docusaurus.config.js
-          echo 'const config = {' >> docusaurus.config.js
-          echo '  title: "KAI Documentation",' >> docusaurus.config.js
-          echo '  tagline: "Comprehensive documentation for the KAI project",' >> docusaurus.config.js
-          echo '  favicon: "img/favicon.ico",' >> docusaurus.config.js
-          echo '  url: "https://basilakis.github.io",' >> docusaurus.config.js
-          echo '  baseUrl: "/",' >> docusaurus.config.js
-          echo '  organizationName: "Basilakis",' >> docusaurus.config.js
-          echo '  projectName: "basilakis.github.io",' >> docusaurus.config.js
-          echo '  trailingSlash: false,' >> docusaurus.config.js
-          echo '  onBrokenLinks: "warn",' >> docusaurus.config.js
-          echo '  onBrokenMarkdownLinks: "warn",' >> docusaurus.config.js
-          echo '  i18n: {' >> docusaurus.config.js
-          echo '    defaultLocale: "en",' >> docusaurus.config.js
-          echo '    locales: ["en"],' >> docusaurus.config.js
-          echo '  },' >> docusaurus.config.js
-          echo '  presets: [' >> docusaurus.config.js
-          echo '    [' >> docusaurus.config.js
-          echo '      "classic",' >> docusaurus.config.js
-          echo '      {' >> docusaurus.config.js
-          echo '        docs: {' >> docusaurus.config.js
-          echo '          sidebarPath: "./sidebars.js",' >> docusaurus.config.js
-          echo '          routeBasePath: "/",' >> docusaurus.config.js
-          echo '        },' >> docusaurus.config.js
-          echo '        blog: false,' >> docusaurus.config.js
-          echo '        theme: {' >> docusaurus.config.js
-          echo '          customCss: "./src/css/custom.css",' >> docusaurus.config.js
-          echo '        },' >> docusaurus.config.js
-          echo '      },' >> docusaurus.config.js
-          echo '    ],' >> docusaurus.config.js
-          echo '  ],' >> docusaurus.config.js
-          echo '  themeConfig: {' >> docusaurus.config.js
-          echo '    navbar: {' >> docusaurus.config.js
-          echo '      title: "KAI Documentation",' >> docusaurus.config.js
-          echo '      logo: {' >> docusaurus.config.js
-          echo '        alt: "KAI Logo",' >> docusaurus.config.js
-          echo '        src: "img/logo.svg",' >> docusaurus.config.js
-          echo '      },' >> docusaurus.config.js
-          echo '      items: [' >> docusaurus.config.js
-          echo '        {' >> docusaurus.config.js
-          echo '          href: "https://github.com/Basilakis/kai",' >> docusaurus.config.js
-          echo '          label: "GitHub",' >> docusaurus.config.js
-          echo '          position: "right",' >> docusaurus.config.js
-          echo '        },' >> docusaurus.config.js
-          echo '      ],' >> docusaurus.config.js
-          echo '    },' >> docusaurus.config.js
-          echo '    footer: {' >> docusaurus.config.js
-          echo '      style: "dark",' >> docusaurus.config.js
-          echo '      links: [' >> docusaurus.config.js
-          echo '        {' >> docusaurus.config.js
-          echo '          title: "More",' >> docusaurus.config.js
-          echo '          items: [' >> docusaurus.config.js
-          echo '            {' >> docusaurus.config.js
-          echo '              label: "GitHub",' >> docusaurus.config.js
-          echo '              href: "https://github.com/Basilakis/kai",' >> docusaurus.config.js
-          echo '            },' >> docusaurus.config.js
-          echo '          ],' >> docusaurus.config.js
-          echo '        },' >> docusaurus.config.js
-          echo '      ],' >> docusaurus.config.js
-          echo '      copyright: `Copyright © ${new Date().getFullYear()} KAI Project. Last updated: ${new Date().toISOString().split("T")[0]}. Built with Docusaurus.`,' >> docusaurus.config.js
-          echo '    },' >> docusaurus.config.js
-          echo '  },' >> docusaurus.config.js
-          echo '};' >> docusaurus.config.js
-          echo '' >> docusaurus.config.js
-          echo 'module.exports = config;' >> docusaurus.config.js
+// Create sidebars.js
+const sidebarsContent = `// Simple sidebars config without TypeScript annotations
+const sidebars = {
+  docs: [
+    {
+      type: 'category',
+      label: 'Introduction',
+      items: ['introduction'],
+    },
+    {
+      type: 'category',
+      label: 'Getting Started',
+      items: ['installation', 'configuration'],
+    },
+    {
+      type: 'category',
+      label: 'Features',
+      items: ['features-overview'],
+    },
+    {
+      type: 'category',
+      label: 'Prompts',
+      items: [
+        'prompt-library',
+        'prompt-abtesting-segmentation',
+        'prompt-advanced-features',
+        'prompt-management',
+        'prompt-success-tracking',
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Deployment',
+      items: ['deployment-guide', 'kubernetes-architecture', 'cicd-pipeline'],
+    },
+    {
+      type: 'category',
+      label: 'Other',
+      items: ['admin-panel', 'queue-system', 'notification-webhook-system'],
+    },
+  ],
+};
+
+module.exports = sidebars;`;
+
+fs.writeFileSync('sidebars.js', sidebarsContent);
+console.log('Created sidebars.js');
+EOF
+
+          # Run the script to create the files
+          node create-docusaurus-files.js
+
+          # Update the script to also create docusaurus.config.js
+          cat > create-docusaurus-files.js << 'EOF'
+const fs = require('fs');
+const path = require('path');
+
+// Create sidebars.js
+const sidebarsContent = `// Simple sidebars config without TypeScript annotations
+const sidebars = {
+  docs: [
+    {
+      type: 'category',
+      label: 'Introduction',
+      items: ['introduction'],
+    },
+    {
+      type: 'category',
+      label: 'Getting Started',
+      items: ['installation', 'configuration'],
+    },
+    {
+      type: 'category',
+      label: 'Features',
+      items: ['features-overview'],
+    },
+    {
+      type: 'category',
+      label: 'Prompts',
+      items: [
+        'prompt-library',
+        'prompt-abtesting-segmentation',
+        'prompt-advanced-features',
+        'prompt-management',
+        'prompt-success-tracking',
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Deployment',
+      items: ['deployment-guide', 'kubernetes-architecture', 'cicd-pipeline'],
+    },
+    {
+      type: 'category',
+      label: 'Other',
+      items: ['admin-panel', 'queue-system', 'notification-webhook-system'],
+    },
+  ],
+};
+
+module.exports = sidebars;`;
+
+// Create docusaurus.config.js
+const configContent = `// Simple config without TypeScript annotations
+const config = {
+  title: "KAI Documentation",
+  tagline: "Comprehensive documentation for the KAI project",
+  favicon: "img/favicon.ico",
+  url: "https://basilakis.github.io",
+  baseUrl: "/",
+  organizationName: "Basilakis",
+  projectName: "basilakis.github.io",
+  trailingSlash: false,
+  onBrokenLinks: "warn",
+  onBrokenMarkdownLinks: "warn",
+  i18n: {
+    defaultLocale: "en",
+    locales: ["en"],
+  },
+  presets: [
+    [
+      "classic",
+      {
+        docs: {
+          sidebarPath: "./sidebars.js",
+          routeBasePath: "/",
+        },
+        blog: false,
+        theme: {
+          customCss: "./src/css/custom.css",
+        },
+      },
+    ],
+  ],
+  themeConfig: {
+    navbar: {
+      title: "KAI Documentation",
+      logo: {
+        alt: "KAI Logo",
+        src: "img/logo.svg",
+      },
+      items: [
+        {
+          href: "https://github.com/Basilakis/kai",
+          label: "GitHub",
+          position: "right",
+        },
+      ],
+    },
+    footer: {
+      style: "dark",
+      links: [
+        {
+          title: "More",
+          items: [
+            {
+              label: "GitHub",
+              href: "https://github.com/Basilakis/kai",
+            },
+          ],
+        },
+      ],
+      copyright: \`Copyright © \${new Date().getFullYear()} KAI Project. Last updated: \${new Date().toISOString().split('T')[0]}. Built with Docusaurus.\`,
+    },
+  },
+};
+
+module.exports = config;`;
+
+// Write the files
+fs.writeFileSync('sidebars.js', sidebarsContent);
+fs.writeFileSync('docusaurus.config.js', configContent);
+
+console.log('Created sidebars.js and docusaurus.config.js');
+EOF
+
+          # Run the script to create the files
+          node create-docusaurus-files.js
 
           cd ..
 
@@ -261,50 +333,73 @@ jobs:
           # Create placeholder files for the sidebar
           mkdir -p kai-docs-temp/docs
 
-          # Create introduction.md
-          echo '---' > kai-docs-temp/docs/introduction.md
-          echo 'id: introduction' >> kai-docs-temp/docs/introduction.md
-          echo 'title: "Introduction to KAI"' >> kai-docs-temp/docs/introduction.md
-          echo 'sidebar_label: "Introduction"' >> kai-docs-temp/docs/introduction.md
-          echo 'slug: /' >> kai-docs-temp/docs/introduction.md
-          echo '---' >> kai-docs-temp/docs/introduction.md
-          echo '' >> kai-docs-temp/docs/introduction.md
-          echo '# Introduction to KAI' >> kai-docs-temp/docs/introduction.md
-          echo '' >> kai-docs-temp/docs/introduction.md
-          echo 'Welcome to the KAI documentation. This documentation provides comprehensive information about the KAI platform, its features, and how to use it.' >> kai-docs-temp/docs/introduction.md
+          # Create a script to generate the markdown files
+          cat > create-markdown-files.js << 'EOF'
+const fs = require('fs');
+const path = require('path');
 
-          # Create installation.md
-          echo '---' > kai-docs-temp/docs/installation.md
-          echo 'id: installation' >> kai-docs-temp/docs/installation.md
-          echo 'title: "Installation"' >> kai-docs-temp/docs/installation.md
-          echo 'sidebar_label: "Installation"' >> kai-docs-temp/docs/installation.md
-          echo '---' >> kai-docs-temp/docs/installation.md
-          echo '' >> kai-docs-temp/docs/installation.md
-          echo '# Installation' >> kai-docs-temp/docs/installation.md
-          echo '' >> kai-docs-temp/docs/installation.md
-          echo 'This page provides instructions for installing the KAI platform.' >> kai-docs-temp/docs/installation.md
+// Ensure the docs directory exists
+const docsDir = path.join('kai-docs-temp', 'docs');
+if (!fs.existsSync(docsDir)) {
+  fs.mkdirSync(docsDir, { recursive: true });
+}
 
-          # Create configuration.md
-          echo '---' > kai-docs-temp/docs/configuration.md
-          echo 'id: configuration' >> kai-docs-temp/docs/configuration.md
-          echo 'title: "Configuration"' >> kai-docs-temp/docs/configuration.md
-          echo 'sidebar_label: "Configuration"' >> kai-docs-temp/docs/configuration.md
-          echo '---' >> kai-docs-temp/docs/configuration.md
-          echo '' >> kai-docs-temp/docs/configuration.md
-          echo '# Configuration' >> kai-docs-temp/docs/configuration.md
-          echo '' >> kai-docs-temp/docs/configuration.md
-          echo 'This page provides instructions for configuring the KAI platform.' >> kai-docs-temp/docs/configuration.md
+// Create introduction.md
+const introContent = `---
+id: introduction
+title: "Introduction to KAI"
+sidebar_label: "Introduction"
+slug: /
+---
 
-          # Create features-overview.md
-          echo '---' > kai-docs-temp/docs/features-overview.md
-          echo 'id: features-overview' >> kai-docs-temp/docs/features-overview.md
-          echo 'title: "Features Overview"' >> kai-docs-temp/docs/features-overview.md
-          echo 'sidebar_label: "Features Overview"' >> kai-docs-temp/docs/features-overview.md
-          echo '---' >> kai-docs-temp/docs/features-overview.md
-          echo '' >> kai-docs-temp/docs/features-overview.md
-          echo '# Features Overview' >> kai-docs-temp/docs/features-overview.md
-          echo '' >> kai-docs-temp/docs/features-overview.md
-          echo 'This page provides an overview of the features available in the KAI platform.' >> kai-docs-temp/docs/features-overview.md
+# Introduction to KAI
+
+Welcome to the KAI documentation. This documentation provides comprehensive information about the KAI platform, its features, and how to use it.`;
+
+// Create installation.md
+const installContent = `---
+id: installation
+title: "Installation"
+sidebar_label: "Installation"
+---
+
+# Installation
+
+This page provides instructions for installing the KAI platform.`;
+
+// Create configuration.md
+const configContent = `---
+id: configuration
+title: "Configuration"
+sidebar_label: "Configuration"
+---
+
+# Configuration
+
+This page provides instructions for configuring the KAI platform.`;
+
+// Create features-overview.md
+const featuresContent = `---
+id: features-overview
+title: "Features Overview"
+sidebar_label: "Features Overview"
+---
+
+# Features Overview
+
+This page provides an overview of the features available in the KAI platform.`;
+
+// Write the files
+fs.writeFileSync(path.join(docsDir, 'introduction.md'), introContent);
+fs.writeFileSync(path.join(docsDir, 'installation.md'), installContent);
+fs.writeFileSync(path.join(docsDir, 'configuration.md'), configContent);
+fs.writeFileSync(path.join(docsDir, 'features-overview.md'), featuresContent);
+
+console.log('Created placeholder markdown files');
+EOF
+
+          # Run the script to create the markdown files
+          node create-markdown-files.js
 
       - name: Process readme files
         run: |
