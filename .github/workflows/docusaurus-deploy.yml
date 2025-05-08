@@ -80,22 +80,17 @@ jobs:
           mkdir -p kai-docs-temp
           cd kai-docs-temp
 
-          # Create a package.json file without workspace references
+          # Create basic directories needed for the build
+          mkdir -p docs src/css static/img
+
+          # Note: Most of the Docusaurus setup is commented out since we don't need it if the repo already exists
+          # We're just creating the minimal structure needed for the build
+
+          # Create a minimal package.json file
           echo '{
             "name": "kai-documentation",
             "version": "1.0.0",
             "private": true,
-            "scripts": {
-              "docusaurus": "docusaurus",
-              "start": "docusaurus start",
-              "build": "docusaurus build",
-              "swizzle": "docusaurus swizzle",
-              "deploy": "docusaurus deploy",
-              "clear": "docusaurus clear",
-              "serve": "docusaurus serve",
-              "write-translations": "docusaurus write-translations",
-              "write-heading-ids": "docusaurus write-heading-ids"
-            },
             "dependencies": {
               "@docusaurus/core": "3.7.0",
               "@docusaurus/preset-classic": "3.7.0",
@@ -104,133 +99,20 @@ jobs:
               "prism-react-renderer": "2.3.1",
               "react": "18.2.0",
               "react-dom": "18.2.0"
-            },
-            "devDependencies": {
-              "@docusaurus/module-type-aliases": "3.7.0",
-              "@docusaurus/types": "3.7.0",
-              "typescript": "5.3.3"
-            },
-            "browserslist": {
-              "production": [
-                ">0.5%",
-                "not dead",
-                "not op_mini all"
-              ],
-              "development": [
-                "last 1 chrome version",
-                "last 1 firefox version",
-                "last 1 safari version"
-              ]
-            },
-            "engines": {
-              "node": ">=18.0"
             }
           }' > package.json
 
-          # Create a basic tsconfig.json file
-          echo '{
-            "compilerOptions": {
-              "target": "es2020",
-              "lib": ["dom", "dom.iterable", "esnext"],
-              "allowJs": true,
-              "skipLibCheck": true,
-              "esModuleInterop": true,
-              "allowSyntheticDefaultImports": true,
-              "strict": true,
-              "forceConsistentCasingInFileNames": true,
-              "noFallthroughCasesInSwitch": true,
-              "module": "esnext",
-              "moduleResolution": "node",
-              "resolveJsonModule": true,
-              "isolatedModules": true,
-              "jsx": "react-jsx"
-            },
-            "include": ["src", "docs"]
-          }' > tsconfig.json
-
-          # Create directories
-          mkdir -p docs src/css static/img
-
-          # Create custom CSS
-          echo '/**
-           * Any CSS included here will be global. The classic template
-           * bundles Infima by default. Infima is a CSS framework designed to
-           * work well for content-centric websites.
-           */
-
-          /* You can override the default Infima variables here. */
-          :root {
-            --ifm-color-primary: #2e8555;
-            --ifm-color-primary-dark: #29784c;
-            --ifm-color-primary-darker: #277148;
-            --ifm-color-primary-darkest: #205d3b;
-            --ifm-color-primary-light: #33925d;
-            --ifm-color-primary-lighter: #359962;
-            --ifm-color-primary-lightest: #3cad6e;
-            --ifm-code-font-size: 95%;
-            --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
-          }
-
-          /* For readability concerns, you should choose a lighter palette in dark mode. */
-          [data-theme="dark"] {
-            --ifm-color-primary: #25c2a0;
-            --ifm-color-primary-dark: #21af90;
-            --ifm-color-primary-darker: #1fa588;
-            --ifm-color-primary-darkest: #1a8870;
-            --ifm-color-primary-light: #29d5b0;
-            --ifm-color-primary-lighter: #32d8b4;
-            --ifm-color-primary-lightest: #4fddbf;
-            --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
-          }
-
-          /* Sidebar styles */
-          .menu__link {
-            font-size: 0.9rem;
-          }
-
-          .menu__list-item-collapsible {
-            font-weight: bold;
-          }
-
-          /* Document styles */
-          article {
-            max-width: 900px;
-            margin: 0 auto;
-          }
-
-          /* Code block styles */
-          .prism-code {
-            font-size: 0.9rem;
-          }' > src/css/custom.css
-
-          # Create placeholder logo
-          echo '<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
-            <rect width="200" height="200" fill="#2e8555" />
-            <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="Arial" font-size="72" fill="white">KAI</text>
-          </svg>' > static/img/logo.svg
-
-          # Note: sidebars.js is now created by the process-readme-files.js script
-
-          # Create Docusaurus config file
+          # Create a minimal docusaurus.config.js file
           echo '// @ts-check
           import {themes as prismThemes} from "prism-react-renderer";
 
           /** @type {import("@docusaurus/types").Config} */
           const config = {
             title: "KAI Documentation",
-            tagline: "Comprehensive documentation for the KAI project",
-            favicon: "img/favicon.ico",
             url: "https://basilakis.github.io",
             baseUrl: "/",
-            organizationName: "Basilakis",
-            projectName: "basilakis.github.io",
-            trailingSlash: false,
             onBrokenLinks: "warn",
             onBrokenMarkdownLinks: "warn",
-            i18n: {
-              defaultLocale: "en",
-              locales: ["en"],
-            },
             presets: [
               [
                 "classic",
@@ -240,53 +122,23 @@ jobs:
                     sidebarPath: "./sidebars.js",
                     routeBasePath: "/",
                   },
-                  blog: false,
                   theme: {
                     customCss: "./src/css/custom.css",
                   },
                 }),
               ],
             ],
-            themeConfig:
-              /** @type {import("@docusaurus/preset-classic").ThemeConfig} */
-              ({
-                navbar: {
-                  title: "KAI Documentation",
-                  logo: {
-                    alt: "KAI Logo",
-                    src: "img/logo.svg",
-                  },
-                  items: [
-                    {
-                      href: "https://github.com/Basilakis/kai",
-                      label: "GitHub",
-                      position: "right",
-                    },
-                  ],
-                },
-                footer: {
-                  style: "dark",
-                  links: [
-                    {
-                      title: "More",
-                      items: [
-                        {
-                          label: "GitHub",
-                          href: "https://github.com/Basilakis/kai",
-                        },
-                      ],
-                    },
-                  ],
-                  copyright: `Copyright © ${new Date().getFullYear()} KAI Project. Last updated: ${new Date().toISOString().split('T')[0]}. Built with Docusaurus.`,
-                },
-                prism: {
-                  theme: prismThemes.github,
-                  darkTheme: prismThemes.dracula,
-                },
-              }),
+            themeConfig: {
+              footer: {
+                copyright: `Copyright © ${new Date().getFullYear()} KAI Project. Last updated: ${new Date().toISOString().split("T")[0]}. Built with Docusaurus.`,
+              },
+            },
           };
 
           export default config;' > docusaurus.config.js
+
+          # Create a minimal custom.css file
+          echo '/* Minimal CSS file */' > src/css/custom.css
 
           cd ..
 
@@ -496,7 +348,7 @@ EOF
           sudo apt update
           sudo apt install gh
 
-      - name: Create Pull Request instead of direct push
+      - name: Create Pull Request
         run: |
           # Generate a unique branch name
           BRANCH_NAME="docs-update-$(date +%Y%m%d%H%M%S)"
@@ -529,14 +381,17 @@ EOF
           git push origin $BRANCH_NAME
 
           echo "Creating pull request..."
-          # Create a pull request using GitHub API directly
-          curl -X POST \
-            -H "Authorization: token ${{ secrets.DOCS_DEPLOY_TOKEN }}" \
-            -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/repos/Basilakis/basilakis.github.io/pulls \
-            -d '{
-              "title": "Deploy Documentation: ${{ github.event.head_commit.message }}",
-              "body": "This PR was automatically created by the GitHub Actions workflow to update the documentation site.\n\nChanges included in this PR:\n- Updated documentation from the latest changes in the kai repository\n- Last commit: ${{ github.sha }}\n\nPlease review and merge to update the documentation site.",
-              "head": "'$BRANCH_NAME'",
-              "base": "gh-pages"
-            }'
+          # Create a pull request using GitHub CLI
+          gh auth login --with-token <<< "${{ secrets.DOCS_DEPLOY_TOKEN }}"
+          gh pr create \
+            --title "Deploy Documentation: ${{ github.event.head_commit.message }}" \
+            --body "This PR was automatically created by the GitHub Actions workflow to update the documentation site.
+
+Changes included in this PR:
+- Updated documentation from the latest changes in the kai repository
+- Last commit: ${{ github.sha }}
+
+Please review and merge to update the documentation site." \
+            --repo Basilakis/basilakis.github.io \
+            --head $BRANCH_NAME \
+            --base gh-pages
