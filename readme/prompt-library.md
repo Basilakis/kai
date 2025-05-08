@@ -116,12 +116,12 @@ On any public prompt detail page, you can:
 2. Add an optional comment
 3. Update your rating if you change your mind
 
-### Coping Prompts
+### Copying Prompts
 
 When viewing a public prompt, you can:
 
-1. Import it (creates a copy without tracking the relationship)
-2. Fork it (creates a copy that tracks the relationship to the original)
+1. Import it (creates a copy without tracking the relationship).
+2. Fork it (creates a copy that tracks the relationship to the original).
 
 ## Integration Points
 
