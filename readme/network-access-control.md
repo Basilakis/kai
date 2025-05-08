@@ -28,7 +28,7 @@ The Network Access Control system in the Kai platform provides a robust security
 
 ### Access Types
 
-Endpoints in the Kai API are classified into three main access types:
+Endpoints in the KAI API are classified into three main access types:
 
 1. **ANY** / **EXTERNAL_ALLOWED**: Accessible from both internal and external networks
    - Example: User authentication, material search, recognition
