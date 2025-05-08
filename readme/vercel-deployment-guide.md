@@ -318,29 +318,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      
+
       - name: Deploy Admin to Vercel
         uses: amondnet/vercel-action@v25
         with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_ADMIN_PROJECT_ID }}
+          vercel-token: {% raw %}${{ secrets.VERCEL_TOKEN }}{% endraw %}
+          github-token: {% raw %}${{ secrets.GITHUB_TOKEN }}{% endraw %}
+          vercel-org-id: {% raw %}${{ secrets.VERCEL_ORG_ID }}{% endraw %}
+          vercel-project-id: {% raw %}${{ secrets.VERCEL_ADMIN_PROJECT_ID }}{% endraw %}
           working-directory: ./packages/admin
           vercel-args: '--prod'
-  
+
   deploy-client:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      
+
       - name: Deploy Client to Vercel
         uses: amondnet/vercel-action@v25
         with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_CLIENT_PROJECT_ID }}
+          vercel-token: {% raw %}${{ secrets.VERCEL_TOKEN }}{% endraw %}
+          github-token: {% raw %}${{ secrets.GITHUB_TOKEN }}{% endraw %}
+          vercel-org-id: {% raw %}${{ secrets.VERCEL_ORG_ID }}{% endraw %}
+          vercel-project-id: {% raw %}${{ secrets.VERCEL_CLIENT_PROJECT_ID }}{% endraw %}
           working-directory: ./packages/client
           vercel-args: '--prod'
 ```
