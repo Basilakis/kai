@@ -247,7 +247,16 @@ MDEOF
       - name: Build Docusaurus site
         run: |
           cd kai-docs-temp
+          echo "Building Docusaurus site..."
           npx docusaurus build
+          echo "Build completed successfully!"
+
+      - name: Archive documentation build
+        uses: actions/upload-artifact@v4
+        with:
+          name: docusaurus-build
+          path: kai-docs-temp/build/
+          retention-days: 7
 
       - name: Install GitHub CLI
         run: |
@@ -259,55 +268,107 @@ MDEOF
       - name: Prepare Documentation Branch
         id: prepare-branch
         run: |
+          echo "Preparing documentation branch..."
+
           # Checkout target repository
-          git clone https://x-access-token:${{ secrets.DOCS_DEPLOY_TOKEN }}@github.com/Basilakis/basilakis.github.io.git target-repo
+          echo "Cloning target repository..."
+          git clone https://x-access-token:${{ secrets.DOCS_DEPLOY_TOKEN }}@github.com/Basilakis/basilakis.github.io.git target-repo || {
+            echo "❌ Failed to clone repository. Please check your DOCS_DEPLOY_TOKEN."
+            exit 1
+          }
           cd target-repo
 
           # Check if gh-pages branch exists, if not create it
+          echo "Checking for gh-pages branch..."
           if ! git ls-remote --heads origin gh-pages | grep gh-pages; then
             echo "Creating gh-pages branch as it doesn't exist"
-            git checkout --orphan gh-pages
+            git checkout --orphan gh-pages || {
+              echo "❌ Failed to create gh-pages branch."
+              exit 1
+            }
             git rm -rf .
             echo "# KAI Documentation" > README.md
             git add README.md
             git commit -m "Initial gh-pages branch"
-            git push origin gh-pages
+            git push origin gh-pages || {
+              echo "❌ Failed to push initial gh-pages branch."
+              exit 1
+            }
+            echo "✅ gh-pages branch created successfully."
           else
-            git checkout gh-pages || git checkout -b gh-pages origin/gh-pages
+            echo "gh-pages branch exists, checking it out..."
+            git checkout gh-pages || git checkout -b gh-pages origin/gh-pages || {
+              echo "❌ Failed to checkout gh-pages branch."
+              exit 1
+            }
           fi
 
           # Create a new branch for the PR
+          echo "Creating new branch for documentation update..."
           BRANCH_NAME="docs-update-$(date +%Y%m%d%H%M%S)"
           echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
-          git checkout -b $BRANCH_NAME
+          git checkout -b $BRANCH_NAME || {
+            echo "❌ Failed to create new branch."
+            exit 1
+          }
 
           # Copy the built files
+          echo "Copying documentation files..."
           rm -rf * || true
-          cp -r ../kai-docs-temp/build/* .
+          cp -r ../kai-docs-temp/build/* . || {
+            echo "❌ Failed to copy built documentation files."
+            exit 1
+          }
 
           # Add .nojekyll file to disable Jekyll processing
+          echo "Adding .nojekyll file..."
           touch .nojekyll
 
           # Commit and push
+          echo "Committing and pushing changes..."
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
-          git add .
-          git commit -m "Deploy Documentation: ${{ github.event.inputs.deploy_message }}"
-          git push origin $BRANCH_NAME
+          git add . || {
+            echo "❌ Failed to stage files."
+            exit 1
+          }
+          git commit -m "Deploy Documentation: ${{ github.event.inputs.deploy_message }}" || {
+            echo "❌ Failed to commit changes. This might happen if there are no changes to commit."
+            exit 1
+          }
+          git push origin $BRANCH_NAME || {
+            echo "❌ Failed to push changes."
+            exit 1
+          }
+
+          echo "✅ Documentation branch prepared successfully: $BRANCH_NAME"
 
       - name: Create Pull Request
+        id: create-pr
         run: |
           # Create PR using GitHub CLI
           cd target-repo
+          echo "Authenticating with GitHub..."
           gh auth login --with-token <<< "${{ secrets.DOCS_DEPLOY_TOKEN }}"
 
           # Set PR body as a variable
           PR_BODY="This PR was automatically created by the GitHub Actions workflow to update the documentation site. It includes updated documentation from the latest changes in the kai repository, triggered by a manual workflow run."
 
-          # Create the PR
-          gh pr create \
+          echo "Creating pull request..."
+          # Create the PR and capture the URL
+          PR_URL=$(gh pr create \
             --title "Deploy Documentation: ${{ github.event.inputs.deploy_message }}" \
             --body "$PR_BODY" \
             --repo Basilakis/basilakis.github.io \
             --head ${{ steps.prepare-branch.outputs.branch_name }} \
-            --base gh-pages
+            --base gh-pages)
+
+          # Save the PR URL as an output
+          echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
+          echo "Pull request created successfully: $PR_URL"
+
+      - name: Display Pull Request Information
+        run: |
+          echo "✅ Documentation build and PR creation completed successfully!"
+          echo "📄 Pull Request URL: ${{ steps.create-pr.outputs.pr_url }}"
+          echo "🔍 You can review the changes and merge the PR to update the documentation site."
