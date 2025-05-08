@@ -1,7 +1,6 @@
 name: Build and Deploy Docusaurus Documentation
 
 on:
-  # Only run manually when requested
   workflow_dispatch:
     inputs:
       deploy_message:
@@ -21,22 +20,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20.x'
-          registry-url: 'https://registry.npmjs.org'
-
-      - name: Install dependencies
-        run: |
-          npm install -g fs-extra
 
       - name: Create Docusaurus site
         run: |
-          # Create a temporary directory for the documentation site
           mkdir -p kai-docs-temp
           cd kai-docs-temp
-
-          # Create basic directories needed for the build
           mkdir -p docs src/css static/img
-
-          # Create a package.json file
+          
+          # Create package.json
           echo '{
             "name": "kai-documentation",
             "version": "1.0.0",
@@ -65,113 +56,110 @@ jobs:
               "@docusaurus/module-type-aliases": "3.7.0",
               "@docusaurus/types": "3.7.0",
               "typescript": "5.3.3"
-            },
-            "browserslist": {
-              "production": [
-                ">0.5%",
-                "not dead",
-                "not op_mini all"
-              ],
-              "development": [
-                "last 1 chrome version",
-                "last 1 firefox version",
-                "last 1 safari version"
-              ]
-            },
-            "engines": {
-              "node": ">=18.0"
             }
           }' > package.json
-
-          # Create a basic tsconfig.json file
-          echo '{
-            "compilerOptions": {
-              "target": "es2020",
-              "lib": ["dom", "dom.iterable", "esnext"],
-              "allowJs": true,
-              "skipLibCheck": true,
-              "esModuleInterop": true,
-              "allowSyntheticDefaultImports": true,
-              "strict": true,
-              "forceConsistentCasingInFileNames": true,
-              "noFallthroughCasesInSwitch": true,
-              "module": "esnext",
-              "moduleResolution": "node",
-              "resolveJsonModule": true,
-              "isolatedModules": true,
-              "jsx": "react-jsx"
+          
+          # Create basic config files
+          echo 'const sidebars = {
+            docs: [
+              {
+                type: "category",
+                label: "Introduction",
+                items: ["introduction"],
+              },
+              {
+                type: "category",
+                label: "Getting Started",
+                items: ["installation", "configuration"],
+              },
+              {
+                type: "category",
+                label: "Features",
+                items: ["features-overview"],
+              },
+              {
+                type: "category",
+                label: "Prompts",
+                items: [
+                  "prompt-library",
+                  "prompt-abtesting-segmentation",
+                  "prompt-advanced-features",
+                  "prompt-management",
+                  "prompt-success-tracking",
+                ],
+              },
+            ],
+          };
+          module.exports = sidebars;' > sidebars.js
+          
+          # Create docusaurus.config.js
+          echo 'const config = {
+            title: "KAI Documentation",
+            tagline: "Documentation for the KAI project",
+            favicon: "img/favicon.ico",
+            url: "https://basilakis.github.io",
+            baseUrl: "/",
+            organizationName: "Basilakis",
+            projectName: "basilakis.github.io",
+            trailingSlash: false,
+            onBrokenLinks: "warn",
+            onBrokenMarkdownLinks: "warn",
+            i18n: {
+              defaultLocale: "en",
+              locales: ["en"],
             },
-            "include": ["src", "docs"]
-          }' > tsconfig.json
-
-          # Create custom CSS
-          echo '/**
-           * Any CSS included here will be global. The classic template
-           * bundles Infima by default. Infima is a CSS framework designed to
-           * work well for content-centric websites.
-           */
-
-          /* You can override the default Infima variables here. */
-          :root {
+            presets: [
+              [
+                "classic",
+                {
+                  docs: {
+                    sidebarPath: "./sidebars.js",
+                    routeBasePath: "/",
+                  },
+                  blog: false,
+                  theme: {
+                    customCss: "./src/css/custom.css",
+                  },
+                },
+              ],
+            ],
+            themeConfig: {
+              navbar: {
+                title: "KAI Documentation",
+                logo: {
+                  alt: "KAI Logo",
+                  src: "img/logo.svg",
+                },
+                items: [
+                  {
+                    href: "https://github.com/Basilakis/kai",
+                    label: "GitHub",
+                    position: "right",
+                  },
+                ],
+              },
+              footer: {
+                style: "dark",
+                copyright: `Copyright © ${new Date().getFullYear()} KAI Project.`,
+              },
+            },
+          };
+          module.exports = config;' > docusaurus.config.js
+          
+          # Create basic CSS
+          echo ':root {
             --ifm-color-primary: #2e8555;
-            --ifm-color-primary-dark: #29784c;
-            --ifm-color-primary-darker: #277148;
-            --ifm-color-primary-darkest: #205d3b;
-            --ifm-color-primary-light: #33925d;
-            --ifm-color-primary-lighter: #359962;
-            --ifm-color-primary-lightest: #3cad6e;
-            --ifm-code-font-size: 95%;
-            --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
-          }
-
-          /* For readability concerns, you should choose a lighter palette in dark mode. */
-          [data-theme="dark"] {
-            --ifm-color-primary: #25c2a0;
-            --ifm-color-primary-dark: #21af90;
-            --ifm-color-primary-darker: #1fa588;
-            --ifm-color-primary-darkest: #1a8870;
-            --ifm-color-primary-light: #29d5b0;
-            --ifm-color-primary-lighter: #32d8b4;
-            --ifm-color-primary-lightest: #4fddbf;
-            --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
           }' > src/css/custom.css
-
+          
           # Create placeholder logo
           echo '<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
             <rect width="200" height="200" fill="#2e8555" />
             <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="Arial" font-size="72" fill="white">KAI</text>
           </svg>' > static/img/logo.svg
-
-      - name: Generate config files
-        run: |
-          cd kai-docs-temp
-
-          # Create sidebars.js
-          node -e "
-            const fs = require('fs');
-
-            const sidebarsContent = 'const sidebars = { docs: [ { type: \"category\", label: \"Introduction\", items: [\"introduction\"], }, { type: \"category\", label: \"Getting Started\", items: [\"installation\", \"configuration\"], }, { type: \"category\", label: \"Features\", items: [\"features-overview\"], }, { type: \"category\", label: \"Prompts\", items: [ \"prompt-library\", \"prompt-abtesting-segmentation\", \"prompt-advanced-features\", \"prompt-management\", \"prompt-success-tracking\", ], }, { type: \"category\", label: \"Deployment\", items: [\"deployment-guide\", \"kubernetes-architecture\", \"cicd-pipeline\"], }, { type: \"category\", label: \"Other\", items: [\"admin-panel\", \"queue-system\", \"notification-webhook-system\"], }, ], }; module.exports = sidebars;';
-
-            fs.writeFileSync('sidebars.js', sidebarsContent);
-            console.log('Created sidebars.js');
-          "
-
-          # Create docusaurus.config.js
-          node -e "
-            const fs = require('fs');
-
-            const configContent = 'const config = { title: \"KAI Documentation\", tagline: \"Comprehensive documentation for the KAI project\", favicon: \"img/favicon.ico\", url: \"https://basilakis.github.io\", baseUrl: \"/\", organizationName: \"Basilakis\", projectName: \"basilakis.github.io\", trailingSlash: false, onBrokenLinks: \"warn\", onBrokenMarkdownLinks: \"warn\", i18n: { defaultLocale: \"en\", locales: [\"en\"], }, presets: [ [ \"classic\", { docs: { sidebarPath: \"./sidebars.js\", routeBasePath: \"/\", }, blog: false, theme: { customCss: \"./src/css/custom.css\", }, }, ], ], themeConfig: { navbar: { title: \"KAI Documentation\", logo: { alt: \"KAI Logo\", src: \"img/logo.svg\", }, items: [ { href: \"https://github.com/Basilakis/kai\", label: \"GitHub\", position: \"right\", }, ], }, footer: { style: \"dark\", links: [ { title: \"More\", items: [ { label: \"GitHub\", href: \"https://github.com/Basilakis/kai\", }, ], }, ], copyright: `Copyright © ${new Date().getFullYear()} KAI Project. Last updated: ${new Date().toISOString().split(\"T\")[0]}. Built with Docusaurus.`, }, }, }; module.exports = config;';
-
-            fs.writeFileSync('docusaurus.config.js', configContent);
-            console.log('Created docusaurus.config.js');
-          "
-
-          # Create placeholder markdown files
+          
+          # Create basic docs
           mkdir -p docs
-
-          # Create introduction.md
-          cat > docs/introduction.md << 'MDEOF'
----
+          echo '---
 id: introduction
 title: "Introduction to KAI"
 sidebar_label: "Introduction"
@@ -180,12 +168,9 @@ slug: /
 
 # Introduction to KAI
 
-Welcome to the KAI documentation.
-MDEOF
-
-          # Create installation.md
-          cat > docs/installation.md << 'MDEOF'
----
+Welcome to the KAI documentation.' > docs/introduction.md
+          
+          echo '---
 id: installation
 title: "Installation"
 sidebar_label: "Installation"
@@ -193,12 +178,9 @@ sidebar_label: "Installation"
 
 # Installation
 
-This page provides instructions for installing the KAI platform.
-MDEOF
-
-          # Create configuration.md
-          cat > docs/configuration.md << 'MDEOF'
----
+This page provides instructions for installing the KAI platform.' > docs/installation.md
+          
+          echo '---
 id: configuration
 title: "Configuration"
 sidebar_label: "Configuration"
@@ -206,12 +188,9 @@ sidebar_label: "Configuration"
 
 # Configuration
 
-This page provides instructions for configuring the KAI platform.
-MDEOF
-
-          # Create features-overview.md
-          cat > docs/features-overview.md << 'MDEOF'
----
+This page provides instructions for configuring the KAI platform.' > docs/configuration.md
+          
+          echo '---
 id: features-overview
 title: "Features Overview"
 sidebar_label: "Features Overview"
@@ -219,44 +198,23 @@ sidebar_label: "Features Overview"
 
 # Features Overview
 
-This page provides an overview of the features available in the KAI platform.
-MDEOF
+This page provides an overview of the features available in the KAI platform.' > docs/features-overview.md
 
       - name: Process readme files
         run: |
           mkdir -p kai-docs-temp/docs
           cd readme
-          node process-readme-files.js
-
-          # Fix any problematic markdown files
-          cd ../kai-docs-temp/docs
-          find . -name "*.md" -exec sed -i '1,6s/^title: \([^"]*\):\([^"]*\)$/title: "\1:\2"/g' {} \;
-          find . -name "*.md" -exec sed -i '1,6s/^sidebar_label: \([^"]*\):\([^"]*\)$/sidebar_label: "\1:\2"/g' {} \;
-          find . -name "*.md" -exec sed -i '/!\[.*\](.*)/d' {} \;
-          find . -name "*.md" -exec sed -i '/<img.*>/d' {} \;
-          find . -name "*.md" -exec sed -i '/```jsx/,/```/d' {} \;
-          find . -name "*.md" -exec sed -i '/```javascript/,/```/d' {} \;
-          find . -name "*.md" -exec sed -i '/```js/,/```/d' {} \;
-          find . -name "*.md" -exec sed -i 's/{[^}]*}//g' {} \;
+          node process-readme-files.js || echo "Warning: Some readme files may not have been processed correctly"
 
       - name: Install Docusaurus dependencies
         run: |
           cd kai-docs-temp
-          npm install --no-save @docusaurus/core@3.7.0 @docusaurus/preset-classic@3.7.0 @mdx-js/react@3.0.0 clsx@2.1.0 prism-react-renderer@2.3.1 react@18.2.0 react-dom@18.2.0 typescript@5.3.3
+          npm install --no-save @docusaurus/core@3.7.0 @docusaurus/preset-classic@3.7.0 @mdx-js/react@3.0.0 clsx@2.1.0 prism-react-renderer@2.3.1 react@18.2.0 react-dom@18.2.0
 
       - name: Build Docusaurus site
         run: |
           cd kai-docs-temp
-          echo "Building Docusaurus site..."
           npx docusaurus build
-          echo "Build completed successfully!"
-
-      - name: Archive documentation build
-        uses: actions/upload-artifact@v4
-        with:
-          name: docusaurus-build
-          path: kai-docs-temp/build/
-          retention-days: 7
 
       - name: Install GitHub CLI
         run: |
@@ -265,110 +223,60 @@ MDEOF
           sudo apt update
           sudo apt install gh
 
-      - name: Prepare Documentation Branch
-        id: prepare-branch
+      - name: Prepare branch
         run: |
-          echo "Preparing documentation branch..."
-
-          # Checkout target repository
-          echo "Cloning target repository..."
-          git clone https://x-access-token:${{ secrets.DOCS_DEPLOY_TOKEN }}@github.com/Basilakis/basilakis.github.io.git target-repo || {
-            echo "❌ Failed to clone repository. Please check your DOCS_DEPLOY_TOKEN."
-            exit 1
-          }
+          git clone https://x-access-token:${{ secrets.DOCS_DEPLOY_TOKEN }}@github.com/Basilakis/basilakis.github.io.git target-repo
           cd target-repo
-
-          # Check if gh-pages branch exists, if not create it
-          echo "Checking for gh-pages branch..."
+          
+          # Create gh-pages branch if it doesn't exist
           if ! git ls-remote --heads origin gh-pages | grep gh-pages; then
-            echo "Creating gh-pages branch as it doesn't exist"
-            git checkout --orphan gh-pages || {
-              echo "❌ Failed to create gh-pages branch."
-              exit 1
-            }
+            git checkout --orphan gh-pages
             git rm -rf .
             echo "# KAI Documentation" > README.md
             git add README.md
+            git config user.name "GitHub Actions"
+            git config user.email "actions@github.com"
             git commit -m "Initial gh-pages branch"
-            git push origin gh-pages || {
-              echo "❌ Failed to push initial gh-pages branch."
-              exit 1
-            }
-            echo "✅ gh-pages branch created successfully."
+            git push origin gh-pages
           else
-            echo "gh-pages branch exists, checking it out..."
-            git checkout gh-pages || git checkout -b gh-pages origin/gh-pages || {
-              echo "❌ Failed to checkout gh-pages branch."
-              exit 1
-            }
+            git checkout gh-pages || git checkout -b gh-pages origin/gh-pages
           fi
-
-          # Create a new branch for the PR
-          echo "Creating new branch for documentation update..."
+          
+          # Create new branch
           BRANCH_NAME="docs-update-$(date +%Y%m%d%H%M%S)"
-          echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
-          git checkout -b $BRANCH_NAME || {
-            echo "❌ Failed to create new branch."
-            exit 1
-          }
-
-          # Copy the built files
-          echo "Copying documentation files..."
+          git checkout -b $BRANCH_NAME
+          
+          # Copy files
           rm -rf * || true
-          cp -r ../kai-docs-temp/build/* . || {
-            echo "❌ Failed to copy built documentation files."
-            exit 1
-          }
-
-          # Add .nojekyll file to disable Jekyll processing
-          echo "Adding .nojekyll file..."
+          cp -r ../kai-docs-temp/build/* .
           touch .nojekyll
-
+          
           # Commit and push
-          echo "Committing and pushing changes..."
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
-          git add . || {
-            echo "❌ Failed to stage files."
-            exit 1
-          }
-          git commit -m "Deploy Documentation: ${{ github.event.inputs.deploy_message }}" || {
-            echo "❌ Failed to commit changes. This might happen if there are no changes to commit."
-            exit 1
-          }
-          git push origin $BRANCH_NAME || {
-            echo "❌ Failed to push changes."
-            exit 1
-          }
+          git add .
+          git commit -m "Deploy Documentation: ${{ github.event.inputs.deploy_message }}"
+          git push origin $BRANCH_NAME
+          
+          # Save branch name for next step
+          echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
 
-          echo "✅ Documentation branch prepared successfully: $BRANCH_NAME"
-
-      - name: Create Pull Request
-        id: create-pr
+      - name: Create PR
         run: |
-          # Create PR using GitHub CLI
           cd target-repo
-          echo "Authenticating with GitHub..."
           gh auth login --with-token <<< "${{ secrets.DOCS_DEPLOY_TOKEN }}"
-
-          # Set PR body as a variable
-          PR_BODY="This PR was automatically created by the GitHub Actions workflow to update the documentation site. It includes updated documentation from the latest changes in the kai repository, triggered by a manual workflow run."
-
-          echo "Creating pull request..."
-          # Create the PR and capture the URL
+          
           PR_URL=$(gh pr create \
             --title "Deploy Documentation: ${{ github.event.inputs.deploy_message }}" \
-            --body "$PR_BODY" \
+            --body "This PR was automatically created by the GitHub Actions workflow to update the documentation site." \
             --repo Basilakis/basilakis.github.io \
-            --head ${{ steps.prepare-branch.outputs.branch_name }} \
+            --head $BRANCH_NAME \
             --base gh-pages)
+          
+          echo "Pull request created: $PR_URL"
+          echo "PR_URL=$PR_URL" >> $GITHUB_ENV
 
-          # Save the PR URL as an output
-          echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
-          echo "Pull request created successfully: $PR_URL"
-
-      - name: Display Pull Request Information
+      - name: PR Summary
         run: |
-          echo "✅ Documentation build and PR creation completed successfully!"
-          echo "📄 Pull Request URL: ${{ steps.create-pr.outputs.pr_url }}"
-          echo "🔍 You can review the changes and merge the PR to update the documentation site."
+          echo "Documentation PR created: $PR_URL"
+          echo "Please review and merge the PR to update the documentation site."
