@@ -195,7 +195,7 @@ sidebar_label: "${title}"
     }
   }
 
-  // Create an intro.md file
+  // Create an intro.md file that will serve as the home page
   const introContent = `---
 id: intro
 title: Introduction
