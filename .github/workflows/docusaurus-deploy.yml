@@ -189,8 +189,13 @@ jobs:
               },
               {
                 type: "category",
+                label: "Prompts",
+                items: ["prompt-library", "prompts/prompt-abtesting-segmentation", "prompts/prompt-advanced-features", "prompts/prompt-management", "prompts/prompt-success-tracking"]
+              },
+              {
+                type: "category",
                 label: "Other",
-                items: ["other/system-updates-summary", "other/huggingface-integration", "other/mcp-integration", "other/prompt-management", "changelog"]
+                items: ["other/system-updates-summary", "other/huggingface-integration", "other/mcp-integration", "changelog"]
               }
             ]
           };' > sidebars.js
@@ -261,7 +266,7 @@ jobs:
                       ],
                     },
                   ],
-                  copyright: `Copyright © ${new Date().getFullYear()} KAI Project. Built with Docusaurus.`,
+                  copyright: `Copyright © ${new Date().getFullYear()} KAI Project. Last updated: ${new Date().toISOString().split('T')[0]}. Built with Docusaurus.`,
                 },
                 prism: {
                   theme: prismThemes.github,
@@ -282,6 +287,55 @@ jobs:
 
           # Create basic directory structure
           mkdir -p ../kai-docs-temp/static/img
+
+          # Create prompt-library.md file
+          cat > ../kai-docs-temp/docs/prompt-library.md << 'EOF'
+---
+id: prompt-library
+title: "Prompt Library"
+sidebar_label: "Prompt Library"
+---
+
+# Prompt Library
+
+The Prompt Library is a centralized repository for managing, organizing, and sharing prompts across the KAI platform.
+
+## Features
+
+- **Public/Private Settings**: Control who can access your prompts
+- **Categories**: Organize prompts by purpose, domain, or any other classification
+- **Usage Types**: Define how prompts can be used (e.g., text generation, image generation)
+- **Sharing Capabilities**: Share prompts with specific users or groups
+- **Import Functionality**: Import prompts from external sources (for logged-in users)
+
+## Implementation
+
+The Prompt Library is implemented as a dedicated page at `/prompt-library/id` with comprehensive management features.
+
+### Key Components
+
+1. **Prompt Storage**: Secure storage of prompts with metadata
+2. **Access Control**: Granular permissions based on user roles
+3. **Version History**: Track changes to prompts over time
+4. **Analytics**: Monitor prompt usage and performance
+5. **Integration API**: Seamlessly integrate prompts into workflows
+
+## Usage
+
+Prompts can be accessed and used through:
+
+- Web interface
+- API endpoints
+- Integration with other KAI features
+
+## Related Documentation
+
+For more information on specific prompt features, see:
+- [Prompt A/B Testing and Segmentation](./prompts/prompt-abtesting-segmentation)
+- [Advanced Prompt Features](./prompts/prompt-advanced-features)
+- [Prompt Management](./prompts/prompt-management)
+- [Prompt Success Tracking](./prompts/prompt-success-tracking)
+EOF
 
           # Create changelog.md file
           cat > ../kai-docs-temp/docs/changelog.md << 'EOF'
@@ -319,6 +373,23 @@ This file contains all notable changes to the KAI project.
 - User authentication and authorization
 - API endpoints for core features
 EOF
+
+          # Create prompts directory and move prompt files
+          mkdir -p ../kai-docs-temp/docs/prompts
+
+          # Move prompt-related files to the prompts directory
+          if [ -f "../kai-docs-temp/docs/other/prompt-management.md" ]; then
+            mv ../kai-docs-temp/docs/other/prompt-management.md ../kai-docs-temp/docs/prompts/
+          fi
+          if [ -f "../kai-docs-temp/docs/other/prompt-abtesting-segmentation.md" ]; then
+            mv ../kai-docs-temp/docs/other/prompt-abtesting-segmentation.md ../kai-docs-temp/docs/prompts/
+          fi
+          if [ -f "../kai-docs-temp/docs/other/prompt-advanced-features.md" ]; then
+            mv ../kai-docs-temp/docs/other/prompt-advanced-features.md ../kai-docs-temp/docs/prompts/
+          fi
+          if [ -f "../kai-docs-temp/docs/other/prompt-success-tracking.md" ]; then
+            mv ../kai-docs-temp/docs/other/prompt-success-tracking.md ../kai-docs-temp/docs/prompts/
+          fi
 
           # Additional fix for any problematic files
           cd ../kai-docs-temp/docs
