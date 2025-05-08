@@ -145,32 +145,33 @@ jobs:
       - name: Generate config files
         run: |
           cd kai-docs-temp
-          
+
           # Create sidebars.js
           node -e "
             const fs = require('fs');
-            
+
             const sidebarsContent = 'const sidebars = { docs: [ { type: \"category\", label: \"Introduction\", items: [\"introduction\"], }, { type: \"category\", label: \"Getting Started\", items: [\"installation\", \"configuration\"], }, { type: \"category\", label: \"Features\", items: [\"features-overview\"], }, { type: \"category\", label: \"Prompts\", items: [ \"prompt-library\", \"prompt-abtesting-segmentation\", \"prompt-advanced-features\", \"prompt-management\", \"prompt-success-tracking\", ], }, { type: \"category\", label: \"Deployment\", items: [\"deployment-guide\", \"kubernetes-architecture\", \"cicd-pipeline\"], }, { type: \"category\", label: \"Other\", items: [\"admin-panel\", \"queue-system\", \"notification-webhook-system\"], }, ], }; module.exports = sidebars;';
-            
+
             fs.writeFileSync('sidebars.js', sidebarsContent);
             console.log('Created sidebars.js');
           "
-          
+
           # Create docusaurus.config.js
           node -e "
             const fs = require('fs');
-            
+
             const configContent = 'const config = { title: \"KAI Documentation\", tagline: \"Comprehensive documentation for the KAI project\", favicon: \"img/favicon.ico\", url: \"https://basilakis.github.io\", baseUrl: \"/\", organizationName: \"Basilakis\", projectName: \"basilakis.github.io\", trailingSlash: false, onBrokenLinks: \"warn\", onBrokenMarkdownLinks: \"warn\", i18n: { defaultLocale: \"en\", locales: [\"en\"], }, presets: [ [ \"classic\", { docs: { sidebarPath: \"./sidebars.js\", routeBasePath: \"/\", }, blog: false, theme: { customCss: \"./src/css/custom.css\", }, }, ], ], themeConfig: { navbar: { title: \"KAI Documentation\", logo: { alt: \"KAI Logo\", src: \"img/logo.svg\", }, items: [ { href: \"https://github.com/Basilakis/kai\", label: \"GitHub\", position: \"right\", }, ], }, footer: { style: \"dark\", links: [ { title: \"More\", items: [ { label: \"GitHub\", href: \"https://github.com/Basilakis/kai\", }, ], }, ], copyright: `Copyright © ${new Date().getFullYear()} KAI Project. Last updated: ${new Date().toISOString().split(\"T\")[0]}. Built with Docusaurus.`, }, }, }; module.exports = config;';
-            
+
             fs.writeFileSync('docusaurus.config.js', configContent);
             console.log('Created docusaurus.config.js');
           "
-          
+
           # Create placeholder markdown files
           mkdir -p docs
-          
+
           # Create introduction.md
-          echo '---
+          cat > docs/introduction.md << 'MDEOF'
+---
 id: introduction
 title: "Introduction to KAI"
 sidebar_label: "Introduction"
@@ -179,10 +180,12 @@ slug: /
 
 # Introduction to KAI
 
-Welcome to the KAI documentation.' > docs/introduction.md
-          
+Welcome to the KAI documentation.
+MDEOF
+
           # Create installation.md
-          echo '---
+          cat > docs/installation.md << 'MDEOF'
+---
 id: installation
 title: "Installation"
 sidebar_label: "Installation"
@@ -190,10 +193,12 @@ sidebar_label: "Installation"
 
 # Installation
 
-This page provides instructions for installing the KAI platform.' > docs/installation.md
-          
+This page provides instructions for installing the KAI platform.
+MDEOF
+
           # Create configuration.md
-          echo '---
+          cat > docs/configuration.md << 'MDEOF'
+---
 id: configuration
 title: "Configuration"
 sidebar_label: "Configuration"
@@ -201,10 +206,12 @@ sidebar_label: "Configuration"
 
 # Configuration
 
-This page provides instructions for configuring the KAI platform.' > docs/configuration.md
-          
+This page provides instructions for configuring the KAI platform.
+MDEOF
+
           # Create features-overview.md
-          echo '---
+          cat > docs/features-overview.md << 'MDEOF'
+---
 id: features-overview
 title: "Features Overview"
 sidebar_label: "Features Overview"
@@ -212,14 +219,15 @@ sidebar_label: "Features Overview"
 
 # Features Overview
 
-This page provides an overview of the features available in the KAI platform.' > docs/features-overview.md
+This page provides an overview of the features available in the KAI platform.
+MDEOF
 
       - name: Process readme files
         run: |
           mkdir -p kai-docs-temp/docs
           cd readme
           node process-readme-files.js
-          
+
           # Fix any problematic markdown files
           cd ../kai-docs-temp/docs
           find . -name "*.md" -exec sed -i '1,6s/^title: \([^"]*\):\([^"]*\)$/title: "\1:\2"/g' {} \;
@@ -248,26 +256,26 @@ This page provides an overview of the features available in the KAI platform.' >
           echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
           sudo apt update
           sudo apt install gh
-          
+
           # Checkout target repository
           git clone https://github.com/Basilakis/basilakis.github.io.git target-repo
           cd target-repo
-          
+
           # Create a new branch
           BRANCH_NAME="docs-update-$(date +%Y%m%d%H%M%S)"
           git checkout -b $BRANCH_NAME
-          
+
           # Copy the built files
           rm -rf * || true
           cp -r ../kai-docs-temp/build/* .
-          
+
           # Commit and push
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
           git add .
           git commit -m "Deploy Documentation: ${{ github.event.inputs.deploy_message }}"
           git push https://x-access-token:${{ secrets.DOCS_DEPLOY_TOKEN }}@github.com/Basilakis/basilakis.github.io.git $BRANCH_NAME
-          
+
           # Create PR
           gh auth login --with-token <<< "${{ secrets.DOCS_DEPLOY_TOKEN }}"
           gh pr create --title "Deploy Documentation: ${{ github.event.inputs.deploy_message }}" --body "This PR was automatically created by the GitHub Actions workflow to update the documentation site." --repo Basilakis/basilakis.github.io --head $BRANCH_NAME --base gh-pages
