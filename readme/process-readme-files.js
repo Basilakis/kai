@@ -47,10 +47,9 @@ const categories = {
   'security': ['security.md'],
   'testing': ['testing-approach.md'],
   'prompts': [
-    'prompt-library.md', 'prompt-abtesting-segmentation.md', 'prompt-advanced-features.md',
-    'prompt-management.md', 'prompt-success-tracking.md'
-  ],
-  'other': []
+    'prompt-library.md', 'prompt-abtesting-segmentation.md', 'prompt-advanced-features.md','prompt-management.md', 'prompt-success-tracking.md'],
+  'other': [],
+  'changelog': ['CHANGELOG.md']
 };
 
 // Function to process a markdown file

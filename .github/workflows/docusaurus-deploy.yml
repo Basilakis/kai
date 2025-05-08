@@ -142,9 +142,9 @@ jobs:
             <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="Arial" font-size="72" fill="white">KAI</text>
           </svg>' > static/img/logo.svg
 
-          # Create sidebars.js file
+          # Create sidebars.js file - simplified version without TypeScript annotations
           cat > sidebars.js << 'EOF'
-/** @type {import('@docusaurus/plugin-content-docs').SidebarsConfig} */
+// Simple sidebars config without TypeScript annotations
 const sidebars = {
   docs: [
     {
@@ -186,15 +186,12 @@ const sidebars = {
   ],
 };
 
-export default sidebars;
+module.exports = sidebars;
 EOF
 
-          # Create Docusaurus config file
+          # Create Docusaurus config file - simplified version without TypeScript annotations
           cat > docusaurus.config.js << 'EOF'
-// @ts-check
-import {themes as prismThemes} from "prism-react-renderer";
-
-/** @type {import("@docusaurus/types").Config} */
+// Simple config without TypeScript annotations
 const config = {
   title: "KAI Documentation",
   tagline: "Comprehensive documentation for the KAI project",
@@ -213,8 +210,7 @@ const config = {
   presets: [
     [
       "classic",
-      /** @type {import("@docusaurus/preset-classic").Options} */
-      ({
+      {
         docs: {
           sidebarPath: "./sidebars.js",
           routeBasePath: "/",
@@ -223,49 +219,43 @@ const config = {
         theme: {
           customCss: "./src/css/custom.css",
         },
-      }),
+      },
     ],
   ],
-  themeConfig:
-    /** @type {import("@docusaurus/preset-classic").ThemeConfig} */
-    ({
-      navbar: {
-        title: "KAI Documentation",
-        logo: {
-          alt: "KAI Logo",
-          src: "img/logo.svg",
+  themeConfig: {
+    navbar: {
+      title: "KAI Documentation",
+      logo: {
+        alt: "KAI Logo",
+        src: "img/logo.svg",
+      },
+      items: [
+        {
+          href: "https://github.com/Basilakis/kai",
+          label: "GitHub",
+          position: "right",
         },
-        items: [
-          {
-            href: "https://github.com/Basilakis/kai",
-            label: "GitHub",
-            position: "right",
-          },
-        ],
-      },
-      footer: {
-        style: "dark",
-        links: [
-          {
-            title: "More",
-            items: [
-              {
-                label: "GitHub",
-                href: "https://github.com/Basilakis/kai",
-              },
-            ],
-          },
-        ],
-        copyright: `Copyright © ${new Date().getFullYear()} KAI Project. Last updated: ${new Date().toISOString().split('T')[0]}. Built with Docusaurus.`,
-      },
-      prism: {
-        theme: prismThemes.github,
-        darkTheme: prismThemes.dracula,
-      },
-    }),
+      ],
+    },
+    footer: {
+      style: "dark",
+      links: [
+        {
+          title: "More",
+          items: [
+            {
+              label: "GitHub",
+              href: "https://github.com/Basilakis/kai",
+            },
+          ],
+        },
+      ],
+      copyright: `Copyright © ${new Date().getFullYear()} KAI Project. Last updated: ${new Date().toISOString().split('T')[0]}. Built with Docusaurus.`,
+    },
+  },
 };
 
-export default config;
+module.exports = config;
 EOF
 
           cd ..
