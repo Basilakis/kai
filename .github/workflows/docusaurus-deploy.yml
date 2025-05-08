@@ -535,8 +535,16 @@ EOF
       - name: Build Docusaurus site
         run: |
           cd kai-docs-temp
+          echo "Current directory: $(pwd)"
+          echo "Contents of current directory:"
+          ls -la
+
+          echo "Building Docusaurus site..."
           # Use npx to run Docusaurus commands directly
           npx docusaurus build
+
+          echo "Build complete. Contents of build directory:"
+          ls -la build || echo "Build directory does not exist!"
 
       - name: Debug before deployment
         run: |
@@ -556,6 +564,19 @@ EOF
           token: ${{ secrets.DOCS_DEPLOY_TOKEN }}
           path: target-repo
 
+      - name: Debug build output
+        run: |
+          echo "Contents of kai-docs-temp directory:"
+          ls -la kai-docs-temp
+
+          echo "Contents of kai-docs-temp/build directory:"
+          ls -la kai-docs-temp/build || echo "Build directory does not exist!"
+
+          if [ ! -d "kai-docs-temp/build" ]; then
+            echo "ERROR: Build directory does not exist. The Docusaurus build may have failed."
+            exit 1
+          fi
+
       - name: Create Pull Request instead of direct push
         run: |
           # Generate a unique branch name
@@ -566,26 +587,35 @@ EOF
           git checkout -b $BRANCH_NAME
 
           # Copy the built files
+          echo "Removing existing files..."
           rm -rf * || true
+
+          echo "Copying built files..."
           cp -r ../kai-docs-temp/build/* .
+
+          echo "Contents after copying:"
+          ls -la
 
           # Commit the changes
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
+
+          echo "Adding files to git..."
           git add .
+
+          echo "Committing changes..."
           git commit -m "Deploy Documentation: ${{ github.event.head_commit.message }}"
 
-          # Push the branch
+          echo "Pushing branch..."
           git push origin $BRANCH_NAME
 
-          # Create a pull request using GitHub API
-          curl -X POST \
-            -H "Authorization: token ${{ secrets.DOCS_DEPLOY_TOKEN }}" \
-            -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/repos/Basilakis/basilakis.github.io/pulls \
-            -d '{
-              "title": "Deploy Documentation: ${{ github.event.head_commit.message }}",
-              "body": "This PR was automatically created by the GitHub Actions workflow to update the documentation site.\n\nChanges included in this PR:\n- Updated documentation from the latest changes in the kai repository\n- Last commit: ${{ github.sha }}\n\nPlease review and merge to update the documentation site.",
-              "head": "'$BRANCH_NAME'",
-              "base": "gh-pages"
-            }'
+          echo "Creating pull request..."
+          # Create a pull request using GitHub CLI
+          gh pr create \
+            --title "Deploy Documentation: ${{ github.event.head_commit.message }}" \
+            --body "This PR was automatically created by the GitHub Actions workflow to update the documentation site.\n\nChanges included in this PR:\n- Updated documentation from the latest changes in the kai repository\n- Last commit: ${{ github.sha }}\n\nPlease review and merge to update the documentation site." \
+            --head $BRANCH_NAME \
+            --base gh-pages \
+            --repo Basilakis/basilakis.github.io
+        env:
+          GITHUB_TOKEN: ${{ secrets.DOCS_DEPLOY_TOKEN }}
