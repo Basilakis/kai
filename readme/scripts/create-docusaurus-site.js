@@ -121,21 +121,15 @@ const config = {
       {
         docs: {
           sidebarPath: "./sidebars.js",
-          routeBasePath: "/",
+          routeBasePath: "/"
+        },
+        pages: {
+          path: 'src/pages', // Explicitly configure the pages plugin that's already in the preset
         },
         blog: false,
         theme: {
           customCss: "./src/css/custom.css",
         },
-      },
-    ],
-  ],
-  // This ensures index.html is generated at the root
-  plugins: [
-    [
-      '@docusaurus/plugin-content-pages',
-      {
-        path: 'src/pages',
       },
     ],
   ],
