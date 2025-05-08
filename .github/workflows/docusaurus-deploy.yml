@@ -549,14 +549,21 @@ EOF
             echo "Token is NOT set!"
           fi
 
+      - name: Checkout target repository
+        uses: actions/checkout@v4
+        with:
+          repository: Basilakis/basilakis.github.io
+          token: ${{ secrets.DOCS_DEPLOY_TOKEN }}
+          path: target-repo
+
       - name: Create Pull Request instead of direct push
         run: |
-          # Clone the target repository
-          git clone https://x-access-token:${{ secrets.DOCS_DEPLOY_TOKEN }}@github.com/Basilakis/basilakis.github.io.git target-repo
+          # Generate a unique branch name
+          BRANCH_NAME="docs-update-$(date +%Y%m%d%H%M%S)"
 
           # Create a new branch for the changes
           cd target-repo
-          git checkout -b docs-update-$(date +%Y%m%d%H%M%S)
+          git checkout -b $BRANCH_NAME
 
           # Copy the built files
           rm -rf * || true
@@ -569,10 +576,9 @@ EOF
           git commit -m "Deploy Documentation: ${{ github.event.head_commit.message }}"
 
           # Push the branch
-          git push origin HEAD
+          git push origin $BRANCH_NAME
 
           # Create a pull request using GitHub API
-          PR_BRANCH=$(git rev-parse --abbrev-ref HEAD)
           curl -X POST \
             -H "Authorization: token ${{ secrets.DOCS_DEPLOY_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
@@ -580,6 +586,6 @@ EOF
             -d '{
               "title": "Deploy Documentation: ${{ github.event.head_commit.message }}",
               "body": "This PR was automatically created by the GitHub Actions workflow to update the documentation site.\n\nChanges included in this PR:\n- Updated documentation from the latest changes in the kai repository\n- Last commit: ${{ github.sha }}\n\nPlease review and merge to update the documentation site.",
-              "head": "'$PR_BRANCH'",
+              "head": "'$BRANCH_NAME'",
               "base": "gh-pages"
             }'
