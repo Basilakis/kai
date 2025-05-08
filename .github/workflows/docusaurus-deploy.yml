@@ -31,7 +31,7 @@ jobs:
             echo "Checking for changes in readme files..."
 
             # Checkout the repository to check for changes
-            git clone --depth 1 https://github.com/Basilakis/kai.git kai-repo
+            git clone --depth 1 https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/Basilakis/kai.git kai-repo
             cd kai-repo
 
             # Get the last commit that modified the readme directory
