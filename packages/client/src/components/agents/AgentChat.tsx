@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import styled from '@emotion/styled';
 import agentService, { AgentType, AgentMessage } from '../../services/agentService';
+import SavePromptButton from './SavePromptButton';
 
 export interface AgentChatProps {
   /** Agent ID to communicate with */
@@ -25,7 +26,7 @@ export interface AgentChatProps {
 
 /**
  * AgentChat Component
- * 
+ *
  * Provides a chat interface for interacting with crewAI agents in the KAI platform.
  * Uses the centralized agentService for communication with agents.
  */
@@ -49,18 +50,18 @@ export const AgentChat: React.FC<AgentChatProps> = ({
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'connecting' | 'disconnected'>('connecting');
   const [isRetrying, setIsRetrying] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  
+
   // Initialize session on component mount
   useEffect(() => {
     let mounted = true;
     let currentSessionId: string | null = null;
-    
+
     // Create a new session with the agent service
     const initSession = async () => {
       try {
         setConnectionStatus('connecting');
         setError(null);
-        
+
         // Map string types to enum if needed
         let mappedAgentType: AgentType;
         if (typeof agentType === 'string') {
@@ -80,20 +81,20 @@ export const AgentChat: React.FC<AgentChatProps> = ({
         } else {
           mappedAgentType = agentType;
         }
-        
+
         const newSessionId = await agentService.createSession(mappedAgentType);
-        
+
         // Only update state if component is still mounted
         if (mounted) {
           setSessionId(newSessionId);
           currentSessionId = newSessionId;
           setConnectionStatus('connected');
-          
+
           // Get initial messages from the session
           if (initialMessages.length === 0) {
             setMessages(agentService.getMessages(newSessionId));
           }
-          
+
           // Set up websocket listener for real-time updates
           agentService.onAgentMessage(newSessionId, (message) => {
             setMessages(prev => [...prev, message]);
@@ -108,28 +109,28 @@ export const AgentChat: React.FC<AgentChatProps> = ({
         }
       }
     };
-    
+
     initSession();
-    
+
     // Cleanup session on component unmount
     return () => {
       mounted = false;
       if (currentSessionId) {
         agentService.offAgentMessage(currentSessionId); // Remove listeners
-        agentService.closeSession(currentSessionId).catch(err => 
+        agentService.closeSession(currentSessionId).catch(err =>
           console.error('Error closing session:', err)
         );
       }
     };
   }, [agentType, initialMessages.length]);
-  
+
   // Handle sending a message to the agent
   const handleSendMessage = async () => {
     if (!input.trim() || !sessionId) return;
-    
+
     // Create a temporary message ID
     const tempMessageId = `temp-${Date.now()}`;
-    
+
     // Add user message to UI immediately
     const userMessage: AgentMessage = {
       id: tempMessageId,
@@ -137,23 +138,23 @@ export const AgentChat: React.FC<AgentChatProps> = ({
       sender: 'user',
       timestamp: new Date()
     };
-    
+
     setMessages(prev => [...prev, userMessage]);
     setIsTyping(true);
     setError(null);
-    
+
     const inputText = input;
     setInput('');
-    
+
     try {
       // Notify parent component
       if (onSend) {
         onSend(inputText);
       }
-      
+
       // Send message to agent service
       await agentService.sendMessage(sessionId, inputText);
-      
+
       // No need to update messages here as the websocket listener will handle it
     } catch (error) {
       console.error('Error sending message to agent:', error);
@@ -161,22 +162,22 @@ export const AgentChat: React.FC<AgentChatProps> = ({
       setIsTyping(false);
     }
   };
-  
+
   // Upload an image to the agent (for recognition agent)
   const uploadImage = async (file: File) => {
     if (!sessionId) return null;
-    
+
     setIsTyping(true);
     setError(null);
-    
+
     try {
       // Upload image to agent service
       const results = await agentService.processImage(sessionId, file);
-      
+
       // Update messages from the session
       const updatedMessages = agentService.getMessages(sessionId);
       setMessages(updatedMessages);
-      
+
       // Return first result image URL if available
       return results && results.length > 0 && results[0] ? results[0].image : null;
     } catch (error) {
@@ -187,7 +188,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
       setIsTyping(false);
     }
   };
-  
+
   // Retry connection to agent service
   const handleRetryConnection = async () => {
     setIsRetrying(true);
@@ -196,12 +197,12 @@ export const AgentChat: React.FC<AgentChatProps> = ({
       if (sessionId) {
         await agentService.closeSession(sessionId);
       }
-      
+
       // Clear messages and error
       setMessages(initialMessages);
       setError(null);
       setConnectionStatus('connecting');
-      
+
       // Map string types to enum if needed
       let mappedAgentType: AgentType;
       if (typeof agentType === 'string') {
@@ -221,11 +222,11 @@ export const AgentChat: React.FC<AgentChatProps> = ({
       } else {
         mappedAgentType = agentType;
       }
-      
+
       const newSessionId = await agentService.createSession(mappedAgentType);
       setSessionId(newSessionId);
       setConnectionStatus('connected');
-      
+
       // Set up websocket listener
       agentService.onAgentMessage(newSessionId, (message) => {
         setMessages(prev => [...prev, message]);
@@ -239,14 +240,14 @@ export const AgentChat: React.FC<AgentChatProps> = ({
       setIsRetrying(false);
     }
   };
-  
+
   // Retry sending a failed message
   const handleRetryMessage = async (content: string) => {
     if (!sessionId) return;
-    
+
     setIsTyping(true);
     setError(null);
-    
+
     try {
       // Send message to agent service
       await agentService.sendMessage(sessionId, content);
@@ -256,14 +257,14 @@ export const AgentChat: React.FC<AgentChatProps> = ({
       setIsTyping(false);
     }
   };
-  
+
   // Scroll to bottom when messages change
   useEffect(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages, isTyping, error]);
-  
+
   // Get agent info based on type
   const getAgentInfo = () => {
     const defaultInfo = {
@@ -271,13 +272,13 @@ export const AgentChat: React.FC<AgentChatProps> = ({
       description: 'AI Assistant',
       iconUrl: '/images/agents/default-agent.png'
     };
-    
+
     // Handle both string literals and enum values
-    const agentTypeValue = typeof agentType === 'string' ? agentType : 
+    const agentTypeValue = typeof agentType === 'string' ? agentType :
                           (agentType === AgentType.RECOGNITION ? 'recognition' :
-                           agentType === AgentType.MATERIAL_EXPERT ? 'material_expert' : 
+                           agentType === AgentType.MATERIAL_EXPERT ? 'material_expert' :
                            agentType === AgentType.PROJECT_ASSISTANT ? 'project_assistant' : 'unknown');
-    
+
     switch (agentTypeValue) {
       case 'recognition':
       case AgentType.RECOGNITION:
@@ -306,9 +307,9 @@ export const AgentChat: React.FC<AgentChatProps> = ({
         return defaultInfo;
     }
   };
-  
+
   const agentInfo = getAgentInfo();
-  
+
   return (
     <ChatContainer className={className}>
       <ChatHeader agentType={agentType}>
@@ -317,13 +318,21 @@ export const AgentChat: React.FC<AgentChatProps> = ({
           <HeaderInfo>
             <AgentName>{agentName || agentInfo.name}</AgentName>
             <ConnectionStatus status={connectionStatus}>
-              {connectionStatus === 'connected' ? 'Online' : 
+              {connectionStatus === 'connected' ? 'Online' :
                connectionStatus === 'connecting' ? 'Connecting...' : 'Offline'}
             </ConnectionStatus>
           </HeaderInfo>
         </HeaderContent>
+        {messages.length > 0 && messages.some(m => m.sender === 'user') && (
+          <SaveButtonContainer>
+            <SavePromptButton
+              promptContent={messages.filter(m => m.sender === 'user').map(m => m.content).join('\n\n')}
+              agentType={typeof agentType === 'string' ? agentType : Object.keys(AgentType)[Object.values(AgentType).indexOf(agentType)]}
+            />
+          </SaveButtonContainer>
+        )}
       </ChatHeader>
-      
+
       <MessagesContainer>
         {messages.map(message => (
           <MessageBubble key={message.id} sender={message.sender}>
@@ -338,7 +347,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
             </MessageContent>
           </MessageBubble>
         ))}
-        
+
         {isTyping && (
           <MessageBubble sender="agent">
             {agentAvatar && <Avatar src={agentAvatar} alt={agentName || agentInfo.name} />}
@@ -349,7 +358,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
             </TypingIndicator>
           </MessageBubble>
         )}
-        
+
         {error && (
           <ErrorContainer>
             <ErrorMessage>
@@ -357,8 +366,8 @@ export const AgentChat: React.FC<AgentChatProps> = ({
               <ErrorText>{error}</ErrorText>
             </ErrorMessage>
             {connectionStatus === 'disconnected' && (
-              <RetryButton 
-                onClick={handleRetryConnection} 
+              <RetryButton
+                onClick={handleRetryConnection}
                 disabled={isRetrying}
               >
                 {isRetrying ? 'Reconnecting...' : 'Retry Connection'}
@@ -366,20 +375,20 @@ export const AgentChat: React.FC<AgentChatProps> = ({
             )}
           </ErrorContainer>
         )}
-        
+
         <div ref={messagesEndRef} />
       </MessagesContainer>
-      
+
       <InputContainer>
-        <Input 
+        <Input
           value={input}
           onChange={(e: React.ChangeEvent<HTMLInputElement>) => setInput(e.target.value)}
           onKeyPress={(e: React.KeyboardEvent<HTMLInputElement>) => e.key === 'Enter' && handleSendMessage()}
           placeholder={placeholder}
           disabled={connectionStatus !== 'connected' || isTyping}
         />
-        <SendButton 
-          onClick={handleSendMessage} 
+        <SendButton
+          onClick={handleSendMessage}
           disabled={!input.trim() || connectionStatus !== 'connected' || isTyping}
         >
           {isTyping ? (
@@ -405,12 +414,12 @@ const ChatContainer = styled.div`
   overflow: hidden;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
   background-color: #f9f9f9;
-  
+
   @media (max-width: 768px) {
     max-width: 100%;
     height: 450px;
   }
-  
+
   @media (max-width: 480px) {
     height: 400px;
     border-radius: 0;
@@ -425,11 +434,11 @@ const ChatHeader = styled.div<{ agentType: string | AgentType }>`
   padding: 12px 16px;
   background-color: ${(props: { agentType: string | AgentType }) => {
     // Handle both string literals and enum values
-    const agentTypeValue = typeof props.agentType === 'string' ? props.agentType : 
+    const agentTypeValue = typeof props.agentType === 'string' ? props.agentType :
                           (props.agentType === AgentType.RECOGNITION ? 'recognition' :
-                           props.agentType === AgentType.MATERIAL_EXPERT ? 'material' : 
+                           props.agentType === AgentType.MATERIAL_EXPERT ? 'material' :
                            props.agentType === AgentType.PROJECT_ASSISTANT ? 'project' : 'unknown');
-                           
+
     switch (agentTypeValue) {
       case 'recognition': return '#4a6fa5';
       case 'material': return '#5d8b5e';
@@ -449,6 +458,10 @@ const HeaderContent = styled.div`
 const HeaderInfo = styled.div`
   display: flex;
   flex-direction: column;
+`;
+
+const SaveButtonContainer = styled.div`
+  margin-left: auto;
 `;
 
 const ConnectionStatus = styled.div<{ status: 'connected' | 'connecting' | 'disconnected' }>`
@@ -483,21 +496,21 @@ const MessagesContainer = styled.div`
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  
+
   /* Add scrollbar styling */
   &::-webkit-scrollbar {
     width: 6px;
   }
-  
+
   &::-webkit-scrollbar-track {
     background: #f1f1f1;
   }
-  
+
   &::-webkit-scrollbar-thumb {
     background: #c1c1c1;
     border-radius: 3px;
   }
-  
+
   &::-webkit-scrollbar-thumb:hover {
     background: #a1a1a1;
   }
@@ -508,7 +521,7 @@ const MessageBubble = styled.div<{ sender: string }>`
   margin-bottom: 12px;
   align-items: flex-start;
   justify-content: ${(props: { sender: string }) => props.sender === 'user' ? 'flex-end' : 'flex-start'};
-  
+
   @media (max-width: 480px) {
     margin-bottom: 8px;
   }
@@ -520,7 +533,7 @@ const Avatar = styled.img`
   border-radius: 50%;
   margin-right: 8px;
   object-fit: cover;
-  
+
   @media (max-width: 480px) {
     width: 24px;
     height: 24px;
@@ -536,7 +549,7 @@ const MessageContent = styled.div<{ sender: string }>`
   font-size: 14px;
   line-height: 1.4;
   word-wrap: break-word;
-  
+
   @media (max-width: 480px) {
     max-width: 80%;
     padding: 8px 12px;
@@ -551,7 +564,7 @@ const TypingIndicator = styled.div`
   background-color: #e9e9eb;
   padding: 10px 14px;
   border-radius: 18px;
-  
+
   @media (max-width: 480px) {
     padding: 8px 12px;
   }
@@ -565,15 +578,15 @@ const Dot = styled.div`
   margin: 0 2px;
   animation: bounce 1.4s infinite ease-in-out;
   animation-fill-mode: both;
-  
+
   &:nth-child(1) {
     animation-delay: -0.32s;
   }
-  
+
   &:nth-child(2) {
     animation-delay: -0.16s;
   }
-  
+
   @keyframes bounce {
     0%, 80%, 100% {
       transform: scale(0);
@@ -582,7 +595,7 @@ const Dot = styled.div`
       transform: scale(1);
     }
   }
-  
+
   @media (max-width: 480px) {
     width: 6px;
     height: 6px;
@@ -627,11 +640,11 @@ const RetryButton = styled.button`
   cursor: pointer;
   outline: none;
   transition: background-color 0.2s;
-  
+
   &:hover:not(:disabled) {
     background-color: #e0352c;
   }
-  
+
   &:disabled {
     background-color: #ffaba7;
     cursor: not-allowed;
@@ -643,7 +656,7 @@ const InputContainer = styled.div`
   padding: 12px;
   border-top: 1px solid #e0e0e0;
   background-color: white;
-  
+
   @media (max-width: 480px) {
     padding: 10px;
   }
@@ -656,16 +669,16 @@ const Input = styled.input`
   border-radius: 20px;
   font-size: 14px;
   outline: none;
-  
+
   &:focus {
     border-color: #0084ff;
   }
-  
+
   &:disabled {
     background-color: #f5f5f5;
     cursor: not-allowed;
   }
-  
+
   @media (max-width: 480px) {
     padding: 8px 12px;
     font-size: 13px;
@@ -687,16 +700,16 @@ const SendButton = styled.button`
   cursor: pointer;
   outline: none;
   transition: background-color 0.2s;
-  
+
   &:disabled {
     background-color: #cccccc;
     cursor: not-allowed;
   }
-  
+
   &:hover:not(:disabled) {
     background-color: #0077e6;
   }
-  
+
   @media (max-width: 480px) {
     min-width: 48px;
     padding: 8px 12px;
@@ -719,9 +732,9 @@ const ButtonSpinner = styled.div`
   border-radius: 50%;
   border-top-color: white;
   animation: spin 1s linear infinite;
-  
+
   ${spin}
-  
+
   @media (max-width: 480px) {
     width: 14px;
     height: 14px;

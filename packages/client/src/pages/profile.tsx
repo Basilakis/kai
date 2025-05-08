@@ -403,6 +403,38 @@ const ProfilePage: React.FC = () => {
           </div>
         )}
 
+        {/* Prompt Library Section */}
+        <div className="bg-white shadow rounded-lg overflow-hidden mb-8">
+          <div className="px-6 py-5 border-b border-gray-200 flex justify-between items-center">
+            <h2 className="text-xl font-semibold">My Prompt Library</h2>
+            <Link
+              to="/prompt-library"
+              className="px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 text-sm"
+            >
+              View Prompt Library
+            </Link>
+          </div>
+          <div className="px-6 py-5">
+            <p className="text-gray-600 mb-4">
+              Save and organize your favorite prompts for AI agents. Create, edit, and share prompts with others.
+            </p>
+            <div className="flex space-x-4">
+              <Link
+                to="/prompt-library"
+                className="text-blue-600 hover:text-blue-800 font-medium"
+              >
+                Browse My Prompts
+              </Link>
+              <Link
+                to="/prompt-library?tab=public-prompts"
+                className="text-blue-600 hover:text-blue-800 font-medium"
+              >
+                Discover Public Prompts
+              </Link>
+            </div>
+          </div>
+        </div>
+
         {/* MoodBoards Section */}
         <div className="bg-white shadow rounded-lg overflow-hidden mb-8">
           <div className="px-6 py-5 border-b border-gray-200 flex justify-between items-center">
