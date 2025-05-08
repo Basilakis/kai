@@ -115,6 +115,12 @@ function processReadmeFiles() {
     for (const file of files) {
       const sourcePath = path.join(sourceDir, file);
       if (fs.existsSync(sourcePath)) {
+        // Special handling for CHANGELOG.md - copy it to the root docs directory as well
+        if (file === 'CHANGELOG.md') {
+          const rootDestPath = path.join(destDir, file);
+          processMarkdownFile(sourcePath, rootDestPath);
+        }
+
         const destPath = path.join(categoryDir, file);
         processMarkdownFile(sourcePath, destPath);
         processedFiles.add(file);
@@ -189,7 +195,8 @@ function generateSidebar() {
       return false;
     }
 
-    const categories = JSON.parse(fs.readFileSync(categoriesFile, 'utf8'));
+    // Read categories but we'll use a custom sidebar configuration
+    JSON.parse(fs.readFileSync(categoriesFile, 'utf8'));
 
     // Create a custom sidebar configuration
     const sidebar = {
@@ -227,12 +234,12 @@ function generateSidebar() {
         {
           type: "category",
           label: "Other",
-          items: ["other/system-updates-summary", "other/huggingface-integration", "other/mcp-integration", "changelog"]
+          items: ["other/system-updates-summary", "other/huggingface-integration", "other/mcp-integration"]
         },
         {
           type: "category",
           label: "Changelog",
-          items: ["CHANGELOG"]
+          items: ["CHANGELOG", "changelog/CHANGELOG"]
         }
       ]
     };
