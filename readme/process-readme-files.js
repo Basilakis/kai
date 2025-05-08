@@ -228,6 +228,11 @@ function generateSidebar() {
           type: "category",
           label: "Other",
           items: ["other/system-updates-summary", "other/huggingface-integration", "other/mcp-integration", "changelog"]
+        },
+        {
+          type: "category",
+          label: "Changelog",
+          items: ["CHANGELOG"]
         }
       ]
     };
