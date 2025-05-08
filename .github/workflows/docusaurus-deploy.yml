@@ -249,14 +249,16 @@ MDEOF
           cd kai-docs-temp
           npx docusaurus build
 
-      - name: Create Pull Request
+      - name: Install GitHub CLI
         run: |
-          # Install GitHub CLI
           curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
           echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
           sudo apt update
           sudo apt install gh
 
+      - name: Prepare Documentation Branch
+        id: prepare-branch
+        run: |
           # Checkout target repository
           git clone https://x-access-token:${{ secrets.DOCS_DEPLOY_TOKEN }}@github.com/Basilakis/basilakis.github.io.git target-repo
           cd target-repo
@@ -276,6 +278,7 @@ MDEOF
 
           # Create a new branch for the PR
           BRANCH_NAME="docs-update-$(date +%Y%m%d%H%M%S)"
+          echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
           git checkout -b $BRANCH_NAME
 
           # Copy the built files
@@ -292,7 +295,10 @@ MDEOF
           git commit -m "Deploy Documentation: ${{ github.event.inputs.deploy_message }}"
           git push origin $BRANCH_NAME
 
+      - name: Create Pull Request
+        run: |
           # Create PR using GitHub CLI
+          cd target-repo
           gh auth login --with-token <<< "${{ secrets.DOCS_DEPLOY_TOKEN }}"
 
           # Set PR body as a variable
@@ -303,5 +309,5 @@ MDEOF
             --title "Deploy Documentation: ${{ github.event.inputs.deploy_message }}" \
             --body "$PR_BODY" \
             --repo Basilakis/basilakis.github.io \
-            --head $BRANCH_NAME \
+            --head ${{ steps.prepare-branch.outputs.branch_name }} \
             --base gh-pages
