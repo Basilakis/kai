@@ -211,47 +211,7 @@ jobs:
             <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="Arial" font-size="72" fill="white">KAI</text>
           </svg>' > static/img/logo.svg
 
-          # Create sidebars.js with changelog
-          echo '/** @type {import("@docusaurus/plugin-content-docs").SidebarsConfig} */
-          export default {
-            docs: [
-              {
-                type: "category",
-                label: "Getting Started",
-                items: ["getting-started/main-readme"]
-              },
-              {
-                type: "category",
-                label: "Features",
-                items: ["features/moodboard-feature"]
-              },
-              {
-                type: "category",
-                label: "AI/ML",
-                items: ["ai-ml/rag-system", "ai-ml/ml-documentation"]
-              },
-              {
-                type: "category",
-                label: "Materials",
-                items: ["materials/enhanced-material-expert"]
-              },
-              {
-                type: "category",
-                label: "Agents",
-                items: ["agents/recognition-assistant"]
-              },
-              {
-                type: "category",
-                label: "Prompts",
-                items: ["prompt-library", "prompts/prompt-abtesting-segmentation", "prompts/prompt-advanced-features", "prompts/prompt-management", "prompts/prompt-success-tracking"]
-              },
-              {
-                type: "category",
-                label: "Other",
-                items: ["other/system-updates-summary", "other/huggingface-integration", "other/mcp-integration", "changelog"]
-              }
-            ]
-          };' > sidebars.js
+          # Note: sidebars.js is now created by the process-readme-files.js script
 
           # Create Docusaurus config file
           echo '// @ts-check
@@ -348,54 +308,7 @@ jobs:
           # Create basic directory structure
           mkdir -p ../kai-docs-temp/static/img
 
-          # Create prompt-library.md file
-          cat > ../kai-docs-temp/docs/prompt-library.md << 'EOF'
----
-id: prompt-library
-title: "Prompt Library"
-sidebar_label: "Prompt Library"
----
-
-# Prompt Library
-
-The Prompt Library is a centralized repository for managing, organizing, and sharing prompts across the KAI platform.
-
-## Features
-
-- **Public/Private Settings**: Control who can access your prompts
-- **Categories**: Organize prompts by purpose, domain, or any other classification
-- **Usage Types**: Define how prompts can be used (e.g., text generation, image generation)
-- **Sharing Capabilities**: Share prompts with specific users or groups
-- **Import Functionality**: Import prompts from external sources (for logged-in users)
-
-## Implementation
-
-The Prompt Library is implemented as a dedicated page at `/prompt-library/id` with comprehensive management features.
-
-### Key Components
-
-1. **Prompt Storage**: Secure storage of prompts with metadata
-2. **Access Control**: Granular permissions based on user roles
-3. **Version History**: Track changes to prompts over time
-4. **Analytics**: Monitor prompt usage and performance
-5. **Integration API**: Seamlessly integrate prompts into workflows
-
-## Usage
-
-Prompts can be accessed and used through:
-
-- Web interface
-- API endpoints
-- Integration with other KAI features
-
-## Related Documentation
-
-For more information on specific prompt features, see:
-- [Prompt A/B Testing and Segmentation](./prompts/prompt-abtesting-segmentation)
-- [Advanced Prompt Features](./prompts/prompt-advanced-features)
-- [Prompt Management](./prompts/prompt-management)
-- [Prompt Success Tracking](./prompts/prompt-success-tracking)
-EOF
+          # Note: prompt-library.md is now created by the process-readme-files.js script
 
           # Create changelog.md file
           cat > ../kai-docs-temp/docs/changelog.md << 'EOF'
@@ -434,22 +347,7 @@ This file contains all notable changes to the KAI project.
 - API endpoints for core features
 EOF
 
-          # Create prompts directory and move prompt files
-          mkdir -p ../kai-docs-temp/docs/prompts
-
-          # Move prompt-related files to the prompts directory
-          if [ -f "../kai-docs-temp/docs/other/prompt-management.md" ]; then
-            mv ../kai-docs-temp/docs/other/prompt-management.md ../kai-docs-temp/docs/prompts/
-          fi
-          if [ -f "../kai-docs-temp/docs/other/prompt-abtesting-segmentation.md" ]; then
-            mv ../kai-docs-temp/docs/other/prompt-abtesting-segmentation.md ../kai-docs-temp/docs/prompts/
-          fi
-          if [ -f "../kai-docs-temp/docs/other/prompt-advanced-features.md" ]; then
-            mv ../kai-docs-temp/docs/other/prompt-advanced-features.md ../kai-docs-temp/docs/prompts/
-          fi
-          if [ -f "../kai-docs-temp/docs/other/prompt-success-tracking.md" ]; then
-            mv ../kai-docs-temp/docs/other/prompt-success-tracking.md ../kai-docs-temp/docs/prompts/
-          fi
+          # Note: Prompt files are now created by the process-readme-files.js script
 
           # Additional fix for any problematic files
           cd ../kai-docs-temp/docs
@@ -532,13 +430,28 @@ EOF
           # Install dependencies directly without using package.json
           npm install --no-save @docusaurus/core@3.7.0 @docusaurus/preset-classic@3.7.0 @mdx-js/react@3.0.0 clsx@2.1.0 prism-react-renderer@2.3.1 react@18.2.0 react-dom@18.2.0 typescript@5.3.3
 
-      - name: Build Docusaurus site
+      - name: Verify Docusaurus configuration
         run: |
           cd kai-docs-temp
           echo "Current directory: $(pwd)"
           echo "Contents of current directory:"
           ls -la
 
+          echo "Checking sidebars.js:"
+          cat sidebars.js
+
+          echo "Checking docusaurus.config.js:"
+          cat docusaurus.config.js
+
+          echo "Checking docs directory structure:"
+          find docs -type d | sort
+
+          echo "Checking for prompt files:"
+          find docs -name "prompt*.md" | sort
+
+      - name: Build Docusaurus site
+        run: |
+          cd kai-docs-temp
           echo "Building Docusaurus site..."
           # Use npx to run Docusaurus commands directly
           npx docusaurus build
@@ -577,6 +490,14 @@ EOF
             exit 1
           fi
 
+      - name: Install GitHub CLI
+        run: |
+          echo "Installing GitHub CLI..."
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+          sudo apt update
+          sudo apt install gh
+
       - name: Create Pull Request instead of direct push
         run: |
           # Generate a unique branch name
@@ -610,12 +531,14 @@ EOF
           git push origin $BRANCH_NAME
 
           echo "Creating pull request..."
-          # Create a pull request using GitHub CLI
-          gh pr create \
-            --title "Deploy Documentation: ${{ github.event.head_commit.message }}" \
-            --body "This PR was automatically created by the GitHub Actions workflow to update the documentation site.\n\nChanges included in this PR:\n- Updated documentation from the latest changes in the kai repository\n- Last commit: ${{ github.sha }}\n\nPlease review and merge to update the documentation site." \
-            --head $BRANCH_NAME \
-            --base gh-pages \
-            --repo Basilakis/basilakis.github.io
-        env:
-          GITHUB_TOKEN: ${{ secrets.DOCS_DEPLOY_TOKEN }}
+          # Create a pull request using GitHub API directly
+          curl -X POST \
+            -H "Authorization: token ${{ secrets.DOCS_DEPLOY_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/Basilakis/basilakis.github.io/pulls \
+            -d '{
+              "title": "Deploy Documentation: ${{ github.event.head_commit.message }}",
+              "body": "This PR was automatically created by the GitHub Actions workflow to update the documentation site.\n\nChanges included in this PR:\n- Updated documentation from the latest changes in the kai repository\n- Last commit: ${{ github.sha }}\n\nPlease review and merge to update the documentation site.",
+              "head": "'$BRANCH_NAME'",
+              "base": "gh-pages"
+            }'

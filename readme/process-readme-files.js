@@ -46,6 +46,10 @@ const categories = {
   'monitoring': ['monitoring-system.md', 'training-monitoring-system.md', 'hpa-configuration-guide.md', 'advanced-scaling-features.md'],
   'security': ['security.md'],
   'testing': ['testing-approach.md'],
+  'prompts': [
+    'prompt-library.md', 'prompt-abtesting-segmentation.md', 'prompt-advanced-features.md',
+    'prompt-management.md', 'prompt-success-tracking.md'
+  ],
   'other': []
 };
 
@@ -167,6 +171,7 @@ The documentation is organized into the following sections:
 - **Monitoring**: System monitoring and scaling
 - **Security**: Security features and considerations
 - **Testing**: Testing approach and methodologies
+- **Prompts**: Prompt management, library, and advanced features
 
 Use the sidebar to navigate through the documentation.
 `;
@@ -187,32 +192,57 @@ function generateSidebar() {
 
     const categories = JSON.parse(fs.readFileSync(categoriesFile, 'utf8'));
 
+    // Create a custom sidebar configuration
     const sidebar = {
-      tutorialSidebar: [
-        'intro',
+      docs: [
+        {
+          type: "category",
+          label: "Getting Started",
+          items: ["getting-started/main-readme"]
+        },
+        {
+          type: "category",
+          label: "Features",
+          items: ["features/moodboard-feature"]
+        },
+        {
+          type: "category",
+          label: "AI/ML",
+          items: ["ai-ml/rag-system", "ai-ml/ml-documentation"]
+        },
+        {
+          type: "category",
+          label: "Materials",
+          items: ["materials/enhanced-material-expert"]
+        },
+        {
+          type: "category",
+          label: "Agents",
+          items: ["agents/recognition-assistant"]
+        },
+        {
+          type: "category",
+          label: "Prompts",
+          items: ["prompt-library", "prompts/prompt-abtesting-segmentation", "prompts/prompt-advanced-features", "prompts/prompt-management", "prompts/prompt-success-tracking"]
+        },
+        {
+          type: "category",
+          label: "Other",
+          items: ["other/system-updates-summary", "other/huggingface-integration", "other/mcp-integration", "changelog"]
+        }
       ]
     };
-
-    for (const [category, files] of Object.entries(categories)) {
-      if (files.length === 0) continue;
-
-      const categoryItems = files.map(file => {
-        const id = path.basename(file, '.md');
-        return `${category}/${id}`;
-      });
-
-      sidebar.tutorialSidebar.push({
-        type: 'category',
-        label: category.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
-        items: categoryItems,
-      });
-    }
 
     const sidebarContent = `/** @type {import('@docusaurus/plugin-content-docs').SidebarsConfig} */
 export default ${JSON.stringify(sidebar, null, 2)};
 `;
 
     fs.writeFileSync('../kai-docs-temp/sidebars.js', sidebarContent);
+
+    // Also create a copy in the root directory
+    fs.writeFileSync('../kai-docs-temp/sidebars.js', sidebarContent);
+
+    console.log('Sidebar configuration generated successfully.');
     return true;
   } catch (error) {
     console.error('Error generating sidebar:', error);
@@ -228,6 +258,102 @@ try {
   if (!fs.existsSync(sourceDir)) {
     console.error(`Source directory ${sourceDir} does not exist.`);
     process.exit(1);
+  }
+
+  // Create prompt-library.md file if it doesn't exist
+  const promptLibraryPath = path.join(destDir, 'prompt-library.md');
+  if (!fs.existsSync(promptLibraryPath)) {
+    console.log('Creating prompt-library.md file...');
+    const promptLibraryContent = `---
+id: prompt-library
+title: "Prompt Library"
+sidebar_label: "Prompt Library"
+---
+
+# Prompt Library
+
+The Prompt Library is a centralized repository for managing, organizing, and sharing prompts across the KAI platform.
+
+## Features
+
+- **Public/Private Settings**: Control who can access your prompts
+- **Categories**: Organize prompts by purpose, domain, or any other classification
+- **Usage Types**: Define how prompts can be used (e.g., text generation, image generation)
+- **Sharing Capabilities**: Share prompts with specific users or groups
+- **Import Functionality**: Import prompts from external sources (for logged-in users)
+
+## Implementation
+
+The Prompt Library is implemented as a dedicated page at \`/prompt-library/id\` with comprehensive management features.
+
+### Key Components
+
+1. **Prompt Storage**: Secure storage of prompts with metadata
+2. **Access Control**: Granular permissions based on user roles
+3. **Version History**: Track changes to prompts over time
+4. **Analytics**: Monitor prompt usage and performance
+5. **Integration API**: Seamlessly integrate prompts into workflows
+
+## Usage
+
+Prompts can be accessed and used through:
+
+- Web interface
+- API endpoints
+- Integration with other KAI features
+
+## Related Documentation
+
+For more information on specific prompt features, see:
+- [Prompt A/B Testing and Segmentation](./prompts/prompt-abtesting-segmentation)
+- [Advanced Prompt Features](./prompts/prompt-advanced-features)
+- [Prompt Management](./prompts/prompt-management)
+- [Prompt Success Tracking](./prompts/prompt-success-tracking)
+`;
+    fs.writeFileSync(promptLibraryPath, promptLibraryContent);
+  }
+
+  // Create prompts directory if it doesn't exist
+  const promptsDir = path.join(destDir, 'prompts');
+  if (!fs.existsSync(promptsDir)) {
+    console.log('Creating prompts directory...');
+    fs.mkdirSync(promptsDir, { recursive: true });
+  }
+
+  // Process prompt files
+  const promptFiles = [
+    'prompt-abtesting-segmentation.md',
+    'prompt-advanced-features.md',
+    'prompt-management.md',
+    'prompt-success-tracking.md'
+  ];
+
+  for (const file of promptFiles) {
+    const sourcePath = path.join(sourceDir, file);
+    const destPath = path.join(promptsDir, file);
+
+    if (fs.existsSync(sourcePath)) {
+      console.log(`Processing ${file}...`);
+      processMarkdownFile(sourcePath, destPath);
+    } else {
+      console.log(`${file} not found in source directory, creating placeholder...`);
+      // Create placeholder file with basic content
+      const placeholderContent = `---
+id: ${path.basename(file, '.md')}
+title: "${path.basename(file, '.md').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}"
+sidebar_label: "${path.basename(file, '.md').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}"
+---
+
+# ${path.basename(file, '.md').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+
+This document describes ${path.basename(file, '.md').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())} features for the KAI platform.
+
+## Overview
+
+Content coming soon.
+`;
+      fs.writeFileSync(destPath, placeholderContent);
+    }
   }
 
   processReadmeFiles();
