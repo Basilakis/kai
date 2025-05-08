@@ -1,4 +1,4 @@
-name: Docusaurus Deploy
+name: Docusaurus Deploy Documentation
 
 on:
   push:
