@@ -20,7 +20,7 @@ jobs:
         id: check
         run: |
           # Try to clone the gh-pages branch of the target repository
-          git clone --depth 1 --branch gh-pages https://github.com/Basilakis/basilakis.github.io.git temp || FIRST_RUN=true
+          git clone --depth 1 --branch gh-pages https://x-access-token:${{ secrets.DOCS_DEPLOY_TOKEN }}@github.com/Basilakis/basilakis.github.io.git temp || FIRST_RUN=true
 
           if [ "$FIRST_RUN" = true ]; then
             # First run - gh-pages branch doesn't exist or is empty
