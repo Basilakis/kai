@@ -479,10 +479,13 @@ EOF
           npx docusaurus build
 
       - name: Deploy to GitHub Pages
-        uses: JamesIves/github-pages-deploy-action@v4
+        uses: peaceiris/actions-gh-pages@v3
         with:
-          token: ${{ secrets.DOCS_DEPLOY_TOKEN }}
-          branch: gh-pages
-          folder: kai-docs-temp/build
-          repository-name: Basilakis/basilakis.github.io
-          clean: true
+          personal_token: ${{ secrets.DOCS_DEPLOY_TOKEN }}
+          external_repository: Basilakis/basilakis.github.io
+          publish_branch: gh-pages
+          publish_dir: ./kai-docs-temp/build
+          force_orphan: true
+          user_name: 'github-actions[bot]'
+          user_email: 'github-actions[bot]@users.noreply.github.com'
+          commit_message: 'Deploy Documentation: ${{ github.event.head_commit.message }}'
