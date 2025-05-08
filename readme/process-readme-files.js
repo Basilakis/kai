@@ -103,6 +103,35 @@ function processReadmeFiles() {
   // Create a map to track which files have been categorized
   const processedFiles = new Set();
 
+  // Get all markdown files in the source directory
+  const allFiles = [];
+
+  // Function to recursively find all markdown files
+  function findMarkdownFiles(dir) {
+    const items = fs.readdirSync(dir);
+
+    for (const item of items) {
+      // Skip node_modules and hidden directories
+      if (item.startsWith('.') || item === 'node_modules' || item === 'scripts') {
+        continue;
+      }
+
+      const fullPath = path.join(dir, item);
+      const stat = fs.statSync(fullPath);
+
+      if (stat.isDirectory()) {
+        findMarkdownFiles(fullPath);
+      } else if (item.endsWith('.md')) {
+        const relativePath = path.relative(sourceDir, fullPath);
+        allFiles.push(relativePath);
+      }
+    }
+  }
+
+  // Find all markdown files
+  findMarkdownFiles(sourceDir);
+  console.log(`Found ${allFiles.length} markdown files in the source directory.`);
+
   // Process files by category
   for (const [category, files] of Object.entries(categories)) {
     // Create category directory
@@ -151,9 +180,8 @@ sidebar_label: "${title}"
   }
 
   // Process any remaining files not explicitly categorized
-  const files = fs.readdirSync(sourceDir);
-  for (const file of files) {
-    if (file.endsWith('.md') && !processedFiles.has(file)) {
+  for (const file of allFiles) {
+    if (!processedFiles.has(file)) {
       const sourcePath = path.join(sourceDir, file);
       const destPath = path.join(destDir, 'other', file);
 
@@ -220,56 +248,55 @@ function generateSidebar() {
     // Read categories but we'll use a custom sidebar configuration
     JSON.parse(fs.readFileSync(categoriesFile, 'utf8'));
 
-    // Create a custom sidebar configuration
+    // Read the categories file to get all processed files
+    const categoriesData = JSON.parse(fs.readFileSync(categoriesFile, 'utf8'));
+
+    // Create a comprehensive sidebar configuration
     const sidebar = {
       docs: [
         {
           type: "doc",
           label: "Introduction",
           id: "intro"
-        },
-        {
-          type: "category",
-          label: "Getting Started",
-          items: ["getting-started/main-readme"]
-        },
-        {
-          type: "category",
-          label: "Features",
-          items: ["features/moodboard-feature"]
-        },
-        {
-          type: "category",
-          label: "AI/ML",
-          items: ["ai-ml/rag-system", "ai-ml/ml-documentation"]
-        },
-        {
-          type: "category",
-          label: "Materials",
-          items: ["materials/enhanced-material-expert"]
-        },
-        {
-          type: "category",
-          label: "Agents",
-          items: ["agents/recognition-assistant"]
-        },
-        {
-          type: "category",
-          label: "Prompts",
-          items: ["prompt-library", "prompts/prompt-abtesting-segmentation", "prompts/prompt-advanced-features", "prompts/prompt-management", "prompts/prompt-success-tracking"]
-        },
-        {
-          type: "category",
-          label: "Other",
-          items: ["other/system-updates-summary", "other/huggingface-integration", "other/mcp-integration"]
-        },
-        {
-          type: "category",
-          label: "Changelog",
-          items: ["CHANGELOG", "changelog/CHANGELOG"]
         }
       ]
     };
+
+    // Add all categories to the sidebar
+    for (const [category, files] of Object.entries(categoriesData)) {
+      // Skip empty categories
+      if (files.length === 0) {
+        continue;
+      }
+
+      // Format the category label
+      const categoryLabel = category.charAt(0).toUpperCase() + category.slice(1).replace(/-/g, ' ');
+
+      // Create items array for this category
+      const items = files.map(file => {
+        const fileId = path.basename(file, '.md');
+        return `${category}/${fileId}`;
+      });
+
+      // Special case for prompts category
+      if (category === 'prompts') {
+        items.unshift('prompt-library'); // Add prompt-library at the beginning
+      }
+
+      // Add the category to the sidebar
+      sidebar.docs.push({
+        type: "category",
+        label: categoryLabel,
+        items: items
+      });
+    }
+
+    // Special case for changelog
+    sidebar.docs.push({
+      type: "category",
+      label: "Changelog",
+      items: ["CHANGELOG", "changelog/CHANGELOG"]
+    });
 
     const sidebarContent = `/** @type {import('@docusaurus/plugin-content-docs').SidebarsConfig} */
 export default ${JSON.stringify(sidebar, null, 2)};
