@@ -116,7 +116,7 @@ On any public prompt detail page, you can:
 2. Add an optional comment
 3. Update your rating if you change your mind
 
-### Forking Prompts
+### Coping Prompts
 
 When viewing a public prompt, you can:
 
