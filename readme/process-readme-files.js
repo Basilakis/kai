@@ -195,12 +195,12 @@ sidebar_label: "${title}"
     }
   }
 
-  // Create an intro.md file that will serve as the home page
+  // Create an intro.md file
   const introContent = `---
 id: intro
 title: Introduction
 sidebar_label: Introduction
-slug: /
+slug: /intro
 ---
 
 # KAI Documentation

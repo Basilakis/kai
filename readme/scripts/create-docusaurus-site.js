@@ -7,7 +7,6 @@ const dirs = [
   'kai-docs-temp',
   'kai-docs-temp/docs',
   'kai-docs-temp/src/css',
-  'kai-docs-temp/src/pages',
   'kai-docs-temp/static/img'
 ];
 
@@ -121,10 +120,7 @@ const config = {
       {
         docs: {
           sidebarPath: "./sidebars.js",
-          routeBasePath: "/"
-        },
-        pages: {
-          path: 'src/pages', // Explicitly configure the pages plugin that's already in the preset
+          routeBasePath: "/",
         },
         blog: false,
         theme: {
@@ -244,42 +240,6 @@ docs.forEach(doc => {
   );
 });
 
-// Create index.js in src/pages to ensure index.html is generated
-console.log('Creating index.js for the home page...');
-const indexContent = `import React from 'react';
-import Layout from '@theme/Layout';
-import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
-import Link from '@docusaurus/Link';
 
-export default function Home() {
-  const {siteConfig} = useDocusaurusContext();
-  return (
-    <Layout
-      title="Home"
-      description="KAI Documentation">
-      <div className="container" style={{padding: '4rem 0'}}>
-        <div className="row">
-          <div className="col col--8 col--offset-2">
-            <h1>{siteConfig.title}</h1>
-            <p>{siteConfig.tagline}</p>
-            <div className="margin-top--lg">
-              <Link
-                className="button button--primary button--lg"
-                to="/intro">
-                View Documentation
-              </Link>
-            </div>
-          </div>
-        </div>
-      </div>
-    </Layout>
-  );
-}
-`;
-
-fs.writeFileSync(
-  path.join('kai-docs-temp', 'src', 'pages', 'index.js'),
-  indexContent
-);
 
 console.log('Docusaurus site created successfully!');
