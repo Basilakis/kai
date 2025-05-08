@@ -53,11 +53,11 @@ jobs:
       - name: Prepare branch
         run: node readme/scripts/prepare-docs-branch.js
         env:
-          GITHUB_TOKEN: ${{ secrets.DOCS_DEPLOY_TOKEN }}
+          DOCS_DEPLOY_TOKEN: ${{ secrets.DOCS_DEPLOY_TOKEN }}
           DEPLOY_MESSAGE: ${{ github.event.inputs.deploy_message }}
 
       - name: Create PR
         run: node readme/scripts/create-docs-pr.js
         env:
-          GITHUB_TOKEN: ${{ secrets.DOCS_DEPLOY_TOKEN }}
+          DOCS_DEPLOY_TOKEN: ${{ secrets.DOCS_DEPLOY_TOKEN }}
           DEPLOY_MESSAGE: ${{ github.event.inputs.deploy_message }}
