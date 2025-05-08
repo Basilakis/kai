@@ -1,11 +1,17 @@
-name: Docusaurus Site Builder
+name: Build and Deploy Docusaurus Documentation
 
 on:
-  # Only run manually
+  # Only run manually when requested
   workflow_dispatch:
+    inputs:
+      deploy_message:
+        description: 'Message for the deployment PR'
+        required: true
+        default: 'Update documentation'
 
 jobs:
-  build_docusaurus:
+  build_and_deploy_docs:
+    name: Build and Deploy Documentation
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -233,44 +239,6 @@ jobs:
 
           # Note: prompt-library.md is now created by the process-readme-files.js script
 
-          # Create changelog.md file
-          cat > ../kai-docs-temp/docs/changelog.md << 'EOF'
----
-id: changelog
-title: "Changelog"
-sidebar_label: "Changelog"
----
-
-# Changelog
-
-This file contains all notable changes to the KAI project.
-
-## [Unreleased]
-
-### Added
-- Documentation site with Docusaurus
-- Comprehensive documentation for all major features
-- Sidebar navigation with categorized documentation
-
-### Changed
-- Migrated from simple markdown files to a full documentation website
-- Improved organization of documentation files
-
-### Fixed
-- Fixed various formatting issues in documentation
-- Resolved broken links and references
-
-## [1.0.0] - 2023-01-01
-
-### Added
-- Initial release of KAI
-- Core functionality for materials management
-- Basic AI/ML capabilities
-- User authentication and authorization
-- API endpoints for core features
-EOF
-
-          # Note: Prompt files are now created by the process-readme-files.js script
 
           # Additional fix for any problematic files
           cd ../kai-docs-temp/docs
@@ -367,3 +335,67 @@ EOF
           name: docusaurus-build
           path: kai-docs-temp/build/
           retention-days: 7
+
+      - name: Install GitHub CLI
+        run: |
+          echo "Installing GitHub CLI..."
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+          sudo apt update
+          sudo apt install gh
+
+      - name: Checkout target repository
+        uses: actions/checkout@v4
+        with:
+          repository: Basilakis/basilakis.github.io
+          token: {% raw %}${{ secrets.DOCS_DEPLOY_TOKEN }}{% endraw %}
+          path: target-repo
+
+      - name: Create Pull Request
+        run: |
+          # Generate a unique branch name
+          BRANCH_NAME="docs-update-$(date +%Y%m%d%H%M%S)"
+          echo "Branch name: $BRANCH_NAME"
+
+          # Create a new branch for the changes
+          cd target-repo
+          git checkout -b $BRANCH_NAME
+
+          # Copy the built files
+          echo "Removing existing files..."
+          rm -rf * || true
+
+          echo "Copying built files..."
+          cp -r ../kai-docs-temp/build/* .
+
+          echo "Contents after copying:"
+          ls -la
+
+          # Commit the changes
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+
+          echo "Adding files to git..."
+          git add .
+
+          echo "Committing changes..."
+          git commit -m "Deploy Documentation: {% raw %}${{ github.event.inputs.deploy_message }}{% endraw %}"
+
+          echo "Pushing branch..."
+          git push origin $BRANCH_NAME
+
+          echo "Creating pull request..."
+          # Create a pull request using GitHub CLI
+          gh auth login --with-token <<< "{% raw %}${{ secrets.DOCS_DEPLOY_TOKEN }}{% endraw %}"
+          gh pr create \
+            --title "Deploy Documentation: {% raw %}${{ github.event.inputs.deploy_message }}{% endraw %}" \
+            --body "This PR was automatically created by the GitHub Actions workflow to update the documentation site.
+
+Changes included in this PR:
+- Updated documentation from the latest changes in the kai repository
+- Triggered by manual workflow run
+
+Please review and merge to update the documentation site." \
+            --repo Basilakis/basilakis.github.io \
+            --head $BRANCH_NAME \
+            --base gh-pages

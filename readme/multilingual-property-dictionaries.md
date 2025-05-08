@@ -164,11 +164,11 @@ import MultilingualMaterialProperties from '../components/multilingual/Multiling
 // Example: Displaying all material properties in the user's language
 <MultilingualMaterialProperties
   materialId="123"
-  properties={{
+  properties={% raw %}{{
     finish: 'matte',
     color: 'white',
     size: '60x60'
-  }}
+  }}{% endraw %}
   showOriginal={true}
 />
 ```
