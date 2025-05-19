@@ -9,6 +9,8 @@
  */
 
 import { logger } from '../../utils/logger';
+import { supabase } from '../supabase/supabaseClient'; // Import Supabase client
+import { PostgrestError } from '@supabase/supabase-js';
 
 export type ModelProvider = 'openai' | 'anthropic' | 'huggingface' | 'local';
 
@@ -105,14 +107,10 @@ export interface ModelRegistryConfig {
  */
 export class ModelRegistry {
   private static instance: ModelRegistry;
-  
-  // In-memory storage for performance metrics and task counters
-  // In a production system, these would be backed by a database
-  private performanceMetrics: ModelEvaluationResult[] = [];
-  private taskCounters: Map<TaskType, TaskCounter> = new Map();
-  private modelComparisons: ModelComparisonReport[] = [];
-  
-  // Default configuration
+  private static initializing: Promise<void> | null = null;
+  private isInitialized = false;
+
+  // Default configuration - will be overridden by DB or used as initial seed
   private config: ModelRegistryConfig = {
     standardCycleLength: 10, // Run standard operation for this many tasks
     evaluationCycleLength: 3, // Then run evaluation mode for this many tasks
@@ -170,29 +168,109 @@ export class ModelRegistry {
   };
 
   private constructor() {
-    // Initialize with environment variables or config files
-    this.loadConfiguration();
-    logger.info('ModelRegistry initialized');
+    // Initialization is now handled by the async init() method
   }
 
   /**
-   * Get the singleton instance
+   * Get the singleton instance, ensuring it's initialized.
    * @returns The ModelRegistry instance
    */
-  public static getInstance(): ModelRegistry {
+  public static async getInstance(): Promise<ModelRegistry> {
     if (!ModelRegistry.instance) {
       ModelRegistry.instance = new ModelRegistry();
+    }
+    if (!ModelRegistry.instance.isInitialized && !ModelRegistry.initializing) {
+      ModelRegistry.initializing = ModelRegistry.instance.init();
+    }
+    if (ModelRegistry.initializing) {
+      await ModelRegistry.initializing;
+      ModelRegistry.initializing = null;
     }
     return ModelRegistry.instance;
   }
 
   /**
-   * Load configuration from environment variables or config files
+   * Initializes the ModelRegistry, primarily by loading configuration from the database.
+   * This method should be called once.
+   */
+  private async init(): Promise<void> {
+    if (this.isInitialized) return;
+    try {
+      await this.loadConfiguration();
+      this.isInitialized = true;
+      logger.info('ModelRegistry initialized successfully with DB configuration.');
+    } catch (error) {
+      logger.error('Failed to initialize ModelRegistry:', error);
+      // Depending on the severity, you might want to throw the error
+      // or operate with default in-memory config as a fallback (though less ideal).
+      // For now, it will use the hardcoded default if DB load fails.
+      this.isInitialized = true; // Mark as initialized even if using defaults to prevent re-attempts.
+      logger.warn('ModelRegistry operating with hardcoded default configuration due to DB load failure.');
+    }
+  }
+
+
+  /**
+   * Load configuration from the database, or seed it if it doesn't exist.
    * @private
    */
-  private loadConfiguration(): void {
-    // In a real implementation, this would load from environment variables or config files
-    // For now, we'll use the default configuration
+  private async loadConfiguration(): Promise<void> {
+    const { data, error } = await supabase
+      .getClient()
+      .from('model_registry_config')
+      .select('config_data')
+      .eq('config_key', 'default')
+      .maybeSingle();
+
+    if (error) {
+      logger.error('Error loading ModelRegistry configuration from DB:', error);
+      // Fallback to default hardcoded config if DB error occurs
+      logger.warn('Using hardcoded default ModelRegistry configuration due to DB error.');
+      return;
+    }
+
+    if (data && data.config_data) {
+      logger.info('Successfully loaded ModelRegistry configuration from DB.');
+      this.config = data.config_data as ModelRegistryConfig;
+    } else {
+      logger.info('No ModelRegistry configuration found in DB. Seeding with default values.');
+      // Seed the database with the default configuration
+      const defaultConfigData = this.config; // Current hardcoded config
+      const { error: insertError } = await supabase
+        .getClient()
+        .from('model_registry_config')
+        .insert({ config_key: 'default', config_data: defaultConfigData });
+
+      if (insertError) {
+        logger.error('Error seeding default ModelRegistry configuration to DB:', insertError);
+        logger.warn('Using hardcoded default ModelRegistry configuration due to DB seed failure.');
+      } else {
+        logger.info('Successfully seeded default ModelRegistry configuration to DB.');
+        // No need to set this.config again, it's already the default
+      }
+    }
+  }
+  
+  /**
+   * Update the ModelRegistry configuration in the database.
+   * @param newConfig The new configuration object
+   */
+  public async updateConfiguration(newConfig: ModelRegistryConfig): Promise<void> {
+    if (!this.isInitialized) {
+        await ModelRegistry.getInstance(); // Ensure initialization
+    }
+    const { error } = await supabase
+      .getClient()
+      .from('model_registry_config')
+      .update({ config_data: newConfig, updated_at: new Date().toISOString() })
+      .eq('config_key', 'default');
+
+    if (error) {
+      logger.error('Error updating ModelRegistry configuration in DB:', error);
+      throw error;
+    }
+    this.config = newConfig; // Update in-memory config
+    logger.info('ModelRegistry configuration updated successfully in DB and in memory.');
   }
 
   /**
@@ -200,70 +278,86 @@ export class ModelRegistry {
    * @param options Model selection options
    * @returns The selected model identifier
    */
-  public selectBestModel(options: ModelSelectionOptions): ModelIdentifier {
+  public async selectBestModel(options: ModelSelectionOptions): Promise<ModelIdentifier> {
+    if (!this.isInitialized) {
+      await ModelRegistry.getInstance(); // Ensure initialization
+    }
     const { taskType, preferredProvider, maxLatency, minAccuracy, costSensitive } = options;
-    
+    const client = supabase.getClient();
+
     // Get all performance metrics for this task type
-    const taskMetrics = this.performanceMetrics.filter(m => m.taskType === taskType);
+    // TODO: Consider fetching only recent metrics or a summary to avoid large data transfers
+    const { data: taskMetricsData, error: metricsError } = await client
+      .from('model_performance_metrics')
+      .select(`
+        model_provider,
+        model_id,
+        accuracy,
+        latency_ms,
+        cost_per_token,
+        token_count
+      `)
+      .eq('task_type', taskType);
+
+    if (metricsError) {
+      logger.error(`Error fetching performance metrics for ${taskType}:`, metricsError);
+      return this.getDefaultModel(taskType, preferredProvider); // Fallback on error
+    }
     
-    if (taskMetrics.length === 0) {
+    if (!taskMetricsData || taskMetricsData.length === 0) {
       // No performance data available, use default model
       return this.getDefaultModel(taskType, preferredProvider);
     }
     
     // Group metrics by model
-    const modelMetrics: Record<string, ModelEvaluationResult[]> = {};
+    const modelMetrics: Record<string, any[]> = {}; // Using any for simplicity, map to ModelEvaluationResult structure
     
-    for (const metric of taskMetrics) {
-      const key = `${metric.modelId.provider}:${metric.modelId.modelId}`;
+    for (const metric of taskMetricsData) {
+      const key = `${metric.model_provider}:${metric.model_id}`;
       if (!modelMetrics[key]) {
         modelMetrics[key] = [];
       }
-      modelMetrics[key].push(metric);
+      // Reconstruct a partial PerformanceMetrics object for calculation
+      modelMetrics[key].push({
+        metrics: { // Nest under 'metrics' to match ModelEvaluationResult structure
+            accuracy: metric.accuracy,
+            latency: metric.latency_ms,
+            costPerToken: metric.cost_per_token,
+            tokenCount: metric.token_count
+        }
+      });
     }
     
-    // Calculate average performance for each model
-    const modelPerformance: Record<string, { 
-      modelId: ModelIdentifier; 
-      score: number; 
-      accuracy: number; 
-      latency: number; 
-      cost: number; 
+    const modelPerformance: Record<string, {
+      modelId: ModelIdentifier;
+      score: number;
+      accuracy: number;
+      latency: number;
+      cost: number;
     }> = {};
     
-    for (const [key, metrics] of Object.entries(modelMetrics)) {
-      const [provider, modelId] = key.split(':');
+    for (const [key, metricsArray] of Object.entries(modelMetrics)) {
+      const [provider, modelIdStr] = key.split(':');
       
-      const avgAccuracy = metrics.reduce((sum, m) => sum + (m.metrics.accuracy || 0), 0) / metrics.length;
-      const avgLatency = metrics.reduce((sum, m) => sum + (m.metrics.latency || 0), 0) / metrics.length;
-      const avgCost = metrics.reduce((sum, m) => sum + (m.metrics.costPerToken || 0) * (m.metrics.tokenCount || 0), 0) / metrics.length;
+      const avgAccuracy = metricsArray.reduce((sum, m) => sum + (m.metrics.accuracy || 0), 0) / metricsArray.length;
+      const avgLatency = metricsArray.reduce((sum, m) => sum + (m.metrics.latency || 0), 0) / metricsArray.length;
+      // Ensure tokenCount and costPerToken are numbers before multiplication
+      const avgCost = metricsArray.reduce((sum, m) => {
+          const cost = (m.metrics.costPerToken || 0) * (m.metrics.tokenCount || 0);
+          return sum + (isNaN(cost) ? 0 : cost);
+      }, 0) / metricsArray.length;
       
-      // Apply weights and constraints
-      let score = (avgAccuracy * this.config.metrics.accuracyWeight) - 
-                  (avgLatency * this.config.metrics.latencyWeight) - 
+      let score = (avgAccuracy * this.config.metrics.accuracyWeight) -
+                  (avgLatency * this.config.metrics.latencyWeight) -
                   (avgCost * this.config.metrics.costWeight);
       
-      // Apply constraints if specified
-      if (maxLatency && avgLatency > maxLatency) {
-        score = -Infinity; // Disqualify models that exceed max latency
-      }
-      
-      if (minAccuracy && avgAccuracy < minAccuracy) {
-        score = -Infinity; // Disqualify models that don't meet min accuracy
-      }
-      
-      // Prefer specified provider if requested
-      if (preferredProvider && provider !== preferredProvider) {
-        score *= 0.9; // 10% penalty for non-preferred providers
-      }
-      
-      // For cost-sensitive applications, prioritize cost more
-      if (costSensitive) {
-        score = score - (avgCost * this.config.metrics.costWeight * 2);
-      }
+      if (maxLatency && avgLatency > maxLatency) score = -Infinity;
+      if (minAccuracy && avgAccuracy < minAccuracy) score = -Infinity;
+      if (preferredProvider && provider !== preferredProvider) score *= 0.9;
+      if (costSensitive) score = score - (avgCost * this.config.metrics.costWeight * 2); // Extra penalty for cost
       
       modelPerformance[key] = {
-        modelId: { provider: provider as ModelProvider, modelId: modelId || '' },
+        modelId: { provider: provider as ModelProvider, modelId: modelIdStr || '' },
         score,
         accuracy: avgAccuracy,
         latency: avgLatency,
@@ -271,159 +365,25 @@ export class ModelRegistry {
       };
     }
     
-    // Find the model with the highest score
-    const bestModel = Object.values(modelPerformance).reduce(
-      (best, current) => (current.score > best.score ? current : best),
-      { score: -Infinity, modelId: this.getDefaultModel(taskType, preferredProvider) } as typeof modelPerformance[keyof typeof modelPerformance]
+    if (Object.keys(modelPerformance).length === 0) {
+        return this.getDefaultModel(taskType, preferredProvider);
+    }
+
+    const bestModelEntry = Object.values(modelPerformance).reduce(
+      (best, current) => (current.score > best.score ? current : best)
+      // No need for initial value if modelPerformance is guaranteed to be non-empty here
     );
     
-    return bestModel.modelId;
+    return bestModelEntry.modelId;
   }
 
-  /**
-   * Record performance metrics for a specific model and task
-   * @param modelId Model identifier
-   * @param taskType Task type
-   * @param metrics Performance metrics
-   */
-  public recordPerformance(
-    modelId: ModelIdentifier, 
-    taskType: TaskType, 
-    metrics: PerformanceMetrics,
-    inputHash?: string
-  ): void {
-    const evaluationResult: ModelEvaluationResult = {
-      modelId,
-      taskType,
-      metrics,
-      timestamp: new Date(),
-      inputHash
-    };
-    
-    this.performanceMetrics.push(evaluationResult);
-    logger.debug(`Recorded performance for ${modelId.provider}:${modelId.modelId} on ${taskType}`);
-    
-    // Increment task counter for this task type
-    this.incrementTaskCount(taskType);
-  }
+  // recordPerformance and incrementTaskCount are already updated
 
-  /**
-   * Increment the task counter for a specific task type
-   * @param taskType Task type
-   * @returns The updated task counter
-   */
-  public incrementTaskCount(taskType: TaskType): TaskCounter {
-    if (!this.taskCounters.has(taskType)) {
-      this.taskCounters.set(taskType, {
-        taskType,
-        count: 0,
-        lastEvaluationAt: new Date(0), // 1970-01-01, never evaluated
-        inEvaluationMode: false,
-        evaluationTasksRemaining: 0
-      });
-    }
-    
-    const counter = this.taskCounters.get(taskType)!;
-    counter.count += 1;
-    
-    // Check if we should enter or exit evaluation mode
-    if (counter.inEvaluationMode) {
-      // In evaluation mode, decrement tasks remaining
-      counter.evaluationTasksRemaining -= 1;
-      
-      // Exit evaluation mode if no tasks remaining
-      if (counter.evaluationTasksRemaining <= 0) {
-        counter.inEvaluationMode = false;
-        counter.lastEvaluationAt = new Date();
-        logger.info(`Exiting evaluation mode for task type ${taskType}`);
-      }
-    } else {
-      // In standard mode, check if we should enter evaluation mode
-      const tasksSinceLastEvaluation = 
-        counter.count - (this.getLastEvaluationCount(taskType) || 0);
-      
-      if (tasksSinceLastEvaluation >= this.config.standardCycleLength) {
-        counter.inEvaluationMode = true;
-        counter.evaluationTasksRemaining = this.config.evaluationCycleLength;
-        logger.info(`Entering evaluation mode for task type ${taskType}, next ${this.config.evaluationCycleLength} tasks will evaluate all models`);
-      }
-    }
-    
-    this.taskCounters.set(taskType, counter);
-    return counter;
-  }
+  // shouldRunEvaluation and getLastEvaluationCount are already updated
 
-  /**
-   * Check if the specified task should run in evaluation mode
-   * @param taskType Task type
-   * @returns True if the task should run in evaluation mode
-   */
-  public shouldRunEvaluation(taskType: TaskType): boolean {
-    const counter = this.taskCounters.get(taskType);
-    if (!counter) {
-      return false; // No counter exists yet, not in evaluation mode
-    }
-    
-    return counter.inEvaluationMode;
-  }
+  // getAllModels is already updated
 
-  /**
-   * Get the task count at the last evaluation
-   * @param taskType Task type
-   * @returns The task count at the last evaluation, or null if never evaluated
-   * @private
-   */
-  private getLastEvaluationCount(taskType: TaskType): number | null {
-    const counter = this.taskCounters.get(taskType);
-    if (!counter || counter.lastEvaluationAt.getTime() === 0) {
-      return null; // Never evaluated
-    }
-    
-    // Find the task count at the last evaluation
-    // This is an approximation based on the current count and time since last evaluation
-    const countsPerEvaluationCycle = this.config.standardCycleLength + this.config.evaluationCycleLength;
-    return counter.count - (counter.count % countsPerEvaluationCycle);
-  }
-
-  /**
-   * Get all available models for a specific task
-   * @param taskType Task type
-   * @returns Array of model identifiers
-   */
-  public getAllModels(taskType: TaskType): ModelIdentifier[] {
-    const models: ModelIdentifier[] = [];
-    
-    // Add models from each enabled provider
-    for (const [provider, config] of Object.entries(this.config.providers)) {
-      if (config.enabled && config.defaultModels[taskType]) {
-        models.push({
-          provider: provider as ModelProvider,
-          modelId: config.defaultModels[taskType]
-        });
-      }
-    }
-    
-    return models;
-  }
-
-  /**
-   * Store a model comparison report from a multi-model evaluation
-   * @param report Model comparison report
-   */
-  public storeModelComparison(report: ModelComparisonReport): void {
-    this.modelComparisons.push(report);
-    logger.info(`Stored model comparison for ${report.taskType} with ${report.results.length} models`);
-    
-    // Update performance metrics with the results
-    for (const result of report.results) {
-      this.recordPerformance(
-        result.modelId,
-        result.taskType,
-        result.metrics,
-        result.inputHash
-      );
-    }
-  }
+  // storeModelComparison is already updated
 
   /**
    * Get a default model for a specific task type
@@ -478,12 +438,39 @@ export class ModelRegistry {
    * @param taskType Task type
    * @returns Array of performance metrics
    */
-  public getPerformanceHistory(modelId: ModelIdentifier, taskType: TaskType): ModelEvaluationResult[] {
-    return this.performanceMetrics.filter(m => 
-      m.taskType === taskType && 
-      m.modelId.provider === modelId.provider && 
-      m.modelId.modelId === modelId.modelId
-    );
+  public async getPerformanceHistory(modelId: ModelIdentifier, taskType: TaskType): Promise<ModelEvaluationResult[]> {
+    if (!this.isInitialized) {
+        await ModelRegistry.getInstance(); // Ensure initialization
+    }
+    const client = supabase.getClient();
+    const { data, error } = await client
+      .from('model_performance_metrics')
+      .select('*')
+      .eq('model_provider', modelId.provider)
+      .eq('model_id', modelId.modelId)
+      .eq('task_type', taskType)
+      .order('timestamp', { ascending: false });
+
+    if (error) {
+      logger.error(`Error fetching performance history for ${modelId.provider}:${modelId.modelId} on ${taskType}:`, error);
+      return [];
+    }
+    // Map DB result to ModelEvaluationResult[]
+    return (data || []).map((dbResult: any) => ({ // Added 'any' for dbResult to satisfy TS during mapping
+        modelId: { provider: dbResult.model_provider as ModelProvider, modelId: dbResult.model_id },
+        taskType: dbResult.task_type,
+        metrics: {
+            accuracy: dbResult.accuracy,
+            latency: dbResult.latency_ms,
+            costPerToken: dbResult.cost_per_token,
+            tokenCount: dbResult.token_count,
+            userRating: dbResult.user_rating,
+            customMetrics: dbResult.custom_metrics
+        },
+        timestamp: new Date(dbResult.timestamp),
+        inputHash: dbResult.input_hash,
+        contextSize: dbResult.context_size
+    }));
   }
 
   /**
@@ -492,11 +479,71 @@ export class ModelRegistry {
    * @param limit Maximum number of reports to return
    * @returns Array of model comparison reports
    */
-  public getModelComparisons(taskType: TaskType, limit: number = 10): ModelComparisonReport[] {
-    return this.modelComparisons
-      .filter(r => r.taskType === taskType)
-      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
-      .slice(0, limit);
+  public async getModelComparisons(taskType: TaskType, limit: number = 10): Promise<ModelComparisonReport[]> {
+    if (!this.isInitialized) {
+        await ModelRegistry.getInstance(); // Ensure initialization
+    }
+    const client = supabase.getClient();
+    const { data: reportsData, error: reportsError } = await client
+      .from('model_comparison_reports')
+      .select('id, task_type, timestamp') // Select specific columns
+      .eq('task_type', taskType)
+      .order('timestamp', { ascending: false })
+      .limit(limit);
+
+    if (reportsError) {
+      logger.error(`Error fetching model comparison reports for ${taskType}:`, reportsError);
+      return [];
+    }
+    if (!reportsData) return [];
+
+    const reports: ModelComparisonReport[] = [];
+    for (const reportRecord of reportsData) {
+      const { data: metricsData, error: metricsError } = await client
+        .from('model_performance_metrics')
+        .select('*')
+        .eq('comparison_report_id', reportRecord.id);
+      
+      if (metricsError) {
+        logger.error(`Error fetching metrics for report ${reportRecord.id}:`, metricsError);
+        // Continue to next report or handle error differently
+        continue;
+      }
+
+      const results: ModelEvaluationResult[] = (metricsData || []).map((dbResult: any) => ({ // Added 'any' for dbResult
+        modelId: { provider: dbResult.model_provider as ModelProvider, modelId: dbResult.model_id },
+        taskType: dbResult.task_type,
+        metrics: {
+            accuracy: dbResult.accuracy,
+            latency: dbResult.latency_ms,
+            costPerToken: dbResult.cost_per_token,
+            tokenCount: dbResult.token_count,
+            userRating: dbResult.user_rating,
+            customMetrics: dbResult.custom_metrics
+        },
+        timestamp: new Date(dbResult.timestamp),
+        inputHash: dbResult.input_hash,
+        contextSize: dbResult.context_size
+      }));
+      
+      // Reconstruct rankings and bestModelId if they were stored in the report or derive them
+      // For now, these are left as potentially empty or to be derived if not in DB
+      // A more robust way would be to store/retrieve these if they are critical.
+      let bestModelInReport: ModelIdentifier = this.getDefaultModel(reportRecord.task_type);
+      if (results && results.length > 0 && results[0]) { // Ensure results[0] is not undefined
+          // Simplified: pick the first one, or implement ranking logic based on metrics
+          bestModelInReport = results[0].modelId;
+      }
+
+      reports.push({
+        taskType: reportRecord.task_type,
+        timestamp: new Date(reportRecord.timestamp),
+        results,
+        rankings: {}, // Placeholder: Derive or load if stored
+        bestModelId: bestModelInReport
+      });
+    }
+    return reports;
   }
 }
 

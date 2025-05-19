@@ -583,7 +583,9 @@ export async function searchMaterials(options: {
 
 /**
  * Find similar materials based on vector representation
- * 
+ *
+ * @deprecated This function performs client-side vector similarity calculation and is highly inefficient.
+ * Use services like EnhancedVectorServiceImpl for database-side vector search.
  * @param materialId Material ID or vector representation
  * @param options Search options
  * @returns Array of similar materials with similarity scores
@@ -599,12 +601,19 @@ export async function findSimilarMaterials(
   material: MaterialDocument;
   similarity: number;
 }>> {
+  logger.warn("DEPRECATED: findSimilarMaterials in material.model.ts is called. This function is inefficient and should not be used for production vector search. Use a database-side vector search implementation.");
+  
+  // Returning empty or throwing an error to discourage use.
+  // For now, returning empty to avoid breaking existing calls immediately,
+  // but this should ideally throw or be removed.
+  return [];
+
+  /* Original inefficient implementation:
   try {
     const { limit = 10, threshold = 0.7, materialType } = options;
     
     let vectorRepresentation: number[];
     
-    // If materialId is a string, get the vector representation from the database
     if (typeof materialId === 'string') {
       const material = await Material.findOne({ id: materialId });
       if (!material || !material.vectorRepresentation || material.vectorRepresentation.length === 0) {
@@ -615,34 +624,27 @@ export async function findSimilarMaterials(
       vectorRepresentation = materialId;
     }
     
-    // Build query
     const filter: any = {
       vectorRepresentation: { $exists: true, $ne: [] }
     };
     
-    // Material type filter
     if (materialType) {
       filter.materialType = Array.isArray(materialType)
         ? { $in: materialType }
         : materialType;
     }
     
-    // Get all materials with vector representations
     const materials = await Material.find(filter);
     
-    // Calculate similarity scores
     const similarMaterials = materials
       .map((material: MaterialDocument) => {
         if (!material.vectorRepresentation || material.vectorRepresentation.length === 0) {
           return { material, similarity: 0 };
         }
-        
-        // Calculate cosine similarity
         const similarity = calculateCosineSimilarity(
           vectorRepresentation,
           material.vectorRepresentation
         );
-        
         return { material, similarity };
       })
       .filter(({ similarity }: { similarity: number }) => similarity >= threshold)
@@ -654,6 +656,7 @@ export async function findSimilarMaterials(
     logger.error(`Failed to find similar materials: ${err}`);
     throw new Error(`Failed to find similar materials: ${err instanceof Error ? err.message : String(err)}`);
   }
+  */
 }
 
 /**

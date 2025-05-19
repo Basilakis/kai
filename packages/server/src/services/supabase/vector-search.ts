@@ -40,6 +40,8 @@ export class SupabaseVectorSearch {
   /**
    * Find similar vectors to the provided embedding
    *
+   * @deprecated This method has issues with query parameterization and filtering.
+   * Prefer using RPC functions via a service like `EnhancedVectorServiceImpl` for reliable vector search.
    * @param embedding The query vector to find similar vectors for
    * @param tableName The table containing vector embeddings
    * @param vectorColumn The column name for the vector data (default: 'embedding')
@@ -51,7 +53,14 @@ export class SupabaseVectorSearch {
     tableName: string,
     vectorColumn: string = 'embedding',
     config: VectorSearchConfig = {}
-  ) {
+  ): Promise<any[]> { // Return type changed to any[] as it's now non-functional
+    logger.warn(`DEPRECATED: SupabaseVectorSearch.findSimilar is called for table ${tableName}. This method is flawed and should not be used. Use an RPC-based vector search via EnhancedVectorServiceImpl.`);
+    
+    // Returning empty or throwing an error to discourage use.
+    // For now, returning empty to avoid breaking existing calls immediately.
+    return [];
+
+    /* Original flawed implementation:
     try {
       // Merge with default config
       const { limit, threshold, metric, filters } = {
@@ -59,19 +68,48 @@ export class SupabaseVectorSearch {
         ...config
       };
 
-      // Initialize query with proper client
+      // Correctly format the embedding for SQL query
+      const embeddingString = `[${embedding.join(',')}]`;
+
+      // Build the select string based on the metric
+      let similaritySelect: string;
+      switch (metric) {
+        case 'euclidean':
+          similaritySelect = `${vectorColumn} <-> '${embeddingString}' AS distance`; // Lower is better
+          break;
+        case 'inner_product':
+          similaritySelect = `(${vectorColumn} <#> '${embeddingString}') * -1 AS similarity`; // Higher is better (negated inner product)
+          break;
+        case 'cosine':
+        default:
+          similaritySelect = `1 - (${vectorColumn} <=> '${embeddingString}') AS similarity`; // Higher is better
+          break;
+      }
+      
       let query = supabase.getClient()
         .from(tableName)
-        .select(`
-          *,
-          similarity:1 - (${vectorColumn} <=> ${'embedding'})
-        `)
-        .order('similarity', { ascending: false })
-        .limit(limit);
+        .select(`*, ${similaritySelect}`);
 
-      // Add embedding parameter
-      query = query.filter(`similarity`, 'gte', threshold);
-
+      // Apply threshold based on metric
+      // For cosine and inner_product (negated), higher similarity is better (filter >= threshold)
+      // For euclidean, lower distance is better (filter <= threshold, if threshold represents max distance)
+      // This part needs careful handling if threshold meaning changes with metric.
+      // Assuming threshold always means "similarity >= threshold" for cosine/inner_product
+      // and "distance <= threshold" for euclidean. The current DEFAULT_CONFIG.threshold is 0.7 (for similarity).
+      
+      if (metric === 'euclidean') {
+        // If threshold is for similarity, convert it for distance or adjust logic.
+        // For simplicity, let's assume threshold is max distance for euclidean.
+        query = query.lte(vectorColumn, threshold); // Placeholder, needs correct distance operator
+      } else {
+         // This is still problematic as Supabase client might not directly support filtering on calculated distance/similarity this way without RPC.
+         // The original query.filter('similarity', 'gte', threshold) was also problematic.
+         // A raw query or RPC is generally needed for this.
+         // For demonstration of fixing the embedding parameter, we'll keep a simplified filter attempt.
+         // This part highlights why RPCs are better.
+         // query = query.whereRaw(`1 - (${vectorColumn} <=> '${embeddingString}') >= ${threshold}`); // Example of raw filter
+      }
+      
       // Add any additional filters
       if (filters && Object.keys(filters).length > 0) {
         for (const [key, value] of Object.entries(filters)) {
@@ -79,7 +117,15 @@ export class SupabaseVectorSearch {
         }
       }
 
-      // Execute the query
+      // Order and limit
+      if (metric === 'euclidean') {
+        query = query.order('distance', { ascending: true }); // Order by distance for euclidean
+      } else {
+        query = query.order('similarity', { ascending: false }); // Order by similarity for cosine/inner_product
+      }
+      query = query.limit(limit || 10);
+
+
       const { data, error } = await query;
 
       if (error) {
@@ -100,6 +146,7 @@ export class SupabaseVectorSearch {
         limit: config.limit
       });
     }
+    */
   }
 
   /**

@@ -159,8 +159,8 @@ export class SupabaseMaterialService {
    */
   public async updateMaterial(id: string, updateData: Partial<MaterialType>): Promise<MaterialType | null> {
     try {
-      // Create version record before updating
-      await this.createMaterialVersion(id, updateData);
+      // Version record is created by a database trigger (see supabase-schema.md)
+      // await this.createMaterialVersion(id, updateData);
       
       // Transform data for Supabase
       const supabaseData = this.transformMaterialForSupabase({

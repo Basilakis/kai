@@ -8,7 +8,7 @@
 import { supabase } from './supabaseClient';
 import { handleSupabaseError } from '../../../shared/src/utils/supabaseErrorHandler';
 import { logger } from '../../utils/logger';
-import { SupabaseVectorSearch } from './vector-search';
+// import { SupabaseVectorSearch } from './vector-search'; // Unused
 
 // Hybrid search configuration
 interface HybridSearchConfig {
@@ -45,10 +45,10 @@ const DEFAULT_CONFIG = {
  * Combines full-text search and vector similarity search for better results
  */
 export class SupabaseHybridSearch {
-  private vectorSearch: SupabaseVectorSearch;
+  // private vectorSearch: SupabaseVectorSearch; // Unused
 
   constructor() {
-    this.vectorSearch = new SupabaseVectorSearch();
+    // this.vectorSearch = new SupabaseVectorSearch(); // Unused
   }
 
   /**
@@ -125,8 +125,8 @@ export class SupabaseHybridSearch {
           tableName,
           textColumns,
           vectorColumn,
-          limit,
-          threshold
+          limit: mergedConfig.limit, // Use mergedConfig here
+          threshold: mergedConfig.threshold // Use mergedConfig here
         });
       }
 
@@ -136,8 +136,8 @@ export class SupabaseHybridSearch {
         tableName,
         textColumns,
         vectorColumn,
-        limit,
-        threshold
+        limit: config.limit, // config is in scope
+        threshold: config.threshold // config is in scope
       });
     }
   }

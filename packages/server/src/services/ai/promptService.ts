@@ -7,8 +7,8 @@
 
 import { logger } from '../../utils/logger';
 import { supabaseClient } from '../supabase/supabaseClient';
-import fs from 'fs';
-import path from 'path';
+// import fs from 'fs'; // Unused
+// import path from 'path'; // Unused
 
 /**
  * Prompt types
@@ -74,6 +74,14 @@ export interface PromptSuccessData {
   userId?: string;
   createdAt: Date;
   context?: Record<string, any>;
+  segmentId?: string;      // Added
+  experimentId?: string;   // Added
+  variantId?: string;      // Added
+  interactionCount?: number; // Added
+  interactionDurationMs?: number; // Added
+  interactionPattern?: string[]; // Added
+  followUpSentiment?: string; // Added
+  sentimentScore?: number; // Added
 }
 
 /**
@@ -787,21 +795,45 @@ class PromptService {
       responseTimeMs?: number;
       autoDetected?: boolean;
       detectionMethod?: string;
+      // Add new fields from autoDetectPromptSuccess
+      interactionCount?: number;
+      interactionDurationMs?: number;
+      interactionPattern?: string[];
+      followUpSentiment?: string;
+      sentimentScore?: number;
     }
   ): Promise<boolean> {
     try {
+      // Prepare the payload with camelCase keys matching PromptSuccessData
+      const updatePayload: Partial<PromptSuccessData> = {
+        isSuccessful: data.isSuccessful,
+        feedback: data.feedback,
+        feedbackRating: data.feedbackRating,
+        feedbackCategory: data.feedbackCategory,
+        feedbackTags: data.feedbackTags,
+        responseTimeMs: data.responseTimeMs,
+        autoDetected: data.autoDetected,
+        detectionMethod: data.detectionMethod,
+        interactionCount: data.interactionCount,
+        interactionDurationMs: data.interactionDurationMs,
+        interactionPattern: data.interactionPattern,
+        followUpSentiment: data.followUpSentiment,
+        sentimentScore: data.sentimentScore
+      };
+      
+      // Remove undefined fields from payload to avoid overwriting with null
+      // And ensure we only pass fields that are part of the DB update schema
+      const dbUpdatePayload: Record<string, any> = {};
+      for (const key in updatePayload) {
+        if (updatePayload[key as keyof typeof updatePayload] !== undefined) {
+          // Assume Supabase client handles camelCase to snake_case conversion for column names
+          dbUpdatePayload[key] = updatePayload[key as keyof typeof updatePayload];
+        }
+      }
+
       const { error } = await supabaseClient.getClient()
         .from('system_prompt_success_tracking')
-        .update({
-          is_successful: data.isSuccessful,
-          feedback: data.feedback,
-          feedback_rating: data.feedbackRating,
-          feedback_category: data.feedbackCategory,
-          feedback_tags: data.feedbackTags,
-          response_time_ms: data.responseTimeMs,
-          auto_detected: data.autoDetected,
-          detection_method: data.detectionMethod
-        })
+        .update(dbUpdatePayload)
         .eq('id', trackingId);
 
       if (error) {
@@ -902,7 +934,7 @@ class PromptService {
       const interactionPattern = userActions.interactionPattern || [];
 
       // Update the tracking record with enhanced data
-      return this.updatePromptTrackingRecord(trackingId, {
+      const updateData = {
         isSuccessful,
         responseTimeMs,
         autoDetected: true,
@@ -912,7 +944,8 @@ class PromptService {
         interactionPattern,
         followUpSentiment,
         sentimentScore
-      });
+      };
+      return this.updatePromptTrackingRecord(trackingId, updateData);
     } catch (error) {
       logger.error(`Failed to auto-detect prompt success: ${error}`);
       throw error;
@@ -1000,13 +1033,17 @@ class PromptService {
       }
 
       // Select a variant based on weights
-      const variants = experiment.prompt_ab_variants;
-      const totalWeight = variants.reduce((sum, variant) => sum + variant.weight, 0);
+      const variants: ABVariantData[] = experiment.prompt_ab_variants || [];
+      if (variants.length === 0) {
+        logger.warn(`Experiment ${experiment.id} has no variants.`);
+        return null; // Or handle as an error
+      }
+      const totalWeight = variants.reduce((sum: number, variant: ABVariantData) => sum + (variant.weight || 0), 0);
       let randomWeight = Math.random() * totalWeight;
-      let selectedVariant = variants[0]; // Default to first variant
+      let selectedVariant: ABVariantData = variants[0]!; // Default to first variant, non-null assertion as we check length
 
       for (const variant of variants) {
-        randomWeight -= variant.weight;
+        randomWeight -= (variant.weight || 0);
         if (randomWeight <= 0) {
           selectedVariant = variant;
           break;
@@ -1031,7 +1068,7 @@ class PromptService {
       }
 
       return {
-        promptId: selectedVariant.prompt_id,
+        promptId: selectedVariant.promptId, // Use camelCase from ABVariantData
         variantId: selectedVariant.id,
         experimentId: experiment.id
       };

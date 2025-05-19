@@ -1,99 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
-
-// Define types for jsonwebtoken since we can't resolve the module
-interface JwtPayload {
-  [key: string]: any;
-}
-
-interface VerifyOptions {
-  algorithms?: string[];
-  audience?: string | string[];
-  issuer?: string | string[];
-  jwtid?: string;
-  subject?: string;
-  clockTolerance?: number;
-  maxAge?: string | number;
-  clockTimestamp?: number;
-}
-
-type GetPublicKeyOrSecret = (
-  header: { kid: string },
-  callback: (err: Error | null, key?: string) => void
-) => void;
-
-interface OfficialJwtPayload extends JwtPayload {}
-
-// Define JWT types and implementation
-
-class JsonWebTokenError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'JsonWebTokenError';
-  }
-}
-
-class TokenExpiredError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'TokenExpiredError';
-  }
-}
-
-// Mock jwt module
-const jwt = {
-  verify: (_token: string, _secretOrPublicKey: string | Buffer | GetPublicKeyOrSecret, _options?: VerifyOptions, callback?: Function) => {
-    // This is a mock implementation
-    if (callback) {
-      callback(new Error('JWT verification not implemented'));
-    } else {
-      throw new Error('JWT verification not implemented');
-    }
-  },
-  decode: (_token: string, _options?: { complete?: boolean; json?: boolean }) => {
-    // This is a mock implementation
-    return null;
-  },
-  sign: (_payload: string | Buffer | object, _secretOrPrivateKey: string | Buffer, _options?: any) => {
-    // This is a mock implementation
-    return 'mock.jwt.token';
-  },
-  JsonWebTokenError,
-  TokenExpiredError
-};
-
-// Define types for jwks-rsa since we can't install it directly
-interface SigningKey {
-  kid: string;
-  nbf?: string;
-  publicKey?: string;
-  rsaPublicKey?: string;
-  getPublicKey?: () => string;
-}
-
-interface JwksClientOptions {
-  jwksUri: string;
-  requestHeaders?: Record<string, string>;
-  timeout?: number;
-  cache?: boolean;
-  cacheMaxEntries?: number;
-  cacheMaxAge?: number;
-  rateLimit?: boolean;
-  jwksRequestsPerMinute?: number;
-}
-
-interface JwksClient {
-  getSigningKey(kid: string): Promise<SigningKey>;
-  getSigningKey(kid: string, callback: (err: Error | null, key?: SigningKey) => void): void;
-}
-
-// Mock jwksClient function
-const jwksClient = (_options: JwksClientOptions): JwksClient => {
-  return {
-    getSigningKey: async (_kid: string): Promise<SigningKey> => {
-      throw new Error('jwks-rsa not implemented');
-    }
-  };
-};
+import jwt, { JsonWebTokenError, TokenExpiredError, JwtPayload as OfficialJwtPayload, VerifyOptions, GetPublicKeyOrSecret } from 'jsonwebtoken';
+import jwksClient, { JwksClientOptions, SigningKey, RsaSigningKey } from 'jwks-rsa';
 
 import { ApiError } from './error.middleware';
 import { asyncHandler } from './error.middleware';
@@ -152,29 +59,21 @@ const client = jwksClient({
 });
 
 // Explicitly type parameters for getKey
-const getKey: GetPublicKeyOrSecret = (header: { kid?: string }, callback: (err: Error | null, key?: string) => void) => {
-  if (!header.kid) {
-    // Provide an error to the callback
-    return callback(new jwt.JsonWebTokenError('Token header does not contain "kid"'), undefined);
+const getKey: GetPublicKeyOrSecret = (header, callback) => {
+  if (!header || !header.kid) {
+    return callback(new JsonWebTokenError('Token header does not contain "kid"'));
   }
-  // Explicitly type parameters for getSigningKey callback
-  client.getSigningKey(header.kid, (err: Error | null, key: SigningKey | undefined) => {
+  client.getSigningKey(header.kid, (err, key) => {
     if (err) {
       logger.error('Error fetching signing key:', err);
-      return callback(err, undefined);
+      return callback(err);
     }
-    // Provide the public key or certificate
-    let signingKey: string | undefined;
-    if (key?.getPublicKey) {
-      signingKey = key.getPublicKey();
-    } else if (key?.publicKey) {
-      signingKey = key.publicKey;
-    } else if (key?.rsaPublicKey) {
-      signingKey = key.rsaPublicKey;
-    }
+    // key is of type SigningKey | undefined. We need to narrow it down.
+    // jwks-rsa returns RsaSigningKey or EcSigningKey. For Supabase (RS256), it's RsaSigningKey.
+    const signingKey = (key as RsaSigningKey)?.publicKey || (key as RsaSigningKey)?.rsaPublicKey;
 
     if (!signingKey) {
-      return callback(new Error('Could not get signing key'));
+      return callback(new Error('Could not get signing key from JWKS'));
     }
     callback(null, signingKey);
   });

@@ -8,7 +8,7 @@
 import { logger } from '../../utils/logger';
 import {
   ApiKey,
-  getUserApiKeys,
+  getUserApiKeys as getUserApiKeysFromModel,
   getApiKeyById,
   createApiKey as createApiKeyModel,
   updateApiKey as updateApiKeyModel,
@@ -38,7 +38,7 @@ export enum ApiKeyScope {
  */
 export async function getUserApiKeys(userId: string): Promise<ApiKey[]> {
   try {
-    return await getUserApiKeys(userId);
+    return await getUserApiKeysFromModel(userId);
   } catch (error) {
     logger.error(`Failed to get API keys: ${error}`);
     throw error;

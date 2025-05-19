@@ -7,8 +7,8 @@
 import { logger } from '../../utils/logger';
 import { supabaseClient } from '../supabase/supabaseClient';
 import axios from 'axios';
-import * as fs from 'fs';
-import * as path from 'path';
+// import * as fs from 'fs'; // Unused
+// import * as path from 'path'; // Unused
 
 /**
  * Integration data

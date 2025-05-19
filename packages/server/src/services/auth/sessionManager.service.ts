@@ -30,12 +30,13 @@ import geoip from 'geoip-lite';
  * @returns Device information
  */
 export function extractDeviceInfo(req: Request): UserSession['deviceInfo'] {
+  const rawUserAgent = req.headers['user-agent'];
+  const userAgentString = Array.isArray(rawUserAgent) ? rawUserAgent.join('; ') : rawUserAgent || '';
+  const ip = req.ip || req.socket.remoteAddress || '';
+
   try {
-    const userAgent = req.headers['user-agent'] || '';
-    const ip = req.ip || req.socket.remoteAddress || '';
-    
     // Parse user agent
-    const parser = new UAParser(userAgent);
+    const parser = new UAParser(userAgentString);
     const browser = parser.getBrowser();
     const os = parser.getOS();
     const device = parser.getDevice();
@@ -48,7 +49,7 @@ export function extractDeviceInfo(req: Request): UserSession['deviceInfo'] {
       os: `${os.name || 'Unknown'} ${os.version || ''}`.trim(),
       device: device.vendor ? `${device.vendor} ${device.model || ''}`.trim() : 'Unknown',
       ip,
-      userAgent,
+      userAgent: userAgentString,
       location: geo ? {
         country: geo.country,
         region: geo.region,
@@ -63,8 +64,8 @@ export function extractDeviceInfo(req: Request): UserSession['deviceInfo'] {
       browser: 'Unknown',
       os: 'Unknown',
       device: 'Unknown',
-      ip: req.ip || req.socket.remoteAddress || '',
-      userAgent: req.headers['user-agent'] || ''
+      ip: ip, // Use the derived ip
+      userAgent: userAgentString
     };
   }
 }
@@ -84,26 +85,31 @@ export async function createUserSession(
   try {
     // Extract device info
     const deviceInfo = extractDeviceInfo(req);
+
+    if (!process.env.JWT_SECRET) {
+      logger.error('JWT_SECRET is not defined. Cannot create session tokens.');
+      throw new Error('JWT_SECRET is not defined.');
+    }
     
     // Generate tokens
     const sessionId = uuidv4();
     const token = jwt.sign(
-      { 
-        userId, 
+      {
+        userId,
         sessionId,
         type: 'access'
       },
-      process.env.JWT_SECRET || 'default-secret',
+      process.env.JWT_SECRET,
       { expiresIn }
     );
     
     const refreshToken = jwt.sign(
-      { 
-        userId, 
+      {
+        userId,
         sessionId,
         type: 'refresh'
       },
-      process.env.JWT_SECRET || 'default-secret',
+      process.env.JWT_SECRET,
       { expiresIn: expiresIn * 2 } // Refresh token lasts twice as long
     );
     
@@ -137,9 +143,13 @@ export async function createUserSession(
 export async function validateSessionToken(token: string): Promise<string | null> {
   try {
     // Verify the token
+    if (!process.env.JWT_SECRET) {
+      logger.error('JWT_SECRET is not defined. Cannot validate session token.');
+      throw new Error('JWT_SECRET is not defined.');
+    }
     const decoded = jwt.verify(
       token,
-      process.env.JWT_SECRET || 'default-secret'
+      process.env.JWT_SECRET
     ) as { userId: string; sessionId: string; type: string };
     
     if (decoded.type !== 'access') {
@@ -177,9 +187,13 @@ export async function refreshSessionToken(
 ): Promise<{ token: string; refreshToken: string } | null> {
   try {
     // Verify the refresh token
+    if (!process.env.JWT_SECRET) {
+      logger.error('JWT_SECRET is not defined. Cannot refresh session token.');
+      throw new Error('JWT_SECRET is not defined.');
+    }
     const decoded = jwt.verify(
       refreshToken,
-      process.env.JWT_SECRET || 'default-secret'
+      process.env.JWT_SECRET
     ) as { userId: string; sessionId: string; type: string };
     
     if (decoded.type !== 'refresh') {
@@ -195,22 +209,22 @@ export async function refreshSessionToken(
     
     // Generate new tokens
     const token = jwt.sign(
-      { 
-        userId: decoded.userId, 
+      {
+        userId: decoded.userId,
         sessionId: decoded.sessionId,
         type: 'access'
       },
-      process.env.JWT_SECRET || 'default-secret',
+      process.env.JWT_SECRET,
       { expiresIn }
     );
     
     const newRefreshToken = jwt.sign(
-      { 
-        userId: decoded.userId, 
+      {
+        userId: decoded.userId,
         sessionId: decoded.sessionId,
         type: 'refresh'
       },
-      process.env.JWT_SECRET || 'default-secret',
+      process.env.JWT_SECRET,
       { expiresIn: expiresIn * 2 } // Refresh token lasts twice as long
     );
     
