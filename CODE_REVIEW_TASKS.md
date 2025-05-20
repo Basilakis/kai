@@ -310,6 +310,174 @@ These issues significantly impact core functionality or security and should be p
         3.  This avoids direct filesystem dependency for model persistence.
     *   **Priority:** Critical
 
+29. **Placeholder ML Pipeline in `RelationshipAwareTrainingService`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1)
+    *   **Issue:** The core machine learning functionalities (model creation, training, evaluation, feature importance) are implemented as placeholders (e.g., `createModel` on [line 1407](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1407) returns a dummy object, `trainModel` on [line 1464](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1464) simulates a delay, `evaluateModel` on [line 1029](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1029) returns hardcoded values, `calculateFeatureImportance` on [line 1500](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1500) returns random values).
+    *   **Impact:** The service cannot actually train or use relationship-aware models for property prediction. Its primary purpose is non-functional.
+    *   **Action:** Implement the actual ML model training, evaluation, and feature importance logic using TensorFlow.js or another suitable ML framework. This includes defining appropriate model architectures and training procedures.
+    *   **Priority:** Critical
+
+30. **Local Filesystem Usage in `RelationshipAwareTrainingService`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1)
+    *   **Issue:** The service saves/loads model artifacts and metadata to/from the local filesystem path `data/models/<modelId>` (e.g., `model.save('file://...')` on [line 940](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:940) - though this save is on a dummy model object, the intent for local file saving is clear).
+    *   **Impact:** Unsuitable for server environments due to issues with statelessness, scalability, and shared access. Model data will be lost or inaccessible.
+    *   **Action:** Refactor all model artifact and metadata storage to use a shared object storage solution (similar to Critical Issues #26, #28).
+    *   **Priority:** Critical
+
+31. **Programmatic Table Creation in `RelationshipAwareTrainingService.ensureTables`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:110)
+    *   **Issue:** The `ensureTables` method uses `supabase.getClient().rpc('execute_sql', ...)` to programmatically create `relationship_aware_training_jobs`, `relationship_aware_models`, and `relationship_aware_model_performance` tables if they don't exist.
+    *   **Impact:** Managing database schema via application code is an anti-pattern. It bypasses proper migration processes, can lead to inconsistencies between environments, and makes schema versioning difficult.
+    *   **Action:** Remove the `ensureTables` method. Define these table schemas in proper Supabase SQL migration files.
+    *   **Priority:** Critical
+
+29. **Placeholder ML Pipeline in `RelationshipAwareTrainingService`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1)
+    *   **Issue:** The core machine learning functionalities (model creation, training, evaluation, feature importance) are implemented as placeholders (e.g., `createModel` on [line 1407](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1407) returns a dummy object, `trainModel` on [line 1464](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1464) simulates a delay, `evaluateModel` on [line 1029](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1029) returns hardcoded values, `calculateFeatureImportance` on [line 1500](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1500) returns random values).
+    *   **Impact:** The service cannot actually train or use relationship-aware models for property prediction. Its primary purpose is non-functional.
+    *   **Action:** Implement the actual ML model training, evaluation, and feature importance logic using TensorFlow.js or another suitable ML framework. This includes defining appropriate model architectures and training procedures.
+    *   **Priority:** Critical
+
+30. **Local Filesystem Usage in `RelationshipAwareTrainingService`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1)
+    *   **Issue:** The service saves/loads model artifacts and metadata to/from the local filesystem path `data/models/<modelId>` (e.g., `model.save('file://...')` on [line 940](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:940) - though this save is on a dummy model object, the intent for local file saving is clear).
+    *   **Impact:** Unsuitable for server environments due to issues with statelessness, scalability, and shared access. Model data will be lost or inaccessible.
+    *   **Action:** Refactor all model artifact and metadata storage to use a shared object storage solution (similar to Critical Issues #26, #28).
+    *   **Priority:** Critical
+
+31. **Programmatic Table Creation in `RelationshipAwareTrainingService.ensureTables`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:110)
+    *   **Issue:** The `ensureTables` method uses `supabase.getClient().rpc('execute_sql', ...)` to programmatically create `relationship_aware_training_jobs`, `relationship_aware_models`, and `relationship_aware_model_performance` tables if they don't exist.
+    *   **Impact:** Managing database schema via application code is an anti-pattern. It bypasses proper migration processes, can lead to inconsistencies between environments, and makes schema versioning difficult.
+    *   **Action:** Remove the `ensureTables` method. Define these table schemas in proper Supabase SQL migration files.
+    *   **Priority:** Critical
+
+29. **Placeholder ML Pipeline in `RelationshipAwareTrainingService`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1)
+    *   **Issue:** The core machine learning functionalities (model creation, training, evaluation, feature importance) are implemented as placeholders (e.g., `createModel` on [line 1407](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1407) returns a dummy object, `trainModel` on [line 1464](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1464) simulates a delay, `evaluateModel` on [line 1029](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1029) returns hardcoded values, `calculateFeatureImportance` on [line 1500](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1500) returns random values).
+    *   **Impact:** The service cannot actually train or use relationship-aware models for property prediction. Its primary purpose is non-functional.
+    *   **Action:** Implement the actual ML model training, evaluation, and feature importance logic using TensorFlow.js or another suitable ML framework. This includes defining appropriate model architectures and training procedures.
+    *   **Priority:** Critical
+
+30. **Local Filesystem Usage in `RelationshipAwareTrainingService`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1)
+    *   **Issue:** The service saves/loads model artifacts and metadata to/from the local filesystem path `data/models/<modelId>` (e.g., `model.save('file://...')` on [line 940](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:940) - though this save is on a dummy model object, the intent for local file saving is clear).
+    *   **Impact:** Unsuitable for server environments due to issues with statelessness, scalability, and shared access. Model data will be lost or inaccessible.
+    *   **Action:** Refactor all model artifact and metadata storage to use a shared object storage solution (similar to Critical Issues #26, #28).
+    *   **Priority:** Critical
+
+31. **Programmatic Table Creation in `RelationshipAwareTrainingService.ensureTables`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:110)
+    *   **Issue:** The `ensureTables` method uses `supabase.getClient().rpc('execute_sql', ...)` to programmatically create `relationship_aware_training_jobs`, `relationship_aware_models`, and `relationship_aware_model_performance` tables if they don't exist.
+    *   **Impact:** Managing database schema via application code is an anti-pattern. It bypasses proper migration processes, can lead to inconsistencies between environments, and makes schema versioning difficult.
+    *   **Action:** Remove the `ensureTables` method. Define these table schemas in proper Supabase SQL migration files.
+    *   **Priority:** Critical
+
+29. **Placeholder ML Pipeline in `RelationshipAwareTrainingService`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1)
+    *   **Issue:** The core machine learning functionalities (model creation, training, evaluation, feature importance) are implemented as placeholders (e.g., `createModel` on [line 1407](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1407) returns a dummy object, `trainModel` on [line 1464](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1464) simulates a delay, `evaluateModel` on [line 1029](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1029) returns hardcoded values, `calculateFeatureImportance` on [line 1500](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1500) returns random values).
+    *   **Impact:** The service cannot actually train or use relationship-aware models for property prediction. Its primary purpose is non-functional.
+    *   **Action:** Implement the actual ML model training, evaluation, and feature importance logic using TensorFlow.js or another suitable ML framework. This includes defining appropriate model architectures and training procedures.
+    *   **Priority:** Critical
+
+30. **Local Filesystem Usage in `RelationshipAwareTrainingService`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1)
+    *   **Issue:** The service saves/loads model artifacts and metadata to/from the local filesystem path `data/models/<modelId>` (e.g., `model.save('file://...')` on [line 940](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:940) - though this save is on a dummy model object, the intent for local file saving is clear).
+    *   **Impact:** Unsuitable for server environments due to issues with statelessness, scalability, and shared access. Model data will be lost or inaccessible.
+    *   **Action:** Refactor all model artifact and metadata storage to use a shared object storage solution (similar to Critical Issues #26, #28).
+    *   **Priority:** Critical
+
+31. **Programmatic Table Creation in `RelationshipAwareTrainingService.ensureTables`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:110)
+    *   **Issue:** The `ensureTables` method uses `supabase.getClient().rpc('execute_sql', ...)` to programmatically create `relationship_aware_training_jobs`, `relationship_aware_models`, and `relationship_aware_model_performance` tables if they don't exist.
+    *   **Impact:** Managing database schema via application code is an anti-pattern. It bypasses proper migration processes, can lead to inconsistencies between environments, and makes schema versioning difficult.
+    *   **Action:** Remove the `ensureTables` method. Define these table schemas in proper Supabase SQL migration files.
+    *   **Priority:** Critical
+
+29. **Placeholder ML Pipeline in `RelationshipAwareTrainingService`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1)
+    *   **Issue:** The core machine learning functionalities (model creation, training, evaluation, feature importance) are implemented as placeholders (e.g., `createModel` on [line 1407](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1407) returns a dummy object, `trainModel` on [line 1464](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1464) simulates a delay, `evaluateModel` on [line 1029](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1029) returns hardcoded values, `calculateFeatureImportance` on [line 1500](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1500) returns random values).
+    *   **Impact:** The service cannot actually train or use relationship-aware models for property prediction. Its primary purpose is non-functional.
+    *   **Action:** Implement the actual ML model training, evaluation, and feature importance logic using TensorFlow.js or another suitable ML framework. This includes defining appropriate model architectures and training procedures.
+    *   **Priority:** Critical
+
+30. **Local Filesystem Usage in `RelationshipAwareTrainingService`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1)
+    *   **Issue:** The service saves/loads model artifacts and metadata to/from the local filesystem path `data/models/<modelId>` (e.g., `model.save('file://...')` on [line 940](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:940) - though this save is on a dummy model object, the intent for local file saving is clear).
+    *   **Impact:** Unsuitable for server environments due to issues with statelessness, scalability, and shared access. Model data will be lost or inaccessible.
+    *   **Action:** Refactor all model artifact and metadata storage to use a shared object storage solution (similar to Critical Issues #26, #28).
+    *   **Priority:** Critical
+
+31. **Programmatic Table Creation in `RelationshipAwareTrainingService.ensureTables`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:110)
+    *   **Issue:** The `ensureTables` method uses `supabase.getClient().rpc('execute_sql', ...)` to programmatically create `relationship_aware_training_jobs`, `relationship_aware_models`, and `relationship_aware_model_performance` tables if they don't exist.
+    *   **Impact:** Managing database schema via application code is an anti-pattern. It bypasses proper migration processes, can lead to inconsistencies between environments, and makes schema versioning difficult.
+    *   **Action:** Remove the `ensureTables` method. Define these table schemas in proper Supabase SQL migration files.
+    *   **Priority:** Critical
+
+29. **Placeholder ML Pipeline in `RelationshipAwareTrainingService`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1)
+    *   **Issue:** The core machine learning functionalities (model creation, training, evaluation, feature importance) are implemented as placeholders (e.g., `createModel` on [line 1407](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1407) returns a dummy object, `trainModel` on [line 1464](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1464) simulates a delay, `evaluateModel` on [line 1029](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1029) returns hardcoded values, `calculateFeatureImportance` on [line 1500](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1500) returns random values).
+    *   **Impact:** The service cannot actually train or use relationship-aware models for property prediction. Its primary purpose is non-functional.
+    *   **Action:** Implement the actual ML model training, evaluation, and feature importance logic using TensorFlow.js or another suitable ML framework. This includes defining appropriate model architectures and training procedures.
+    *   **Priority:** Critical
+
+30. **Local Filesystem Usage in `RelationshipAwareTrainingService`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1)
+    *   **Issue:** The service saves/loads model artifacts and metadata to/from the local filesystem path `data/models/<modelId>` (e.g., `model.save('file://...')` on [line 940](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:940) - though this save is on a dummy model object, the intent for local file saving is clear).
+    *   **Impact:** Unsuitable for server environments due to issues with statelessness, scalability, and shared access. Model data will be lost or inaccessible.
+    *   **Action:** Refactor all model artifact and metadata storage to use a shared object storage solution (similar to Critical Issues #26, #28).
+    *   **Priority:** Critical
+
+31. **Programmatic Table Creation in `RelationshipAwareTrainingService.ensureTables`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:110)
+    *   **Issue:** The `ensureTables` method uses `supabase.getClient().rpc('execute_sql', ...)` to programmatically create `relationship_aware_training_jobs`, `relationship_aware_models`, and `relationship_aware_model_performance` tables if they don't exist.
+    *   **Impact:** Managing database schema via application code is an anti-pattern. It bypasses proper migration processes, can lead to inconsistencies between environments, and makes schema versioning difficult.
+    *   **Action:** Remove the `ensureTables` method. Define these table schemas in proper Supabase SQL migration files.
+    *   **Priority:** Critical
+
+29. **Placeholder ML Pipeline in `RelationshipAwareTrainingService`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1)
+    *   **Issue:** The core machine learning functionalities (model creation, training, evaluation, feature importance) are implemented as placeholders (e.g., `createModel` on [line 1407](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1407) returns a dummy object, `trainModel` on [line 1464](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1464) simulates a delay, `evaluateModel` on [line 1029](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1029) returns hardcoded values, `calculateFeatureImportance` on [line 1500](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1500) returns random values).
+    *   **Impact:** The service cannot actually train or use relationship-aware models for property prediction. Its primary purpose is non-functional.
+    *   **Action:** Implement the actual ML model training, evaluation, and feature importance logic using TensorFlow.js or another suitable ML framework. This includes defining appropriate model architectures and training procedures.
+    *   **Priority:** Critical
+
+30. **Local Filesystem Usage in `RelationshipAwareTrainingService`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1)
+    *   **Issue:** The service saves/loads model artifacts and metadata to/from the local filesystem path `data/models/<modelId>` (e.g., `model.save('file://...')` on [line 940](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:940) - though this save is on a dummy model object, the intent for local file saving is clear).
+    *   **Impact:** Unsuitable for server environments due to issues with statelessness, scalability, and shared access. Model data will be lost or inaccessible.
+    *   **Action:** Refactor all model artifact and metadata storage to use a shared object storage solution (similar to Critical Issues #26, #28).
+    *   **Priority:** Critical
+
+31. **Programmatic Table Creation in `RelationshipAwareTrainingService.ensureTables`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:110)
+    *   **Issue:** The `ensureTables` method uses `supabase.getClient().rpc('execute_sql', ...)` to programmatically create `relationship_aware_training_jobs`, `relationship_aware_models`, and `relationship_aware_model_performance` tables if they don't exist.
+    *   **Impact:** Managing database schema via application code is an anti-pattern. It bypasses proper migration processes, can lead to inconsistencies between environments, and makes schema versioning difficult.
+    *   **Action:** Remove the `ensureTables` method. Define these table schemas in proper Supabase SQL migration files.
+    *   **Priority:** Critical
+
+29. **Placeholder ML Pipeline in `RelationshipAwareTrainingService`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1)
+    *   **Issue:** The core machine learning functionalities (model creation, training, evaluation, feature importance) are implemented as placeholders (e.g., `createModel` on [line 1407](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1407) returns a dummy object, `trainModel` on [line 1464](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1464) simulates a delay, `evaluateModel` on [line 1029](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1029) returns hardcoded values, `calculateFeatureImportance` on [line 1500](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1500) returns random values).
+    *   **Impact:** The service cannot actually train or use relationship-aware models for property prediction. Its primary purpose is non-functional.
+    *   **Action:** Implement the actual ML model training, evaluation, and feature importance logic using TensorFlow.js or another suitable ML framework. This includes defining appropriate model architectures and training procedures.
+    *   **Priority:** Critical
+
+30. **Local Filesystem Usage in `RelationshipAwareTrainingService`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1)
+    *   **Issue:** The service saves/loads model artifacts and metadata to/from the local filesystem path `data/models/<modelId>` (e.g., `model.save('file://...')` on [line 940](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:940) - though this save is on a dummy model object, the intent for local file saving is clear).
+    *   **Impact:** Unsuitable for server environments due to issues with statelessness, scalability, and shared access. Model data will be lost or inaccessible.
+    *   **Action:** Refactor all model artifact and metadata storage to use a shared object storage solution (similar to Critical Issues #26, #28).
+    *   **Priority:** Critical
+
+31. **Programmatic Table Creation in `RelationshipAwareTrainingService.ensureTables`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:110)
+    *   **Issue:** The `ensureTables` method uses `supabase.getClient().rpc('execute_sql', ...)` to programmatically create `relationship_aware_training_jobs`, `relationship_aware_models`, and `relationship_aware_model_performance` tables if they don't exist.
+    *   **Impact:** Managing database schema via application code is an anti-pattern. It bypasses proper migration processes, can lead to inconsistencies between environments, and makes schema versioning difficult.
+    *   **Action:** Remove the `ensureTables` method. Define these table schemas in proper Supabase SQL migration files.
+    *   **Priority:** Critical
+
 ## II. High Priority Issues
 
 1.  **Hardcoded Admin Email in `SupabaseAuthProvider`:**
@@ -513,6 +681,45 @@ These issues significantly impact core functionality or security and should be p
     *   **Impact:** Core functionality offered by these service methods (e.g., knowledge-augmented search, query routing) will be non-functional or unreliable until the underlying Python scripts are fully implemented.
     *   **Action:** Prioritize implementation of placeholder logic in `hybrid_retriever.py`. Review and verify the completeness and correctness of `context_assembler.py` and other Python scripts invoked by this service.
     *   **Priority:** High (Linked to Critical Issue #I.6)
+
+43. **Incorrect Categorical Feature Encoding in `RelationshipAwareTrainingService`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1356) (method `prepareDataForTraining`)
+    *   **Issue:** When preparing features for training, string values are placeholder encoded by pushing `1`. This is not a valid encoding strategy for categorical features.
+    *   **Impact:** The ML model will receive meaningless input for string features, leading to poor training and prediction performance.
+    *   **Action:** Implement proper encoding for string categorical features (e.g., one-hot encoding based on a vocabulary derived from training data, or using embedding layers if the model architecture supports it). This needs to be consistent between `prepareDataForTraining` and any similar feature preparation for prediction.
+    *   **Priority:** High (Bug affecting core ML functionality)
+
+44. **Supabase Client Import Path in `RelationshipAwareTrainingService`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:10)
+    *   **Issue:** Imports Supabase client as `import { supabase } from '../../supabase/supabaseClient';`. This path is different from the `../supabase/supabaseClient` used by most services and the `../../../config/supabase` used by `PropertyPredictionService`.
+    *   **Action:** Verify all Supabase client import paths and standardize to the corrected re-export from `packages/server/src/services/supabase/supabaseClient.ts`.
+    *   **Priority:** High
+
+43. **Incorrect Categorical Feature Encoding in `RelationshipAwareTrainingService`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1356) (method `prepareDataForTraining`)
+    *   **Issue:** When preparing features for training, string values are placeholder encoded by pushing `1`. This is not a valid encoding strategy for categorical features.
+    *   **Impact:** The ML model will receive meaningless input for string features, leading to poor training and prediction performance.
+    *   **Action:** Implement proper encoding for string categorical features (e.g., one-hot encoding based on a vocabulary derived from training data, or using embedding layers if the model architecture supports it). This needs to be consistent between `prepareDataForTraining` and any similar feature preparation for prediction.
+    *   **Priority:** High (Bug affecting core ML functionality)
+
+44. **Supabase Client Import Path in `RelationshipAwareTrainingService`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:10)
+    *   **Issue:** Imports Supabase client as `import { supabase } from '../../supabase/supabaseClient';`. This path is different from the `../supabase/supabaseClient` used by most services and the `../../../config/supabase` used by `PropertyPredictionService`.
+    *   **Action:** Verify all Supabase client import paths and standardize to the corrected re-export from `packages/server/src/services/supabase/supabaseClient.ts`.
+    *   **Priority:** High
+
+43. **Incorrect Categorical Feature Encoding in `RelationshipAwareTrainingService`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1356) (method `prepareDataForTraining`)
+    *   **Issue:** When preparing features for training, string values are placeholder encoded by pushing `1`. This is not a valid encoding strategy for categorical features.
+    *   **Impact:** The ML model will receive meaningless input for string features, leading to poor training and prediction performance.
+    *   **Action:** Implement proper encoding for string categorical features (e.g., one-hot encoding based on a vocabulary derived from training data, or using embedding layers if the model architecture supports it). This needs to be consistent between `prepareDataForTraining` and any similar feature preparation for prediction.
+    *   **Priority:** High (Bug affecting core ML functionality)
+
+44. **Supabase Client Import Path in `RelationshipAwareTrainingService`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:10)
+    *   **Issue:** Imports Supabase client as `import { supabase } from '../../supabase/supabaseClient';`. This path is different from the `../supabase/supabaseClient` used by most services and the `../../../config/supabase` used by `PropertyPredictionService`.
+    *   **Action:** Verify all Supabase client import paths and standardize to the corrected re-export from `packages/server/src/services/supabase/supabaseClient.ts`.
+    *   **Priority:** High
 
 38. **Architectural Concern: Embedded ML Pipeline in `PromptMLService`:**
     *   **File:** [`packages/server/src/services/ai/promptMLService.ts`](packages/server/src/services/ai/promptMLService.ts:1)
@@ -907,6 +1114,104 @@ These issues significantly impact core functionality or security and should be p
     *   **Impact:** If `sourceValue` is a string or categorical, this will result in `NaN` or incorrect feature values.
     *   **Action:** Implement appropriate handling for categorical `sourceValue`s when creating relationship features. This might involve creating separate binary features for specific source value/relationship type combinations, or interaction terms, rather than direct multiplication.
     *   **Priority:** Medium
+
+53. **Numeric Assumption for Source Values in `RelationshipAwareTrainingService.extractRelationshipFeatures`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:572)
+    *   **Issue:** When creating features from relationships, the code multiplies `sourceValue` by `relationship.strength` (e.g., `features[featureName] = sourceValue * relationship.strength;`). This assumes `sourceValue` is numeric.
+    *   **Impact:** If `sourceValue` is a string or categorical, this will result in `NaN` or incorrect feature values.
+    *   **Action:** Implement appropriate handling for categorical `sourceValue`s when creating relationship features. This might involve creating separate binary features for specific source value/relationship type combinations, or interaction terms, rather than direct multiplication.
+    *   **Priority:** Medium
+
+53. **Numeric Assumption for Source Values in `RelationshipAwareTrainingService.extractRelationshipFeatures`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:572)
+    *   **Issue:** When creating features from relationships, the code multiplies `sourceValue` by `relationship.strength` (e.g., `features[featureName] = sourceValue * relationship.strength;`). This assumes `sourceValue` is numeric.
+    *   **Impact:** If `sourceValue` is a string or categorical, this will result in `NaN` or incorrect feature values.
+    *   **Action:** Implement appropriate handling for categorical `sourceValue`s when creating relationship features. This might involve creating separate binary features for specific source value/relationship type combinations, or interaction terms, rather than direct multiplication.
+    *   **Priority:** Medium
+
+54. **Fragile Path Construction in `RelationshipAwareTrainingService`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1) (e.g., [line 230](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:230))
+    *   **Issue:** Uses `process.cwd()` for local model storage paths.
+    *   **Impact:** Paths may be incorrect if the service isn't run from the project root.
+    *   **Action:** While the primary fix is to move to object storage, ensure robust path resolution for any remaining local file operations.
+    *   **Priority:** Medium (Secondary to removing local FS reliance)
+
+53. **Numeric Assumption for Source Values in `RelationshipAwareTrainingService.extractRelationshipFeatures`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:572)
+    *   **Issue:** When creating features from relationships, the code multiplies `sourceValue` by `relationship.strength` (e.g., `features[featureName] = sourceValue * relationship.strength;`). This assumes `sourceValue` is numeric.
+    *   **Impact:** If `sourceValue` is a string or categorical, this will result in `NaN` or incorrect feature values.
+    *   **Action:** Implement appropriate handling for categorical `sourceValue`s when creating relationship features. This might involve creating separate binary features for specific source value/relationship type combinations, or interaction terms, rather than direct multiplication.
+    *   **Priority:** Medium
+
+53. **Numeric Assumption for Source Values in `RelationshipAwareTrainingService.extractRelationshipFeatures`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:572)
+    *   **Issue:** When creating features from relationships, the code multiplies `sourceValue` by `relationship.strength` (e.g., `features[featureName] = sourceValue * relationship.strength;`). This assumes `sourceValue` is numeric.
+    *   **Impact:** If `sourceValue` is a string or categorical, this will result in `NaN` or incorrect feature values.
+    *   **Action:** Implement appropriate handling for categorical `sourceValue`s when creating relationship features. This might involve creating separate binary features for specific source value/relationship type combinations, or interaction terms, rather than direct multiplication.
+    *   **Priority:** Medium
+
+53. **Numeric Assumption for Source Values in `RelationshipAwareTrainingService.extractRelationshipFeatures`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:572)
+    *   **Issue:** When creating features from relationships, the code multiplies `sourceValue` by `relationship.strength` (e.g., `features[featureName] = sourceValue * relationship.strength;`). This assumes `sourceValue` is numeric.
+    *   **Impact:** If `sourceValue` is a string or categorical, this will result in `NaN` or incorrect feature values.
+    *   **Action:** Implement appropriate handling for categorical `sourceValue`s when creating relationship features. This might involve creating separate binary features for specific source value/relationship type combinations, or interaction terms, rather than direct multiplication.
+    *   **Priority:** Medium
+
+54. **Fragile Path Construction in `RelationshipAwareTrainingService`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1) (e.g., [line 230](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:230))
+    *   **Issue:** Uses `process.cwd()` for local model storage paths.
+    *   **Impact:** Paths may be incorrect if the service isn't run from the project root.
+    *   **Action:** While the primary fix is to move to object storage, ensure robust path resolution for any remaining local file operations.
+    *   **Priority:** Medium (Secondary to removing local FS reliance)
+
+53. **Numeric Assumption for Source Values in `RelationshipAwareTrainingService.extractRelationshipFeatures`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:572)
+    *   **Issue:** When creating features from relationships, the code multiplies `sourceValue` by `relationship.strength` (e.g., `features[featureName] = sourceValue * relationship.strength;`). This assumes `sourceValue` is numeric.
+    *   **Impact:** If `sourceValue` is a string or categorical, this will result in `NaN` or incorrect feature values.
+    *   **Action:** Implement appropriate handling for categorical `sourceValue`s when creating relationship features. This might involve creating separate binary features for specific source value/relationship type combinations, or interaction terms, rather than direct multiplication.
+    *   **Priority:** Medium
+
+54. **Fragile Path Construction in `RelationshipAwareTrainingService`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1) (e.g., [line 230](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:230))
+    *   **Issue:** Uses `process.cwd()` for local model storage paths.
+    *   **Impact:** Paths may be incorrect if the service isn't run from the project root.
+    *   **Action:** While the primary fix is to move to object storage, ensure robust path resolution for any remaining local file operations.
+    *   **Priority:** Medium (Secondary to removing local FS reliance)
+
+53. **Numeric Assumption for Source Values in `RelationshipAwareTrainingService.extractRelationshipFeatures`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:572)
+    *   **Issue:** When creating features from relationships, the code multiplies `sourceValue` by `relationship.strength` (e.g., `features[featureName] = sourceValue * relationship.strength;`). This assumes `sourceValue` is numeric.
+    *   **Impact:** If `sourceValue` is a string or categorical, this will result in `NaN` or incorrect feature values.
+    *   **Action:** Implement appropriate handling for categorical `sourceValue`s when creating relationship features. This might involve creating separate binary features for specific source value/relationship type combinations, or interaction terms, rather than direct multiplication.
+    *   **Priority:** Medium
+
+54. **Fragile Path Construction in `RelationshipAwareTrainingService`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1) (e.g., [line 230](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:230))
+    *   **Issue:** Uses `process.cwd()` for local model storage paths.
+    *   **Impact:** Paths may be incorrect if the service isn't run from the project root.
+    *   **Action:** While the primary fix is to move to object storage, ensure robust path resolution for any remaining local file operations.
+    *   **Priority:** Medium (Secondary to removing local FS reliance)
+
+54. **Fragile Path Construction in `RelationshipAwareTrainingService`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1) (e.g., [line 230](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:230))
+    *   **Issue:** Uses `process.cwd()` for local model storage paths.
+    *   **Impact:** Paths may be incorrect if the service isn't run from the project root.
+    *   **Action:** While the primary fix is to move to object storage, ensure robust path resolution for any remaining local file operations.
+    *   **Priority:** Medium (Secondary to removing local FS reliance)
+
+54. **Fragile Path Construction in `RelationshipAwareTrainingService`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1) (e.g., [line 230](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:230))
+    *   **Issue:** Uses `process.cwd()` for local model storage paths.
+    *   **Impact:** Paths may be incorrect if the service isn't run from the project root.
+    *   **Action:** While the primary fix is to move to object storage, ensure robust path resolution for any remaining local file operations.
+    *   **Priority:** Medium (Secondary to removing local FS reliance)
+
+54. **Fragile Path Construction in `RelationshipAwareTrainingService`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1) (e.g., [line 230](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:230))
+    *   **Issue:** Uses `process.cwd()` for local model storage paths.
+    *   **Impact:** Paths may be incorrect if the service isn't run from the project root.
+    *   **Action:** While the primary fix is to move to object storage, ensure robust path resolution for any remaining local file operations.
+    *   **Priority:** Medium (Secondary to removing local FS reliance)
 
 54. **Fragile Path Construction in `RelationshipAwareTrainingService`:**
     *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1) (e.g., [line 230](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:230))
@@ -1428,6 +1733,18 @@ These issues significantly impact core functionality or security and should be p
     *   **Issue:** Uses `logger` from `../../../utils/logger` (different relative path).
     *   **Action:** Align with the project-wide logging strategy and consistent pathing.
     *   **Priority:** Low
+
+82. **Logger Inconsistency in `RelationshipAwareTrainingService`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:8)
+    *   **Issue:** Uses `logger` from `../../../utils/logger` (different relative path).
+    *   **Action:** Align with the project-wide logging strategy and consistent pathing.
+    *   **Priority:** Low
+
+83. **Database Schema for `RelationshipAwareTrainingService` Tables (Observation):**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1)
+    *   **Issue:** The service programmatically attempts to create `relationship_aware_training_jobs`, `relationship_aware_models`, and `relationship_aware_model_performance`. It also uses Prisma to interact with `PropertyRelationship`.
+    *   **Action:** Ensure all necessary tables are defined via Supabase migrations (and Prisma schema is aligned if it's the source of truth for some tables). Remove programmatic table creation.
+    *   **Priority:** Low (Observation, but linked to Critical #31)
 
 82. **Logger Inconsistency in `RelationshipAwareTrainingService`:**
     *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:8)
