@@ -137,7 +137,7 @@ const config = {
       {
         docs: {
           sidebarPath: "./sidebars.js",
-          routeBasePath: "/",
+          routeBasePath: "readme",
         },
         blog: false,
         theme: {
@@ -154,6 +154,12 @@ const config = {
         src: "img/logo.svg",
       },
       items: [
+        {
+          type: "docSidebar",
+          sidebarId: "docs",
+          position: "left",
+          label: "Documentation",
+        },
         {
           href: "https://github.com/Basilakis/kai",
           label: "GitHub",
@@ -218,7 +224,6 @@ const docs = [
 id: introduction
 title: "Welcome to KAI Documentation"
 sidebar_label: "Introduction"
-slug: /
 ---
 
 # Welcome to KAI Documentation
@@ -951,5 +956,118 @@ docs.forEach(doc => {
 });
 
 
+
+// Create homepage
+console.log('Creating homepage...');
+const homepageContent = `import React from 'react';
+import clsx from 'clsx';
+import Link from '@docusaurus/Link';
+import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
+import Layout from '@theme/Layout';
+import styles from './index.module.css';
+
+function HomepageHeader() {
+  const {siteConfig} = useDocusaurusContext();
+  return (
+    <header className={clsx('hero hero--primary', styles.heroBanner)}>
+      <div className="container">
+        <h1 className="hero__title">{siteConfig.title}</h1>
+        <p className="hero__subtitle">{siteConfig.tagline}</p>
+        <div className={styles.buttons}>
+          <Link
+            className="button button--secondary button--lg"
+            to="/docs/introduction">
+            Get Started
+          </Link>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+export default function Home() {
+  const {siteConfig} = useDocusaurusContext();
+  return (
+    <Layout
+      title={\`Hello from \${siteConfig.title}\`}
+      description="Documentation for the KAI project">
+      <HomepageHeader />
+      <main>
+        <section className={styles.features}>
+          <div className="container">
+            <div className="row">
+              <div className="col col--4">
+                <div className="text--center">
+                  <h3>🤖 AI-Powered</h3>
+                  <p>
+                    Advanced material recognition and classification using cutting-edge AI models.
+                  </p>
+                </div>
+              </div>
+              <div className="col col--4">
+                <div className="text--center">
+                  <h3>🔧 Automated Workflows</h3>
+                  <p>
+                    Streamlined processes with RooCommander integration and GitHub Actions automation.
+                  </p>
+                </div>
+              </div>
+              <div className="col col--4">
+                <div className="text--center">
+                  <h3>📊 Analytics & Insights</h3>
+                  <p>
+                    Comprehensive analytics system with real-time monitoring and reporting.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </Layout>
+  );
+}`;
+
+fs.writeFileSync(
+  path.join('kai-docs-temp', 'src', 'pages', 'index.js'),
+  homepageContent
+);
+
+// Create homepage CSS
+const homepageCssContent = `.heroBanner {
+  padding: 4rem 0;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+
+@media screen and (max-width: 996px) {
+  .heroBanner {
+    padding: 2rem;
+  }
+}
+
+.buttons {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.features {
+  display: flex;
+  align-items: center;
+  padding: 2rem 0;
+  width: 100%;
+}`;
+
+// Create pages directory and CSS file
+if (!fs.existsSync(path.join('kai-docs-temp', 'src', 'pages'))) {
+  fs.mkdirSync(path.join('kai-docs-temp', 'src', 'pages'), { recursive: true });
+}
+
+fs.writeFileSync(
+  path.join('kai-docs-temp', 'src', 'pages', 'index.module.css'),
+  homepageCssContent
+);
 
 console.log('Docusaurus site created successfully!');
