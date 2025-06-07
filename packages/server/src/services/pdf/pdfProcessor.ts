@@ -93,6 +93,7 @@ export async function processPdfCatalog(
     userId: string;
     catalogName: string;
     manufacturer?: string;
+    factoryId?: string; // Added factoryId
     extractImages?: boolean;
     extractText?: boolean;
     associateTextWithImages?: boolean;
@@ -148,6 +149,7 @@ export async function processPdfCatalog(
           id: catalogId,
           name: processingOptions.catalogName,
           manufacturer: processingOptions.manufacturer,
+          factoryId: processingOptions.factoryId, // Add factoryId
           originalFilePath: filePath,
           status: 'processing',
           totalPages: 0,
@@ -224,6 +226,7 @@ export async function processPdfCatalog(
       id: catalogId,
       name: processingOptions.catalogName,
       manufacturer: processingOptions.manufacturer,
+      factoryId: processingOptions.factoryId, // Add factoryId
       originalFilePath: filePath,
       status: 'processing',
       totalPages: 0,

@@ -7,11 +7,11 @@ import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger';
-import { 
-  getCatalogById, 
-  getAllCatalogs, 
-  updateCatalog, 
-  deleteCatalog 
+import {
+  getCatalogById,
+  getCatalogs,
+  updateCatalog,
+  deleteCatalog
 } from '../models/catalog.model';
 import { processPdfCatalog } from '../services/pdf/pdfProcessor';
 
@@ -38,7 +38,7 @@ const upload = multer({
   fileFilter: (req, file, cb) => {
     // Accept only PDF files
     if (file.mimetype !== 'application/pdf') {
-      return cb(new Error('Only PDF files are allowed'));
+      return cb(new Error('Only PDF files are allowed'), false);
     }
     cb(null, true);
   }
@@ -54,7 +54,7 @@ router.get('/', asyncHandler(async (req: Request, res: Response) => {
   const limit = parseInt(req.query.limit as string) || 10;
   const skip = (page - 1) * limit;
   
-  const { catalogs, total } = await getAllCatalogs({
+  const { catalogs, total } = await getCatalogs({
     limit,
     skip,
     sort: { updatedAt: -1 }
@@ -79,7 +79,12 @@ router.get('/', asyncHandler(async (req: Request, res: Response) => {
  * @access  Private
  */
 router.get('/:id', asyncHandler(async (req: Request, res: Response) => {
-  const catalog = await getCatalogById(req.params.id);
+  const id = req.params.id;
+  if (!id) {
+    throw new ApiError(400, 'Catalog ID is required');
+  }
+  
+  const catalog = await getCatalogById(id);
   
   if (!catalog) {
     throw new ApiError(404, `Catalog not found with id ${req.params.id}`);
@@ -108,6 +113,7 @@ router.post(
     
     const catalogName = req.body.name || path.basename(req.file.originalname, path.extname(req.file.originalname));
     const manufacturer = req.body.manufacturer || 'Unknown';
+    const factoryId = req.body.factoryId || req.user?.id; // Use factoryId from request or default to current user
     
     // Create a job to process the catalog asynchronously
     res.status(202).json({
@@ -128,6 +134,7 @@ router.post(
       userId: req.user?.id || 'system',
       catalogName,
       manufacturer,
+      factoryId, // Add factoryId to processing options
       extractImages: true,
       extractText: true,
       associateTextWithImages: true,
@@ -174,6 +181,7 @@ router.post(
       userId: req.user?.id || 'system',
       catalogName: catalogName || path.basename(filePath, path.extname(filePath)),
       manufacturer: manufacturer || 'Unknown',
+      factoryId: req.body.factoryId || req.user?.id, // Add factoryId
       extractImages: true,
       extractText: true,
       associateTextWithImages: true,
@@ -227,6 +235,7 @@ router.post(
         userId: req.user?.id || 'system',
         catalogName: catalog.name || path.basename(catalog.filePath, path.extname(catalog.filePath)),
         manufacturer: catalog.manufacturer || 'Unknown',
+        factoryId: catalog.factoryId || req.user?.id, // Add factoryId
         extractImages: true,
         extractText: true,
         associateTextWithImages: true,
@@ -248,13 +257,18 @@ router.put(
   authMiddleware,
   authorizeRoles(['admin', 'manager']),
   asyncHandler(async (req: Request, res: Response) => {
-    const catalog = await getCatalogById(req.params.id);
+    const id = req.params.id;
+    if (!id) {
+      throw new ApiError(400, 'Catalog ID is required');
+    }
+    
+    const catalog = await getCatalogById(id);
     
     if (!catalog) {
       throw new ApiError(404, `Catalog not found with id ${req.params.id}`);
     }
     
-    const updatedCatalog = await updateCatalog(req.params.id, {
+    const updatedCatalog = await updateCatalog(id, {
       ...req.body,
       updatedAt: new Date()
     });
@@ -276,13 +290,18 @@ router.delete(
   authMiddleware,
   authorizeRoles(['admin']),
   asyncHandler(async (req: Request, res: Response) => {
-    const catalog = await getCatalogById(req.params.id);
+    const id = req.params.id;
+    if (!id) {
+      throw new ApiError(400, 'Catalog ID is required');
+    }
+    
+    const catalog = await getCatalogById(id);
     
     if (!catalog) {
       throw new ApiError(404, `Catalog not found with id ${req.params.id}`);
     }
     
-    await deleteCatalog(req.params.id);
+    await deleteCatalog(id);
     
     res.status(200).json({
       success: true,

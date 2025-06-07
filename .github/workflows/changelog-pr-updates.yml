@@ -1,0 +1,62 @@
+name: AI-Powered Changelog & PR Updates
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main, master]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  ai-changelog-update:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: |
+          npm install @octokit/rest openai
+
+      - name: AI-Powered PR Analysis and Changelog Update
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          REPO_NAME: ${{ github.event.repository.name }}
+        run: |
+          node .github/scripts/ai-pr-analyzer.js
+
+      - name: Commit changelog updates
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action Bot"
+          
+          if git diff --quiet readme/CHANGELOG.md; then
+            echo "No changes to commit"
+          else
+            git add readme/CHANGELOG.md
+            git commit -m "🤖 AI-generated changelog update for PR #${{ github.event.pull_request.number }}
+
+            Automatically analyzed and categorized changes using OpenAI
+            
+            [skip ci]"
+            git push
+          fi

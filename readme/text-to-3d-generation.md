@@ -132,8 +132,8 @@ Features:
 ## Model Weights and Dependencies
 
 ### Required Models
-- ControlNet: `lllyasviel/sd-controlnet-canny`
-- Stable Diffusion: `runwayml/stable-diffusion-v1-5`
+- ControlNet: `diffusers/controlnet-canny-sdxl-1.0`
+- Stable Diffusion: `stabilityai/stable-diffusion-xl-base-1.0`
 - Shap-E: `openai/shap-e-base`
 - GET3D: `nvidia/get3d-base`
 - CLIP: `openai/clip-vit-base-patch32`

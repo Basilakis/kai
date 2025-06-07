@@ -936,7 +936,7 @@ class HouseOutlineGenerator:
         """Initialize ControlNet and Stable Diffusion models"""
         controlnet = ControlNetModel.from_pretrained("lllyasviel/sd-controlnet-scribble")
         self.stable_diffusion = StableDiffusionControlNetPipeline.from_pretrained(
-            "runwayml/stable-diffusion-v1-5",
+            "stabilityai/stable-diffusion-xl-base-1.0",
             controlnet=controlnet
         )
         
@@ -956,7 +956,7 @@ class HouseOutlineGenerator:
     async def _generate_sketch(self, prompt: str) -> np.ndarray:
         """Generate initial architectural sketch"""
         # Initialize ControlNet for architectural sketching
-        controlnet = self.controlnet.from_pretrained("lllyasviel/sd-controlnet-canny")
+        controlnet = self.controlnet.from_pretrained("diffusers/controlnet-canny-sdxl-1.0")
         
         # Generate edge detection guidance
         edge_image = cv2.Canny(

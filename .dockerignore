@@ -107,6 +107,15 @@ docker-compose*.yml
 
 !.env.example
 !tsconfig.json
-!packages/*/tsconfig.json
+!packages/client/tsconfig.json
+!packages/coordinator/tsconfig.json
+!packages/ml/tsconfig.json
+!packages/server/tsconfig.json
+!packages/shared/tsconfig.json
 !packages/ml/python/requirements.txt
 !packages/ml/requirements.txt
+
+# Roo Commander system files
+.roo/
+.ruru/
+.roomodes

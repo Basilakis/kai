@@ -18,7 +18,7 @@ These issues significantly impact core functionality or security and should be p
     *   **Issue:** There's a fundamental contradiction regarding the primary database. The entire `packages/server/src/models/` directory appears to consist of Mongoose models for MongoDB, while many services and schema documents point to Supabase/PostgreSQL as the target database for the same entities (e.g., materials, API keys, user sessions).
     *   **Impact:** This is a major architectural conflict. If services are using different data sources for the same core entity (`materials`), it will lead to data divergence, incorrect application behavior, and significant maintenance issues. Vector search implementations will also target different databases with different capabilities.
     *   **Action:**
-        1.  **Immediately clarify the definitive source of truth for `materials` data.**
+        1.  **Immediately clarify the definitive source of truth for `materials` data and other entities.**
         2.  If Supabase/PostgreSQL is the target (strongly suggested by overall architecture):
             *   The entire Mongoose-based `packages/server/src/models/` directory should be considered **legacy and be scheduled for deprecation/removal.**
             *   All data entity operations (CRUD, queries) must be consistently routed through Supabase-compatible services or a new Supabase-based data access layer/repository pattern if preferred over direct client use in services.
@@ -44,439 +44,224 @@ These issues significantly impact core functionality or security and should be p
         *   Verify all active vector search implementations (especially in `EnhancedVectorServiceImpl` and relevant RPCs like `material_hybrid_search`) correctly handle query embedding and parameterization against the chosen primary database.
     *   **Priority:** Critical
 
-3.  **Flawed Vector Search Logic in SQL Function `search_materials_by_text`:**
+4.  **Flawed Vector Search Logic in SQL Function `search_materials_by_text`:**
     *   **File:** [`packages/server/src/services/supabase/migrations/006_enhanced_vector_storage.sql`](packages/server/src/services/supabase/migrations/006_enhanced_vector_storage.sql:120-170)
     *   **Issue:** Vector similarity part uses `ILIKE` match on `name` to find a single embedding, not valid semantic search.
     *   **Impact:** "Vector" component of `material_hybrid_search` RPC will be ineffective.
     *   **Action:** Redesign `search_materials_by_text` and `material_hybrid_search`. Convert `query_text` to `query_embedding` in application layer and pass to SQL for `pgvector` comparison.
     *   **Priority:** Critical
 
-4.  **Placeholder Vector Indexing & Mongoose Misalignment in `searchIndex.model.ts`:**
+5.  **Placeholder Vector Indexing & Mongoose Misalignment in `searchIndex.model.ts`:**
     *   **File:** [`packages/server/src/models/searchIndex.model.ts`](packages/server/src/models/searchIndex.model.ts:544) (function `buildVectorIndex`).
     *   **Issue:**
-        1.  The `buildVectorIndex` function is a placeholder and does not implement any logic for generating or storing vector embeddings ([CONFIRMED](packages/server/src/models/searchIndex.model.ts:544-575)).
-        2.  This entire model uses Mongoose, implying it manages indexes in MongoDB. This contradicts the likely project direction towards Supabase/PostgreSQL and pgvector for vector search. Managing pgvector indexes is done via SQL DDL (typically in migrations), not an application-layer model like this.
-    *   **Impact:**
-        *   Vector search capabilities intended to be managed by this model are non-functional.
-        *   Architectural conflict if Supabase/pgvector is the target vector store, as this model is for MongoDB.
-    *   **Action:**
-        1.  **Clarify Database Strategy (see Critical Issue #2):** If Supabase/PostgreSQL is the primary data and vector store:
-            *   This Mongoose-based `searchIndex.model.ts` is largely misaligned for vector index management. pgvector indexes are schema-level constructs.
-            *   The concept of a "search index document" might still be useful for *configuring* or *describing* available indexes (text, vector, metadata) that exist in Supabase, but the building/management of pgvector indexes themselves would not happen here.
-            *   If this model is to be retained for managing metadata about Supabase indexes, `buildVectorIndex` should be removed or re-purposed (e.g., to trigger an RPC that might populate a pgvector table if data isn't directly in an indexed column).
-        2.  If MongoDB Atlas Search is intended for vector search (less likely given other evidence), then `buildVectorIndex` needs full implementation for Atlas Search.
-    *   **Priority:** Critical (Linked to architectural decision in #2)
+        1.  The `buildVectorIndex` function is a placeholder and does not implement any logic for generating or storing vector embeddings.
+        2.  This entire model uses Mongoose, implying it manages indexes in MongoDB. This contradicts the likely project direction towards Supabase/PostgreSQL and pgvector for vector search.
+    *   **Impact:** Vector search capabilities non-functional; architectural conflict.
+    *   **Action:** Clarify database strategy. If Supabase/pgvector, this model is misaligned. `buildVectorIndex` should be removed or re-purposed. If MongoDB Atlas Search, `buildVectorIndex` needs full implementation.
+    *   **Priority:** Critical (Linked to #2)
 
-5.  **Overly Permissive RLS Policies for Message Broker Tables:**
+6.  **Overly Permissive RLS Policies for Message Broker Tables:**
     *   **File:** [`packages/server/src/services/supabase/migrations/005_message_broker.sql`](packages/server/src/services/supabase/migrations/005_message_broker.sql:82-131)
     *   **Issue:** RLS policies grant general `authenticated` users excessive CRUD permissions.
     *   **Impact:** Significant security risk to message broker data.
-    *   **Action:** Redefine RLS policies for `message_broker_messages`, `message_broker_broadcasts`, `message_broker_metrics`, and `message_broker_status` to restrict access to appropriate service roles or specific users based on defined logic.
+    *   **Action:** Redefine RLS policies to restrict access to appropriate service roles or specific users.
     *   **Priority:** Critical
 
-6.  **Placeholder Implementations in Python RAG System (`hybrid_retriever.py`):**
+7.  **Placeholder Implementations in Python RAG System (`hybrid_retriever.py`):**
     *   **File:** [`packages/ml/python/hybrid_retriever.py`](packages/ml/python/hybrid_retriever.py)
     *   **Issue:** Critical components are placeholders (LLM calls, vector client init, sparse embedding, metadata search).
     *   **Impact:** Core RAG functionality is missing or non-functional.
     *   **Action:** Implement placeholder methods: integrate real LLM client, connect to vector DB, use actual sparse embedding generation, implement metadata search.
     *   **Priority:** Critical
 
-7.  **Partially Addressed: In-Memory Storage in `ModelRegistry` / Missing Evaluation Cycle Logic & `ModelRouter` Dependency:**
+8.  **Partially Addressed: In-Memory Storage in `ModelRegistry` / Missing Evaluation Cycle Logic & `ModelRouter` Dependency:**
     *   **Files:** [`packages/server/src/services/ai/modelRegistry.ts`](packages/server/src/services/ai/modelRegistry.ts:1), [`packages/server/src/services/ai/modelRouter.ts`](packages/server/src/services/ai/modelRouter.ts:1)
-    *   **Original Issue:** `performanceMetrics`, `taskCounters`, `modelComparisons`, `ModelRegistryConfig` in `ModelRegistry` were in-memory.
-    *   **Current Status & New Issues:**
-        *   `ModelRegistryConfig` is now loaded from/seeded to `model_registry_config` table.
-        *   Performance metrics (`ModelEvaluationResult`) are fetched from `model_performance_metrics`.
-        *   Model comparisons (`ModelComparisonReport`) are fetched from `model_comparison_reports`.
-        *   **Missing in `ModelRegistry`:** The core logic for the rotation-based evaluation system, including `TaskCounter` management and methods like `recordPerformance`, `incrementTaskCount`, `shouldRunEvaluation`, `getAllModels` (for evaluation), `storeModelComparison`. `TaskCounter` data needs persistence.
-        *   **`ModelRouter` Dependency:** `ModelRouter` heavily relies on these missing/incomplete `ModelRegistry` methods (e.g., `shouldRunEvaluation` on [`modelRouter.ts:109`](packages/server/src/services/ai/modelRouter.ts:109), `getAllModels` on [`modelRouter.ts:146`](packages/server/src/services/ai/modelRouter.ts:146), `storeModelComparison` on [`modelRouter.ts:195`](packages/server/src/services/ai/modelRouter.ts:195), `recordPerformance` on [`modelRouter.ts:283`](packages/server/src/services/ai/modelRouter.ts:283)).
-    *   **Impact:** The model evaluation and routing system is non-functional or incomplete due to these missing pieces in `ModelRegistry`.
-    *   **Action:**
-        1.  Verify/create DB schema and migrations for `model_registry_config`, `model_performance_metrics`, and `model_comparison_reports` tables.
-        2.  **In `ModelRegistry`:**
-            *   Define DB schema and create migration for `task_counters` table.
-            *   Implement the missing service methods (`recordPerformance`, `incrementTaskCount`, `shouldRunEvaluation`, `storeModelComparison`, `getAllModels` for evaluation) to use their respective database tables.
-    *   **Priority:** Critical (Core functionality for model evaluation, A/B testing, and intelligent routing depends on this)
-
-8.  **Untrained Projection Layers in Embedding Generation:**
-    *   **Files:** [`packages/ml/python/embedding_generator.py`](packages/ml/python/embedding_generator.py:1), [`packages/ml/python/enhanced_text_embeddings.py`](packages/ml/python/enhanced_text_embeddings.py:1)
-    *   **Issue:** Added projection layers for dimensionality adjustment are not trained; truncation/padding distorts embeddings.
-    *   **Impact:** Very low-quality embeddings, undermining similarity search.
-    *   **Action:** For image and text embeddings, either fine-tune projection layers or use base models with native output dimensions matching requirements. Address PCA fitting for `FeatureBasedEmbedding`. Re-evaluate `HybridEmbedding` concatenation.
+    *   **Issue:** Core logic for rotation-based evaluation, `TaskCounter` management, and several key methods in `ModelRegistry` are missing or incomplete. `ModelRouter` depends heavily on these.
+    *   **Impact:** Model evaluation and routing system non-functional or incomplete.
+    *   **Action:** Verify/create DB schemas. Implement missing `ModelRegistry` methods using database tables.
     *   **Priority:** Critical
 
-9.  **Disconnected General Material Recognition Logic:**
+9.  **Untrained Projection Layers in Embedding Generation:**
+    *   **Files:** [`packages/ml/python/embedding_generator.py`](packages/ml/python/embedding_generator.py:1), [`packages/ml/python/enhanced_text_embeddings.py`](packages/ml/python/enhanced_text_embeddings.py:1)
+    *   **Issue:** Added projection layers are not trained; truncation/padding distorts embeddings.
+    *   **Impact:** Very low-quality embeddings, undermining similarity search.
+    *   **Action:** Fine-tune projection layers or use base models with native output dimensions. Address PCA fitting. Re-evaluate `HybridEmbedding`.
+    *   **Priority:** Critical
+
+10. **Disconnected General Material Recognition Logic:**
     *   **File:** [`packages/server/src/services/recognition/material-recognizer-service.ts`](packages/server/src/services/recognition/material-recognizer-service.ts:256-329)
     *   **Issue:** Uses simplified direct feature extraction, not the sophisticated Python pipeline.
     *   **Impact:** Basic, poorly performing general material recognition.
-    *   **Action:** Refactor to invoke `material_recognizer.py` script for feature extraction and ML model inference.
+    *   **Action:** Refactor to invoke `material_recognizer.py` script.
     *   **Priority:** Critical
 
-10. **Simulated/Incomplete Logic in `ExternalLibraryManager` Components:**
+11. **Simulated/Incomplete Logic in `ExternalLibraryManager` Components:**
     *   **File:** [`packages/server/src/services/recognition/external-library-integration.ts`](packages/server/src/services/recognition/external-library-integration.ts:1)
-    *   **Issue:** JS fallbacks for OpenCV LBP/GLCM; `isolatePattern` simulates mask; `extractWaveletFeatures` is placeholder; `PyTorchIntegration` missing.
-    *   **Impact:** Inefficient or non-functional image processing steps.
-    *   **Action:** Implement native OpenCV calls if available; implement actual mask application and wavelet extraction; implement or clarify need for `PyTorchIntegration`.
+    *   **Issue:** JS fallbacks for OpenCV; `isolatePattern` simulates mask; `extractWaveletFeatures` placeholder; `PyTorchIntegration` missing.
+    *   **Impact:** Inefficient or non-functional image processing.
+    *   **Action:** Implement native OpenCV calls, actual mask application, wavelet extraction, and `PyTorchIntegration`.
     *   **Priority:** Critical
 
-11. **Non-Functional UI Theming in `HeroUIProvider.tsx`:**
+12. **Non-Functional UI Theming in `HeroUIProvider.tsx`:**
     *   **File:** [`packages/client/src/providers/HeroUIProvider.tsx`](packages/client/src/providers/HeroUIProvider.tsx:28-30)
     *   **Issue:** Uses placeholder `<div>` instead of actual HeroUI `ThemeProvider`.
     *   **Impact:** HeroUI components likely not themed correctly.
-    *   **Action:** Implement with actual `ThemeProvider` from `@heroui/react`, ensure theme compatibility.
+    *   **Action:** Implement with actual `ThemeProvider` from `@heroui/react`.
     *   **Priority:** Critical
 
-12. **Missing API Call Implementation in `OfflineProvider.executeQueuedActions`:**
+13. **Missing API Call Implementation in `OfflineProvider.executeQueuedActions`:**
     *   **File:** [`packages/client/src/providers/OfflineProvider.tsx`](packages/client/src/providers/OfflineProvider.tsx:352-354)
     *   **Issue:** Offline action execution is a placeholder.
     *   **Impact:** Offline actions queued but never synced.
-    *   **Action:** Implement API calls for each `OfflineActionType` using appropriate client services.
+    *   **Action:** Implement API calls for each `OfflineActionType`.
     *   **Priority:** Critical
 
-13. **OfflineProvider: Missing True Resource Caching:**
+14. **OfflineProvider: Missing True Resource Caching:**
     *   **File:** [`packages/client/src/providers/OfflineProvider.tsx`](packages/client/src/providers/OfflineProvider.tsx:416-418)
-    *   **Issue:** No actual binary resource caching (images, etc.) using Cache API / IndexedDB.
+    *   **Issue:** No actual binary resource caching.
     *   **Impact:** App cannot display fetched resources offline.
-    *   **Action:** Implement resource caching using Cache API in `cacheMaterial`, `isResourceCached`, `getResourceFromCache`. Consider Service Worker.
+    *   **Action:** Implement resource caching using Cache API / IndexedDB.
     *   **Priority:** Critical
 
-14. **`MaterialsPage.tsx` Uses Mock Data and Client-Side Filtering:**
+15. **`MaterialsPage.tsx` Uses Mock Data and Client-Side Filtering:**
     *   **File:** [`packages/client/src/pages/materials.tsx`](packages/client/src/pages/materials.tsx:1)
     *   **Issue:** Uses mock data, client-side filtering, no `SearchFilterProvider`.
-    *   **Impact:** Page doesn't display real data, performs poorly with large datasets.
-    *   **Action:** Remove mock data, integrate `SearchFilterProvider`, implement API data fetching with server-side filtering/pagination.
+    *   **Impact:** Page doesn't display real data, performs poorly.
+    *   **Action:** Remove mock data, integrate `SearchFilterProvider`, implement API data fetching.
     *   **Priority:** Critical
 
-15. **Mocked AI Detection in `ImageUploader.tsx`:**
+16. **Mocked AI Detection in `ImageUploader.tsx`:**
     *   **File:** [`packages/client/src/components/ImageUploader.tsx`](packages/client/src/components/ImageUploader.tsx:160-292)
     *   **Issue:** `detectMaterials` function is entirely mocked.
     *   **Impact:** AI detection feature non-functional.
-    *   **Action:** Replace mock with actual API calls to backend recognition endpoint.
+    *   **Action:** Replace mock with actual API calls.
     *   **Priority:** Critical
 
-16. **Missing MoodBoard Database Schema:**
+17. **Missing MoodBoard Database Schema:**
     *   **Files:** New migration file needed.
-    *   **Issue:** DB tables for MoodBoards (`moodboards`, `moodboard_items`, `moodboard_collaborators`) not defined.
+    *   **Issue:** DB tables for MoodBoards not defined.
     *   **Impact:** MoodBoard feature non-functional.
-    *   **Action:** Create SQL migration for these tables with RLS policies.
+    *   **Action:** Create SQL migration for `moodboards`, `moodboard_items`, `moodboard_collaborators` with RLS.
     *   **Priority:** Critical
 
-17. **Missing/Misused Shared `apiClient.ts` for Client-Side API Calls:**
+18. **Missing/Misused Shared `apiClient.ts` for Client-Side API Calls:**
     *   **Files:** [`packages/client/src/services/materialService.ts`](packages/client/src/services/materialService.ts:10), [`packages/client/src/services/recognitionService.ts`](packages/client/src/services/recognitionService.ts:9), [`packages/shared/src/services/api/apiClient.ts`](packages/shared/src/services/api/apiClient.ts:1)
-    *   **Issue:** Client services not consistently using shared `apiClient`; some use incorrect local imports or own Axios instances.
-    *   **Impact:** Inconsistent API calls, runtime errors, bypass of shared features (auth, cache, config).
-    *   **Action:** Correct imports to use `@kai/shared/services/api/apiClient`. Remove redundant Axios instances. Verify `apiClient` config.
+    *   **Issue:** Client services not consistently using shared `apiClient`.
+    *   **Impact:** Inconsistent API calls, runtime errors.
+    *   **Action:** Correct imports to use `@kai/shared/services/api/apiClient`.
     *   **Priority:** Critical
 
-18. **Missing OpenTelemetry SDK Initialization in `tracingInitializer.ts`:**
+19. **Missing OpenTelemetry SDK Initialization in `tracingInitializer.ts`:**
     *   **File:** [`packages/shared/src/services/tracing/tracingInitializer.ts`](packages/shared/src/services/tracing/tracingInitializer.ts:1)
-    *   **Issue:** Only instantiates `OpenTelemetryProvider` (API wrapper), does not set up the OpenTelemetry SDK (processors, exporters).
-    *   **Impact:** No trace data will be exported; tracing system non-functional.
-    *   **Action:** `initializeOpenTelemetryTracing` must include full OTel SDK setup (`NodeSDK` or `WebTracerProvider`, resource, span processors, exporters configured via `UnifiedConfig`).
+    *   **Issue:** Only instantiates `OpenTelemetryProvider`, no SDK setup.
+    *   **Impact:** No trace data exported.
+    *   **Action:** Include full OTel SDK setup in `initializeOpenTelemetryTracing`.
     *   **Priority:** Critical
 
-19. **Mocked Embedding Generation in `QueryUnderstandingService`:**
+20. **Mocked Embedding Generation in `QueryUnderstandingService`:**
     *   **File:** [`packages/server/src/services/search/query-understanding-service.ts`](packages/server/src/services/search/query-understanding-service.ts:306)
     *   **Issue:** `generateQueryEmbedding` uses a mock implementation.
-    *   **Impact:** Core semantic understanding capability is non-functional. Query expansion and semantic search will be based on random vectors.
-    *   **Action:** Replace mock embedding generation with calls to a real embedding service (e.g., via `ModelRouter` or direct API call).
+    *   **Impact:** Core semantic understanding non-functional.
+    *   **Action:** Replace mock with calls to a real embedding service.
     *   **Priority:** Critical
 
-20. **Missing JWT Secret Handling in `sessionManager.service.ts`:**
+21. **Missing JWT Secret Handling in `sessionManager.service.ts`:**
     *   **File:** [`packages/server/src/services/auth/sessionManager.service.ts`](packages/server/src/services/auth/sessionManager.service.ts:96)
-    *   **Issue:** Service used a default hardcoded JWT secret (`'default-secret'`) if `process.env.JWT_SECRET` was not set. This is a major security risk.
-    *   **Impact:** Predictable JWTs if the environment variable is not set, allowing unauthorized access.
-    *   **Action:** Removed the default fallback. The service now throws an error if `JWT_SECRET` is not defined. Ensure `JWT_SECRET` is properly configured in all environments and managed by `UnifiedConfig`.
+    *   **Issue:** Used a default hardcoded JWT secret.
+    *   **Impact:** Predictable JWTs if env var not set.
+    *   **Action:** Removed default fallback. Ensure `JWT_SECRET` configured via `UnifiedConfig`.
     *   **Priority:** Critical
 
-21. **TypeScript Compilation Errors in Auth Services:**
+22. **TypeScript Compilation Errors in Auth Services:**
     *   **Files:** [`packages/server/src/services/auth/sessionManager.service.ts`](packages/server/src/services/auth/sessionManager.service.ts:1), [`packages/server/src/services/auth/twoFactor.service.ts`](packages/server/src/services/auth/twoFactor.service.ts:1)
-    *   **Issue:** Multiple TypeScript errors due to missing dependencies and type issues:
-        *   `sessionManager.service.ts`: Cannot find module 'jsonwebtoken' or its corresponding type declarations ([`sessionManager.service.ts:9`](packages/server/src/services/auth/sessionManager.service.ts:9)). (Note: `jsonwebtoken` is in `packages/server/package.json` but may not be installed/linked correctly in the workspace due to environment issues).
-        *   `sessionManager.service.ts`: Cannot find module 'ua-parser-js' or its corresponding type declarations ([`sessionManager.service.ts:24`](packages/server/src/services/auth/sessionManager.service.ts:24)).
-        *   `sessionManager.service.ts`: Cannot find module 'geoip-lite' or its corresponding type declarations ([`sessionManager.service.ts:25`](packages/server/src/services/auth/sessionManager.service.ts:25)).
-        *   `sessionManager.service.ts`: Could not find a declaration file for module '../supabase/supabaseClient' ([`sessionManager.service.ts:23`](packages/server/src/services/auth/sessionManager.service.ts:23)).
-        *   `sessionManager.service.ts`: Object literal may only specify known properties, and 'token' does not exist in type 'Partial<Omit<UserSession, "id" | "createdAt" | "userId" | "token">>'. ([`sessionManager.service.ts:223`](packages/server/src/services/auth/sessionManager.service.ts:223)) (This relates to a design inconsistency with `userSession.model.ts`). (Note: `userAgent` type issue was fixed).
-        *   `twoFactor.service.ts`: Cannot find module 'speakeasy' or its corresponding type declarations ([`twoFactor.service.ts:8`](packages/server/src/services/auth/twoFactor.service.ts:8)).
-        *   `twoFactor.service.ts`: Cannot find module 'qrcode' or its corresponding type declarations ([`twoFactor.service.ts:9`](packages/server/src/services/auth/twoFactor.service.ts:9)).
-    *   **Impact:** Prevents successful compilation of the `packages/server` module. Core auth functionality is broken or incomplete.
-    *   **Action:**
-        *   **Crucial:** Resolve Node.js/Yarn environment issues preventing `npm` or `yarn` from running, so dependencies can be installed/managed.
-        *   Ensure `jsonwebtoken` is correctly installed/linked in the `packages/server` workspace.
-        *   Install missing dependencies for `sessionManager.service.ts`: `ua-parser-js`, `geoip-lite` and their type declarations (`@types/ua-parser-js`, `@types/geoip-lite`).
-        *   Install missing dependencies for `twoFactor.service.ts`: `speakeasy`, `qrcode` and their type declarations (`@types/speakeasy`, `@types/qrcode`).
-        *   Create or find type declarations for `supabaseClient` (imported in `sessionManager.service.ts`).
-        *   Address the `token` property update issue in `sessionManager.service.ts`'s `updateSession` call by clarifying the intended logic and potentially adjusting `userSession.model.ts`'s `updateSession` signature or the service's approach.
+    *   **Issue:** Multiple TypeScript errors due to missing dependencies and type issues.
+    *   **Impact:** Prevents `packages/server` compilation. Core auth broken.
+    *   **Action:** Resolve Node.js/Yarn issues. Install missing dependencies (`jsonwebtoken`, `ua-parser-js`, `geoip-lite`, `speakeasy`, `qrcode`, and types). Address type/declaration issues.
     *   **Priority:** Critical
 
-22. **Circular Dependency in `supabaseClient.js` on Server:**
-    *   **File:** [`packages/server/src/services/supabase/supabaseClient.js`](packages/server/src/services/supabase/supabaseClient.js:7)
-    *   **Issue:** The file `packages/server/src/services/supabase/supabaseClient.js` attempts to re-export `supabaseClient` from itself (`export { supabaseClient } from './supabaseClient';`), creating a circular dependency.
-    *   **Impact:** This will cause a runtime error when any module attempts to import `supabaseClient` from this file, effectively breaking all Supabase interactions for the server.
-    *   **Action:**
-        1.  Determine the correct source for the server-side Supabase client. It's likely intended to be the shared client from [`packages/shared/src/services/supabase/supabaseClient.ts`](packages/shared/src/services/supabase/supabaseClient.ts:1).
-        2.  Rename [`packages/server/src/services/supabase/supabaseClient.js`](packages/server/src/services/supabase/supabaseClient.js:1) to `supabaseClient.ts`.
-        3.  Modify the renamed file to correctly re-export the client from the shared package (e.g., `export { supabaseClient } from '@kai/shared/services/supabase/supabaseClient';`). Adjust path if necessary based on tsconfig paths or relative paths.
-        4.  Ensure all server-side imports point to this corrected server-level `supabaseClient.ts` or directly to the shared client if appropriate.
+23. **Circular Dependency in `supabaseClient.js` on Server:**
+    *   **File:** [`packages/server/src/services/supabase/supabaseClient.js`](packages/server/src/services/supabase/supabaseClient.js:7) (Now likely `supabaseClient.ts`)
+    *   **Issue:** Attempted to re-export `supabaseClient` from itself.
+    *   **Impact:** Runtime error, breaking Supabase interactions.
+    *   **Action:** Ensure correct re-export from shared package.
     *   **Priority:** Critical
 
-23. **TypeScript Module Resolution Issues Between Packages:**
-    *   **Files:**
-        *   [`packages/server/src/services/supabase/supabaseClient.ts`](packages/server/src/services/supabase/supabaseClient.ts:7) (importing from `../../../shared/src/services/supabase/supabaseClient`)
-        *   [`packages/server/src/services/supabase/hybrid-search.ts`](packages/server/src/services/supabase/hybrid-search.ts:9) (importing from `../../../shared/src/utils/supabaseErrorHandler`)
-        *   Other files in `packages/server` attempting to import from `packages/shared` using relative paths or aliases.
-    *   **Issue:** TypeScript is unable to resolve modules imported from the `packages/shared` directory into `packages/server`, whether using relative paths or (previously attempted) workspace aliases like `@kai/shared`. This results in "Cannot find module ... or its corresponding type declarations" errors.
-    *   **Impact:** Prevents successful compilation of `packages/server`. Indicates a fundamental problem with the TypeScript project setup (e.g., `tsconfig.json` `paths`, `baseUrl`, `references`) or the monorepo's workspace linking for TypeScript.
-    *   **Action:**
-        1.  **Review `tsconfig.json` files:** Examine the `tsconfig.json` in `packages/server`, `packages/shared`, and any root/base `tsconfig.json`.
-        2.  Ensure `paths` aliases (like `@kai/shared/*`) are correctly defined and used, or that project references are properly configured for inter-package dependencies.
-        3.  Verify that the build process for `packages/shared` produces the necessary declaration files (`.d.ts`) in its output directory and that `packages/server`'s tsconfig can locate them.
-        4.  If not using path aliases, ensure relative paths are accurate and robust. However, aliases or project references are generally preferred in monorepos.
-        5.  This issue might also be linked to the overall Node.js/Yarn environment problems that prevent dependency installation, as a corrupted `node_modules` or linking issue could manifest this way.
+24. **TypeScript Module Resolution Issues Between Packages:**
+    *   **Files:** Various files in `packages/server` importing from `packages/shared`.
+    *   **Issue:** TypeScript cannot resolve modules from `packages/shared`.
+    *   **Impact:** Prevents `packages/server` compilation.
+    *   **Action:** Review `tsconfig.json` for paths/references. Verify `packages/shared` build.
     *   **Priority:** Critical
 
-24. **Flawed Type Safety Approach in `SupabaseHelper`:**
+25. **Flawed Type Safety Approach in `SupabaseHelper`:**
     *   **File:** [`packages/server/src/services/supabase/supabaseHelper.ts`](packages/server/src/services/supabase/supabaseHelper.ts:1)
-    *   **Issue:** The `SupabaseHelper` attempts to provide type safety by casting Supabase client query builder chains to `unknown as SupabaseFilterBuilder<T>` ([e.g., line 109](packages/server/src/services/supabase/supabaseHelper.ts:109)), where `SupabaseFilterBuilder` is a custom-defined interface mimicking the Supabase client's builder. This is an anti-pattern that bypasses the actual Supabase client's type system and introduces a fragile, manually maintained interface.
-    *   **Impact:** Significant risk of runtime errors if the custom interface doesn't perfectly match the Supabase client or if Supabase client APIs change. It offers a false sense of type safety and makes the code harder to maintain and debug.
-    *   **Action:**
-        1.  **Strongly recommend refactoring or removing `SupabaseHelper`**.
-        2.  Services should use the Supabase JS client directly.
-        3.  Achieve true type safety by generating TypeScript types from the Supabase schema (e.g., using `supabase gen types typescript --project-id <your-project-id> > src/types/supabase.ts`) and using these generated types with the Supabase client. This provides accurate types for tables, columns, and RPCs.
+    *   **Issue:** Casts Supabase client query builder to custom interface `SupabaseFilterBuilder<T>`.
+    *   **Impact:** Bypasses Supabase client's type system, risk of runtime errors.
+    *   **Action:** Refactor/remove `SupabaseHelper`. Use Supabase client directly with generated types.
     *   **Priority:** Critical
 
 26. **Local Filesystem Reliance in `VisualReferenceTrainingService`:**
     *   **File:** [`packages/server/src/services/ai/visual-reference-training.ts`](packages/server/src/services/ai/visual-reference-training.ts:1)
-    *   **Issue:** The service uses the local filesystem extensively for:
-        *   Creating dataset directories (`data/training/<datasetId>`) ([line 52](packages/server/src/services/ai/visual-reference-training.ts:52)).
-        *   Storing downloaded images within these local dataset directories ([line 79](packages/server/src/services/ai/visual-reference-training.ts:79)).
-        *   Writing dataset `metadata.json` locally ([line 66](packages/server/src/services/ai/visual-reference-training.ts:66)).
-        *   Reading dataset `metadata.json` locally for training ([line 111](packages/server/src/services/ai/visual-reference-training.ts:111)).
-        *   Creating local model directories (`data/models/<modelId>`) ([line 124](packages/server/src/services/ai/visual-reference-training.ts:124)).
-        *   Writing (simulated) model artifacts (`model.json`, `metrics.json`) to these local model directories ([line 282](packages/server/src/services/ai/visual-reference-training.ts:282)).
-    *   **Impact:** This makes the service unsuitable for typical server deployments (stateless, scalable, containerized) as local filesystem paths are not persistent or shared. It will lead to data loss and inability to find datasets/models across restarts or instances.
-    *   **Action:**
-        1.  Refactor all dataset and model artifact storage to use a shared object storage solution (e.g., Supabase Storage, AWS S3).
-        2.  Dataset creation should download images to this object storage, organized by dataset ID and class.
-        3.  Dataset metadata should also be stored in object storage or a dedicated database table.
-        4.  Model training (when implemented) should read datasets from object storage and save trained model artifacts back to object storage. The `storage_path` field in `ml_models` table already suggests this intent.
+    *   **Issue:** Uses local filesystem for datasets, images, metadata, models.
+    *   **Impact:** Unsuitable for server deployments. Data loss risk.
+    *   **Action:** Refactor to use shared object storage.
     *   **Priority:** Critical
 
-28. **Local Filesystem Reliance in `PropertyPredictionService`:**
+27. **Local Filesystem Reliance in `PropertyPredictionService`:**
     *   **File:** [`packages/server/src/services/ai/property-prediction/propertyPredictionService.ts`](packages/server/src/services/ai/property-prediction/propertyPredictionService.ts:1)
-    *   **Issue:** The service saves and loads TensorFlow.js models and their metadata to/from the local filesystem path `data/models/<modelId>` (e.g., `model.save('file://...')` on [line 101](packages/server/src/services/ai/property-prediction/propertyPredictionService.ts:101), `tf.loadLayersModel('file://...')` on [line 158](packages/server/src/services/ai/property-prediction/propertyPredictionService.ts:158)).
-    *   **Impact:** Unsuitable for server environments due to issues with statelessness, scalability, and shared access. Model data will be lost or inaccessible.
-    *   **Action:** Refactor model saving/loading to use a shared object storage solution (e.g., Supabase Storage). This involves serializing TF.js models to memory buffers (as recommended for Critical Issue #25 regarding `PromptMLService`) and storing/retrieving these buffers from object storage. The `storage_path` in `ml_models` table (used by `registerModel` method) already implies this intent.
-    *   **Priority:** Critical (Similar to #25 and #26)
-
-27. **Simulated Model Training in `VisualReferenceTrainingService`:**
-    *   **File:** [`packages/server/src/services/ai/visual-reference-training.ts`](packages/server/src/services/ai/visual-reference-training.ts:102) (method `trainModel`)
-    *   **Issue:** The `trainModel` method currently only simulates training by calling `this.simulateTraining` ([line 155](packages/server/src/services/ai/visual-reference-training.ts:155)), which writes dummy files after a timeout. No actual ML model training is performed.
-    *   **Impact:** The core purpose of training models from visual references is non-functional.
-    *   **Action:** Implement actual model training logic. This will likely involve:
-        *   Preparing data loaders that read from the (refactored) object storage dataset location.
-        *   Integrating with an ML framework (e.g., TensorFlow.js, or calling Python scripts that use TensorFlow/PyTorch) to define and train image classification/detection models.
-        *   Saving the actual trained model artifacts to object storage.
-    *   **Priority:** Critical
-
-29. **Placeholder ML Pipeline in `RelationshipAwareTrainingService`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1)
-    *   **Issue:** The core machine learning functionalities (model creation, training, evaluation, feature importance) are implemented as placeholders (e.g., `createModel` on [line 1407](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1407) returns a dummy object, `trainModel` on [line 1464](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1464) simulates a delay, `evaluateModel` on [line 1029](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1029) returns hardcoded values, `calculateFeatureImportance` on [line 1500](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1500) returns random values).
-    *   **Impact:** The service cannot actually train or use relationship-aware models for property prediction. Its primary purpose is non-functional.
-    *   **Action:** Implement the actual ML model training, evaluation, and feature importance logic using TensorFlow.js or another suitable ML framework. This includes defining appropriate model architectures and training procedures.
-    *   **Priority:** Critical
-
-30. **Local Filesystem Usage in `RelationshipAwareTrainingService`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1)
-    *   **Issue:** The service saves/loads model artifacts and metadata to/from the local filesystem path `data/models/<modelId>` (e.g., `model.save('file://...')` on [line 940](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:940) - though this save is on a dummy model object, the intent for local file saving is clear).
+    *   **Issue:** Saves/loads TF.js models locally.
     *   **Impact:** Unsuitable for server environments.
-    *   **Action:** Refactor all model artifact and metadata storage to use a shared object storage solution (similar to Critical Issues #26, #28).
+    *   **Action:** Refactor to use shared object storage.
     *   **Priority:** Critical
 
-31. **Programmatic Table Creation in `RelationshipAwareTrainingService.ensureTables`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:110)
-    *   **Issue:** The `ensureTables` method uses `supabase.getClient().rpc('execute_sql', ...)` to programmatically create `relationship_aware_training_jobs`, `relationship_aware_models`, and `relationship_aware_model_performance` tables if they don't exist.
-    *   **Impact:** Managing database schema via application code is an anti-pattern. It bypasses proper migration processes, can lead to inconsistencies between environments, and makes schema versioning difficult.
-    *   **Action:** Remove the `ensureTables` method. Define these table schemas in proper Supabase SQL migration files.
-    *   **Priority:** Critical
-
-25. **Filesystem Usage for TensorFlow.js Model Serialization in `PromptMLService`:**
-    *   **File:** [`packages/server/src/services/ai/promptMLService.ts`](packages/server/src/services/ai/promptMLService.ts:1265) (methods `serializeModel`, `loadModel`)
-    *   **Issue:** The `serializeModel` method saves TensorFlow.js models to a local temporary path (`file://./tmp/model`) before reading the files into a buffer. `loadModel` reverses this by writing to the temporary path before loading. This use of a relative local filesystem path is problematic for server environments, especially if stateless, scaled horizontally, or running in containers without persistent/shared `/tmp` access.
-    *   **Impact:** Model saving/loading will likely fail or behave inconsistently in typical server deployments. Data corruption or errors if multiple instances try to access `./tmp/model` simultaneously.
-    *   **Action:**
-        1.  Refactor `serializeModel` to use `tf.io.withSaveHandler` with a custom `tf.io.IOHandler` that writes model artifacts (model.json, weights.bin) directly to memory buffers. These buffers can then be combined (e.g., into a single JSON or a tarball buffer) and stored in the database (`prompt_ml_model_versions.model_data`).
-        2.  Refactor `loadModel` to read these buffers from the database and use `tf.loadLayersModel` with a custom `tf.io.IOHandler` that reads from these memory buffers.
-        3.  This avoids direct filesystem dependency for model persistence.
+28. **Simulated Model Training in `VisualReferenceTrainingService`:**
+    *   **File:** [`packages/server/src/services/ai/visual-reference-training.ts`](packages/server/src/services/ai/visual-reference-training.ts:102)
+    *   **Issue:** `trainModel` only simulates training.
+    *   **Impact:** Core functionality non-functional.
+    *   **Action:** Implement actual model training.
     *   **Priority:** Critical
 
 29. **Placeholder ML Pipeline in `RelationshipAwareTrainingService`:**
     *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1)
-    *   **Issue:** The core machine learning functionalities (model creation, training, evaluation, feature importance) are implemented as placeholders (e.g., `createModel` on [line 1407](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1407) returns a dummy object, `trainModel` on [line 1464](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1464) simulates a delay, `evaluateModel` on [line 1029](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1029) returns hardcoded values, `calculateFeatureImportance` on [line 1500](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1500) returns random values).
-    *   **Impact:** The service cannot actually train or use relationship-aware models for property prediction. Its primary purpose is non-functional.
-    *   **Action:** Implement the actual ML model training, evaluation, and feature importance logic using TensorFlow.js or another suitable ML framework. This includes defining appropriate model architectures and training procedures.
+    *   **Issue:** Core ML functionalities are placeholders.
+    *   **Impact:** Service non-functional for its primary purpose.
+    *   **Action:** Implement actual ML logic.
     *   **Priority:** Critical
 
 30. **Local Filesystem Usage in `RelationshipAwareTrainingService`:**
     *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1)
-    *   **Issue:** The service saves/loads model artifacts and metadata to/from the local filesystem path `data/models/<modelId>` (e.g., `model.save('file://...')` on [line 940](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:940) - though this save is on a dummy model object, the intent for local file saving is clear).
-    *   **Impact:** Unsuitable for server environments due to issues with statelessness, scalability, and shared access. Model data will be lost or inaccessible.
-    *   **Action:** Refactor all model artifact and metadata storage to use a shared object storage solution (similar to Critical Issues #26, #28).
+    *   **Issue:** Saves/loads model artifacts locally.
+    *   **Impact:** Unsuitable for server environments.
+    *   **Action:** Refactor to use shared object storage.
     *   **Priority:** Critical
 
 31. **Programmatic Table Creation in `RelationshipAwareTrainingService.ensureTables`:**
     *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:110)
-    *   **Issue:** The `ensureTables` method uses `supabase.getClient().rpc('execute_sql', ...)` to programmatically create `relationship_aware_training_jobs`, `relationship_aware_models`, and `relationship_aware_model_performance` tables if they don't exist.
-    *   **Impact:** Managing database schema via application code is an anti-pattern. It bypasses proper migration processes, can lead to inconsistencies between environments, and makes schema versioning difficult.
-    *   **Action:** Remove the `ensureTables` method. Define these table schemas in proper Supabase SQL migration files.
+    *   **Issue:** Programmatically creates tables via `execute_sql`.
+    *   **Impact:** Anti-pattern, risks inconsistencies.
+    *   **Action:** Remove `ensureTables`; define schemas in migrations.
     *   **Priority:** Critical
 
-29. **Placeholder ML Pipeline in `RelationshipAwareTrainingService`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1)
-    *   **Issue:** The core machine learning functionalities (model creation, training, evaluation, feature importance) are implemented as placeholders (e.g., `createModel` on [line 1407](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1407) returns a dummy object, `trainModel` on [line 1464](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1464) simulates a delay, `evaluateModel` on [line 1029](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1029) returns hardcoded values, `calculateFeatureImportance` on [line 1500](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1500) returns random values).
-    *   **Impact:** The service cannot actually train or use relationship-aware models for property prediction. Its primary purpose is non-functional.
-    *   **Action:** Implement the actual ML model training, evaluation, and feature importance logic using TensorFlow.js or another suitable ML framework. This includes defining appropriate model architectures and training procedures.
+32. **Filesystem Usage for TensorFlow.js Model Serialization in `PromptMLService`:**
+    *   **File:** [`packages/server/src/services/ai/promptMLService.ts`](packages/server/src/services/ai/promptMLService.ts:1265)
+    *   **Issue:** Uses local temporary path for model serialization.
+    *   **Impact:** Problematic for server environments.
+    *   **Action:** Refactor for in-memory buffer operations and DB storage.
     *   **Priority:** Critical
 
-30. **Local Filesystem Usage in `RelationshipAwareTrainingService`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1)
-    *   **Issue:** The service saves/loads model artifacts and metadata to/from the local filesystem path `data/models/<modelId>` (e.g., `model.save('file://...')` on [line 940](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:940) - though this save is on a dummy model object, the intent for local file saving is clear).
-    *   **Impact:** Unsuitable for server environments due to issues with statelessness, scalability, and shared access. Model data will be lost or inaccessible.
-    *   **Action:** Refactor all model artifact and metadata storage to use a shared object storage solution (similar to Critical Issues #26, #28).
+33. **Simulated Core Auth Logic in `SessionController`:**
+    *   **File:** [`packages/server/src/controllers/auth/session.controller.ts`](packages/server/src/controllers/auth/session.controller.ts:1)
+    *   **Issue:** `registerUser`, `loginUser`, `verifyEmailHandler` use simulated logic.
+    *   **Impact:** Core user auth non-functional.
+    *   **Action:** Refactor to use Supabase Auth.
     *   **Priority:** Critical
 
-31. **Programmatic Table Creation in `RelationshipAwareTrainingService.ensureTables`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:110)
-    *   **Issue:** The `ensureTables` method uses `supabase.getClient().rpc('execute_sql', ...)` to programmatically create `relationship_aware_training_jobs`, `relationship_aware_models`, and `relationship_aware_model_performance` tables if they don't exist.
-    *   **Impact:** Managing database schema via application code is an anti-pattern. It bypasses proper migration processes, can lead to inconsistencies between environments, and makes schema versioning difficult.
-    *   **Action:** Remove the `ensureTables` method. Define these table schemas in proper Supabase SQL migration files.
-    *   **Priority:** Critical
-
-29. **Placeholder ML Pipeline in `RelationshipAwareTrainingService`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1)
-    *   **Issue:** The core machine learning functionalities (model creation, training, evaluation, feature importance) are implemented as placeholders (e.g., `createModel` on [line 1407](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1407) returns a dummy object, `trainModel` on [line 1464](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1464) simulates a delay, `evaluateModel` on [line 1029](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1029) returns hardcoded values, `calculateFeatureImportance` on [line 1500](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1500) returns random values).
-    *   **Impact:** The service cannot actually train or use relationship-aware models for property prediction. Its primary purpose is non-functional.
-    *   **Action:** Implement the actual ML model training, evaluation, and feature importance logic using TensorFlow.js or another suitable ML framework. This includes defining appropriate model architectures and training procedures.
-    *   **Priority:** Critical
-
-30. **Local Filesystem Usage in `RelationshipAwareTrainingService`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1)
-    *   **Issue:** The service saves/loads model artifacts and metadata to/from the local filesystem path `data/models/<modelId>` (e.g., `model.save('file://...')` on [line 940](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:940) - though this save is on a dummy model object, the intent for local file saving is clear).
-    *   **Impact:** Unsuitable for server environments due to issues with statelessness, scalability, and shared access. Model data will be lost or inaccessible.
-    *   **Action:** Refactor all model artifact and metadata storage to use a shared object storage solution (similar to Critical Issues #26, #28).
-    *   **Priority:** Critical
-
-31. **Programmatic Table Creation in `RelationshipAwareTrainingService.ensureTables`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:110)
-    *   **Issue:** The `ensureTables` method uses `supabase.getClient().rpc('execute_sql', ...)` to programmatically create `relationship_aware_training_jobs`, `relationship_aware_models`, and `relationship_aware_model_performance` tables if they don't exist.
-    *   **Impact:** Managing database schema via application code is an anti-pattern. It bypasses proper migration processes, can lead to inconsistencies between environments, and makes schema versioning difficult.
-    *   **Action:** Remove the `ensureTables` method. Define these table schemas in proper Supabase SQL migration files.
-    *   **Priority:** Critical
-
-29. **Placeholder ML Pipeline in `RelationshipAwareTrainingService`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1)
-    *   **Issue:** The core machine learning functionalities (model creation, training, evaluation, feature importance) are implemented as placeholders (e.g., `createModel` on [line 1407](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1407) returns a dummy object, `trainModel` on [line 1464](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1464) simulates a delay, `evaluateModel` on [line 1029](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1029) returns hardcoded values, `calculateFeatureImportance` on [line 1500](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1500) returns random values).
-    *   **Impact:** The service cannot actually train or use relationship-aware models for property prediction. Its primary purpose is non-functional.
-    *   **Action:** Implement the actual ML model training, evaluation, and feature importance logic using TensorFlow.js or another suitable ML framework. This includes defining appropriate model architectures and training procedures.
-    *   **Priority:** Critical
-
-30. **Local Filesystem Usage in `RelationshipAwareTrainingService`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1)
-    *   **Issue:** The service saves/loads model artifacts and metadata to/from the local filesystem path `data/models/<modelId>` (e.g., `model.save('file://...')` on [line 940](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:940) - though this save is on a dummy model object, the intent for local file saving is clear).
-    *   **Impact:** Unsuitable for server environments due to issues with statelessness, scalability, and shared access. Model data will be lost or inaccessible.
-    *   **Action:** Refactor all model artifact and metadata storage to use a shared object storage solution (similar to Critical Issues #26, #28).
-    *   **Priority:** Critical
-
-31. **Programmatic Table Creation in `RelationshipAwareTrainingService.ensureTables`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:110)
-    *   **Issue:** The `ensureTables` method uses `supabase.getClient().rpc('execute_sql', ...)` to programmatically create `relationship_aware_training_jobs`, `relationship_aware_models`, and `relationship_aware_model_performance` tables if they don't exist.
-    *   **Impact:** Managing database schema via application code is an anti-pattern. It bypasses proper migration processes, can lead to inconsistencies between environments, and makes schema versioning difficult.
-    *   **Action:** Remove the `ensureTables` method. Define these table schemas in proper Supabase SQL migration files.
-    *   **Priority:** Critical
-
-29. **Placeholder ML Pipeline in `RelationshipAwareTrainingService`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1)
-    *   **Issue:** The core machine learning functionalities (model creation, training, evaluation, feature importance) are implemented as placeholders (e.g., `createModel` on [line 1407](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1407) returns a dummy object, `trainModel` on [line 1464](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1464) simulates a delay, `evaluateModel` on [line 1029](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1029) returns hardcoded values, `calculateFeatureImportance` on [line 1500](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1500) returns random values).
-    *   **Impact:** The service cannot actually train or use relationship-aware models for property prediction. Its primary purpose is non-functional.
-    *   **Action:** Implement the actual ML model training, evaluation, and feature importance logic using TensorFlow.js or another suitable ML framework. This includes defining appropriate model architectures and training procedures.
-    *   **Priority:** Critical
-
-30. **Local Filesystem Usage in `RelationshipAwareTrainingService`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1)
-    *   **Issue:** The service saves/loads model artifacts and metadata to/from the local filesystem path `data/models/<modelId>` (e.g., `model.save('file://...')` on [line 940](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:940) - though this save is on a dummy model object, the intent for local file saving is clear).
-    *   **Impact:** Unsuitable for server environments due to issues with statelessness, scalability, and shared access. Model data will be lost or inaccessible.
-    *   **Action:** Refactor all model artifact and metadata storage to use a shared object storage solution (similar to Critical Issues #26, #28).
-    *   **Priority:** Critical
-
-31. **Programmatic Table Creation in `RelationshipAwareTrainingService.ensureTables`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:110)
-    *   **Issue:** The `ensureTables` method uses `supabase.getClient().rpc('execute_sql', ...)` to programmatically create `relationship_aware_training_jobs`, `relationship_aware_models`, and `relationship_aware_model_performance` tables if they don't exist.
-    *   **Impact:** Managing database schema via application code is an anti-pattern. It bypasses proper migration processes, can lead to inconsistencies between environments, and makes schema versioning difficult.
-    *   **Action:** Remove the `ensureTables` method. Define these table schemas in proper Supabase SQL migration files.
-    *   **Priority:** Critical
-
-29. **Placeholder ML Pipeline in `RelationshipAwareTrainingService`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1)
-    *   **Issue:** The core machine learning functionalities (model creation, training, evaluation, feature importance) are implemented as placeholders (e.g., `createModel` on [line 1407](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1407) returns a dummy object, `trainModel` on [line 1464](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1464) simulates a delay, `evaluateModel` on [line 1029](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1029) returns hardcoded values, `calculateFeatureImportance` on [line 1500](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1500) returns random values).
-    *   **Impact:** The service cannot actually train or use relationship-aware models for property prediction. Its primary purpose is non-functional.
-    *   **Action:** Implement the actual ML model training, evaluation, and feature importance logic using TensorFlow.js or another suitable ML framework. This includes defining appropriate model architectures and training procedures.
-    *   **Priority:** Critical
-
-30. **Local Filesystem Usage in `RelationshipAwareTrainingService`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1)
-    *   **Issue:** The service saves/loads model artifacts and metadata to/from the local filesystem path `data/models/<modelId>` (e.g., `model.save('file://...')` on [line 940](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:940) - though this save is on a dummy model object, the intent for local file saving is clear).
-    *   **Impact:** Unsuitable for server environments due to issues with statelessness, scalability, and shared access. Model data will be lost or inaccessible.
-    *   **Action:** Refactor all model artifact and metadata storage to use a shared object storage solution (similar to Critical Issues #26, #28).
-    *   **Priority:** Critical
-
-31. **Programmatic Table Creation in `RelationshipAwareTrainingService.ensureTables`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:110)
-    *   **Issue:** The `ensureTables` method uses `supabase.getClient().rpc('execute_sql', ...)` to programmatically create `relationship_aware_training_jobs`, `relationship_aware_models`, and `relationship_aware_model_performance` tables if they don't exist.
-    *   **Impact:** Managing database schema via application code is an anti-pattern. It bypasses proper migration processes, can lead to inconsistencies between environments, and makes schema versioning difficult.
-    *   **Action:** Remove the `ensureTables` method. Define these table schemas in proper Supabase SQL migration files.
-    *   **Priority:** Critical
-
-29. **Placeholder ML Pipeline in `RelationshipAwareTrainingService`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1)
-    *   **Issue:** The core machine learning functionalities (model creation, training, evaluation, feature importance) are implemented as placeholders (e.g., `createModel` on [line 1407](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1407) returns a dummy object, `trainModel` on [line 1464](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1464) simulates a delay, `evaluateModel` on [line 1029](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1029) returns hardcoded values, `calculateFeatureImportance` on [line 1500](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1500) returns random values).
-    *   **Impact:** The service cannot actually train or use relationship-aware models for property prediction. Its primary purpose is non-functional.
-    *   **Action:** Implement the actual ML model training, evaluation, and feature importance logic using TensorFlow.js or another suitable ML framework. This includes defining appropriate model architectures and training procedures.
-    *   **Priority:** Critical
-
-30. **Local Filesystem Usage in `RelationshipAwareTrainingService`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1)
-    *   **Issue:** The service saves/loads model artifacts and metadata to/from the local filesystem path `data/models/<modelId>` (e.g., `model.save('file://...')` on [line 940](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:940) - though this save is on a dummy model object, the intent for local file saving is clear).
-    *   **Impact:** Unsuitable for server environments due to issues with statelessness, scalability, and shared access. Model data will be lost or inaccessible.
-    *   **Action:** Refactor all model artifact and metadata storage to use a shared object storage solution (similar to Critical Issues #26, #28).
-    *   **Priority:** Critical
-
-31. **Programmatic Table Creation in `RelationshipAwareTrainingService.ensureTables`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:110)
-    *   **Issue:** The `ensureTables` method uses `supabase.getClient().rpc('execute_sql', ...)` to programmatically create `relationship_aware_training_jobs`, `relationship_aware_models`, and `relationship_aware_model_performance` tables if they don't exist.
-    *   **Impact:** Managing database schema via application code is an anti-pattern. It bypasses proper migration processes, can lead to inconsistencies between environments, and makes schema versioning difficult.
-    *   **Action:** Remove the `ensureTables` method. Define these table schemas in proper Supabase SQL migration files.
-    *   **Priority:** Critical
-
-29. **Placeholder ML Pipeline in `RelationshipAwareTrainingService`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1)
-    *   **Issue:** The core machine learning functionalities (model creation, training, evaluation, feature importance) are implemented as placeholders (e.g., `createModel` on [line 1407](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1407) returns a dummy object, `trainModel` on [line 1464](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1464) simulates a delay, `evaluateModel` on [line 1029](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1029) returns hardcoded values, `calculateFeatureImportance` on [line 1500](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1500) returns random values).
-    *   **Impact:** The service cannot actually train or use relationship-aware models for property prediction. Its primary purpose is non-functional.
-    *   **Action:** Implement the actual ML model training, evaluation, and feature importance logic using TensorFlow.js or another suitable ML framework. This includes defining appropriate model architectures and training procedures.
-    *   **Priority:** Critical
-
-30. **Local Filesystem Usage in `RelationshipAwareTrainingService`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1)
-    *   **Issue:** The service saves/loads model artifacts and metadata to/from the local filesystem path `data/models/<modelId>` (e.g., `model.save('file://...')` on [line 940](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:940) - though this save is on a dummy model object, the intent for local file saving is clear).
-    *   **Impact:** Unsuitable for server environments due to issues with statelessness, scalability, and shared access. Model data will be lost or inaccessible.
-    *   **Action:** Refactor all model artifact and metadata storage to use a shared object storage solution (similar to Critical Issues #26, #28).
-    *   **Priority:** Critical
-
-31. **Programmatic Table Creation in `RelationshipAwareTrainingService.ensureTables`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:110)
-    *   **Issue:** The `ensureTables` method uses `supabase.getClient().rpc('execute_sql', ...)` to programmatically create `relationship_aware_training_jobs`, `relationship_aware_models`, and `relationship_aware_model_performance` tables if they don't exist.
-    *   **Impact:** Managing database schema via application code is an anti-pattern. It bypasses proper migration processes, can lead to inconsistencies between environments, and makes schema versioning difficult.
-    *   **Action:** Remove the `ensureTables` method. Define these table schemas in proper Supabase SQL migration files.
-    *   **Priority:** Critical
+34. **Database Inconsistency for Session Data in `SessionController`:**
+    *   **Files:** [`packages/server/src/controllers/auth/session.controller.ts`](packages/server/src/controllers/auth/session.controller.ts:1), [`packages/server/src/models/userSession.model.ts`](packages/server/src/models/userSession.model.ts:1), [`packages/server/src/services/auth/sessionManager.service.ts`](packages/server/src/services/auth/sessionManager.service.ts:1)
+    *   **Issue:** Uses Mongoose `userSession.model.ts` (MongoDB) conflicting with `sessionManager.service.ts`.
+    *   **Impact:** Inconsistent session data management.
+    *   **Action:** Clarify session store. If Supabase, deprecate Mongoose model, refactor.
+    *   **Priority:** Critical (Linked to #2)
 
 ## II. High Priority Issues
 
@@ -545,19 +330,23 @@ These issues significantly impact core functionality or security and should be p
     *   **Action:** Clarify responsibility. If uploading, implement API call. If delegating, rename or document.
     *   **Priority:** High
 
-14. **Flawed `/api/materials/similar/:id` Endpoint:**
+14. **Flawed `/api/materials/similar/:id` Endpoint in `material.routes.ts`:**
     *   **File:** [`packages/server/src/routes/material.routes.ts`](packages/server/src/routes/material.routes.ts:289-339)
-    *   **Action:** Refactor to use `EnhancedVectorServiceImpl` and performant pgvector RPCs.
+    *   **Issue:** Uses the Mongoose `findSimilarMaterials`.
+    *   **Impact:** Endpoint non-functional for similarity search.
+    *   **Action:** Refactor to use `EnhancedVectorServiceImpl` or correct Supabase RPC.
     *   **Priority:** High
 
-15. **Non-functional Material Recognition Endpoint (`/api/materials/recognition`):**
-    *   **File:** [`packages/server/src/routes/material.routes.ts`](packages/server/src/routes/material.routes.ts:1)
-    *   **Action:** Remove direct import. Use `MaterialRecognizerService` to orchestrate calls to Python scripts.
+15. **Non-functional/Misaligned Material Recognition Endpoint (`/api/materials/recognition`) in `material.routes.ts`:**
+    *   **File:** [`packages/server/src/routes/material.routes.ts`](packages/server/src/routes/material.routes.ts:434-499)
+    *   **Issue:** Directly calls `@kai/ml`, uses Mongoose `getMaterialById` in loop.
+    *   **Impact:** Inefficient, outdated data sources, bypasses service architecture.
+    *   **Action:** Refactor to use `MaterialRecognizerService`, ensure efficient Supabase data fetching.
     *   **Priority:** High
 
 16. **Configuration and Backend Dependencies for 3D Visualization (`MaterialVisualizer.tsx`):**
     *   **Files:** [`packages/client/src/components/MaterialVisualizer.tsx`](packages/client/src/components/MaterialVisualizer.tsx:35-51), `MaterialVisualizationProvider`
-    *   **Action:** Move endpoints to `UnifiedConfig`; ensure backend services are implemented/deployed.
+    *   **Action:** Move endpoints to `UnifiedConfig`; ensure backend services implemented/deployed.
     *   **Priority:** High
 
 17. **Auth Provider Initialization for Shared `AuthService`:**
@@ -567,32 +356,32 @@ These issues significantly impact core functionality or security and should be p
 
 18. **Supabase Token Refresh Logic in `SupabaseAuthProvider`:**
     *   **Files:** [`packages/shared/src/services/auth/supabaseAuthProvider.ts`](packages/shared/src/services/auth/supabaseAuthProvider.ts:1), [`packages/shared/src/services/auth/authService.ts`](packages/shared/src/services/auth/authService.ts:1)
-    *   **Action:** Review `SupabaseAuthProvider.refreshToken()` to ensure it uses Supabase SDK's refresh and returns `AuthResult` correctly. Verify `getToken()` and session details from `login/register`.
+    *   **Action:** Review `SupabaseAuthProvider.refreshToken()` for correct Supabase SDK usage.
     *   **Priority:** High
 
 19. **Dependency on `materialRecognitionProvider` in `RecognitionDemo.tsx`:**
     *   **File:** [`packages/client/src/components/RecognitionDemo.tsx`](packages/client/src/components/RecognitionDemo.tsx:1)
-    *   **Action:** Review `materialRecognitionProvider` implementation and its API calls.
+    *   **Action:** Review `materialRecognitionProvider` implementation and API calls.
     *   **Priority:** High
 
 20. **API Client Inconsistency & Hardcoded URL in `recognitionService.ts`:**
     *   **File:** [`packages/client/src/services/recognitionService.ts`](packages/client/src/services/recognitionService.ts:9)
-    *   **Action:** Refactor to use shared `apiClient`. (Related to Critical #17)
+    *   **Action:** Refactor to use shared `apiClient`.
     *   **Priority:** High
 
 21. **Backend Endpoints for `recognitionService.ts`:**
     *   **File:** [`packages/client/src/services/recognitionService.ts`](packages/client/src/services/recognitionService.ts:1)
-    *   **Action:** Verify/update/deprecate these backend routes and ensure client service aligns.
+    *   **Action:** Verify/update/deprecate backend routes.
     *   **Priority:** High
 
 22. **Cache Service Initialization:**
     *   **Files:** [`packages/shared/src/services/cache/cacheInitializer.ts`](packages/shared/src/services/cache/cacheInitializer.ts:1), [`packages/shared/src/services/api/apiClient.ts`](packages/shared/src/services/api/apiClient.ts:1)
-    *   **Action:** Ensure `initializeCache()` called at app startup; verify `UnifiedConfig` for cache provider settings.
+    *   **Action:** Ensure `initializeCache()` called at startup; verify `UnifiedConfig`.
     *   **Priority:** High
 
 23. **`UnifiedConfig.init()` Call Timing:**
-    *   **Files:** `UnifiedConfig.ts`, various service initializers and consumers.
-    *   **Action:** Ensure `config.init()` is called at the absolute beginning of startup sequences.
+    *   **Files:** `UnifiedConfig.ts`, service initializers.
+    *   **Action:** Ensure `config.init()` called at absolute beginning of startup.
     *   **Priority:** High
 
 24. **Bug in `TelemetryService.flush()` Error Handling (Re-buffering):**
@@ -601,1159 +390,731 @@ These issues significantly impact core functionality or security and should be p
     *   **Priority:** High
 
 25. **Missing or Misconfigured Shared Storage Service Abstraction:**
-    *   **Files:** Missing [`packages/shared/src/services/storage/index.ts`](packages/shared/src/services/storage/index.ts:1) and `storageService.ts`. [`packages/shared/src/services/recognition/materialProvider.ts`](packages/shared/src/services/recognition/materialProvider.ts:2) hardcodes S3 adapter.
-    *   **Action:** Create `storageService.ts` (renaming `s3StorageAdapter.ts`) with `StorageService` class using a `StorageProvider`. Create `storageInitializer.ts` to configure it via `UnifiedConfig`. Update consumers. Define `StorageProvider` interface in `storage/types.ts`.
+    *   **Files:** Missing [`packages/shared/src/services/storage/index.ts`](packages/shared/src/services/storage/index.ts:1), `storageService.ts`. [`packages/shared/src/services/recognition/materialProvider.ts`](packages/shared/src/services/recognition/materialProvider.ts:2) hardcodes S3.
+    *   **Action:** Create `storageService.ts` with `StorageService` class, `storageInitializer.ts`.
     *   **Priority:** High
 
 26. **Dependency on External `ML_SERVICE_URL` in `MaterialRecognitionProvider`:**
-    *   **File:** [`packages/shared/src/services/recognition/materialProvider.ts`](packages/shared/src/services/recognition/materialProvider.ts:1) (lines 77, 215)
+    *   **File:** [`packages/shared/src/services/recognition/materialProvider.ts`](packages/shared/src/services/recognition/materialProvider.ts:1)
     *   **Action:** Refactor to get `ML_SERVICE_URL` from `UnifiedConfig`.
     *   **Priority:** High
 
 27. **Missing `create_conversation_table` RPC for `ConversationalSearchService`:**
     *   **File:** [`packages/server/src/services/search/conversational-search-service.ts`](packages/server/src/services/search/conversational-search-service.ts:129)
-    *   **Issue:** Service attempts to create `conversation_sessions` table via an RPC that's not defined.
-    *   **Impact:** Persistence for conversation sessions will fail.
-    *   **Action:** Define schema for `conversation_sessions` in a Supabase migration file. Remove RPC call.
+    *   **Action:** Define schema for `conversation_sessions` in migration. Remove RPC call.
     *   **Priority:** High
 
 28. **Redundancy of `config.ts` with `unified-config.ts`:**
     *   **File:** [`packages/shared/src/utils/config.ts`](packages/shared/src/utils/config.ts:1)
-    *   **Issue:** Duplicates functionality of `unified-config.ts`.
-    *   **Action:** Deprecate and delete `config.ts`. Refactor consumers to use `unified-config.ts`.
+    *   **Action:** Deprecate `config.ts`, use `unified-config.ts`.
     *   **Priority:** High
 
 29. **Redundancy of `logger.ts` with `unified-logger.ts`:**
     *   **File:** [`packages/shared/src/utils/logger.ts`](packages/shared/src/utils/logger.ts:1)
-    *   **Issue:** Duplicates functionality of `unified-logger.ts`.
-    *   **Action:** Deprecate and delete `logger.ts`. Refactor consumers to use `unified-logger.ts`.
+    *   **Action:** Deprecate `logger.ts`, use `unified-logger.ts`.
     *   **Priority:** High
 
 30. **Logger Inconsistency in `apiKeyManager.service.ts`:**
     *   **File:** [`packages/server/src/services/auth/apiKeyManager.service.ts`](packages/server/src/services/auth/apiKeyManager.service.ts:8)
-    *   **Issue:** Uses `logger` from `../../utils/logger` which might be inconsistent with the project's goal to use `unified-logger.ts`.
-    *   **Impact:** Inconsistent logging practices, potential difficulty in centralized log management.
-    *   **Action:** Confirm the project-wide logging strategy. If `unified-logger.ts` is standard, refactor `apiKeyManager.service.ts` to use it.
-    *   **Priority:** High (was Medium, upgraded due to systematic nature)
+    *   **Action:** Refactor to use `unified-logger.ts`.
+    *   **Priority:** High
 
 31. **Logger Inconsistency in `sessionManager.service.ts`:**
     *   **File:** [`packages/server/src/services/auth/sessionManager.service.ts`](packages/server/src/services/auth/sessionManager.service.ts:11)
-    *   **Issue:** Uses `logger` from `../../utils/logger` which might be inconsistent with the project's goal to use `unified-logger.ts`.
-    *   **Impact:** Inconsistent logging practices, potential difficulty in centralized log management.
-    *   **Action:** Confirm the project-wide logging strategy. If `unified-logger.ts` is standard, refactor `sessionManager.service.ts` to use it.
+    *   **Action:** Refactor to use `unified-logger.ts`.
     *   **Priority:** High
 
 32. **Logger Inconsistency in `twoFactor.service.ts`:**
     *   **File:** [`packages/server/src/services/auth/twoFactor.service.ts`](packages/server/src/services/auth/twoFactor.service.ts:10)
-    *   **Issue:** Uses `logger` from `../../utils/logger` which might be inconsistent with the project's goal to use `unified-logger.ts`.
-    *   **Impact:** Inconsistent logging practices, potential difficulty in centralized log management.
-    *   **Action:** Confirm the project-wide logging strategy. If `unified-logger.ts` is standard, refactor `twoFactor.service.ts` to use it.
+    *   **Action:** Refactor to use `unified-logger.ts`.
     *   **Priority:** High
 
-35. **Effectiveness of `SupabaseHybridSearch` Relies on RPC Correctness:**
+33. **Effectiveness of `SupabaseHybridSearch` Relies on RPC Correctness:**
     *   **File:** [`packages/server/src/services/supabase/hybrid-search.ts`](packages/server/src/services/supabase/hybrid-search.ts:1)
-    *   **Issue:** This service calls Supabase RPC functions `hybrid_search_materials` and `hybrid_search`. The `hybrid_search_materials` RPC is particularly concerning as it might be linked to `material_hybrid_search` and the flawed `search_materials_by_text` logic (Critical Issue #I.3), potentially rendering its vector search component ineffective if it doesn't correctly use the passed `query_embedding`.
-    *   **Impact:** If the underlying RPCs are flawed (especially in their vector search component), hybrid search will not perform as expected, potentially degrading to keyword search or yielding irrelevant results.
-    *   **Action:**
-        1.  **Critically review the SQL definitions of `hybrid_search_materials` and `hybrid_search` RPCs.** Ensure they correctly utilize provided embeddings for semantic similarity and efficiently combine scores with text search results.
-        2.  Specifically, verify that `hybrid_search_materials` does not inherit the flaws of `search_materials_by_text` if it's related.
-    *   **Priority:** High (Effectiveness of a core search service depends on this; linked to Critical Issue #I.3)
+    *   **Action:** Critically review SQL definitions of `hybrid_search_materials` and `hybrid_search` RPCs.
+    *   **Priority:** High (Linked to Critical Issue #4)
 
-36. **Verification of `find_similar_materials` RPC in `SupabaseMaterialService`:**
+34. **Verification of `find_similar_materials` RPC in `SupabaseMaterialService`:**
     *   **File:** [`packages/server/src/services/supabase/supabase-material-service.ts`](packages/server/src/services/supabase/supabase-material-service.ts:369)
-    *   **Issue:** The `findSimilarMaterials` method relies on a Supabase RPC named `find_similar_materials`. It's crucial to verify this RPC's implementation against the flawed patterns identified in `material.model.ts` (Critical Issue #I.2) to ensure it performs a correct vector similarity search.
-    *   **Impact:** If this RPC is also flawed, the primary vector similarity search for materials would be compromised.
-    *   **Action:** Review the SQL definition of the `find_similar_materials` RPC. Ensure it correctly uses the input `search_vector` and applies similarity calculations and thresholds effectively.
-    *   **Priority:** High (Linked to Critical Issue #I.2)
+    *   **Action:** Review SQL definition of `find_similar_materials` RPC.
+    *   **Priority:** High (Linked to Critical Issue #3)
 
-33. **Potential Flaw in `EnhancedVectorServiceImpl.searchMaterials` via `material_hybrid_search` RPC:**
+35. **Potential Flaw in `EnhancedVectorServiceImpl.searchMaterials` via `material_hybrid_search` RPC:**
     *   **File:** [`packages/server/src/services/supabase/enhanced-vector-service.ts`](packages/server/src/services/supabase/enhanced-vector-service.ts:396)
-    *   **Issue:** The `searchMaterials` method, when using specialized indexes, calls the `material_hybrid_search` RPC with `query_text`. This RPC is linked to `search_materials_by_text` (Critical Issue #I.3), which has flawed logic for converting text to embeddings for semantic search.
-    *   **Impact:** If the RPC is not fixed, semantic search via this path in `EnhancedVectorServiceImpl` will be ineffective, relying on keyword matching instead of true semantic similarity.
-    *   **Action:**
-        1.  Verify if `material_hybrid_search` RPC (and its underlying SQL function `search_materials_by_text`) has been corrected to properly generate and use query embeddings.
-        2.  If not fixed, `EnhancedVectorServiceImpl.searchMaterials` should ensure query embeddings are generated in the application layer (similar to its fallback path for `find_similar_materials_hybrid`) and passed to a corrected or alternative RPC that accepts embeddings.
-    *   **Priority:** High (Linked to Critical Issue #I.3)
+    *   **Action:** Verify RPC fix or generate embeddings in app layer.
+    *   **Priority:** High (Linked to Critical Issue #4)
 
-34. **Dependency on Potentially Incomplete Python Scripts in `EnhancedVectorServiceImpl`:**
-    *   **File:** [`packages/server/src/services/supabase/enhanced-vector-service.ts`](packages/server/src/services/supabase/enhanced-vector-service.ts:1) (various methods like `searchMaterialsWithKnowledge`, `routeQuery`)
-    *   **Issue:** Several methods in `EnhancedVectorServiceImpl` rely on invoking Python scripts like `hybrid_retriever.py` and `context_assembler.py`. `hybrid_retriever.py` is known to have placeholder implementations (Critical Issue #I.6).
-    *   **Impact:** Core functionality offered by these service methods (e.g., knowledge-augmented search, query routing) will be non-functional or unreliable until the underlying Python scripts are fully implemented.
-    *   **Action:** Prioritize implementation of placeholder logic in `hybrid_retriever.py`. Review and verify the completeness and correctness of `context_assembler.py` and other Python scripts invoked by this service.
-    *   **Priority:** High (Linked to Critical Issue #I.6)
+36. **Dependency on Potentially Incomplete Python Scripts in `EnhancedVectorServiceImpl`:**
+    *   **File:** [`packages/server/src/services/supabase/enhanced-vector-service.ts`](packages/server/src/services/supabase/enhanced-vector-service.ts:1)
+    *   **Action:** Prioritize `hybrid_retriever.py` implementation. Review `context_assembler.py`.
+    *   **Priority:** High (Linked to Critical Issue #7)
 
-43. **Incorrect Categorical Feature Encoding in `RelationshipAwareTrainingService`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1356) (method `prepareDataForTraining`)
-    *   **Issue:** When preparing features for training, string values are placeholder encoded by pushing `1`. This is not a valid encoding strategy for categorical features.
-    *   **Impact:** The ML model will receive meaningless input for string features, leading to poor training and prediction performance.
-    *   **Action:** Implement proper encoding for string categorical features (e.g., one-hot encoding based on a vocabulary derived from training data, or using embedding layers if the model architecture supports it). This needs to be consistent between `prepareDataForTraining` and any similar feature preparation for prediction.
-    *   **Priority:** High (Bug affecting core ML functionality)
-
-44. **Supabase Client Import Path in `RelationshipAwareTrainingService`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:10)
-    *   **Issue:** Imports Supabase client as `import { supabase } from '../../supabase/supabaseClient';`. This path is different from the `../supabase/supabaseClient` used by most services and the `../../../config/supabase` used by `PropertyPredictionService`.
-    *   **Action:** Verify all Supabase client import paths and standardize to the corrected re-export from `packages/server/src/services/supabase/supabaseClient.ts`.
-    *   **Priority:** High
-
-43. **Incorrect Categorical Feature Encoding in `RelationshipAwareTrainingService`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1356) (method `prepareDataForTraining`)
-    *   **Issue:** When preparing features for training, string values are placeholder encoded by pushing `1`. This is not a valid encoding strategy for categorical features.
-    *   **Impact:** The ML model will receive meaningless input for string features, leading to poor training and prediction performance.
-    *   **Action:** Implement proper encoding for string categorical features (e.g., one-hot encoding based on a vocabulary derived from training data, or using embedding layers if the model architecture supports it). This needs to be consistent between `prepareDataForTraining` and any similar feature preparation for prediction.
-    *   **Priority:** High (Bug affecting core ML functionality)
-
-44. **Supabase Client Import Path in `RelationshipAwareTrainingService`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:10)
-    *   **Issue:** Imports Supabase client as `import { supabase } from '../../supabase/supabaseClient';`. This path is different from the `../supabase/supabaseClient` used by most services and the `../../../config/supabase` used by `PropertyPredictionService`.
-    *   **Action:** Verify all Supabase client import paths and standardize to the corrected re-export from `packages/server/src/services/supabase/supabaseClient.ts`.
-    *   **Priority:** High
-
-43. **Incorrect Categorical Feature Encoding in `RelationshipAwareTrainingService`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1356) (method `prepareDataForTraining`)
-    *   **Issue:** When preparing features for training, string values are placeholder encoded by pushing `1`. This is not a valid encoding strategy for categorical features.
-    *   **Impact:** The ML model will receive meaningless input for string features, leading to poor training and prediction performance.
-    *   **Action:** Implement proper encoding for string categorical features (e.g., one-hot encoding based on a vocabulary derived from training data, or using embedding layers if the model architecture supports it). This needs to be consistent between `prepareDataForTraining` and any similar feature preparation for prediction.
-    *   **Priority:** High (Bug affecting core ML functionality)
-
-44. **Supabase Client Import Path in `RelationshipAwareTrainingService`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:10)
-    *   **Issue:** Imports Supabase client as `import { supabase } from '../../supabase/supabaseClient';`. This path is different from the `../supabase/supabaseClient` used by most services and the `../../../config/supabase` used by `PropertyPredictionService`.
-    *   **Action:** Verify all Supabase client import paths and standardize to the corrected re-export from `packages/server/src/services/supabase/supabaseClient.ts`.
-    *   **Priority:** High
-
-38. **Architectural Concern: Embedded ML Pipeline in `PromptMLService`:**
+37. **Architectural Concern: Embedded ML Pipeline in `PromptMLService`:**
     *   **File:** [`packages/server/src/services/ai/promptMLService.ts`](packages/server/src/services/ai/promptMLService.ts:1)
-    *   **Issue:** The service includes extensive logic for training various ML models (TensorFlow.js neural nets, LSTMs, Transformers; and traditional models like Random Forest, Gradient Boosting via external libraries), including feature extraction, model definition, training loops, serialization, and prediction.
-    *   **Impact:** This embeds a complex ML pipeline directly within an application service, which can lead to:
-        *   High maintenance overhead.
-        *   Scalability challenges for training.
-        *   Difficulty in robustly managing model versions, experiments, and deployments.
-        *   Potential for resource contention if training occurs on the application server.
-    *   **Action:** Evaluate the long-term viability of this embedded approach. Consider:
-        1.  Offloading model training to a separate, dedicated ML pipeline/infrastructure (e.g., using Python scripts managed by an MLOps tool, cloud ML platforms).
-        2.  This service could then focus on fetching pre-trained models (or model metadata/endpoints) from a central model store/registry, performing feature extraction, and invoking predictions.
-        3.  For traditional ML models (Random Forest, Gradient Boosting), ensure the `ml-*` libraries are suitable for production use or consider more established Python libraries if training is moved externally.
+    *   **Action:** Evaluate offloading model training.
     *   **Priority:** High (Architectural)
 
-41. **Incorrect One-Hot Encoding Placeholder in `PropertyPredictionService`:**
-    *   **File:** [`packages/server/src/services/ai/property-prediction/propertyPredictionService.ts`](packages/server/src/services/ai/property-prediction/propertyPredictionService.ts:1) (methods `convertToTensors`, `convertFeaturesToTensor`)
-    *   **Issue:** When converting string features to tensors, the code has a placeholder comment "One-hot encode string values" but then simply pushes `1` (e.g., [line 220](packages/server/src/services/ai/property-prediction/propertyPredictionService.ts:220), [line 264](packages/server/src/services/ai/property-prediction/propertyPredictionService.ts:264)). This is not one-hot encoding and will lead to incorrect feature representation.
-    *   **Impact:** The ML model will be trained on and predict with meaningless feature data for any string-based categorical inputs, leading to poor or nonsensical predictions.
-    *   **Action:** Implement proper one-hot encoding for string categorical features. This involves:
-        1.  Building a vocabulary for each categorical feature from the training data.
-        2.  Mapping string values to integer indices based on the vocabulary.
-        3.  Converting these integer indices to one-hot encoded vectors.
-        4.  Ensure the same vocabulary and encoding process is applied consistently during training and prediction.
-        Alternatively, consider using embedding layers in the TensorFlow.js model for categorical features.
-    *   **Priority:** High (Bug affecting core ML functionality)
+38. **Incorrect One-Hot Encoding Placeholder in `PropertyPredictionService`:**
+    *   **File:** [`packages/server/src/services/ai/property-prediction/propertyPredictionService.ts`](packages/server/src/services/ai/property-prediction/propertyPredictionService.ts:1)
+    *   **Action:** Implement proper one-hot encoding or use embedding layers.
+    *   **Priority:** High (Bug affecting core ML)
 
-42. **Supabase Client Import Path in `PropertyPredictionService`:**
+39. **Supabase Client Import Path in `PropertyPredictionService`:**
     *   **File:** [`packages/server/src/services/ai/property-prediction/propertyPredictionService.ts`](packages/server/src/services/ai/property-prediction/propertyPredictionService.ts:11)
-    *   **Issue:** Imports Supabase client as `import { supabase } from '../../../config/supabase';`. This path is different from other services.
-    *   **Action:** Verify this import path. Align with the standard Supabase client import (`../supabase/supabaseClient` or the shared package alias) used in other services for consistency.
+    *   **Action:** Align with standard Supabase client import.
     *   **Priority:** High
 
 40. **Supabase Client Import Path in `VisualReferenceTrainingService`:**
     *   **File:** [`packages/server/src/services/ai/visual-reference-training.ts`](packages/server/src/services/ai/visual-reference-training.ts:14)
-    *   **Issue:** Imports Supabase client as `import { supabase } from '../../config/supabase';`. This path (`../../config/supabase`) is different from other services which use `../supabase/supabaseClient`.
-    *   **Impact:** Potential inconsistency or error if `../../config/supabase` does not correctly provide the initialized Supabase client instance in the same way as `../supabase/supabaseClient`.
-    *   **Action:** Verify the `../../config/supabase` import. If it's not the standard shared client, refactor to use the same Supabase client import (`../supabase/supabaseClient` which re-exports the shared client) as other services for consistency and to benefit from the centralized client logic.
+    *   **Action:** Align with standard Supabase client import.
     *   **Priority:** High
 
-39. **Implement Placeholder Rules in `PromptOptimizationService`:**
+41. **Implement Placeholder Rules in `PromptOptimizationService`:**
     *   **File:** [`packages/server/src/services/ai/promptOptimizationService.ts`](packages/server/src/services/ai/promptOptimizationService.ts:1)
-    *   **Issue:** Several rule execution methods are placeholders:
-        *   `executeSegmentSpecificRule` ([line 492](packages/server/src/services/ai/promptOptimizationService.ts:492))
-        *   `executeMLSuggestionRule` ([line 502](packages/server/src/services/ai/promptOptimizationService.ts:502))
-        *   `executeScheduledExperimentRule` ([line 512](packages/server/src/services/ai/promptOptimizationService.ts:512))
-    *   **Impact:** Key automated optimization functionalities are missing.
-    *   **Action:** Implement the logic for these rule types. This will likely involve fetching relevant data (e.g., segment performance, ML-generated suggestions, schedules) and creating appropriate `OptimizationActionData` records.
+    *   **Action:** Implement logic for placeholder rule types.
+    *   **Priority:** High
+
+42. **Potential Bug in `PromptService.renderPrompt` by Name:**
+    *   **File:** [`packages/server/src/services/ai/promptService.ts`](packages/server/src/services/ai/promptService.ts:582)
+    *   **Action:** Update `PromptRenderOptions` or remove logic path.
     *   **Priority:** High
 
 43. **Incorrect Categorical Feature Encoding in `RelationshipAwareTrainingService`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1356) (method `prepareDataForTraining`)
-    *   **Issue:** When preparing features for training, string values are placeholder encoded by pushing `1`. This is not a valid encoding strategy for categorical features.
-    *   **Impact:** The ML model will receive meaningless input for string features, leading to poor training and prediction performance.
-    *   **Action:** Implement proper encoding for string categorical features (e.g., one-hot encoding based on a vocabulary derived from training data, or using embedding layers if the model architecture supports it). This needs to be consistent between `prepareDataForTraining` and any similar feature preparation for prediction.
-    *   **Priority:** High (Bug affecting core ML functionality)
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1356)
+    *   **Action:** Implement proper encoding.
+    *   **Priority:** High (Bug affecting core ML)
 
 44. **Supabase Client Import Path in `RelationshipAwareTrainingService`:**
     *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:10)
-    *   **Issue:** Imports Supabase client as `import { supabase } from '../../supabase/supabaseClient';`. This path is different from the `../supabase/supabaseClient` used by most services and the `../../../config/supabase` used by `PropertyPredictionService`.
-    *   **Action:** Verify all Supabase client import paths and standardize to the corrected re-export from `packages/server/src/services/supabase/supabaseClient.ts`.
+    *   **Action:** Standardize Supabase client import paths.
     *   **Priority:** High
 
-37. **Potential Bug in `PromptService.renderPrompt` by Name:**
-    *   **File:** [`packages/server/src/services/ai/promptService.ts`](packages/server/src/services/ai/promptService.ts:582)
-    *   **Issue:** The `renderPrompt` method, when attempting to fetch a prompt by `options.promptName`, throws an error stating "Getting prompt by name requires prompt type". However, the `PromptRenderOptions` interface does not include a `promptType` field, making this path unusable.
-    *   **Impact:** Rendering prompts by name (if intended as a feature) will always fail.
-    *   **Action:**
-        1.  If rendering by name is a required feature, update `PromptRenderOptions` to include `promptType` and modify `renderPrompt` to use it when calling `getPromptByNameAndType`.
-        2.  Alternatively, if fetching by name in `renderPrompt` is not intended or too ambiguous without type, remove this specific logic path.
-    *   **Priority:** High (Potential bug in a core service method)
+45. **Client Dependencies for `ContextAssembler` (`context_assembler.py`):**
+    *   **File:** [`packages/ml/python/context_assembler.py`](packages/ml/python/context_assembler.py:1)
+    *   **Action:** Review actual client implementations.
+    *   **Priority:** High
+
+46. **Configuration for `CLIENT_URL` in `passwordReset.controller.ts`:**
+    *   **File:** [`packages/server/src/controllers/auth/passwordReset.controller.ts`](packages/server/src/controllers/auth/passwordReset.controller.ts:61)
+    *   **Issue:** Uses `process.env.CLIENT_URL` directly.
+    *   **Impact:** Bypasses centralized configuration management.
+    *   **Action:** Source `CLIENT_URL` from `UnifiedConfig` for consistency.
+    *   **Priority:** High
+
+47. **Logger Inconsistency in `passwordReset.controller.ts`:**
+    *   **File:** [`packages/server/src/controllers/auth/passwordReset.controller.ts`](packages/server/src/controllers/auth/passwordReset.controller.ts:9)
+    *   **Issue:** Uses `logger` from `../../utils/logger`.
+    *   **Impact:** Inconsistent logging practices.
+    *   **Action:** Refactor to use the project's standard `unified-logger`.
+    *   **Priority:** High
+
+48. **Supabase Client Import in `passwordReset.controller.ts`:**
+    *   **File:** [`packages/server/src/controllers/auth/passwordReset.controller.ts`](packages/server/src/controllers/auth/passwordReset.controller.ts:11)
+    *   **Issue:** Imports `supabaseClient` from `../../services/supabase/supabaseClient`.
+    *   **Impact:** Potential inconsistency if this doesn't align with the project-wide standardized Supabase client.
+    *   **Action:** Verify and align with the standard Supabase client import path.
+    *   **Priority:** High
+
+49. **Logger Inconsistency in `session.controller.ts`:**
+    *   **File:** [`packages/server/src/controllers/auth/session.controller.ts`](packages/server/src/controllers/auth/session.controller.ts:9)
+    *   **Issue:** Uses `logger` from `../../utils/logger`.
+    *   **Impact:** Inconsistent logging practices.
+    *   **Action:** Refactor to use the project's standard `unified-logger`.
+    *   **Priority:** High
+
+50. **Password Validation in `session.controller.ts` (`registerUser`):**
+    *   **File:** [`packages/server/src/controllers/auth/session.controller.ts`](packages/server/src/controllers/auth/session.controller.ts:45)
+    *   **Issue:** Contains password validation regex.
+    *   **Impact:** Duplicates validation logic if also handled by Supabase Auth or a shared utility.
+    *   **Action:** If custom registration logic is retained (unlikely given Supabase Auth integration - see Critical Issue #33), centralize password validation. Otherwise, this will be removed when refactoring to Supabase Auth.
+    *   **Priority:** High (Contingent on Critical Issue #33 resolution)
+
+51. **Logger Inconsistency in `twoFactor.controller.ts`:**
+    *   **File:** [`packages/server/src/controllers/auth/twoFactor.controller.ts`](packages/server/src/controllers/auth/twoFactor.controller.ts:9)
+    *   **Issue:** Uses `logger` from `../../utils/logger`.
+    *   **Impact:** Inconsistent logging practices.
+    *   **Action:** Refactor to use the project's standard `unified-logger`.
+    *   **Priority:** High
+
+52. **Database Model Dependency for 2FA Settings (`twoFactor.model.ts`):**
+    *   **File:** [`packages/server/src/controllers/auth/twoFactor.controller.ts`](packages/server/src/controllers/auth/twoFactor.controller.ts:12-16) (imports from `../../models/twoFactor.model.ts`)
+    *   **Issue:** If `twoFactor.model.ts` uses Mongoose, 2FA settings would be stored in MongoDB, conflicting with the likely primary database being Supabase.
+    *   **Impact:** Inconsistent data storage for 2FA settings, potential data management issues.
+    *   **Action:** Clarify the definitive database for 2FA settings. If Supabase is the target, refactor `twoFactor.model.ts` or replace with Supabase-compatible data access. Ensure `two_factor_settings` table schema is in Supabase migrations.
+    *   **Priority:** High (Linked to Critical Issue #2)
+
+53. **Logger Inconsistency in `proratedBilling.service.ts`:**
+    *   **File:** [`packages/server/src/services/billing/proratedBilling.service.ts`](packages/server/src/services/billing/proratedBilling.service.ts:8)
+    *   **Issue:** Uses `logger` from `../../utils/logger`.
+    *   **Impact:** Inconsistent logging practices.
+    *   **Action:** Refactor to use the project's standard `unified-logger`.
+    *   **Priority:** High
+
+54. **Database Model Dependencies in `proratedBilling.service.ts`:**
+    *   **Files:** [`packages/server/src/services/billing/proratedBilling.service.ts`](packages/server/src/services/billing/proratedBilling.service.ts:1) (imports `../../models/userSubscription.model.ts` and `../../models/subscriptionTier.model.ts`)
+    *   **Issue:** If these models use Mongoose, this service relies on MongoDB for subscription/tier data, conflicting with the likely primary Supabase database.
+    *   **Impact:** Billing operations might use data from a non-primary, potentially inconsistent data store.
+    *   **Action:** Clarify the definitive database for subscription and tier data. If Supabase is the target, refactor models for Supabase compatibility and ensure schemas are in Supabase migrations.
+    *   **Priority:** High (Linked to Critical Issue #2)
+
+55. **Dependency on `stripeService` in `proratedBilling.service.ts`:**
+    *   **File:** [`packages/server/src/services/billing/proratedBilling.service.ts`](packages/server/src/services/billing/proratedBilling.service.ts:11) (imports `../payment/stripeService`)
+    *   **Issue:** Functionality heavily depends on the correctness of `stripeService`.
+    *   **Impact:** Issues in `stripeService` will directly affect billing.
+    *   **Action:** Ensure `stripeService` is thoroughly reviewed, uses `UnifiedConfig` for API keys, handles errors robustly, and Stripe API interactions are correct.
+    *   **Priority:** High (Dependency on critical external service integration)
+
+56. **Logger Inconsistency in `materialComparisonService.ts`:**
+    *   **File:** [`packages/server/src/services/comparison/materialComparisonService.ts`](packages/server/src/services/comparison/materialComparisonService.ts:7)
+    *   **Issue:** Uses `logger` from `../../utils/logger`.
+    *   **Impact:** Inconsistent logging practices.
+    *   **Action:** Refactor to use the project's standard `unified-logger`.
+    *   **Priority:** High
+
+57. **Prisma Client Import and Configuration in `materialComparisonService.ts`:**
+    *   **File:** [`packages/server/src/services/comparison/materialComparisonService.ts`](packages/server/src/services/comparison/materialComparisonService.ts:8)
+    *   **Issue:** Imports `prisma` from `../prisma`. This needs to align with the project's standard for Prisma client instantiation and ensure it's configured for the primary database (Supabase).
+    *   **Impact:** Potential use of an incorrect or isolated Prisma client, leading to data inconsistencies if not targeting the primary database.
+    *   **Action:** Ensure the Prisma client is correctly configured and imported according to project standards, targeting the definitive primary database.
+    *   **Priority:** High (Linked to Critical Issue #2)
+
+58. **Database Table Dependencies in `materialComparisonService.ts`:**
+    *   **File:** [`packages/server/src/services/comparison/materialComparisonService.ts`](packages/server/src/services/comparison/materialComparisonService.ts:1)
+    *   **Issue:** Relies on Prisma models for `material` and implicitly a `comparison_results` table.
+    *   **Impact:** Service failure or incorrect results if tables are not in the primary Supabase DB or schemas are misaligned.
+    *   **Action:** Ensure `material` table schema in Prisma matches Supabase. Define `comparison_results` schema in Supabase migrations and update Prisma schema.
+    *   **Priority:** High (Linked to Critical Issue #2)
+
+59. **Logger Inconsistency in `creditService.ts`:**
+    *   **File:** [`packages/server/src/services/credit/creditService.ts`](packages/server/src/services/credit/creditService.ts:8)
+    *   **Issue:** Uses `logger` from `../../utils/logger`.
+    *   **Impact:** Inconsistent logging practices.
+    *   **Action:** Refactor to use the project's standard `unified-logger`.
+    *   **Priority:** High
+
+60. **Database Model Dependencies in `creditService.ts`:**
+    *   **Files:** [`packages/server/src/services/credit/creditService.ts`](packages/server/src/services/credit/creditService.ts:1) (imports `../../models/userCredit.model.ts` and `../../models/serviceCost.model.ts`)
+    *   **Issue:** If these models use Mongoose, this service relies on MongoDB for credit and service cost data, conflicting with the likely primary Supabase database.
+    *   **Impact:** Credit management and service cost calculations might be based on data from a non-primary, potentially out-of-sync database.
+    *   **Action:** Clarify the definitive database for user credits and service costs. If Supabase is the target, refactor models for Supabase compatibility and ensure schemas for `user_credits`, `credit_transactions`, and `service_costs` are in Supabase migrations.
+    *   **Priority:** High (Linked to Critical Issue #2)
+
+61. **Logger Inconsistency in `alertManager.service.ts`:**
+    *   **File:** [`packages/server/src/services/credit/alertManager.service.ts`](packages/server/src/services/credit/alertManager.service.ts:8)
+    *   **Issue:** Uses `logger` from `../../utils/logger`.
+    *   **Impact:** Inconsistent logging practices.
+    *   **Action:** Refactor to use the project's standard `unified-logger`.
+    *   **Priority:** High
+
+62. **Database Model Dependencies in `alertManager.service.ts`:**
+    *   **Files:** [`packages/server/src/services/credit/alertManager.service.ts`](packages/server/src/services/credit/alertManager.service.ts:1) (imports `../../models/creditAlert.model.ts` and `../../models/userCredit.model.ts`)
+    *   **Issue:** If these models use Mongoose, this service relies on MongoDB for alert and credit data, conflicting with the likely primary Supabase database.
+    *   **Impact:** Alerting system might operate on data from a non-primary, potentially out-of-sync database.
+    *   **Action:** Clarify the definitive database for these entities. If Supabase, refactor models for Supabase compatibility. Ensure `credit_alert_settings`, `credit_alert_history`, and `user_credits` table schemas are in Supabase migrations.
+    *   **Priority:** High (Linked to Critical Issue #2)
+
+63. **Supabase Client Import in `alertManager.service.ts`:**
+    *   **File:** [`packages/server/src/services/credit/alertManager.service.ts`](packages/server/src/services/credit/alertManager.service.ts:18)
+    *   **Issue:** Imports `supabaseClient` from `../supabase/supabaseClient`.
+    *   **Impact:** Needs to align with the standardized Supabase client instance.
+    *   **Action:** Verify and align with the standard Supabase client import path.
+    *   **Priority:** High
+
+64. **External Service Dependencies in `alertManager.service.ts`:**
+    *   **Files:** [`packages/server/src/services/credit/alertManager.service.ts`](packages/server/src/services/credit/alertManager.service.ts:1) (imports `emailService`, `smsService`, `axios`)
+    *   **Issue:** Reliability of alert delivery depends on these external services and webhook calls.
+    *   **Impact:** Failures or misconfigurations will prevent alert delivery.
+    *   **Action:** Ensure `emailService`, `smsService` are robust, use `UnifiedConfig` for credentials, and handle errors gracefully. Implement robust error handling and consider retries for webhook calls.
+    *   **Priority:** High
+
+65. **Logger Inconsistency in `autoTopup.service.ts`:**
+    *   **File:** [`packages/server/src/services/credit/autoTopup.service.ts`](packages/server/src/services/credit/autoTopup.service.ts:8)
+    *   **Issue:** Uses `logger` from `../../utils/logger`.
+    *   **Impact:** Inconsistent logging practices.
+    *   **Action:** Refactor to use the project's standard `unified-logger`.
+    *   **Priority:** High
+
+66. **Database Model Dependencies in `autoTopup.service.ts`:**
+    *   **Files:** [`packages/server/src/services/credit/autoTopup.service.ts`](packages/server/src/services/credit/autoTopup.service.ts:1) (imports `../../models/creditTopup.model.ts` and `../../models/userCredit.model.ts`)
+    *   **Issue:** If these models use Mongoose, this service relies on MongoDB for top-up and credit data, conflicting with the likely primary Supabase database.
+    *   **Impact:** Auto top-up functionality might operate on data from a non-primary, potentially out-of-sync database.
+    *   **Action:** Clarify the definitive database for these entities. If Supabase, refactor models for Supabase compatibility. Ensure `credit_topup_settings`, `credit_topup_history`, and `user_credits` table schemas are in Supabase migrations.
+    *   **Priority:** High (Linked to Critical Issue #2)
+
+67. **External and Internal Service Dependencies in `autoTopup.service.ts`:**
+    *   **Files:** [`packages/server/src/services/credit/autoTopup.service.ts`](packages/server/src/services/credit/autoTopup.service.ts:1) (imports `stripeService` and `bulkPurchaseService`)
+    *   **Issue:** Core functionality depends on the correctness of `stripeService` (for payments) and `bulkPurchaseService` (for credit calculation/provisioning).
+    *   **Impact:** Issues in these dependent services will directly affect auto top-up operations.
+    *   **Action:** Ensure `stripeService` and `bulkPurchaseService` are thoroughly reviewed, use `UnifiedConfig` for necessary configurations, handle errors robustly, and their interactions are correct.
+    *   **Priority:** High
+
+68. **Logger Inconsistency in `bulkPurchase.service.ts`:**
+    *   **File:** [`packages/server/src/services/credit/bulkPurchase.service.ts`](packages/server/src/services/credit/bulkPurchase.service.ts:8)
+    *   **Issue:** Uses `logger` from `../../utils/logger`.
+    *   **Impact:** Inconsistent logging practices.
+    *   **Action:** Refactor to use the project's standard `unified-logger`.
+    *   **Priority:** High
+
+69. **Database Model Dependencies in `bulkPurchase.service.ts`:**
+    *   **Files:** [`packages/server/src/services/credit/bulkPurchase.service.ts`](packages/server/src/services/credit/bulkPurchase.service.ts:1) (imports `../../models/bulkCredit.model.ts` and `../../models/userCredit.model.ts`)
+    *   **Issue:** If these models use Mongoose, this service relies on MongoDB for bulk package and credit data, conflicting with the likely primary Supabase database.
+    *   **Impact:** Bulk purchase functionality might operate on data from a non-primary, potentially out-of-sync database.
+    *   **Action:** Clarify the definitive database for these entities. If Supabase, refactor models for Supabase compatibility. Ensure `bulk_credit_packages`, `user_credits`, and `credit_transactions` table schemas are in Supabase migrations.
+    *   **Priority:** High (Linked to Critical Issue #2)
+
+70. **External and Internal Service Dependencies in `bulkPurchase.service.ts`:**
+    *   **Files:** [`packages/server/src/services/credit/bulkPurchase.service.ts`](packages/server/src/services/credit/bulkPurchase.service.ts:1) (imports `stripeService`)
+    *   **Issue:** Core purchasing functionality depends on the correctness of `stripeService` for payments.
+    *   **Impact:** Issues in `stripeService` will directly affect credit purchases.
+    *   **Action:** Ensure `stripeService` is thoroughly reviewed, uses `UnifiedConfig` for API keys, handles errors robustly, and Stripe API interactions are correct.
+    *   **Priority:** High
+
+71. **Logger Inconsistency in `transfer.service.ts`:**
+    *   **File:** [`packages/server/src/services/credit/transfer.service.ts`](packages/server/src/services/credit/transfer.service.ts:8)
+    *   **Issue:** Uses `logger` from `../../utils/logger`.
+    *   **Impact:** Inconsistent logging practices.
+    *   **Action:** Refactor to use the project's standard `unified-logger`.
+    *   **Priority:** High
+
+72. **Database Model and Direct Supabase Client Usage in `transfer.service.ts`:**
+    *   **Files:** [`packages/server/src/services/credit/transfer.service.ts`](packages/server/src/services/credit/transfer.service.ts:1) (imports `userCredit.model.ts` and `supabaseClient`)
+    *   **Issue:** Relies on `userCredit.model.ts` (potentially Mongoose-based) for credit balance operations and directly uses `supabaseClient` for a `credit_transfers` table. This creates a high risk of operating across different, unaligned databases if `userCredit.model.ts` isn't using Supabase.
+    *   **Impact:** Critical data inconsistency for credit transfers if `userCredit.model.ts` and `credit_transfers` table are in different databases.
+    *   **Action:** Ensure `userCredit.model.ts` is refactored for Supabase. Define `credit_transfers` table schema in Supabase migrations. All credit-related operations must target the single, definitive Supabase database.
+    *   **Priority:** High (Linked to Critical Issue #2)
+
+73. **Atomicity of `transferCredits` Operation in `transfer.service.ts`:**
+    *   **File:** [`packages/server/src/services/credit/transfer.service.ts`](packages/server/src/services/credit/transfer.service.ts:40)
+    *   **Issue:** The `transferCredits` function performs multiple sequential database operations (create transfer record, deduct credits, add credits, update transfer status) without a single overarching database transaction.
+    *   **Impact:** High risk of data inconsistency (e.g., credits deducted but not received, or transfer record not reflecting the true outcome of operations).
+    *   **Action:** Refactor the entire `transferCredits` logic into a single atomic Supabase database function (RPC) to ensure all steps succeed or fail together.
+    *   **Priority:** High (Critical for financial/credit integrity)
+
+74. **Supabase Client Import in `transfer.service.ts`:**
+    *   **File:** [`packages/server/src/services/credit/transfer.service.ts`](packages/server/src/services/credit/transfer.service.ts:14)
+    *   **Issue:** Imports `supabaseClient` from `../supabase/supabaseClient`.
+    *   **Impact:** Needs to align with the standardized Supabase client instance.
+    *   **Action:** Verify and align with the standard Supabase client import path.
+    *   **Priority:** High
 
 ## III. Medium Priority Issues & Refinements
 
-1.  **Unclear Rendering Logic in `MaterialVisualizer.tsx`:**
-    *   **File:** [`packages/client/src/components/MaterialVisualizer.tsx`](packages/client/src/components/MaterialVisualizer.tsx:100-106)
-    *   **Action:** Clarify rendering method.
-    *   **Priority:** Medium
+(Consolidating and re-numbering items here.)
 
-2.  **Token Cancellation Logic in Shared `apiClient.ts`:**
-    *   **File:** [`packages/shared/src/services/api/apiClient.ts`](packages/shared/src/services/api/apiClient.ts:1)
-    *   **Action:** If feature desired, modify `requestWithRetry` to manage cancel tokens.
-    *   **Priority:** Medium
-
-3.  **Error Propagation in `AuthService`:**
-    *   **File:** [`packages/shared/src/services/auth/authService.ts`](packages/shared/src/services/auth/authService.ts:1)
-    *   **Action:** Standardize to consistently throw custom `ApiError` or `AuthError`.
-    *   **Priority:** Medium
-
-4.  **Error Handling Granularity & Propagation (Server-side General):**
-    *   **Files:** Various server-side services.
-    *   **Action:** Refine to catch specific errors, wrap in `ApiError` with more context.
-    *   **Priority:** Medium
-
-5.  **Ownership Checks for 'manager' Role in Modifying Material Routes:**
-    *   **File:** [`packages/server/src/routes/material.routes.ts`](packages/server/src/routes/material.routes.ts:1)
-    *   **Action:** Clarify 'manager' permissions. If needed, add ownership checks.
-    *   **Priority:** Medium
-
-6.  **Inconsistent Service Layer Usage in `material.routes.ts`:**
-    *   **File:** [`packages/server/src/routes/material.routes.ts`](packages/server/src/routes/material.routes.ts:1)
-    *   **Action:** Refactor to consistently use `materialService.ts`.
-    *   **Priority:** Medium
-
-7.  **Centralized Context Providers in `Layout.tsx`:**
-    *   **File:** [`packages/client/src/components/Layout.tsx`](packages/client/src/components/Layout.tsx:1)
-    *   **Action:** Review and centralize global providers in `Layout.tsx` if needed.
-    *   **Priority:** Medium
-
-8.  **State Management Complexity in `ImageUploader.tsx`:**
-    *   **File:** [`packages/client/src/components/ImageUploader.tsx`](packages/client/src/components/ImageUploader.tsx:1)
-    *   **Action:** Consider `React.useReducer`.
-    *   **Priority:** Medium
-
-9.  **Accessibility of Interactive Elements in `ImageUploader.tsx`:**
-    *   **File:** [`packages/client/src/components/ImageUploader.tsx`](packages/client/src/components/ImageUploader.tsx:1)
-    *   **Action:** Thorough accessibility review.
-    *   **Priority:** Medium
-
-10. **Missing Action for "View Details" in `RecognitionDemo.tsx`:**
-    *   **File:** [`packages/client/src/components/RecognitionDemo.tsx`](packages/client/src/components/RecognitionDemo.tsx:243)
-    *   **Action:** Implement navigation.
-    *   **Priority:** Medium
-
-11. **Generic Error Handling in Client Services (General):**
-    *   **Files:** Various client services.
-    *   **Action:** Use shared `apiClient`'s `ApiError` and interceptors; propagate structured errors.
-    *   **Priority:** Medium
-
-12. **`clear()` Method with Namespace (`KEYS`) in `RedisCacheProvider`:**
-    *   **File:** [`packages/shared/src/services/cache/redisCacheProvider.ts`](packages/shared/src/services/cache/redisCacheProvider.ts:180)
-    *   **Action:** Avoid `KEYS`; use alternatives like Redis Sets or Lua with `SCAN`.
-    *   **Priority:** Medium
-
-13. **`clear()` Method without Namespace (`flushDb`) in `RedisCacheProvider`:**
-    *   **File:** [`packages/shared/src/services/cache/redisCacheProvider.ts`](packages/shared/src/services/cache/redisCacheProvider.ts:188)
-    *   **Action:** Make safer.
-    *   **Priority:** Medium
-
-14. **Connection Management & Retries in `RedisCacheProvider`:**
-    *   **File:** [`packages/shared/src/services/cache/redisCacheProvider.ts`](packages/shared/src/services/cache/redisCacheProvider.ts:1)
-    *   **Action:** Ensure Redis client reconnection strategy is configured; consider queue/retry.
-    *   **Priority:** Medium
-
-15. **`ADAPTIVE` Cache Warming Strategy Not Implemented:**
-    *   **File:** [`packages/shared/src/services/cache/cacheWarming.ts`](packages/shared/src/services/cache/cacheWarming.ts:32)
-    *   **Action:** Implement or remove from enum.
-    *   **Priority:** Medium
-
-16. **Cron Parsing and Scheduling Robustness (`cron-parser.ts`):**
-    *   **File:** [`packages/shared/src/utils/cron-parser.ts`](packages/shared/src/utils/cron-parser.ts:1)
-    *   **Action:** Consider robust third-party cron library.
-    *   **Priority:** Medium
-
-17. **Timezone Handling in `getNextExecutionTime` (`cron-parser.ts`):**
-    *   **File:** [`packages/shared/src/utils/cron-parser.ts`](packages/shared/src/utils/cron-parser.ts:393-404)
-    *   **Action:** Use mature date/time or cron library with DST support if precise handling is critical.
-    *   **Priority:** Medium
-
-18. **Tag Storage for `invalidateByTag` in `CacheInvalidationService`:**
-    *   **File:** [`packages/shared/src/services/cache/cacheInvalidation.ts`](packages/shared/src/services/cache/cacheInvalidation.ts:49)
-    *   **Action:** For distributed environments, store tag-to-key mappings in a shared store.
-    *   **Priority:** Medium
-
-19. **Client-Side Environment Variable Access for API URL in `UnifiedConfig`:**
-    *   **File:** [`packages/shared/src/utils/unified-config.ts`](packages/shared/src/utils/unified-config.ts:320)
-    *   **Action:** Ensure `loadFromEnvironment` or `createApiClient` prioritizes client-accessible env vars for `api.url`.
-    *   **Priority:** Medium
-
-20. **Incomplete `validateAllConfig` in `configValidator.ts`:**
-    *   **File:** [`packages/shared/src/utils/configValidator.ts`](packages/shared/src/utils/configValidator.ts:1)
-    *   **Action:** Expand to validate all critical configs from `ConfigSchema`. Call at app startup.
-    *   **Priority:** Medium
-
-21. **`API.BASE_URL` and `STORAGE.S3_BUCKET` Inconsistency in `constants.ts`:**
-    *   **File:** [`packages/shared/src/utils/constants.ts`](packages/shared/src/utils/constants.ts:1)
-    *   **Action:** Deprecate these constants. Use `UnifiedConfig`.
-    *   **Priority:** Medium
-
-22. **Hardcoded S3 Adapter Import in `MaterialRecognitionProvider`:**
-    *   **File:** [`packages/shared/src/services/recognition/materialProvider.ts`](packages/shared/src/services/recognition/materialProvider.ts:2)
-    *   **Action:** Refactor to use the generic `storageService`.
-    *   **Priority:** Medium
-
-23. **Inconsistent Error Propagation in `MaterialRecognitionProvider`:**
-    *   **File:** [`packages/shared/src/services/recognition/materialProvider.ts`](packages/shared/src/services/recognition/materialProvider.ts:1)
-    *   **Action:** Standardize to throw `RecognitionError` or `ServiceError` on ultimate failure.
-    *   **Priority:** Medium
-
-24. **Interface Mismatch for Download Operations in `storage/types.ts`:**
-    *   **File:** [`packages/shared/src/services/storage/types.ts`](packages/shared/src/services/storage/types.ts:1)
-    *   **Action:** Add download methods to `StorageProvider` interface.
-    *   **Priority:** Medium
-
-25. **Clarify `StorageRetryOptions` Usage in `storage/types.ts` and Providers:**
-    *   **File:** [`packages/shared/src/services/storage/types.ts`](packages/shared/src/services/storage/types.ts:1)
-    *   **Action:** Clarify if application-level retries are needed on top of SDK retries. Implement or remove from interface.
-    *   **Priority:** Medium
-
-26. **Synchronous File Write in `SupabaseStorageProvider.downloadFile`:**
-    *   **File:** [`packages/shared/src/services/storage/supabaseStorageProvider.ts`](packages/shared/src/services/storage/supabaseStorageProvider.ts:303)
-    *   **Action:** Change to asynchronous `fs.writeFile`.
-    *   **Priority:** Medium
-
-27. **Configuration Path for Supabase in `SupabaseManager` Constructor:**
-    *   **File:** [`packages/shared/src/services/supabase/supabaseClient.ts`](packages/shared/src/services/supabase/supabaseClient.ts:52-62)
-    *   **Action:** Correct to use `config.get('supabase.url')` and `config.get('supabase.key')`.
-    *   **Priority:** Medium
-
-28. **Error Handling in `PropertyInheritanceService.applyInheritance`:**
-    *   **File:** [`packages/server/src/services/propertyInheritance/propertyInheritanceService.ts`](packages/server/src/services/propertyInheritance/propertyInheritanceService.ts:68)
-    *   **Issue:** Silently fails by returning original material on error.
-    *   **Action:** Re-throw a specific error (e.g., `PropertyInheritanceError`) wrapping the original.
-    *   **Priority:** Medium
-
-29. **Placeholder Personalization Logic in `QueryUnderstandingService`:**
-    *   **File:** [`packages/server/src/services/search/query-understanding-service.ts`](packages/server/src/services/search/query-understanding-service.ts:409-455)
-    *   **Issue:** Logic for using user preferences and recently viewed items is placeholder.
-    *   **Action:** Implement actual personalization logic, including fetching real embeddings for items.
-    *   **Priority:** Medium
-
-30. **Missing `get_trending_queries` RPC for `QueryUnderstandingService`:**
-    *   **File:** [`packages/server/src/services/search/query-understanding-service.ts`](packages/server/src/services/search/query-understanding-service.ts:551)
-    *   **Issue:** Calls an undefined Supabase RPC.
-    *   **Action:** Define and implement the `get_trending_queries` SQL RPC.
-    *   **Priority:** Medium
-
-31. **Basic Entity Extraction in `ConversationalSearchService`:**
-    *   **File:** [`packages/server/src/services/search/conversational-search-service.ts`](packages/server/src/services/search/conversational-search-service.ts:526-561)
-    *   **Issue:** Uses simple regex-based entity extraction.
-    *   **Impact:** Prone to errors, limited understanding.
-    *   **Action:** For robust NER, integrate with an NLP library/service.
-    *   **Priority:** Medium
-
-32. **Heuristic Query Interpretation in `ConversationalSearchService`:**
-    *   **File:** [`packages/server/src/services/search/conversational-search-service.ts`](packages/server/src/services/search/conversational-search-service.ts:566-630)
-    *   **Issue:** Relies on keyword indicators and term comparison for follow-up queries.
-    *   **Impact:** Brittle context handling.
-    *   **Action:** For robust conversation, consider advanced techniques (coreference, dialog state, LLM rewrite) or ensure MCP path is primary.
-    *   **Priority:** Medium
-
-33. **Python Script Path Resolution in `EnhancedVectorServiceImpl`:**
-    *   **File:** [`packages/server/src/services/supabase/enhanced-vector-service.ts`](packages/server/src/services/supabase/enhanced-vector-service.ts:46)
-    *   **Issue:** Python script paths (e.g., for `enhanced_text_embeddings.py`) are resolved using `path.resolve(process.cwd(), 'packages/ml/python/...')`. This can be fragile if the application's current working directory (`process.cwd()`) is not the project root when the service is instantiated.
-    *   **Impact:** Python script invocation might fail if `cwd` is unexpected.
-    *   **Action:** Consider using a more robust path resolution method, such as resolving relative to `__dirname` of the service file, or ensuring paths are configured via `UnifiedConfig` and resolved from a known base path.
-    *   **Priority:** Medium
-
-34. **JSON String Filters in `SupabaseHybridSearch` Generic RPC:**
-    *   **File:** [`packages/server/src/services/supabase/hybrid-search.ts`](packages/server/src/services/supabase/hybrid-search.ts:120)
-    *   **Issue:** The generic `hybrid_search` RPC is called with a `filter_obj` that is a JSON stringified object. The SQL function must parse this JSON and dynamically apply filters.
-    *   **Impact:** Dynamic JSON parsing and filtering in SQL can be complex to implement correctly, may have performance implications compared to strongly-typed parameters, and can be less secure if not handled carefully.
-    *   **Action:** Review the implementation of the `hybrid_search` SQL RPC, particularly how it handles `filter_obj`. Evaluate its correctness, performance, and security. Consider if a more structured approach to filtering in the generic RPC is feasible for common filter types.
-    *   **Priority:** Medium
-
-35. **Lack of Database Transactions in `SupabaseDatasetService` Deletes:**
-    *   **File:** [`packages/server/src/services/supabase/supabase-dataset-service.ts`](packages/server/src/services/supabase/supabase-dataset-service.ts:1) (methods `deleteDataset`, `deleteDatasetClass`)
-    *   **Issue:** Methods like `deleteDataset` ([line 256](packages/server/src/services/supabase/supabase-dataset-service.ts:256)) and `deleteDatasetClass` ([line 460](packages/server/src/services/supabase/supabase-dataset-service.ts:460)) perform multiple dependent delete operations (e.g., deleting images, then classes, then the dataset itself) as separate `await` calls. While there's a comment "Start a transaction", the current structure does not guarantee atomicity for these operations at the database level.
-    *   **Impact:** If an error occurs midway through these operations (e.g., after deleting images but before deleting the class record), the database could be left in an inconsistent state.
-    *   **Action:** Refactor these multi-step delete operations to use database transactions. This might involve creating Supabase RPC functions that encapsulate the entire delete logic within a single transaction, or using a transaction block if the Supabase client library supports it for multiple operations.
-    *   **Priority:** Medium
-
-37. **Redundant Material Versioning Call:**
-    *   **Files:** [`packages/server/src/services/supabase/supabase-material-service.ts`](packages/server/src/services/supabase/supabase-material-service.ts:163), [`packages/server/src/services/supabase/supabase-schema.md`](packages/server/src/services/supabase/supabase-schema.md:353)
-    *   **Issue:** `SupabaseMaterialService.updateMaterial` manually calls `this.createMaterialVersion`. However, the `supabase-schema.md` defines a database trigger `create_material_version_trigger` that also inserts into the `versions` table `BEFORE UPDATE ON materials`.
-    *   **Impact:** If both are active, material updates will result in two version records being created: one by the service, one by the trigger.
-    *   **Action:** Remove the manual call to `this.createMaterialVersion` from `SupabaseMaterialService.updateMaterial` and rely on the database trigger for versioning. Verify the trigger logic is complete and correct.
-    *   **Priority:** Medium
-
-38. **Filename Mismatch for `SupabaseUtilityService`:**
-    *   **File:** [`packages/server/src/services/supabase/supabase-sync.ts`](packages/server/src/services/supabase/supabase-sync.ts:1)
-    *   **Issue:** The file `supabase-sync.ts` defines a class named `SupabaseUtilityService`. The filename does not accurately reflect the service it contains.
-    *   **Impact:** Can cause confusion for developers navigating the codebase.
-    *   **Action:** Rename the file from `supabase-sync.ts` to `supabase-utility.service.ts` or a similar name that matches the class name and its purpose. Update any imports accordingly.
-    *   **Priority:** Medium
-
-39. **N+1 Query in `ModelRegistry.getModelComparisons`:**
-    *   **File:** [`packages/server/src/services/ai/modelRegistry.ts`](packages/server/src/services/ai/modelRegistry.ts:502)
-    *   **Issue:** The `getModelComparisons` method first fetches report headers and then, for each report, fetches its associated metrics in a separate query.
-    *   **Impact:** Can lead to N+1 database queries, impacting performance if many reports or metrics per report are involved.
-    *   **Action:** Optimize by fetching all necessary metrics in a more consolidated way. For example, after fetching report headers, collect all `reportRecord.id` values and fetch all associated metrics in a single query using an `IN` clause on `comparison_report_id`. Then, map these metrics back to their respective reports in the application layer.
-    *   **Priority:** Medium
-
-40. **Placeholder Logic in `ModelRegistry.getModelComparisons` for Rankings:**
-    *   **File:** [`packages/server/src/services/ai/modelRegistry.ts`](packages/server/src/services/ai/modelRegistry.ts:529-536)
-    *   **Issue:** The reconstruction of `rankings` and `bestModelId` within a `ModelComparisonReport` is noted as a placeholder or overly simplified.
-    *   **Impact:** Comparison reports may lack meaningful ranking information or an accurately determined best model if this logic isn't robust.
-    *   **Action:** Implement proper logic to derive or retrieve rankings and the best model for each report. This might involve calculating scores based on the fetched metrics or ensuring this data is stored with the report in the `model_comparison_reports` table.
-    *   **Priority:** Medium
-
-41. **Hardcoded Model Costs in `ModelRouter.estimateCostPerToken`:**
-    *   **File:** [`packages/server/src/services/ai/modelRouter.ts`](packages/server/src/services/ai/modelRouter.ts:650)
-    *   **Issue:** The `estimateCostPerToken` method uses a hardcoded `costMap` for different models and providers. It notes these should ideally be configurable.
-    *   **Impact:** Costs are not easily updatable or configurable per environment.
-    *   **Action:** Move the model cost information into the `ModelRegistryConfig` structure. This way, costs can be loaded from the database along with other registry configurations and managed centrally. Update `estimateCostPerToken` to read from `this.modelRegistry.config`.
-    *   **Priority:** Medium
-
-36. **N+1 Query Problem in `SupabaseMaterialService` Search Methods:**
-    *   **File:** [`packages/server/src/services/supabase/supabase-material-service.ts`](packages/server/src/services/supabase/supabase-material-service.ts:1) (methods `findSimilarMaterials`, `hybridSearchMaterials`)
-    *   **Issue:** Both `findSimilarMaterials` ([lines 381-389](packages/server/src/services/supabase/supabase-material-service.ts:381-389)) and `hybridSearchMaterials` ([lines 466-476](packages/server/src/services/supabase/supabase-material-service.ts:466-476)) first get a list of material IDs (or basic info) from an RPC or another service, and then iterate through these IDs, calling `getMaterialById` for each one to fetch the full material details.
-    *   **Impact:** This leads to an N+1 query problem, where N is the number of similar/hybrid search results. For a typical limit of 10 results, this means 1 initial query + 10 subsequent `getMaterialById` queries, which is inefficient.
-    *   **Action:** Optimize these methods to reduce database calls. Options include:
-        1.  Modify the respective RPC functions (`find_similar_materials`, and the ones called by `hybridSearch.search`) to return all necessary material fields directly, avoiding the need for subsequent `getMaterialById` calls.
-        2.  If RPC modification is complex, collect all result IDs and perform a single batch `SELECT ... WHERE id IN (...)` query to fetch all material details at once after the initial search.
-    *   **Priority:** Medium (Performance)
-
-43. **Lack of DB Transactions in `PromptService` Multi-Step Operations:**
-    *   **File:** [`packages/server/src/services/ai/promptService.ts`](packages/server/src/services/ai/promptService.ts:1)
-    *   **Issue:**
-        *   `updatePrompt` ([line 378](packages/server/src/services/ai/promptService.ts:378)): When creating a new version, it performs multiple DB operations (get current prompt, insert new version, update old versions, update main prompt) without an explicit transaction.
-        *   `createABExperiment` ([line 1247](packages/server/src/services/ai/promptService.ts:1247)): Creates the experiment record and then loops to create variant records as separate operations.
-    *   **Impact:** If any step in these multi-operation methods fails, the database could be left in an inconsistent state (e.g., a new prompt version created but not linked, or an A/B experiment created with only partial variants).
-    *   **Action:** Wrap these multi-step database modifications within explicit database transactions to ensure atomicity. This might involve Supabase RPC functions or client-side transaction management if supported.
-    *   **Priority:** Medium
-
-46. **Transaction Management in `PromptOptimizationService.executeCreateExperiment`:**
-    *   **File:** [`packages/server/src/services/ai/promptOptimizationService.ts`](packages/server/src/services/ai/promptOptimizationService.ts:570)
-    *   **Issue:** The `executeCreateExperiment` method performs multiple database operations: fetching suggestions, creating new prompt records for variants (via `promptService.createPrompt`), and then creating the A/B experiment record (via `promptService.createABExperiment`). These are not explicitly wrapped in a transaction.
-    *   **Impact:** If an error occurs during variant creation or experiment setup, the system could be left with orphaned prompt records or an incomplete experiment setup.
-    *   **Action:** Refactor `executeCreateExperiment` (and potentially the underlying `promptService` methods if they also do multiple writes) to ensure these operations are performed within a single database transaction for atomicity.
-    *   **Priority:** Medium
-
-44. **Data Integrity on `PromptService.deletePrompt`:**
-    *   **File:** [`packages/server/src/services/ai/promptService.ts`](packages/server/src/services/ai/promptService.ts:492)
-    *   **Issue:** The `deletePrompt` method only deletes the main record from `system_prompts`. It does not appear to handle the deletion of related records in other tables (e.g., `system_prompt_versions`, `system_prompt_success_tracking`, `prompt_usage_analytics`, `prompt_ab_variants` linked to prompts within experiments, etc.).
-    *   **Impact:** Deleting prompts can lead to orphaned records in associated tables, cluttering the database and potentially causing issues if foreign key constraints are not set to cascade (or if they are, understanding the cascade effect is important).
-    *   **Action:**
-        1.  Define a clear strategy for handling related data upon prompt deletion.
-        2.  Either implement cascade deletes in the database schema (via foreign key constraints `ON DELETE CASCADE`).
-        3.  Or, update `deletePrompt` to explicitly delete related records from all relevant tables within a transaction.
-    *   **Priority:** Medium
-
-42. **Review RPC Dependencies in `PromptIntegrationService`:**
-    *   **File:** [`packages/server/src/services/ai/promptIntegrationService.ts`](packages/server/src/services/ai/promptIntegrationService.ts:1)
-    *   **Issue:** The service relies on several Supabase RPC functions to fetch data for export (e.g., `get_success_metrics` on [line 604](packages/server/src/services/ai/promptIntegrationService.ts:604), `get_experiment_results` on [line 659](packages/server/src/services/ai/promptIntegrationService.ts:659), `get_segment_analytics` on [line 713](packages/server/src/services/ai/promptIntegrationService.ts:713), `get_ml_predictions` on [line 764](packages/server/src/services/ai/promptIntegrationService.ts:764), `execute_query` on [line 819](packages/server/src/services/ai/promptIntegrationService.ts:819)).
-    *   **Impact:** The correctness and efficiency of data exports depend entirely on these underlying RPCs.
-    *   **Action:** Review the SQL definitions of these RPC functions to ensure they accurately fetch the intended data and are reasonably performant.
-    *   **Priority:** Medium
-
-45. **Transaction Management in `PromptMLService`:**
-    *   **File:** [`packages/server/src/services/ai/promptMLService.ts`](packages/server/src/services/ai/promptMLService.ts:1) (methods `trainModel`, `applyImprovementSuggestion`)
-    *   **Issue:**
-        *   `trainModel` ([line 192](packages/server/src/services/ai/promptMLService.ts:192)) performs multiple database operations (get version, insert new version, update model metrics).
-        *   `applyImprovementSuggestion` ([line 490](packages/server/src/services/ai/promptMLService.ts:490)) also performs multiple updates (prompt content, suggestion status).
-    *   **Impact:** Potential for data inconsistency if one of the steps fails.
-    *   **Action:** Wrap these multi-step database modifications within explicit database transactions.
-    *   **Priority:** Medium
-
-51. **Feature Dimensionality/Sparsity in `RelationshipFeatureExtractor`:**
-    *   **File:** [`packages/server/src/services/ai/property-prediction/relationshipFeatureExtractor.ts`](packages/server/src/services/ai/property-prediction/relationshipFeatureExtractor.ts:24) (method `extractFeatures`)
-    *   **Issue:** The method creates dynamic feature names that include specific property values (e.g., `corr_finish_glossy_to_rRating_R10`, `compat_score_color_red_to_style_modern`). If properties have high cardinality (many unique values), this can lead to a very high-dimensional and sparse feature space.
-    *   **Impact:** High dimensionality and sparsity can make some ML models harder to train, less effective, or require more data.
-    *   **Action:** Monitor the dimensionality of the generated feature space. If it becomes problematic, consider techniques like:
-        *   Feature hashing.
-        *   Limiting cardinality of values used in feature names (e.g., only top N values).
-        *   Using embedding layers for categorical features if neural networks are the primary consumers.
-        *   Aggregating relationship features in a more generic way (e.g., average correlation strength instead of per-value).
-    *   **Priority:** Medium
-
-52. **Basic Default Value Generation in `RelationshipFeatureExtractor.generateTrainingData`:**
-    *   **File:** [`packages/server/src/services/ai/property-prediction/relationshipFeatureExtractor.ts`](packages/server/src/services/ai/property-prediction/relationshipFeatureExtractor.ts:206-217)
-    *   **Issue:** If the relationship graph is sparse and doesn't provide enough possible values for `targetProperty` or `sourceProperties`, the `generateTrainingData` method falls back to very basic hardcoded default values (e.g., 'matte'/'glossy' for 'finish', 'value1'/'value2' for others).
-    *   **Impact:** This can lead to poor quality or unrepresentative synthetic training data if the relationship graph lacks coverage for certain properties.
-    *   **Action:** Explore more robust strategies for generating or sourcing default/representative values when the graph is sparse. This could involve:
-        *   Fetching actual distinct values from the `materials` table for the given `materialType` and `propertyName`.
-        *   Using predefined lists of common values for known properties.
-        *   Implementing a strategy to ensure a wider and more realistic distribution of values in synthetic data.
-    *   **Priority:** Medium
-
-47. **N+1 Query Problem in `PromptStatisticalService`:**
-    *   **File:** [`packages/server/src/services/ai/promptStatisticalService.ts`](packages/server/src/services/ai/promptStatisticalService.ts:1)
-    *   **Issue:**
-        *   `analyzeExperiment` ([line 132](packages/server/src/services/ai/promptStatisticalService.ts:132)) fetches analytics data for each A/B test variant in a loop.
-        *   `compareSegments` ([line 246](packages/server/src/services/ai/promptStatisticalService.ts:246)) fetches analytics data for each user segment in a loop.
-    *   **Impact:** Leads to multiple database queries where one or a few could suffice, impacting performance when analyzing experiments or segments with many variants/segments.
-    *   **Action:** Optimize these methods to fetch analytics data in a more consolidated manner. For example, collect all relevant `variant_id`s or `segment_id`s and use a single query with an `IN` clause to fetch their `prompt_usage_analytics` data. Then, process this data in the application layer.
-    *   **Priority:** Medium (Performance)
-
-48. **Utility and Accuracy of Local Image Analysis Fallback:**
-    *   **File:** [`packages/server/src/services/ai/imageAnalysisService.ts`](packages/server/src/services/ai/imageAnalysisService.ts:137) (method `analyzeImageLocally`)
-    *   **Issue:** The `analyzeImageLocally` method provides a fallback if MCP is unavailable. However, its analysis is based on simple heuristics (color variance, brightness ratios, color counts) and explicitly states it cannot determine material type, setting confidence to a fixed 0.6.
-    *   **Impact:** The fallback analysis results might be too simplistic or inaccurate for meaningful use, potentially leading to poor user experience or incorrect downstream processing if relied upon.
-    *   **Action:** Evaluate if the current local fallback provides sufficient value. If not, consider:
-        1.  Removing it and failing explicitly if MCP is unavailable for critical analysis.
-        2.  Clearly documenting its severe limitations wherever its results are consumed.
-        3.  Exploring lightweight, local ML models (e.g., via ONNX runtime or a simpler TensorFlow.js model) if a more capable fallback is essential and feasible.
-    *   **Priority:** Medium
-
-53. **Numeric Assumption for Source Values in `RelationshipAwareTrainingService.extractRelationshipFeatures`:**
+1.  **Unclear Rendering Logic in `MaterialVisualizer.tsx`** ([`packages/client/src/components/MaterialVisualizer.tsx`](packages/client/src/components/MaterialVisualizer.tsx:100-106))
+2.  **Token Cancellation Logic in Shared `apiClient.ts`** ([`packages/shared/src/services/api/apiClient.ts`](packages/shared/src/services/api/apiClient.ts:1))
+3.  **Error Propagation in `AuthService`** ([`packages/shared/src/services/auth/authService.ts`](packages/shared/src/services/auth/authService.ts:1))
+4.  **Error Handling Granularity & Propagation (Server-side General)**
+5.  **Ownership Checks for 'manager' Role in Modifying Material Routes** ([`packages/server/src/routes/material.routes.ts`](packages/server/src/routes/material.routes.ts:1))
+6.  **Inconsistent Service Layer Usage in `material.routes.ts`** ([`packages/server/src/routes/material.routes.ts`](packages/server/src/routes/material.routes.ts:1))
+7.  **Centralized Context Providers in `Layout.tsx`** ([`packages/client/src/components/Layout.tsx`](packages/client/src/components/Layout.tsx:1))
+8.  **State Management Complexity in `ImageUploader.tsx`** ([`packages/client/src/components/ImageUploader.tsx`](packages/client/src/components/ImageUploader.tsx:1))
+9.  **Accessibility of Interactive Elements in `ImageUploader.tsx`** ([`packages/client/src/components/ImageUploader.tsx`](packages/client/src/components/ImageUploader.tsx:1))
+10. **Missing Action for "View Details" in `RecognitionDemo.tsx`** ([`packages/client/src/components/RecognitionDemo.tsx`](packages/client/src/components/RecognitionDemo.tsx:243))
+11. **Generic Error Handling in Client Services (General)**
+12. **`clear()` Method with Namespace (`KEYS`) in `RedisCacheProvider`** ([`packages/shared/src/services/cache/redisCacheProvider.ts`](packages/shared/src/services/cache/redisCacheProvider.ts:180))
+13. **`clear()` Method without Namespace (`flushDb`) in `RedisCacheProvider`** ([`packages/shared/src/services/cache/redisCacheProvider.ts`](packages/shared/src/services/cache/redisCacheProvider.ts:188))
+14. **Connection Management & Retries in `RedisCacheProvider`** ([`packages/shared/src/services/cache/redisCacheProvider.ts`](packages/shared/src/services/cache/redisCacheProvider.ts:1))
+15. **`ADAPTIVE` Cache Warming Strategy Not Implemented** ([`packages/shared/src/services/cache/cacheWarming.ts`](packages/shared/src/services/cache/cacheWarming.ts:32))
+16. **Cron Parsing and Scheduling Robustness (`cron-parser.ts`)** ([`packages/shared/src/utils/cron-parser.ts`](packages/shared/src/utils/cron-parser.ts:1))
+17. **Timezone Handling in `getNextExecutionTime` (`cron-parser.ts`)** ([`packages/shared/src/utils/cron-parser.ts`](packages/shared/src/utils/cron-parser.ts:393-404))
+18. **Tag Storage for `invalidateByTag` in `CacheInvalidationService`** ([`packages/shared/src/services/cache/cacheInvalidation.ts`](packages/shared/src/services/cache/cacheInvalidation.ts:49))
+19. **Client-Side Environment Variable Access for API URL in `UnifiedConfig`** ([`packages/shared/src/utils/unified-config.ts`](packages/shared/src/utils/unified-config.ts:320))
+20. **Incomplete `validateAllConfig` in `configValidator.ts`** ([`packages/shared/src/utils/configValidator.ts`](packages/shared/src/utils/configValidator.ts:1))
+21. **`API.BASE_URL` and `STORAGE.S3_BUCKET` Inconsistency in `constants.ts`** ([`packages/shared/src/utils/constants.ts`](packages/shared/src/utils/constants.ts:1))
+22. **Hardcoded S3 Adapter Import in `MaterialRecognitionProvider`** ([`packages/shared/src/services/recognition/materialProvider.ts`](packages/shared/src/services/recognition/materialProvider.ts:2))
+23. **Inconsistent Error Propagation in `MaterialRecognitionProvider`** ([`packages/shared/src/services/recognition/materialProvider.ts`](packages/shared/src/services/recognition/materialProvider.ts:1))
+24. **Interface Mismatch for Download Operations in `storage/types.ts`** ([`packages/shared/src/services/storage/types.ts`](packages/shared/src/services/storage/types.ts:1))
+25. **Clarify `StorageRetryOptions` Usage in `storage/types.ts` and Providers** ([`packages/shared/src/services/storage/types.ts`](packages/shared/src/services/storage/types.ts:1))
+26. **Synchronous File Write in `SupabaseStorageProvider.downloadFile`** ([`packages/shared/src/services/storage/supabaseStorageProvider.ts`](packages/shared/src/services/storage/supabaseStorageProvider.ts:303))
+27. **Configuration Path for Supabase in `SupabaseManager` Constructor** ([`packages/shared/src/services/supabase/supabaseClient.ts`](packages/shared/src/services/supabase/supabaseClient.ts:52-62))
+28. **Error Handling in `PropertyInheritanceService.applyInheritance`** ([`packages/server/src/services/propertyInheritance/propertyInheritanceService.ts`](packages/server/src/services/propertyInheritance/propertyInheritanceService.ts:68))
+29. **Placeholder Personalization Logic in `QueryUnderstandingService`** ([`packages/server/src/services/search/query-understanding-service.ts`](packages/server/src/services/search/query-understanding-service.ts:409-455))
+30. **Missing `get_trending_queries` RPC for `QueryUnderstandingService`** ([`packages/server/src/services/search/query-understanding-service.ts`](packages/server/src/services/search/query-understanding-service.ts:551))
+31. **Basic Entity Extraction in `ConversationalSearchService`** ([`packages/server/src/services/search/conversational-search-service.ts`](packages/server/src/services/search/conversational-search-service.ts:526-561))
+32. **Heuristic Query Interpretation in `ConversationalSearchService`** ([`packages/server/src/services/search/conversational-search-service.ts`](packages/server/src/services/search/conversational-search-service.ts:566-630))
+33. **Python Script Path Resolution in `EnhancedVectorServiceImpl`** ([`packages/server/src/services/supabase/enhanced-vector-service.ts`](packages/server/src/services/supabase/enhanced-vector-service.ts:46))
+34. **JSON String Filters in `SupabaseHybridSearch` Generic RPC** ([`packages/server/src/services/supabase/hybrid-search.ts`](packages/server/src/services/supabase/hybrid-search.ts:120))
+35. **Lack of Database Transactions in `SupabaseDatasetService` Deletes** ([`packages/server/src/services/supabase/supabase-dataset-service.ts`](packages/server/src/services/supabase/supabase-dataset-service.ts:1))
+36. **Redundant Material Versioning Call** ([`packages/server/src/services/supabase/supabase-material-service.ts`](packages/server/src/services/supabase/supabase-material-service.ts:163), [`packages/server/src/services/supabase/supabase-schema.md`](packages/server/src/services/supabase/supabase-schema.md:353))
+37. **Filename Mismatch for `SupabaseUtilityService`** ([`packages/server/src/services/supabase/supabase-sync.ts`](packages/server/src/services/supabase/supabase-sync.ts:1))
+38. **N+1 Query in `ModelRegistry.getModelComparisons`** ([`packages/server/src/services/ai/modelRegistry.ts`](packages/server/src/services/ai/modelRegistry.ts:502))
+39. **Placeholder Logic in `ModelRegistry.getModelComparisons` for Rankings** ([`packages/server/src/services/ai/modelRegistry.ts`](packages/server/src/services/ai/modelRegistry.ts:529-536))
+40. **Hardcoded Model Costs in `ModelRouter.estimateCostPerToken`** ([`packages/server/src/services/ai/modelRouter.ts`](packages/server/src/services/ai/modelRouter.ts:650))
+41. **N+1 Query Problem in `SupabaseMaterialService` Search Methods** ([`packages/server/src/services/supabase/supabase-material-service.ts`](packages/server/src/services/supabase/supabase-material-service.ts:1))
+42. **Lack of DB Transactions in `PromptService` Multi-Step Operations** ([`packages/server/src/services/ai/promptService.ts`](packages/server/src/services/ai/promptService.ts:1))
+43. **Transaction Management in `PromptOptimizationService.executeCreateExperiment`** ([`packages/server/src/services/ai/promptOptimizationService.ts`](packages/server/src/services/ai/promptOptimizationService.ts:570))
+44. **Data Integrity on `PromptService.deletePrompt`** ([`packages/server/src/services/ai/promptService.ts`](packages/server/src/services/ai/promptService.ts:492))
+45. **Review RPC Dependencies in `PromptIntegrationService`** ([`packages/server/src/services/ai/promptIntegrationService.ts`](packages/server/src/services/ai/promptIntegrationService.ts:1))
+46. **Transaction Management in `PromptMLService`** ([`packages/server/src/services/ai/promptMLService.ts`](packages/server/src/services/ai/promptMLService.ts:1))
+47. **Feature Dimensionality/Sparsity in `RelationshipFeatureExtractor`** ([`packages/server/src/services/ai/property-prediction/relationshipFeatureExtractor.ts`](packages/server/src/services/ai/property-prediction/relationshipFeatureExtractor.ts:24))
+48. **Basic Default Value Generation in `RelationshipFeatureExtractor.generateTrainingData`** ([`packages/server/src/services/ai/property-prediction/relationshipFeatureExtractor.ts`](packages/server/src/services/ai/property-prediction/relationshipFeatureExtractor.ts:206-217))
+49. **N+1 Query Problem in `PromptStatisticalService`** ([`packages/server/src/services/ai/promptStatisticalService.ts`](packages/server/src/services/ai/promptStatisticalService.ts:1))
+50. **Utility and Accuracy of Local Image Analysis Fallback** ([`packages/server/src/services/ai/imageAnalysisService.ts`](packages/server/src/services/ai/imageAnalysisService.ts:137))
+51. **Numeric Assumption for Source Values in `RelationshipAwareTrainingService.extractRelationshipFeatures`:**
     *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:572)
-    *   **Issue:** When creating features from relationships, the code multiplies `sourceValue` by `relationship.strength` (e.g., `features[featureName] = sourceValue * relationship.strength;`). This assumes `sourceValue` is numeric.
+    *   **Issue:** When creating features from relationships, the code multiplies `sourceValue` by `relationship.strength`. This assumes `sourceValue` is numeric.
     *   **Impact:** If `sourceValue` is a string or categorical, this will result in `NaN` or incorrect feature values.
-    *   **Action:** Implement appropriate handling for categorical `sourceValue`s when creating relationship features. This might involve creating separate binary features for specific source value/relationship type combinations, or interaction terms, rather than direct multiplication.
+    *   **Action:** Implement appropriate handling for categorical `sourceValue`s.
     *   **Priority:** Medium
 
-53. **Numeric Assumption for Source Values in `RelationshipAwareTrainingService.extractRelationshipFeatures`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:572)
-    *   **Issue:** When creating features from relationships, the code multiplies `sourceValue` by `relationship.strength` (e.g., `features[featureName] = sourceValue * relationship.strength;`). This assumes `sourceValue` is numeric.
-    *   **Impact:** If `sourceValue` is a string or categorical, this will result in `NaN` or incorrect feature values.
-    *   **Action:** Implement appropriate handling for categorical `sourceValue`s when creating relationship features. This might involve creating separate binary features for specific source value/relationship type combinations, or interaction terms, rather than direct multiplication.
-    *   **Priority:** Medium
-
-53. **Numeric Assumption for Source Values in `RelationshipAwareTrainingService.extractRelationshipFeatures`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:572)
-    *   **Issue:** When creating features from relationships, the code multiplies `sourceValue` by `relationship.strength` (e.g., `features[featureName] = sourceValue * relationship.strength;`). This assumes `sourceValue` is numeric.
-    *   **Impact:** If `sourceValue` is a string or categorical, this will result in `NaN` or incorrect feature values.
-    *   **Action:** Implement appropriate handling for categorical `sourceValue`s when creating relationship features. This might involve creating separate binary features for specific source value/relationship type combinations, or interaction terms, rather than direct multiplication.
-    *   **Priority:** Medium
-
-54. **Fragile Path Construction in `RelationshipAwareTrainingService`:**
+52. **Fragile Path Construction in `RelationshipAwareTrainingService`:**
     *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1) (e.g., [line 230](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:230))
     *   **Issue:** Uses `process.cwd()` for local model storage paths.
     *   **Impact:** Paths may be incorrect if the service isn't run from the project root.
-    *   **Action:** While the primary fix is to move to object storage, ensure robust path resolution for any remaining local file operations.
+    *   **Action:** Ensure robust path resolution for any remaining local file operations.
     *   **Priority:** Medium (Secondary to removing local FS reliance)
 
-53. **Numeric Assumption for Source Values in `RelationshipAwareTrainingService.extractRelationshipFeatures`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:572)
-    *   **Issue:** When creating features from relationships, the code multiplies `sourceValue` by `relationship.strength` (e.g., `features[featureName] = sourceValue * relationship.strength;`). This assumes `sourceValue` is numeric.
-    *   **Impact:** If `sourceValue` is a string or categorical, this will result in `NaN` or incorrect feature values.
-    *   **Action:** Implement appropriate handling for categorical `sourceValue`s when creating relationship features. This might involve creating separate binary features for specific source value/relationship type combinations, or interaction terms, rather than direct multiplication.
+53. **Fragile Path Construction in `PropertyPredictionService`:**
+    *   **File:** [`packages/server/src/services/ai/property-prediction/propertyPredictionService.ts`](packages/server/src/services/ai/property-prediction/propertyPredictionService.ts:1)
+    *   **Action:** Ensure robust path resolution.
     *   **Priority:** Medium
 
-53. **Numeric Assumption for Source Values in `RelationshipAwareTrainingService.extractRelationshipFeatures`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:572)
-    *   **Issue:** When creating features from relationships, the code multiplies `sourceValue` by `relationship.strength` (e.g., `features[featureName] = sourceValue * relationship.strength;`). This assumes `sourceValue` is numeric.
-    *   **Impact:** If `sourceValue` is a string or categorical, this will result in `NaN` or incorrect feature values.
-    *   **Action:** Implement appropriate handling for categorical `sourceValue`s when creating relationship features. This might involve creating separate binary features for specific source value/relationship type combinations, or interaction terms, rather than direct multiplication.
+54. **Fragile Path Construction in `VisualReferenceTrainingService`:**
+    *   **File:** [`packages/server/src/services/ai/visual-reference-training.ts`](packages/server/src/services/ai/visual-reference-training.ts:1)
+    *   **Action:** Ensure robust path resolution.
     *   **Priority:** Medium
 
-53. **Numeric Assumption for Source Values in `RelationshipAwareTrainingService.extractRelationshipFeatures`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:572)
-    *   **Issue:** When creating features from relationships, the code multiplies `sourceValue` by `relationship.strength` (e.g., `features[featureName] = sourceValue * relationship.strength;`). This assumes `sourceValue` is numeric.
-    *   **Impact:** If `sourceValue` is a string or categorical, this will result in `NaN` or incorrect feature values.
-    *   **Action:** Implement appropriate handling for categorical `sourceValue`s when creating relationship features. This might involve creating separate binary features for specific source value/relationship type combinations, or interaction terms, rather than direct multiplication.
+55. **Local Filesystem for Uploads in `material.routes.ts`:**
+    *   **File:** [`packages/server/src/routes/material.routes.ts`](packages/server/src/routes/material.routes.ts:31)
+    *   **Action:** Refactor multer storage to use shared object storage.
     *   **Priority:** Medium
 
-54. **Fragile Path Construction in `RelationshipAwareTrainingService`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1) (e.g., [line 230](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:230))
-    *   **Issue:** Uses `process.cwd()` for local model storage paths.
-    *   **Impact:** Paths may be incorrect if the service isn't run from the project root.
-    *   **Action:** While the primary fix is to move to object storage, ensure robust path resolution for any remaining local file operations.
-    *   **Priority:** Medium (Secondary to removing local FS reliance)
-
-53. **Numeric Assumption for Source Values in `RelationshipAwareTrainingService.extractRelationshipFeatures`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:572)
-    *   **Issue:** When creating features from relationships, the code multiplies `sourceValue` by `relationship.strength` (e.g., `features[featureName] = sourceValue * relationship.strength;`). This assumes `sourceValue` is numeric.
-    *   **Impact:** If `sourceValue` is a string or categorical, this will result in `NaN` or incorrect feature values.
-    *   **Action:** Implement appropriate handling for categorical `sourceValue`s when creating relationship features. This might involve creating separate binary features for specific source value/relationship type combinations, or interaction terms, rather than direct multiplication.
+56. **Heuristic Methods in `ContextAssembler` (`context_assembler.py`):**
+    *   **File:** [`packages/ml/python/context_assembler.py`](packages/ml/python/context_assembler.py:1)
+    *   **Action:** Consider integrating advanced NLP/ML models for query understanding and knowledge categorization.
     *   **Priority:** Medium
 
-54. **Fragile Path Construction in `RelationshipAwareTrainingService`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1) (e.g., [line 230](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:230))
-    *   **Issue:** Uses `process.cwd()` for local model storage paths.
-    *   **Impact:** Paths may be incorrect if the service isn't run from the project root.
-    *   **Action:** While the primary fix is to move to object storage, ensure robust path resolution for any remaining local file operations.
-    *   **Priority:** Medium (Secondary to removing local FS reliance)
-
-53. **Numeric Assumption for Source Values in `RelationshipAwareTrainingService.extractRelationshipFeatures`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:572)
-    *   **Issue:** When creating features from relationships, the code multiplies `sourceValue` by `relationship.strength` (e.g., `features[featureName] = sourceValue * relationship.strength;`). This assumes `sourceValue` is numeric.
-    *   **Impact:** If `sourceValue` is a string or categorical, this will result in `NaN` or incorrect feature values.
-    *   **Action:** Implement appropriate handling for categorical `sourceValue`s when creating relationship features. This might involve creating separate binary features for specific source value/relationship type combinations, or interaction terms, rather than direct multiplication.
+57. **Context Trimming Logic in `ContextAssembler` (`context_assembler.py`):**
+    *   **File:** [`packages/ml/python/context_assembler.py`](packages/ml/python/context_assembler.py:602)
+    *   **Action:** Use a proper tokenizer for token count; explore sophisticated summarization.
     *   **Priority:** Medium
 
-54. **Fragile Path Construction in `RelationshipAwareTrainingService`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1) (e.g., [line 230](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:230))
-    *   **Issue:** Uses `process.cwd()` for local model storage paths.
-    *   **Impact:** Paths may be incorrect if the service isn't run from the project root.
-    *   **Action:** While the primary fix is to move to object storage, ensure robust path resolution for any remaining local file operations.
-    *   **Priority:** Medium (Secondary to removing local FS reliance)
+58. **Password Policy in `passwordReset.controller.ts`:**
+    *   **File:** [`packages/server/src/controllers/auth/passwordReset.controller.ts`](packages/server/src/controllers/auth/passwordReset.controller.ts:147-149)
+    *   **Issue:** Basic password strength check (length only).
+    *   **Impact:** May allow weak passwords.
+    *   **Action:** Consider integrating a more comprehensive password policy (e.g., complexity, common password checks), potentially via a shared validation service.
+    *   **Priority:** Medium
 
-54. **Fragile Path Construction in `RelationshipAwareTrainingService`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1) (e.g., [line 230](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:230))
-    *   **Issue:** Uses `process.cwd()` for local model storage paths.
-    *   **Impact:** Paths may be incorrect if the service isn't run from the project root.
-    *   **Action:** While the primary fix is to move to object storage, ensure robust path resolution for any remaining local file operations.
-    *   **Priority:** Medium (Secondary to removing local FS reliance)
+59. **Atomicity of Password Reset & Token Invalidation:**
+    *   **File:** [`packages/server/src/controllers/auth/passwordReset.controller.ts`](packages/server/src/controllers/auth/passwordReset.controller.ts:167-181)
+    *   **Issue:** Password update and token invalidation are separate operations.
+    *   **Impact:** Low risk, but theoretically token could be reused if the second operation fails.
+    *   **Action:** For true atomicity, these operations would ideally be in a single database transaction/function, though this is complex across Supabase Auth and custom tables. Current mitigation (token expiry) is likely sufficient for most cases.
+    *   **Priority:** Medium
 
-54. **Fragile Path Construction in `RelationshipAwareTrainingService`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1) (e.g., [line 230](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:230))
-    *   **Issue:** Uses `process.cwd()` for local model storage paths.
-    *   **Impact:** Paths may be incorrect if the service isn't run from the project root.
-    *   **Action:** While the primary fix is to move to object storage, ensure robust path resolution for any remaining local file operations.
-    *   **Priority:** Medium (Secondary to removing local FS reliance)
+60. **Cookie Security for Refresh Token in `session.controller.ts`:**
+    *   **File:** [`packages/server/src/controllers/auth/session.controller.ts`](packages/server/src/controllers/auth/session.controller.ts:172-176)
+    *   **Issue:** While the main token cookie has security flags, if refresh tokens are also stored in cookies (not explicitly shown but common), they need similar or stronger security.
+    *   **Impact:** Potential misuse of refresh tokens if not secured properly.
+    *   **Action:** Ensure secure cookie settings (HttpOnly, Secure, SameSite=Strict) for any refresh token cookies if they are implemented.
+    *   **Priority:** Medium
 
-54. **Fragile Path Construction in `RelationshipAwareTrainingService`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1) (e.g., [line 230](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:230))
-    *   **Issue:** Uses `process.cwd()` for local model storage paths.
-    *   **Impact:** Paths may be incorrect if the service isn't run from the project root.
-    *   **Action:** While the primary fix is to move to object storage, ensure robust path resolution for any remaining local file operations.
-    *   **Priority:** Medium (Secondary to removing local FS reliance)
+61. **Error Handling in `session.controller.ts` (`getUserSessionsHandler`):**
+    *   **File:** [`packages/server/src/controllers/auth/session.controller.ts`](packages/server/src/controllers/auth/session.controller.ts:318)
+    *   **Issue:** Throws a generic `new ApiError(500, ...)` instead of potentially re-throwing a more specific error.
+    *   **Impact:** May obscure original error details.
+    *   **Action:** Improve error propagation if more specific error types are available from the service layer.
+    *   **Priority:** Medium
 
-54. **Fragile Path Construction in `RelationshipAwareTrainingService`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1) (e.g., [line 230](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:230))
-    *   **Issue:** Uses `process.cwd()` for local model storage paths.
-    *   **Impact:** Paths may be incorrect if the service isn't run from the project root.
-    *   **Action:** While the primary fix is to move to object storage, ensure robust path resolution for any remaining local file operations.
-    *   **Priority:** Medium (Secondary to removing local FS reliance)
+62. **Security Logging Consistency in `twoFactor.controller.ts`:**
+    *   **File:** [`packages/server/src/controllers/auth/twoFactor.controller.ts`](packages/server/src/controllers/auth/twoFactor.controller.ts:1)
+    *   **Issue:** While `setupTOTP` and `verifyTwoFactorCode` have good security logging, other handlers like `verifyTOTP`, `setupSMS`, `verifySMS`, `setupEmail`, `verifyEmail`, and `disableTwoFactor` may lack consistent attempt/success/failure logging with detailed context.
+    *   **Impact:** Incomplete audit trail for 2FA operations.
+    *   **Action:** Review all 2FA endpoint handlers and ensure consistent and detailed security logging (attempt, success, failure) is implemented for all sensitive operations.
+    *   **Priority:** Medium
 
-50. **Fragile Path Construction in `PropertyPredictionService`:**
-    *   **File:** [`packages/server/src/services/ai/property-prediction/propertyPredictionService.ts`](packages/server/src/services/ai/property-prediction/propertyPredictionService.ts:1) (e.g., [line 76](packages/server/src/services/ai/property-prediction/propertyPredictionService.ts:76), [131](packages/server/src/services/ai/property-prediction/propertyPredictionService.ts:131))
-    *   **Issue:** Uses `process.cwd()` for local model storage paths.
-    *   **Impact:** Paths may be incorrect if the service isn't run from the project root.
-    *   **Action:** While the primary fix is to move to object storage, if any temporary local processing remains, use robust path resolution.
-    *   **Priority:** Medium (Secondary to removing local FS reliance)
+63. **Error Handling Consistency in `twoFactor.controller.ts`:**
+    *   **File:** [`packages/server/src/controllers/auth/twoFactor.controller.ts`](packages/server/src/controllers/auth/twoFactor.controller.ts:1)
+    *   **Issue:** Controller relies on `twoFactor.service.ts` to throw appropriate `ApiError`s.
+    *   **Impact:** If the service layer throws generic errors, the controller won't propagate specific error information.
+    *   **Action:** Ensure `twoFactor.service.ts` throws specific `ApiError`s where appropriate, so the controller can re-throw them, providing better error details to the client.
+    *   **Priority:** Medium
 
-49. **Fragile Path Construction in `VisualReferenceTrainingService`:**
-    *   **File:** [`packages/server/src/services/ai/visual-reference-training.ts`](packages/server/src/services/ai/visual-reference-training.ts:1) (e.g., [line 52](packages/server/src/services/ai/visual-reference-training.ts:52), [111](packages/server/src/services/ai/visual-reference-training.ts:111), [124](packages/server/src/services/ai/visual-reference-training.ts:124))
-    *   **Issue:** Uses `process.cwd()` as the base for constructing local filesystem paths for datasets and models.
-    *   **Impact:** This can lead to incorrect paths if the service is run from a directory other than the project root.
-    *   **Action:** While the primary fix is to move away from local filesystem storage, if any temporary local processing is still needed, use more robust path resolution (e.g., relative to `__dirname` if appropriate, or from a well-defined base path configured via `UnifiedConfig`).
-    *   **Priority:** Medium (Secondary to removing local FS reliance)
+64. **Input Validation for `appName` in `setupTOTP` (`twoFactor.controller.ts`):**
+    *   **File:** [`packages/server/src/controllers/auth/twoFactor.controller.ts`](packages/server/src/controllers/auth/twoFactor.controller.ts:62)
+    *   **Issue:** The `appName` for TOTP setup, if user-supplied, is not validated.
+    *   **Impact:** Potential for invalid or overly long app names.
+    *   **Action:** Add validation for `appName` (e.g., length, allowed characters) if it can be provided by the user.
+    *   **Priority:** Medium
+
+65. **Error Handling in `proratedBilling.service.ts`:**
+    *   **File:** [`packages/server/src/services/billing/proratedBilling.service.ts`](packages/server/src/services/billing/proratedBilling.service.ts:1)
+    *   **Issue:** Catches and re-throws generic `Error` or original errors.
+    *   **Impact:** May obscure specific error context for upstream callers.
+    *   **Action:** Consider defining and throwing more specific custom error types (e.g., `BillingError`, `StripeError`) from this service and `stripeService`.
+    *   **Priority:** Medium
+
+66. **Missing Stripe Price ID Null Check in `calculateProration`:**
+    *   **File:** [`packages/server/src/services/billing/proratedBilling.service.ts`](packages/server/src/services/billing/proratedBilling.service.ts:63)
+    *   **Issue:** Uses `newTier.stripePriceId!` without an explicit preceding null check for `newTier.stripePriceId` itself within this function.
+    *   **Impact:** Potential runtime error if `newTier.stripePriceId` is null/undefined.
+    *   **Action:** Add an explicit check for `newTier.stripePriceId` in `calculateProration` before use and throw a specific error if missing.
+    *   **Priority:** Medium
+
+67. **DB Update Relies on Asynchronous Webhook in `applyProratedChange`:**
+    *   **File:** [`packages/server/src/services/billing/proratedBilling.service.ts`](packages/server/src/services/billing/proratedBilling.service.ts:133)
+    *   **Issue:** Local database update after a Stripe subscription change relies on an asynchronous webhook.
+    *   **Impact:** Potential for temporary data inconsistency between Stripe and the local database.
+    *   **Action:** Confirm webhook handling is robust and timely. This architectural choice is acceptable if slight delays are understood; otherwise, consider immediate local DB update post-Stripe confirmation with webhook for reconciliation.
+    *   **Priority:** Medium
+
+68. **Performance of `findSimilarMaterials` in `materialComparisonService.ts`:**
+    *   **File:** [`packages/server/src/services/comparison/materialComparisonService.ts`](packages/server/src/services/comparison/materialComparisonService.ts:151)
+    *   **Issue:** Fetches `limit * 3` potential matches then compares in-app. Can be inefficient for large datasets.
+    *   **Impact:** Potential slowness in finding similar materials.
+    *   **Action:** Consider optimizations like preliminary vector-based filtering or pushing more comparison logic to the database if performance becomes an issue.
+    *   **Priority:** Medium
+
+69. **Normalization in `calculateNumericSimilarity` (`materialComparisonService.ts`):**
+    *   **File:** [`packages/server/src/services/comparison/materialComparisonService.ts`](packages/server/src/services/comparison/materialComparisonService.ts:492)
+    *   **Issue:** `getPropertyRange` returns `null`, disabling normalization. Hardcoded ranges are commented out.
+    *   **Impact:** Numeric similarity might be skewed by properties with different scales.
+    *   **Action:** Implement robust determination or configuration of property ranges for normalization if this feature is desired.
+    *   **Priority:** Medium
+
+70. **Hardcoded Default Property Weights and Metadata in `materialComparisonService.ts`:**
+    *   **Files:** [`packages/server/src/services/comparison/materialComparisonService.ts`](packages/server/src/services/comparison/materialComparisonService.ts:316) (for weights), [`packages/server/src/services/comparison/materialComparisonService.ts`](packages/server/src/services/comparison/materialComparisonService.ts:657) (for metadata)
+    *   **Issue:** Default weights and display metadata are hardcoded.
+    *   **Impact:** Difficult to configure or extend without code changes.
+    *   **Action:** Consider moving this configuration to a database table or a configuration file managed by `UnifiedConfig`.
+    *   **Priority:** Medium
+
+71. **Error Handling in `materialComparisonService.ts`:**
+    *   **File:** [`packages/server/src/services/comparison/materialComparisonService.ts`](packages/server/src/services/comparison/materialComparisonService.ts:1)
+    *   **Issue:** Generally re-throws errors.
+    *   **Impact:** May obscure original error context.
+    *   **Action:** Consider using more specific custom error types for better upstream error handling.
+    *   **Priority:** Medium
+
+72. **Error Handling in `creditService.ts`:**
+    *   **File:** [`packages/server/src/services/credit/creditService.ts`](packages/server/src/services/credit/creditService.ts:1)
+    *   **Issue:** Catches errors, logs them, and then re-throws the original error.
+    *   **Impact:** May obscure original error context if underlying models throw generic errors.
+    *   **Action:** Enhance underlying models (`userCredit.model.ts`, `serviceCost.model.ts`) to throw specific custom errors. Update `CreditService` to catch and potentially wrap/re-throw these for better upstream handling.
+    *   **Priority:** Medium
+
+73. **Atomicity of Credit Operations in Underlying Models:**
+    *   **File:** [`packages/server/src/services/credit/creditService.ts`](packages/server/src/services/credit/creditService.ts:1) (depends on `userCredit.model.ts`)
+    *   **Issue:** Operations like `useServiceCredits` and `addCreditsToUser` likely involve multiple database writes in the model layer (e.g., update balance, create transaction). These must be atomic.
+    *   **Impact:** Potential for inconsistent credit states if model-layer operations are not transactional.
+    *   **Action:** Ensure that methods in `userCredit.model.ts` performing multiple dependent database writes are wrapped in database transactions.
+    *   **Priority:** Medium (Integrity of credit system)
+
+74. **Security Logging Consistency in `alertManager.service.ts`:**
+    *   **File:** [`packages/server/src/services/credit/alertManager.service.ts`](packages/server/src/services/credit/alertManager.service.ts:1)
+    *   **Issue:** Ensure consistent attempt/success/failure logging for all sensitive 2FA-related operations or alert configuration changes.
+    *   **Impact:** Potentially incomplete audit trail.
+    *   **Action:** Review all handlers in `alertManager.service.ts` and implement detailed security logging.
+    *   **Priority:** Medium
+
+75. **Error Handling Consistency in `alertManager.service.ts`:**
+    *   **File:** [`packages/server/src/services/credit/alertManager.service.ts`](packages/server/src/services/credit/alertManager.service.ts:1)
+    *   **Issue:** Service should throw specific custom errors rather than generic ones.
+    *   **Impact:** Generic errors make upstream handling harder.
+    *   **Action:** Define and use specific custom error types (e.g., `AlertConfigurationError`, `NotificationChannelError`).
+    *   **Priority:** Medium
+
+76. **Input Validation in `createAlertSetting` and `updateAlertSetting` (`alertManager.service.ts`):**
+    *   **File:** [`packages/server/src/services/credit/alertManager.service.ts`](packages/server/src/services/credit/alertManager.service.ts:1)
+    *   **Issue:** Lacks deep validation for formats of `emailAddresses`, `phoneNumbers`, `webhookUrls`.
+    *   **Impact:** Invalid contact details or URLs could be stored.
+    *   **Action:** Add stricter format validation (regex, valid URL format).
+    *   **Priority:** Medium
+
+77. **`notifications` Table for In-App Alerts in `alertManager.service.ts`:**
+    *   **File:** [`packages/server/src/services/credit/alertManager.service.ts`](packages/server/src/services/credit/alertManager.service.ts:431)
+    *   **Issue:** Relies on a `notifications` table.
+    *   **Impact:** Functionality depends on correct schema and RLS.
+    *   **Action:** Ensure `notifications` table is defined in Supabase migrations with appropriate schema and RLS.
+    *   **Priority:** Medium
+
+78. **Alert Throttling/Cool-down in `checkUserNeedsAlerts` (`alertManager.service.ts`):**
+    *   **File:** [`packages/server/src/services/credit/alertManager.service.ts`](packages/server/src/services/credit/alertManager.service.ts:498-509)
+    *   **Issue:** 24-hour cool-down is hardcoded.
+    *   **Impact:** Not configurable without code changes.
+    *   **Action:** Consider making the alert cool-down period configurable via `UnifiedConfig`.
+    *   **Priority:** Medium
+
+79. **`processAllAlerts` Scalability in `alertManager.service.ts`:**
+    *   **File:** [`packages/server/src/services/credit/alertManager.service.ts`](packages/server/src/services/credit/alertManager.service.ts:526)
+    *   **Issue:** Fetches all users, then settings/balance for each; could be resource-intensive.
+    *   **Impact:** Potential performance issues with growth.
+    *   **Action:** Acceptable for now. Consider batch processing or more targeted queries if it becomes a bottleneck.
+    *   **Priority:** Medium
+
+80. **`setInterval` for `scheduleAlertChecks` in `alertManager.service.ts`:**
+    *   **File:** [`packages/server/src/services/credit/alertManager.service.ts`](packages/server/src/services/credit/alertManager.service.ts:559)
+    *   **Issue:** Uses `setInterval` for periodic checks.
+    *   **Impact:** Can be less reliable than cron jobs in production.
+    *   **Action:** Consider a robust cron job system for production; `setInterval` is acceptable for now.
+    *   **Priority:** Medium
+
+81. **Atomicity of `processTopup` in `autoTopup.service.ts`:**
+    *   **File:** [`packages/server/src/services/credit/autoTopup.service.ts`](packages/server/src/services/credit/autoTopup.service.ts:129)
+    *   **Issue:** Performs multiple critical steps (DB writes, Stripe payment, credit provisioning) sequentially. Failure after payment but before credit grant is a key risk.
+    *   **Impact:** Potential for inconsistent state and user billing issues.
+    *   **Action:** Implement robust distributed transaction patterns (e.g., transactional outbox, reliable queues with retries/DLQ) or ensure idempotent operations with clear reconciliation processes for failures.
+    *   **Priority:** Medium
+
+82. **Error Handling in `autoTopup.service.ts`:**
+    *   **File:** [`packages/server/src/services/credit/autoTopup.service.ts`](packages/server/src/services/credit/autoTopup.service.ts:1)
+    *   **Issue:** Logs and re-throws original errors.
+    *   **Impact:** May obscure specific error context.
+    *   **Action:** Consider more specific custom error types from this service and its dependencies.
+    *   **Priority:** Medium
+
+83. **Input Validation for `paymentMethodId` in `autoTopup.service.ts`:**
+    *   **File:** [`packages/server/src/services/credit/autoTopup.service.ts`](packages/server/src/services/credit/autoTopup.service.ts:48)
+    *   **Issue:** `paymentMethodId` is not validated for format or existence before use (though Stripe would reject an invalid one).
+    *   **Impact:** Minor, as Stripe handles final validation.
+    *   **Action:** Consider adding format validation if a known pattern exists.
+    *   **Priority:** Medium
+
+84. **`processAllTopups` Scalability in `autoTopup.service.ts`:**
+    *   **File:** [`packages/server/src/services/credit/autoTopup.service.ts`](packages/server/src/services/credit/autoTopup.service.ts:270)
+    *   **Issue:** Fetches all users needing top-up then processes sequentially.
+    *   **Impact:** Potential performance issues with many users.
+    *   **Action:** Acceptable for now. Consider batching or more targeted queries if it becomes a bottleneck.
+    *   **Priority:** Medium
+
+85. **`setInterval` for `scheduleTopupChecks` in `autoTopup.service.ts`:**
+    *   **File:** [`packages/server/src/services/credit/autoTopup.service.ts`](packages/server/src/services/credit/autoTopup.service.ts:303)
+    *   **Issue:** Uses `setInterval` for periodic checks.
+    *   **Impact:** Can be less reliable than cron jobs in production.
+    *   **Action:** Consider a robust cron job system for production; `setInterval` is acceptable for now.
+    *   **Priority:** Medium
+
+86. **Atomicity of `purchaseCredits` and `purchaseCreditPackage` in `bulkPurchase.service.ts`:**
+    *   **File:** [`packages/server/src/services/credit/bulkPurchase.service.ts`](packages/server/src/services/credit/bulkPurchase.service.ts:1) (methods `purchaseCredits` [line 183](packages/server/src/services/credit/bulkPurchase.service.ts:183), `purchaseCreditPackage` [line 258](packages/server/src/services/credit/bulkPurchase.service.ts:258))
+    *   **Issue:** Both methods involve Stripe payment processing followed by calls to `addCredits` (from `userCredit.model.ts`). These are sequential and not inherently atomic across services/database.
+    *   **Impact:** Risk of user being charged without receiving credits if `addCredits` fails after successful payment.
+    *   **Action:** Implement robust distributed transaction patterns (e.g., transactional outbox, reliable queues with retries/DLQ for the credit granting step) or ensure idempotent operations with clear reconciliation processes for failures.
+    *   **Priority:** Medium
+
+87. **`BASE_CREDIT_UNIT_PRICE` Configuration in `bulkPurchase.service.ts`:**
+    *   **File:** [`packages/server/src/services/credit/bulkPurchase.service.ts`](packages/server/src/services/credit/bulkPurchase.service.ts:16)
+    *   **Issue:** `BASE_CREDIT_UNIT_PRICE` is hardcoded.
+    *   **Impact:** Price changes require code modification.
+    *   **Action:** Move `BASE_CREDIT_UNIT_PRICE` to `UnifiedConfig`.
+    *   **Priority:** Medium
+
+88. **Error Handling in `bulkPurchase.service.ts`:**
+    *   **File:** [`packages/server/src/services/credit/bulkPurchase.service.ts`](packages/server/src/services/credit/bulkPurchase.service.ts:1)
+    *   **Issue:** Logs and re-throws original errors.
+    *   **Impact:** May obscure specific error context.
+    *   **Action:** Consider more specific custom error types (e.g., `PurchaseError`, `PackageNotFoundError`).
+    *   **Priority:** Medium
+
+89. **Input Validation for `stripePriceId` in `bulkPurchase.service.ts`:**
+    *   **File:** [`packages/server/src/services/credit/bulkPurchase.service.ts`](packages/server/src/services/credit/bulkPurchase.service.ts:1) (method `createBulkCreditPackage`)
+    *   **Issue:** `stripePriceId` is optional and not validated for format if provided.
+    *   **Impact:** Minor, as Stripe would reject an invalid ID.
+    *   **Action:** Consider adding format validation if a known pattern exists for Stripe Price IDs.
+    *   **Priority:** Low
+
+90. **Currency Handling in `bulkPurchase.service.ts`:**
+    *   **File:** [`packages/server/src/services/credit/bulkPurchase.service.ts`](packages/server/src/services/credit/bulkPurchase.service.ts:1) (methods `purchaseCredits`, `purchaseCreditPackage`)
+    *   **Issue:** 'USD' is hardcoded for Stripe payments if not using a `stripePriceId`.
+    *   **Impact:** Limits multi-currency support for direct payments.
+    *   **Action:** If multi-currency is a requirement, this needs to be handled more dynamically (e.g., from package data or user settings). Document if USD is the only supported currency for now.
+    *   **Priority:** Low
 
 ## IV. Low Priority & Code Quality Refinements
 
-1.  **Header Component Refinements (Code Quality aspects):**
-    *   **File:** [`packages/client/src/components/Header.tsx`](packages/client/src/components/Header.tsx:1)
-    *   **Issue:** Unused shared imports, hardcoded navigation.
-    *   **Action:** Clean up imports, consider mapping `navItems`.
-    *   **Priority:** Low
-
-2.  **Footer Component Refinements:**
-    *   **File:** [`packages/client/src/components/Footer.tsx`](packages/client/src/components/Footer.tsx:1)
-    *   **Action:** Consider SVG icons, i18n for text.
-    *   **Priority:** Low (Medium if i18n is firm requirement)
-
-3.  **Accessibility of "Add to Board" Button in `MaterialCard.tsx`:**
-    *   **File:** [`packages/client/src/components/materials/MaterialCard.tsx`](packages/client/src/components/materials/MaterialCard.tsx:54-59)
-    *   **Action:** Add more descriptive `aria-label`.
-    *   **Priority:** Low
-
-4.  **Icon Implementation in `RecognitionDemo.tsx`:**
-    *   **File:** [`packages/client/src/components/RecognitionDemo.tsx`](packages/client/src/components/RecognitionDemo.tsx:1)
-    *   **Action:** Consider SVG icons.
-    *   **Priority:** Low
-
-5.  **Local `MaterialProperty` Type in `materialService.ts` (Client):**
-    *   **File:** [`packages/client/src/services/materialService.ts`](packages/client/src/services/materialService.ts:19-22)
-    *   **Action:** If common, move to shared types.
-    *   **Priority:** Low
-
-6.  **Type Safety of `process.env` Access in `UnifiedConfig`:**
-    *   **File:** [`packages/shared/src/utils/unified-config.ts`](packages/shared/src/utils/unified-config.ts:1)
-    *   **Action:** Consider stricter typing/validation for env vars.
-    *   **Priority:** Low
-
-7.  **Jitter Application in `applyJitter` (`cron-parser.ts`):**
-    *   **File:** [`packages/shared/src/utils/cron-parser.ts`](packages/shared/src/utils/cron-parser.ts:346-359)
-    *   **Action:** Confirm if always subtracting jitter is intended.
-    *   **Priority:** Low
-
-8.  **Circular Dependency Check for Cache Warming Dependencies:**
-    *   **File:** [`packages/shared/src/services/cache/cacheWarming.ts`](packages/shared/src/services/cache/cacheWarming.ts:717-742)
-    *   **Action:** Add detection for circular dependencies.
-    *   **Priority:** Low
-
-9.  **Pattern-Based Invalidation Fallback in `CacheInvalidationService`:**
-    *   **File:** [`packages/shared/src/services/cache/cacheInvalidation.ts`](packages/shared/src/services/cache/cacheInvalidation.ts:1)
-    *   **Action:** Implement granular pattern deletion or document limitation.
-    *   **Priority:** Low (Medium if granular pattern invalidation is essential)
-
-10. **Logger Inconsistency in `configValidator.ts`:**
-    *   **File:** [`packages/shared/src/utils/configValidator.ts`](packages/shared/src/utils/configValidator.ts:8)
-    *   **Action:** Update to use `createLogger` from `unified-logger`.
-    *   **Priority:** Low
-
-11. **Hardcoded `storageBucket` in `MaterialRecognitionProvider`:**
-    *   **File:** [`packages/shared/src/services/recognition/materialProvider.ts`](packages/shared/src/services/recognition/materialProvider.ts:49)
-    *   **Action:** Make configurable via `UnifiedConfig`.
-    *   **Priority:** Low
-
-12. **Missing `generateUniqueKey` in `SupabaseStorageProvider`:**
-    *   **File:** [`packages/shared/src/services/storage/supabaseStorageProvider.ts`](packages/shared/src/services/storage/supabaseStorageProvider.ts:1)
-    *   **Action:** Implement `generateUniqueKey` from `StorageProvider` interface.
-    *   **Priority:** Low
-
-13. **Direct `process.env.SUPABASE_URL` in `SupabaseStorageProvider` Fallback:**
-    *   **File:** [`packages/shared/src/services/storage/supabaseStorageProvider.ts`](packages/shared/src/services/storage/supabaseStorageProvider.ts:48)
-    *   **Action:** Use `config.get('supabase.url')` for consistency if possible for this fallback.
-    *   **Priority:** Low
-
-14. **Path/Bucket Handling Duplication (Storage Services):**
-    *   **Files:** `SupabaseStorageProvider.ts`, `s3StorageAdapter.ts` (to be `storageService.ts`)
-    *   **Action:** Centralize or redesign API to take explicit bucket/key.
-    *   **Priority:** Low
-
-15. **Logger Inconsistency in `PropertyInheritanceService`:**
-    *   **File:** [`packages/server/src/services/propertyInheritance/propertyInheritanceService.ts`](packages/server/src/services/propertyInheritance/propertyInheritanceService.ts:8)
-    *   **Action:** Update to use `createLogger` from `unified-logger`.
-    *   **Priority:** Low
-
-16. **`isDefaultValue` Logic in `PropertyInheritanceService`:**
-    *   **File:** [`packages/server/src/services/propertyInheritance/propertyInheritanceService.ts`](packages/server/src/services/propertyInheritance/propertyInheritanceService.ts:167-183)
-    *   **Issue:** Considers `0` as a default value.
-    *   **Action:** Re-evaluate if `0` should always be "default" or if more nuance is needed.
-    *   **Priority:** Low
-
-17. **Logger Inconsistency in `QueryUnderstandingService`:**
-    *   **File:** [`packages/server/src/services/search/query-understanding-service.ts`](packages/server/src/services/search/query-understanding-service.ts:11)
-    *   **Action:** Update to use `createLogger` from `unified-logger`.
-    *   **Priority:** Low
-
-18. **`ensureTables` DDL via RPC in `QueryUnderstandingService`:**
-    *   **File:** [`packages/server/src/services/search/query-understanding-service.ts`](packages/server/src/services/search/query-understanding-service.ts:96-157)
-    *   **Issue:** Creates tables via RPC at startup.
-    *   **Action:** Move schema definitions to Supabase migration files.
-    *   **Priority:** Low
-
-19. **Error Fallback Embedding in `QueryUnderstandingService.enhanceQuery`:**
-    *   **File:** [`packages/server/src/services/search/query-understanding-service.ts`](packages/server/src/services/search/query-understanding-service.ts:250)
-    *   **Issue:** Returns a mock embedding on error.
-    *   **Action:** Consider returning `[]` or `undefined` for `queryEmbedding` on failure.
-    *   **Priority:** Low
-
-20. **Logger Inconsistency in `ConversationalSearchService`:**
-    *   **File:** [`packages/server/src/services/search/conversational-search-service.ts`](packages/server/src/services/search/conversational-search-service.ts:10)
-    *   **Action:** Update to use `createLogger` from `unified-logger`.
-    *   **Priority:** Low
-
-21. **Recursive Call in `apiKeyManager.service.ts` `getUserApiKeys`:**
-    *   **File:** [`packages/server/src/services/auth/apiKeyManager.service.ts`](packages/server/src/services/auth/apiKeyManager.service.ts:39)
-    *   **Issue:** The service function `getUserApiKeys` was calling itself recursively due to name shadowing with an imported model function.
-    *   **Impact:** Stack overflow if the function was called.
-    *   **Action:** Fixed by aliasing the imported model function to `getUserApiKeysFromModel`.
-    *   **Status:** Resolved.
-    *   **Priority:** Low (was Critical, now resolved)
-
-22. **Unused `supabaseClient` Import in `sessionManager.service.ts`:**
-    *   **File:** [`packages/server/src/services/auth/sessionManager.service.ts`](packages/server/src/services/auth/sessionManager.service.ts:23)
-    *   **Issue:** `supabaseClient` is imported but not directly used within the service. Database operations are delegated to `userSession.model.ts`.
-    *   **Impact:** Minor code clutter.
-    *   **Action:** Remove the import if it's confirmed to be unused.
-    *   **Priority:** Low
-
-23. **`setInterval` for Scheduled Cleanups in Auth Services:**
-    *   **Files:** [`packages/server/src/services/auth/apiKeyManager.service.ts`](packages/server/src/services/auth/apiKeyManager.service.ts:156), [`packages/server/src/services/auth/sessionManager.service.ts`](packages/server/src/services/auth/sessionManager.service.ts:294)
-    *   **Issue:** Uses `setInterval` for periodic cleanup of expired API keys and sessions.
-    *   **Impact:** While functional, `setInterval` can be less reliable for critical scheduled tasks in a production environment (e.g., behavior on unhandled errors, drift over time).
-    *   **Action:** Consider using a more robust scheduling mechanism if available within the project (e.g., a dedicated cron job manager or a library like `node-cron`) for production deployments. For now, it's acceptable.
-    *   **Priority:** Low
-
-24. **Hardcoded `embedding_quality` in `EnhancedVectorServiceImpl.storeEmbedding`:**
-    *   **File:** [`packages/server/src/services/supabase/enhanced-vector-service.ts`](packages/server/src/services/supabase/enhanced-vector-service.ts:308)
-    *   **Issue:** The `embedding_quality` field is hardcoded to `1.0` when storing embeddings.
-    *   **Impact:** Does not reflect actual embedding quality if a scoring mechanism exists or is planned.
-    *   **Action:** If embedding quality can be assessed (e.g., by the Python script or other metrics), use the actual value. Otherwise, document this as a placeholder.
-    *   **Priority:** Low
-
-25. **Hardcoded `model_name` in `EnhancedVectorServiceImpl.logEmbeddingMetrics`:**
-    *   **File:** [`packages/server/src/services/supabase/enhanced-vector-service.ts`](packages/server/src/services/supabase/enhanced-vector-service.ts:345)
-    *   **Issue:** The `model_name` for embedding metrics is hardcoded as `'all-MiniLM-L6-v2'`.
-    *   **Impact:** Metrics will be inaccurate if different embedding models are used.
-    *   **Action:** Parameterize the model name, possibly by retrieving it from the `EmbeddingGenerationOptions` or the active `VectorSearchConfig`.
-    *   **Priority:** Low
-
-26. **Assumed `vector_search_performance` Table in `EnhancedVectorServiceImpl.getPerformanceStats`:**
-    *   **File:** [`packages/server/src/services/supabase/enhanced-vector-service.ts`](packages/server/src/services/supabase/enhanced-vector-service.ts:833)
-    *   **Issue:** The `getPerformanceStats` method attempts to select from a `vector_search_performance` table. The schema or existence of this table is not defined/verified within this review context.
-    *   **Impact:** Method will fail if the table doesn't exist or has a different schema.
-    *   **Action:** Verify the existence and schema of the `vector_search_performance` table. Ensure it aligns with the query in this method.
-    *   **Priority:** Low
-
-27. **Logger Inconsistency in `EnhancedVectorServiceImpl`:**
-    *   **File:** [`packages/server/src/services/supabase/enhanced-vector-service.ts`](packages/server/src/services/supabase/enhanced-vector-service.ts:13)
-    *   **Issue:** Uses `logger` from `../../utils/logger`.
-    *   **Action:** Align with the project-wide logging strategy (likely `unified-logger.ts`).
-    *   **Priority:** Low (Consistent with other similar logger issues, but less critical than auth service loggers if those are prioritized first)
-
-28. **Programmatic Index Creation in `SupabaseVectorSearch.createIndex`:**
-    *   **File:** [`packages/server/src/services/supabase/vector-search.ts`](packages/server/src/services/supabase/vector-search.ts:208)
-    *   **Issue:** The `createIndex` method attempts to construct and (conditionally) execute `CREATE INDEX` SQL statements programmatically.
-    *   **Impact:** While potentially useful for dynamic scenarios, index creation is typically better managed via database migrations for schema version control and consistency. Direct execution of DDL from application code can also pose permission risks.
-    *   **Action:** Evaluate the necessity of this programmatic index creation. Prefer managing vector indexes through SQL migration files (e.g., in `packages/server/src/services/supabase/migrations/`). If retained, ensure robust error handling and consider security implications of executing DDL from the application.
-    *   **Priority:** Low
-
-29. **Logger Inconsistency in `vector-search.ts`:**
-    *   **File:** [`packages/server/src/services/supabase/vector-search.ts`](packages/server/src/services/supabase/vector-search.ts:10)
-    *   **Issue:** Uses `logger` from `../../utils/logger`.
-    *   **Action:** Align with the project-wide logging strategy.
-    *   **Priority:** Low
-
-30. **Unused `SupabaseVectorSearch` Dependency in `SupabaseHybridSearch`:**
-    *   **File:** [`packages/server/src/services/supabase/hybrid-search.ts`](packages/server/src/services/supabase/hybrid-search.ts:51)
-    *   **Issue:** An instance of `SupabaseVectorSearch` is created in the constructor but is not used by any methods in the class.
-    *   **Impact:** Minor code clutter, unnecessary object instantiation.
-    *   **Action:** Remove the `this.vectorSearch` property and its instantiation.
-    *   **Priority:** Low
-
-31. **Logger Inconsistency in `hybrid-search.ts`:**
-    *   **File:** [`packages/server/src/services/supabase/hybrid-search.ts`](packages/server/src/services/supabase/hybrid-search.ts:10)
-    *   **Issue:** Uses `logger` from `../../utils/logger`.
-    *   **Action:** Align with the project-wide logging strategy.
-    *   **Priority:** Low
-
-32. **Widespread use of `as any` in `SupabaseDatasetService`:**
-    *   **File:** [`packages/server/src/services/supabase/supabase-dataset-service.ts`](packages/server/src/services/supabase/supabase-dataset-service.ts:1)
-    *   **Issue:** Supabase client query builder calls are frequently cast with `as any` (e.g., [line 153](packages/server/src/services/supabase/supabase-dataset-service.ts:153), [179](packages/server/src/services/supabase/supabase-dataset-service.ts:179)).
-    *   **Impact:** Reduces TypeScript's type safety benefits, potentially hiding type errors or incorrect data handling.
-    *   **Action:** Investigate if using generated Supabase types (e.g., via `supabase gen types typescript`) could help in strongly typing these client calls and reducing the need for `as any`.
-    *   **Priority:** Low
-
-33. **Generic Error Re-throwing in `SupabaseDatasetService`:**
-    *   **File:** [`packages/server/src/services/supabase/supabase-dataset-service.ts`](packages/server/src/services/supabase/supabase-dataset-service.ts:1)
-    *   **Issue:** Most error handling blocks catch errors and re-throw `new Error(...)`.
-    *   **Impact:** Can obscure the original error type and context if not handled carefully by upstream callers. If these service errors are meant to result in specific HTTP error responses, using custom error classes (like `ApiError` used elsewhere in the codebase) would be more consistent.
-    *   **Action:** Consider standardizing error propagation to use custom error classes (e.g., `ApiError` or domain-specific errors) for better error handling and response consistency.
-    *   **Priority:** Low
-
-34. **Logger Inconsistency in `SupabaseDatasetService`:**
-    *   **File:** [`packages/server/src/services/supabase/supabase-dataset-service.ts`](packages/server/src/services/supabase/supabase-dataset-service.ts:9)
-    *   **Issue:** Uses `logger` from `../../utils/logger`.
-    *   **Action:** Align with the project-wide logging strategy.
-    *   **Priority:** Low
-
-35. **Counter Update Efficiency in `SupabaseDatasetService` (Observation):**
-    *   **File:** [`packages/server/src/services/supabase/supabase-dataset-service.ts`](packages/server/src/services/supabase/supabase-dataset-service.ts:1) (methods `updateClassImageCount`, `updateDatasetCounters`)
-    *   **Issue:** Counter updates involve separate `SELECT COUNT(*)` queries followed by an `UPDATE`.
-    *   **Impact:** For very high-frequency modifications of dataset entities, this pattern could become a performance bottleneck.
-    *   **Action:** This is an observation for now. If performance issues arise in these areas, consider optimizing counter updates (e.g., using database triggers, batch updates, or denormalizing counts with careful consistency management).
-    *   **Priority:** Low (Observation)
-
-36. **Review RPCs in `SupabaseMaterialService.getKnowledgeBaseStats`:**
-    *   **File:** [`packages/server/src/services/supabase/supabase-material-service.ts`](packages/server/src/services/supabase/supabase-material-service.ts:762)
-    *   **Issue:** The `getKnowledgeBaseStats` method relies on RPCs `get_materials_by_type` and `get_materials_by_collection`.
-    *   **Action:** Review the SQL definitions of these RPCs for correctness and efficiency.
-    *   **Priority:** Low
-
-37. **CSV Parsing in `SupabaseMaterialService.getKnowledgeBaseStats`:**
-    *   **File:** [`packages/server/src/services/supabase/supabase-material-service.ts`](packages/server/src/services/supabase/supabase-material-service.ts:802)
-    *   **Issue:** The method fetches `vector_indexes` status by selecting as CSV and then parsing the string.
-    *   **Impact:** Less robust than direct JSON results.
-    *   **Action:** Investigate if the `vector_indexes` data (or a view on it) can be queried to return structured JSON directly, avoiding manual CSV parsing.
-    *   **Priority:** Low
-
-38. **Logger Inconsistency in `SupabaseMaterialService`:**
-    *   **File:** [`packages/server/src/services/supabase/supabase-material-service.ts`](packages/server/src/services/supabase/supabase-material-service.ts:10)
-    *   **Issue:** Uses `logger` from `../../utils/logger`.
-    *   **Action:** Align with the project-wide logging strategy.
-    *   **Priority:** Low
-
-39. **Generic Error Re-throwing in `SupabaseMaterialService`:**
-    *   **File:** [`packages/server/src/services/supabase/supabase-material-service.ts`](packages/server/src/services/supabase/supabase-material-service.ts:1)
-    *   **Issue:** Error handling blocks often re-throw `new Error(...)`.
-    *   **Action:** Consider standardizing to custom error classes (e.g., `ApiError`) for consistency.
-    *   **Priority:** Low
-
-40. **Assumed Table Schemas in `SupabaseMaterialService.getKnowledgeBaseStats`:**
-    *   **File:** [`packages/server/src/services/supabase/supabase-material-service.ts`](packages/server/src/services/supabase/supabase-material-service.ts:1)
-    *   **Issue:** The `getKnowledgeBaseStats` method assumes the existence and specific schemas for `collections` and `vector_indexes` tables/views.
-    *   **Action:** Ensure these database objects are defined in migrations and their schemas match the service's expectations.
-    *   **Priority:** Low (Observation)
-
-41. **Vector Index Discrepancy (Schema vs. Service Default):**
-    *   **Files:** [`packages/server/src/services/supabase/supabase-schema.md`](packages/server/src/services/supabase/supabase-schema.md:77), [`packages/server/src/services/supabase/vector-search.ts`](packages/server/src/services/supabase/vector-search.ts:211)
-    *   **Issue:** The `materials` table schema in `supabase-schema.md` defines a vector index `materials_vector_idx` using `ivfflat` and `vector_cosine_ops`. However, the `SupabaseVectorSearch.createIndex` method defaults to `hnsw` and its SQL construction implies `vector_l2_ops`.
-    *   **Impact:** Minor inconsistency. If `createIndex` were used, it would create a different type of index than what's documented as the primary one.
-    *   **Action:** Ensure migrations are the source of truth for index definitions. If `SupabaseVectorSearch.createIndex` is intended for use, align its defaults or parameters with the standard index types used in the project (likely `ivfflat` with `vector_cosine_ops` as per schema).
-    *   **Priority:** Low
-
-42. **`vector_indexes` Table Schema vs. Service Usage Discrepancy:**
-    *   **Files:** [`packages/server/src/services/supabase/supabase-schema.md`](packages/server/src/services/supabase/supabase-schema.md:211), [`packages/server/src/services/supabase/supabase-material-service.ts`](packages/server/src/services/supabase/supabase-material-service.ts:802), [`packages/server/src/services/supabase/enhanced-vector-service.ts`](packages/server/src/services/supabase/enhanced-vector-service.ts:833)
-    *   **Issue:**
-        *   `supabase-schema.md` defines a `vector_indexes` table.
-        *   `SupabaseMaterialService.getKnowledgeBaseStats` queries this `vector_indexes` table but expects CSV output with `status, count`.
-        *   `EnhancedVectorServiceImpl.getPerformanceStats` attempts to query a `vector_search_performance` table, which is not defined in the schema document.
-    *   **Impact:** `getPerformanceStats` will fail. `getKnowledgeBaseStats` CSV parsing is unusual.
-    *   **Action:**
-        1.  Consolidate on a single table for vector index/performance metadata (likely `vector_indexes` as defined in schema).
-        2.  Update `EnhancedVectorServiceImpl.getPerformanceStats` to query the correct `vector_indexes` table and its defined columns.
-        3.  Modify `SupabaseMaterialService.getKnowledgeBaseStats` to query `vector_indexes` and process structured JSON results instead of CSV, if possible.
-    *   **Priority:** Low
-
-45. **Logger Inconsistency in `SupabaseHelper`:**
-    *   **File:** [`packages/server/src/services/supabase/supabaseHelper.ts`](packages/server/src/services/supabase/supabaseHelper.ts:10)
-    *   **Issue:** Uses `logger` from `../../utils/logger`.
-    *   **Action:** Align with the project-wide logging strategy.
-    *   **Priority:** Low
-
-43. **Logger Inconsistency in `SupabaseUtilityService` (`supabase-sync.ts`):**
-    *   **File:** [`packages/server/src/services/supabase/supabase-sync.ts`](packages/server/src/services/supabase/supabase-sync.ts:9)
-    *   **Issue:** Uses `logger` from `../../utils/logger`.
-    *   **Action:** Align with the project-wide logging strategy.
-    *   **Priority:** Low
-
-44. **`healthCheck` Status Logic in `SupabaseUtilityService`:**
-    *   **File:** [`packages/server/src/services/supabase/supabase-sync.ts`](packages/server/src/services/supabase/supabase-sync.ts:75)
-    *   **Issue:** The `healthCheck` method's return type definition includes a `'degraded'` status, but the current implementation only returns `'healthy'` or `'unhealthy'`.
-    *   **Impact:** Minor; the `'degraded'` status is unused.
-    *   **Action:** If a `'degraded'` state is meaningful (e.g., high latency but still functional), implement logic to set this status. Otherwise, remove `'degraded'` from the return type for accuracy.
-    *   **Priority:** Low
-
-46. **Optimization TODO in `ModelRegistry.selectBestModel`:**
-    *   **File:** [`packages/server/src/services/ai/modelRegistry.ts`](packages/server/src/services/ai/modelRegistry.ts:289)
-    *   **Issue:** A `TODO` comment notes to consider fetching only recent metrics or a summary instead of all historical metrics for `selectBestModel`.
-    *   **Impact:** Fetching all historical performance data for every model selection could become inefficient as data grows.
-    *   **Action:** Implement a strategy for using recent or summarized/aggregated performance data for model selection to improve performance. This could involve time windowing, rolling averages, or pre-calculated aggregate scores in the database.
-    *   **Priority:** Low (Performance optimization)
-
-47. **Logger Inconsistency in `ModelRegistry`:**
-    *   **File:** [`packages/server/src/services/ai/modelRegistry.ts`](packages/server/src/services/ai/modelRegistry.ts:11)
-    *   **Issue:** Uses `logger` from `../../utils/logger`.
-    *   **Action:** Align with the project-wide logging strategy.
-    *   **Priority:** Low
-
-48. **Use of `as any` in `ModelRegistry` Data Mapping:**
-    *   **File:** [`packages/server/src/services/ai/modelRegistry.ts`](packages/server/src/services/ai/modelRegistry.ts:459)
-    *   **Issue:** Uses `as any` for `dbResult` when mapping database results to `ModelEvaluationResult`.
-    *   **Impact:** Reduces type safety.
-    *   **Action:** Use generated Supabase types if available to provide strong types for `dbResult` and avoid `as any`.
-    *   **Priority:** Low
-
-49. **Logger Inconsistency in `ModelRouter`:**
-    *   **File:** [`packages/server/src/services/ai/modelRouter.ts`](packages/server/src/services/ai/modelRouter.ts:10)
-    *   **Issue:** Uses `logger` from `../../utils/logger`.
-    *   **Action:** Align with the project-wide logging strategy.
-    *   **Priority:** Low
-
-50. **Singleton Pattern Inconsistency in `PromptIntegrationService`:**
-    *   **File:** [`packages/server/src/services/ai/promptIntegrationService.ts`](packages/server/src/services/ai/promptIntegrationService.ts:76)
-    *   **Issue:** Unlike many other services in the codebase (e.g., `ModelRegistry`, `SupabaseDatasetService`), `PromptIntegrationService` does not implement a static `getInstance()` method for singleton access. It's instantiated directly.
-    *   **Impact:** Inconsistent service design pattern. May lead to multiple instances if not managed carefully by consumers, though typically services are singletons.
-    *   **Action:** Refactor `PromptIntegrationService` to use the static `getInstance()` singleton pattern for consistency with other services.
-    *   **Priority:** Low
-
-51. **Unused Imports in `PromptIntegrationService`:**
-    *   **File:** [`packages/server/src/services/ai/promptIntegrationService.ts`](packages/server/src/services/ai/promptIntegrationService.ts:10-11)
-    *   **Issue:** `fs` and `path` modules are imported but do not appear to be used anywhere in the service.
-    *   **Impact:** Minor code clutter.
-    *   **Action:** Remove the unused imports for `fs` and `path`.
-    *   **Priority:** Low
-
-52. **Logger Inconsistency in `PromptIntegrationService`:**
-    *   **File:** [`packages/server/src/services/ai/promptIntegrationService.ts`](packages/server/src/services/ai/promptIntegrationService.ts:7)
-    *   **Issue:** Uses `logger` from `../../utils/logger`.
-    *   **Action:** Align with the project-wide logging strategy.
-    *   **Priority:** Low
-
-53. **Generic Error Re-throwing in `PromptIntegrationService`:**
-    *   **File:** [`packages/server/src/services/ai/promptIntegrationService.ts`](packages/server/src/services/ai/promptIntegrationService.ts:1)
-    *   **Issue:** Error handling blocks often re-throw `new Error(...)`.
-    *   **Action:** Consider standardizing to custom error classes for consistency.
-    *   **Priority:** Low
-
-54. **Dependency Check for `axios` in `PromptIntegrationService`:**
-    *   **File:** [`packages/server/src/services/ai/promptIntegrationService.ts`](packages/server/src/services/ai/promptIntegrationService.ts:9)
-    *   **Issue:** The service uses `axios` for making HTTP requests to external systems.
-    *   **Action:** Ensure `axios` is listed as a dependency in `packages/server/package.json` and is correctly installed.
-    *   **Priority:** Low (Build/runtime check)
-
-55. **Unused Imports in `PromptService`:**
-    *   **File:** [`packages/server/src/services/ai/promptService.ts`](packages/server/src/services/ai/promptService.ts:10-11)
-    *   **Issue:** `fs` and `path` modules are imported but do not appear to be used.
-    *   **Impact:** Minor code clutter.
-    *   **Action:** Remove the unused imports.
-    *   **Priority:** Low
-
-56. **Logger Inconsistency in `PromptService`:**
-    *   **File:** [`packages/server/src/services/ai/promptService.ts`](packages/server/src/services/ai/promptService.ts:8)
-    *   **Issue:** Uses `logger` from `../../utils/logger`.
-    *   **Action:** Align with the project-wide logging strategy.
-    *   **Priority:** Low
-
-57. **Generic Error Re-throwing in `PromptService`:**
-    *   **File:** [`packages/server/src/services/ai/promptService.ts`](packages/server/src/services/ai/promptService.ts:1)
-    *   **Issue:** Error handling blocks often re-throw `new Error(...)`.
-    *   **Action:** Consider standardizing to custom error classes.
-    *   **Priority:** Low
-
-58. **Database Schema for `PromptService` Tables (Observation):**
-    *   **File:** [`packages/server/src/services/ai/promptService.ts`](packages/server/src/services/ai/promptService.ts:1)
-    *   **Issue:** This service interacts with numerous tables: `system_prompts`, `system_prompt_versions`, `system_prompt_success_tracking`, `prompt_usage_analytics`, `prompt_monitoring_alerts`, `prompt_monitoring_settings`, `prompt_ab_experiments`, `prompt_ab_variants`, `prompt_ab_assignments`, `user_segments`, `user_segment_assignments`.
-    *   **Action:** Ensure all these tables are correctly defined in Supabase migrations with appropriate schemas, indexes, and foreign key relationships (including cascade behavior where appropriate).
-    *   **Priority:** Low (Observation - covered by general need for schema review)
-
-59. **Dependency Check for ML Libraries in `PromptMLService`:**
-    *   **File:** [`packages/server/src/services/ai/promptMLService.ts`](packages/server/src/services/ai/promptMLService.ts:1)
-    *   **Issue:** The service uses `@tensorflow/tfjs-node`, and requires `ml-random-forest` and `ml-gradient-boosting`.
-    *   **Action:** Ensure these are listed as dependencies in `packages/server/package.json` and are correctly installed.
-    *   **Priority:** Low (Build/runtime check)
-
-60. **Logger Inconsistency in `PromptMLService`:**
-    *   **File:** [`packages/server/src/services/ai/promptMLService.ts`](packages/server/src/services/ai/promptMLService.ts:7)
-    *   **Issue:** Uses `logger` from `../../utils/logger`.
-    *   **Action:** Align with the project-wide logging strategy.
-    *   **Priority:** Low
-
-61. **Generic Error Re-throwing in `PromptMLService`:**
-    *   **File:** [`packages/server/src/services/ai/promptMLService.ts`](packages/server/src/services/ai/promptMLService.ts:1)
-    *   **Issue:** Error handling blocks often re-throw `new Error(...)`.
-    *   **Action:** Consider standardizing to custom error classes.
-    *   **Priority:** Low
-
-62. **Singleton Pattern Inconsistency in `PromptMLService`:**
-    *   **File:** [`packages/server/src/services/ai/promptMLService.ts`](packages/server/src/services/ai/promptMLService.ts:88)
-    *   **Issue:** Does not use the static `getInstance()` singleton pattern.
-    *   **Action:** Refactor for consistency if other services predominantly use the static method.
-    *   **Priority:** Low
-
-63. **Database Schema for `PromptMLService` Tables (Observation):**
-    *   **File:** [`packages/server/src/services/ai/promptMLService.ts`](packages/server/src/services/ai/promptMLService.ts:1)
-    *   **Issue:** This service interacts with tables: `prompt_ml_models`, `prompt_ml_model_versions`, `prompt_ml_predictions`, `prompt_improvement_suggestions`.
-    *   **Action:** Ensure these tables are correctly defined in Supabase migrations.
-    *   **Priority:** Low (Observation)
-
-64. **Logger Inconsistency in `PromptOptimizationService`:**
-    *   **File:** [`packages/server/src/services/ai/promptOptimizationService.ts`](packages/server/src/services/ai/promptOptimizationService.ts:7)
-    *   **Issue:** Uses `logger` from `../../utils/logger`.
-    *   **Action:** Align with the project-wide logging strategy.
-    *   **Priority:** Low
-
-65. **Generic Error Re-throwing in `PromptOptimizationService`:**
-    *   **File:** [`packages/server/src/services/ai/promptOptimizationService.ts`](packages/server/src/services/ai/promptOptimizationService.ts:1)
-    *   **Issue:** Error handling blocks often re-throw `new Error(...)`.
-    *   **Action:** Consider standardizing to custom error classes.
-    *   **Priority:** Low
-
-66. **Singleton Pattern Inconsistency in `PromptOptimizationService`:**
-    *   **File:** [`packages/server/src/services/ai/promptOptimizationService.ts`](packages/server/src/services/ai/promptOptimizationService.ts:80)
-    *   **Issue:** Does not use the static `getInstance()` singleton pattern.
-    *   **Action:** Refactor for consistency.
-    *   **Priority:** Low
-
-67. **Database Schema for `PromptOptimizationService` Tables (Observation):**
-    *   **File:** [`packages/server/src/services/ai/promptOptimizationService.ts`](packages/server/src/services/ai/promptOptimizationService.ts:1)
-    *   **Issue:** This service interacts with tables `prompt_optimization_rules` and `prompt_optimization_actions`.
-    *   **Action:** Ensure these tables are correctly defined in Supabase migrations.
-    *   **Priority:** Low (Observation)
-
-68. **Dependency Check for `jstat` in `PromptStatisticalService`:**
-    *   **File:** [`packages/server/src/services/ai/promptStatisticalService.ts`](packages/server/src/services/ai/promptStatisticalService.ts:9)
-    *   **Issue:** The service uses the `jstat` library for statistical calculations (Z-test, Chi-square).
-    *   **Action:** Ensure `jstat` (and its types, e.g., `@types/jstat` if available) is listed as a dependency in `packages/server/package.json` and is correctly installed.
-    *   **Priority:** Low (Build/runtime check)
-
-69. **Logger Inconsistency in `PromptStatisticalService`:**
-    *   **File:** [`packages/server/src/services/ai/promptStatisticalService.ts`](packages/server/src/services/ai/promptStatisticalService.ts:7)
-    *   **Issue:** Uses `logger` from `../../utils/logger`.
-    *   **Action:** Align with the project-wide logging strategy.
-    *   **Priority:** Low
-
-70. **Generic Error Re-throwing in `PromptStatisticalService`:**
-    *   **File:** [`packages/server/src/services/ai/promptStatisticalService.ts`](packages/server/src/services/ai/promptStatisticalService.ts:1)
-    *   **Issue:** Error handling blocks often re-throw `new Error(...)`.
-    *   **Action:** Consider standardizing to custom error classes.
-    *   **Priority:** Low
-
-71. **Singleton Pattern Inconsistency in `PromptStatisticalService`:**
-    *   **File:** [`packages/server/src/services/ai/promptStatisticalService.ts`](packages/server/src/services/ai/promptStatisticalService.ts:46)
-    *   **Issue:** Does not use the static `getInstance()` singleton pattern.
-    *   **Action:** Refactor for consistency.
-    *   **Priority:** Low
-
-72. **Database Schema for `PromptStatisticalService` Tables (Observation):**
-    *   **File:** [`packages/server/src/services/ai/promptStatisticalService.ts`](packages/server/src/services/ai/promptStatisticalService.ts:1)
-    *   **Issue:** This service interacts with `prompt_statistical_analysis`, `prompt_ab_experiments`, and `prompt_usage_analytics`.
-    *   **Action:** Ensure these tables are correctly defined in Supabase migrations.
-    *   **Priority:** Low (Observation)
-
-73. **Synchronous File Read in `ImageAnalysisService`:**
-    *   **File:** [`packages/server/src/services/ai/imageAnalysisService.ts`](packages/server/src/services/ai/imageAnalysisService.ts:87) (method `analyzeImageWithMCP`)
-    *   **Issue:** Uses `fs.readFileSync` to read the image file before sending to MCP.
-    *   **Impact:** For a server handling multiple requests, synchronous file I/O can block the event loop, reducing throughput.
-    *   **Action:** Change `fs.readFileSync` to its asynchronous counterpart `fs.readFile` (promisified or with a callback) to avoid blocking.
-    *   **Priority:** Low (Optimization/Best Practice)
-
-74. **Dependency Check for `canvas` in `ImageAnalysisService`:**
-    *   **File:** [`packages/server/src/services/ai/imageAnalysisService.ts`](packages/server/src/services/ai/imageAnalysisService.ts:12)
-    *   **Issue:** The service uses the `canvas` library for local image processing.
-    *   **Action:** Ensure `canvas` is listed as a dependency in `packages/server/package.json`. Note that `canvas` often has native build dependencies (Cairo, Pango, etc.) that need to be present on the server environment.
-    *   **Priority:** Low (Build/runtime check)
-
-75. **Logger Inconsistency in `ImageAnalysisService`:**
-    *   **File:** [`packages/server/src/services/ai/imageAnalysisService.ts`](packages/server/src/services/ai/imageAnalysisService.ts:7)
-    *   **Issue:** Uses `logger` from `../../utils/logger`.
-    *   **Action:** Align with the project-wide logging strategy.
-    *   **Priority:** Low
-
-76. **Dependency Check for `axios` in `VisualReferenceTrainingService`:**
-    *   **File:** [`packages/server/src/services/ai/visual-reference-training.ts`](packages/server/src/services/ai/visual-reference-training.ts:10)
-    *   **Issue:** Uses `axios` for downloading images.
-    *   **Action:** Ensure `axios` is listed as a dependency in `packages/server/package.json`.
-    *   **Priority:** Low (Build/runtime check)
-
-77. **Logger Inconsistency in `VisualReferenceTrainingService`:**
-    *   **File:** [`packages/server/src/services/ai/visual-reference-training.ts`](packages/server/src/services/ai/visual-reference-training.ts:9)
-    *   **Issue:** Uses `logger` from `../../utils/logger`.
-    *   **Action:** Align with the project-wide logging strategy.
-    *   **Priority:** Low
-
-78. **Database Schema for `VisualReferenceTrainingService` Tables (Observation):**
-    *   **File:** [`packages/server/src/services/ai/visual-reference-training.ts`](packages/server/src/services/ai/visual-reference-training.ts:1)
-    *   **Issue:** Interacts with `ml_datasets` and `ml_models` tables.
-    *   **Action:** Ensure these tables are correctly defined in Supabase migrations.
-    *   **Priority:** Low (Observation)
-
-79. **Dependency Check for `@tensorflow/tfjs-node` in `PropertyPredictionService`:**
-    *   **File:** [`packages/server/src/services/ai/property-prediction/propertyPredictionService.ts`](packages/server/src/services/ai/property-prediction/propertyPredictionService.ts:10)
-    *   **Issue:** Uses `@tensorflow/tfjs-node`.
-    *   **Action:** Ensure it's in `packages/server/package.json`.
-    *   **Priority:** Low (Build/runtime check)
-
-80. **Logger Inconsistency in `PropertyPredictionService`:**
-    *   **File:** [`packages/server/src/services/ai/property-prediction/propertyPredictionService.ts`](packages/server/src/services/ai/property-prediction/propertyPredictionService.ts:9)
-    *   **Issue:** Uses `logger` from `../../../utils/logger` (different relative path).
-    *   **Action:** Align with the project-wide logging strategy and consistent pathing.
-    *   **Priority:** Low
-
-81. **Logger Inconsistency in `RelationshipFeatureExtractor`:**
-    *   **File:** [`packages/server/src/services/ai/property-prediction/relationshipFeatureExtractor.ts`](packages/server/src/services/ai/property-prediction/relationshipFeatureExtractor.ts:10)
-    *   **Issue:** Uses `logger` from `../../../utils/logger` (different relative path).
-    *   **Action:** Align with the project-wide logging strategy and consistent pathing.
-    *   **Priority:** Low
-
-82. **Logger Inconsistency in `RelationshipAwareTrainingService`:**
+(Consolidating and re-numbering items here.)
+
+1.  **Header Component Refinements (`Header.tsx`)** ([`packages/client/src/components/Header.tsx`](packages/client/src/components/Header.tsx:1))
+2.  **Footer Component Refinements (`Footer.tsx`)** ([`packages/client/src/components/Footer.tsx`](packages/client/src/components/Footer.tsx:1))
+3.  **Accessibility of "Add to Board" Button in `MaterialCard.tsx`** ([`packages/client/src/components/materials/MaterialCard.tsx`](packages/client/src/components/materials/MaterialCard.tsx:54-59))
+4.  **Icon Implementation in `RecognitionDemo.tsx`** ([`packages/client/src/components/RecognitionDemo.tsx`](packages/client/src/components/RecognitionDemo.tsx:1))
+5.  **Local `MaterialProperty` Type in `materialService.ts` (Client)** ([`packages/client/src/services/materialService.ts`](packages/client/src/services/materialService.ts:19-22))
+6.  **Type Safety of `process.env` Access in `UnifiedConfig`** ([`packages/shared/src/utils/unified-config.ts`](packages/shared/src/utils/unified-config.ts:1))
+7.  **Jitter Application in `applyJitter` (`cron-parser.ts`)** ([`packages/shared/src/utils/cron-parser.ts`](packages/shared/src/utils/cron-parser.ts:346-359))
+8.  **Circular Dependency Check for Cache Warming Dependencies** ([`packages/shared/src/services/cache/cacheWarming.ts`](packages/shared/src/services/cache/cacheWarming.ts:717-742))
+9.  **Pattern-Based Invalidation Fallback in `CacheInvalidationService`** ([`packages/shared/src/services/cache/cacheInvalidation.ts`](packages/shared/src/services/cache/cacheInvalidation.ts:1))
+10. **Logger Inconsistency in `configValidator.ts`** ([`packages/shared/src/utils/configValidator.ts`](packages/shared/src/utils/configValidator.ts:8))
+11. **Hardcoded `storageBucket` in `MaterialRecognitionProvider`** ([`packages/shared/src/services/recognition/materialProvider.ts`](packages/shared/src/services/recognition/materialProvider.ts:49))
+12. **Missing `generateUniqueKey` in `SupabaseStorageProvider`** ([`packages/shared/src/services/storage/supabaseStorageProvider.ts`](packages/shared/src/services/storage/supabaseStorageProvider.ts:1))
+13. **Direct `process.env.SUPABASE_URL` in `SupabaseStorageProvider` Fallback** ([`packages/shared/src/services/storage/supabaseStorageProvider.ts`](packages/shared/src/services/storage/supabaseStorageProvider.ts:48))
+14. **Path/Bucket Handling Duplication (Storage Services)**
+15. **Logger Inconsistency in `PropertyInheritanceService`** ([`packages/server/src/services/propertyInheritance/propertyInheritanceService.ts`](packages/server/src/services/propertyInheritance/propertyInheritanceService.ts:8))
+16. **`isDefaultValue` Logic in `PropertyInheritanceService`** ([`packages/server/src/services/propertyInheritance/propertyInheritanceService.ts`](packages/server/src/services/propertyInheritance/propertyInheritanceService.ts:167-183))
+17. **Logger Inconsistency in `QueryUnderstandingService`** ([`packages/server/src/services/search/query-understanding-service.ts`](packages/server/src/services/search/query-understanding-service.ts:11))
+18. **`ensureTables` DDL via RPC in `QueryUnderstandingService`** ([`packages/server/src/services/search/query-understanding-service.ts`](packages/server/src/services/search/query-understanding-service.ts:96-157))
+19. **Error Fallback Embedding in `QueryUnderstandingService.enhanceQuery`** ([`packages/server/src/services/search/query-understanding-service.ts`](packages/server/src/services/search/query-understanding-service.ts:250))
+20. **Logger Inconsistency in `ConversationalSearchService`** ([`packages/server/src/services/search/conversational-search-service.ts`](packages/server/src/services/search/conversational-search-service.ts:10))
+21. **Unused `supabaseClient` Import in `sessionManager.service.ts`** ([`packages/server/src/services/auth/sessionManager.service.ts`](packages/server/src/services/auth/sessionManager.service.ts:23))
+22. **`setInterval` for Scheduled Cleanups in Auth Services** ([`packages/server/src/services/auth/apiKeyManager.service.ts`](packages/server/src/services/auth/apiKeyManager.service.ts:156), [`packages/server/src/services/auth/sessionManager.service.ts`](packages/server/src/services/auth/sessionManager.service.ts:294))
+23. **Hardcoded `embedding_quality` in `EnhancedVectorServiceImpl.storeEmbedding`** ([`packages/server/src/services/supabase/enhanced-vector-service.ts`](packages/server/src/services/supabase/enhanced-vector-service.ts:308))
+24. **Hardcoded `model_name` in `EnhancedVectorServiceImpl.logEmbeddingMetrics`** ([`packages/server/src/services/supabase/enhanced-vector-service.ts`](packages/server/src/services/supabase/enhanced-vector-service.ts:345))
+25. **Assumed `vector_search_performance` Table in `EnhancedVectorServiceImpl.getPerformanceStats`** ([`packages/server/src/services/supabase/enhanced-vector-service.ts`](packages/server/src/services/supabase/enhanced-vector-service.ts:833))
+26. **Logger Inconsistency in `EnhancedVectorServiceImpl`** ([`packages/server/src/services/supabase/enhanced-vector-service.ts`](packages/server/src/services/supabase/enhanced-vector-service.ts:13))
+27. **Programmatic Index Creation in `SupabaseVectorSearch.createIndex`** ([`packages/server/src/services/supabase/vector-search.ts`](packages/server/src/services/supabase/vector-search.ts:208))
+28. **Logger Inconsistency in `vector-search.ts`** ([`packages/server/src/services/supabase/vector-search.ts`](packages/server/src/services/supabase/vector-search.ts:10))
+29. **Unused `SupabaseVectorSearch` Dependency in `SupabaseHybridSearch`** ([`packages/server/src/services/supabase/hybrid-search.ts`](packages/server/src/services/supabase/hybrid-search.ts:51))
+30. **Logger Inconsistency in `hybrid-search.ts`** ([`packages/server/src/services/supabase/hybrid-search.ts`](packages/server/src/services/supabase/hybrid-search.ts:10))
+31. **Widespread use of `as any` in `SupabaseDatasetService`** ([`packages/server/src/services/supabase/supabase-dataset-service.ts`](packages/server/src/services/supabase/supabase-dataset-service.ts:1))
+32. **Generic Error Re-throwing in `SupabaseDatasetService`** ([`packages/server/src/services/supabase/supabase-dataset-service.ts`](packages/server/src/services/supabase/supabase-dataset-service.ts:1))
+33. **Logger Inconsistency in `SupabaseDatasetService`** ([`packages/server/src/services/supabase/supabase-dataset-service.ts`](packages/server/src/services/supabase/supabase-dataset-service.ts:9))
+34. **Counter Update Efficiency in `SupabaseDatasetService` (Observation)** ([`packages/server/src/services/supabase/supabase-dataset-service.ts`](packages/server/src/services/supabase/supabase-dataset-service.ts:1))
+35. **Review RPCs in `SupabaseMaterialService.getKnowledgeBaseStats`** ([`packages/server/src/services/supabase/supabase-material-service.ts`](packages/server/src/services/supabase/supabase-material-service.ts:762))
+36. **CSV Parsing in `SupabaseMaterialService.getKnowledgeBaseStats`** ([`packages/server/src/services/supabase/supabase-material-service.ts`](packages/server/src/services/supabase/supabase-material-service.ts:802))
+37. **Logger Inconsistency in `SupabaseMaterialService`** ([`packages/server/src/services/supabase/supabase-material-service.ts`](packages/server/src/services/supabase/supabase-material-service.ts:10))
+38. **Generic Error Re-throwing in `SupabaseMaterialService`** ([`packages/server/src/services/supabase/supabase-material-service.ts`](packages/server/src/services/supabase/supabase-material-service.ts:1))
+39. **Assumed Table Schemas in `SupabaseMaterialService.getKnowledgeBaseStats`** ([`packages/server/src/services/supabase/supabase-material-service.ts`](packages/server/src/services/supabase/supabase-material-service.ts:1))
+40. **Vector Index Discrepancy (Schema vs. Service Default)** ([`packages/server/src/services/supabase/supabase-schema.md`](packages/server/src/services/supabase/supabase-schema.md:77), [`packages/server/src/services/supabase/vector-search.ts`](packages/server/src/services/supabase/vector-search.ts:211))
+41. **`vector_indexes` Table Schema vs. Service Usage Discrepancy** ([`packages/server/src/services/supabase/supabase-schema.md`](packages/server/src/services/supabase/supabase-schema.md:211), [`packages/server/src/services/supabase/supabase-material-service.ts`](packages/server/src/services/supabase/supabase-material-service.ts:802), [`packages/server/src/services/supabase/enhanced-vector-service.ts`](packages/server/src/services/supabase/enhanced-vector-service.ts:833))
+42. **Logger Inconsistency in `SupabaseHelper`** ([`packages/server/src/services/supabase/supabaseHelper.ts`](packages/server/src/services/supabase/supabaseHelper.ts:10))
+43. **Logger Inconsistency in `SupabaseUtilityService` (`supabase-sync.ts`)** ([`packages/server/src/services/supabase/supabase-sync.ts`](packages/server/src/services/supabase/supabase-sync.ts:9))
+44. **`healthCheck` Status Logic in `SupabaseUtilityService`** ([`packages/server/src/services/supabase/supabase-sync.ts`](packages/server/src/services/supabase/supabase-sync.ts:75))
+45. **Optimization TODO in `ModelRegistry.selectBestModel`** ([`packages/server/src/services/ai/modelRegistry.ts`](packages/server/src/services/ai/modelRegistry.ts:289))
+46. **Logger Inconsistency in `ModelRegistry`** ([`packages/server/src/services/ai/modelRegistry.ts`](packages/server/src/services/ai/modelRegistry.ts:11))
+47. **Use of `as any` in `ModelRegistry` Data Mapping** ([`packages/server/src/services/ai/modelRegistry.ts`](packages/server/src/services/ai/modelRegistry.ts:459))
+48. **Logger Inconsistency in `ModelRouter`** ([`packages/server/src/services/ai/modelRouter.ts`](packages/server/src/services/ai/modelRouter.ts:10))
+49. **Singleton Pattern Inconsistency in `PromptIntegrationService`** ([`packages/server/src/services/ai/promptIntegrationService.ts`](packages/server/src/services/ai/promptIntegrationService.ts:76))
+50. **Logger Inconsistency in `RelationshipAwareTrainingService`:**
     *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:8)
-    *   **Issue:** Uses `logger` from `../../../utils/logger` (different relative path).
-    *   **Action:** Align with the project-wide logging strategy and consistent pathing.
+    *   **Issue:** Uses `logger` from `../../../utils/logger`.
+    *   **Action:** Align with the project-wide logging strategy.
     *   **Priority:** Low
 
-83. **Database Schema for `RelationshipAwareTrainingService` Tables (Observation):**
+51. **Database Schema for `RelationshipAwareTrainingService` Tables (Observation):**
     *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1)
-    *   **Issue:** The service programmatically attempts to create `relationship_aware_training_jobs`, `relationship_aware_models`, and `relationship_aware_model_performance`. It also uses Prisma to interact with `PropertyRelationship`.
-    *   **Action:** Ensure all necessary tables are defined via Supabase migrations (and Prisma schema is aligned if it's the source of truth for some tables). Remove programmatic table creation.
+    *   **Issue:** The service programmatically attempts to create tables and uses Prisma for `PropertyRelationship`.
+    *   **Action:** Ensure all tables defined via migrations, Prisma schema aligned.
     *   **Priority:** Low (Observation, but linked to Critical #31)
 
-82. **Logger Inconsistency in `RelationshipAwareTrainingService`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:8)
-    *   **Issue:** Uses `logger` from `../../../utils/logger` (different relative path).
-    *   **Action:** Align with the project-wide logging strategy and consistent pathing.
+52. **Logger Inconsistency in `PromptMLService`:**
+    *   **File:** [`packages/server/src/services/ai/promptMLService.ts`](packages/server/src/services/ai/promptMLService.ts:14)
+    *   **Action:** Align with project-wide logging.
     *   **Priority:** Low
 
-83. **Database Schema for `RelationshipAwareTrainingService` Tables (Observation):**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1)
-    *   **Issue:** The service programmatically attempts to create `relationship_aware_training_jobs`, `relationship_aware_models`, and `relationship_aware_model_performance`. It also uses Prisma to interact with `PropertyRelationship`.
-    *   **Action:** Ensure all necessary tables are defined via Supabase migrations (and Prisma schema is aligned if it's the source of truth for some tables). Remove programmatic table creation.
-    *   **Priority:** Low (Observation, but linked to Critical #31)
+53. **Database Table Definition for `password_reset_tokens`:**
+    *   **File:** [`packages/server/src/controllers/auth/passwordReset.controller.ts`](packages/server/src/controllers/auth/passwordReset.controller.ts:1) (Implicit)
+    *   **Issue:** The controller relies on a `password_reset_tokens` table.
+    *   **Impact:** Functionality will fail if the table is not correctly defined with appropriate schema and RLS.
+    *   **Action:** Ensure `password_reset_tokens` table is defined in a Supabase SQL migration file with columns like `userId` (FK to `auth.users`), `token` (text, unique, indexed), `expiresAt` (timestamptz), `isUsed` (boolean). Implement restrictive RLS policies (e.g., inserts/updates by service_role only).
+    *   **Priority:** Low (Assuming it might exist but needs verification)
+
+54. **Database Table and RLS for `two_factor_settings`:**
+    *   **File:** [`packages/server/src/controllers/auth/twoFactor.controller.ts`](packages/server/src/controllers/auth/twoFactor.controller.ts:1) (Implicit)
+    *   **Issue:** The controller relies on a `two_factor_settings` table (interacted with via `twoFactor.model.ts`).
+    *   **Impact:** 2FA functionality will fail if this table is not correctly defined with appropriate schema and restrictive RLS.
+    *   **Action:** Ensure the `two_factor_settings` table is defined in a Supabase SQL migration. Columns should include `userId` (FK to `auth.users`), `method` (enum: 'totp', 'sms', 'email'), `secret` (text, encrypted), `phoneNumber` (text, nullable), `email` (text, nullable), `isVerified` (boolean), `isEnabled` (boolean), `backupCodes` (text[], nullable), `lastUsedAt` (timestamptz, nullable). Implement RLS policies (e.g., users can select/update their own settings, inserts/deletes by service_role or specific backend role).
+    *   **Priority:** Low (Assuming it might exist but needs schema and RLS verification)
+
+55. **`any` Type Usage in `materialComparisonService.ts`:**
+    *   **File:** [`packages/server/src/services/comparison/materialComparisonService.ts`](packages/server/src/services/comparison/materialComparisonService.ts:1) (e.g., [line 226-227](packages/server/src/services/comparison/materialComparisonService.ts:226-227), [line 428](packages/server/src/services/comparison/materialComparisonService.ts:428))
+    *   **Issue:** `material1`, `material2` parameters, and `material` in `getPropertyValue` are typed as `any`.
+    *   **Impact:** Reduces TypeScript type safety.
+    *   **Action:** Use a more specific type (e.g., Prisma `Material` type or a shared material type if available).
+    *   **Priority:** Low
+
+56. **Placeholder `saveComparisonResult` in `materialComparisonService.ts`:**
+    *   **File:** [`packages/server/src/services/comparison/materialComparisonService.ts`](packages/server/src/services/comparison/materialComparisonService.ts:698)
+    *   **Issue:** The `saveComparisonResult` method is a placeholder.
+    *   **Impact:** Comparison results are not persisted.
+    *   **Action:** Implement the database insertion logic using Prisma to save the `ComparisonResult` to the `comparison_results` table (or equivalent).
+    *   **Priority:** Low

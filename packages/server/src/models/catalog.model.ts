@@ -16,6 +16,7 @@ export interface CatalogDocument extends Document {
   name: string;
   description?: string;
   manufacturer?: string;
+  factoryId?: string; // Added factoryId
   originalFilePath: string;
   s3Key?: string;
   s3Url?: string;
@@ -64,6 +65,11 @@ const catalogSchema = new Schema<CatalogDocument>(
     manufacturer: {
       type: String,
       trim: true
+    },
+    factoryId: { // Added factoryId schema definition
+      type: String,
+      trim: true,
+      index: true // Added index for factoryId
     },
     originalFilePath: {
       type: String,
@@ -156,6 +162,7 @@ const catalogSchema = new Schema<CatalogDocument>(
 catalogSchema.index({ id: 1 }, { unique: true });
 catalogSchema.index({ name: 1 });
 catalogSchema.index({ manufacturer: 1 });
+// factoryId index is already added inline
 catalogSchema.index({ status: 1 });
 catalogSchema.index({ createdBy: 1 });
 catalogSchema.index({ createdAt: 1 });
