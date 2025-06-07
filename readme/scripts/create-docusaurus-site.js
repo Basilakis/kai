@@ -1028,6 +1028,9 @@ export default function Home() {
   );
 }`;
 
+// Create src/pages directory if it doesn't exist
+fs.mkdirSync(path.join('kai-docs-temp', 'src', 'pages'), { recursive: true });
+
 fs.writeFileSync(
   path.join('kai-docs-temp', 'src', 'pages', 'index.js'),
   homepageContent
