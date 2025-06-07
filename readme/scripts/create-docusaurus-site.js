@@ -1028,14 +1028,6 @@ export default function Home() {
   );
 }`;
 
-// Create src/pages directory if it doesn't exist
-fs.mkdirSync(path.join('kai-docs-temp', 'src', 'pages'), { recursive: true });
-
-fs.writeFileSync(
-  path.join('kai-docs-temp', 'src', 'pages', 'index.js'),
-  homepageContent
-);
-
 // Create homepage CSS
 const homepageCssContent = `.heroBanner {
   padding: 4rem 0;
@@ -1063,10 +1055,15 @@ const homepageCssContent = `.heroBanner {
   width: 100%;
 }`;
 
-// Create pages directory and CSS file
+// Create pages directory and both files
 if (!fs.existsSync(path.join('kai-docs-temp', 'src', 'pages'))) {
   fs.mkdirSync(path.join('kai-docs-temp', 'src', 'pages'), { recursive: true });
 }
+
+fs.writeFileSync(
+  path.join('kai-docs-temp', 'src', 'pages', 'index.js'),
+  homepageContent
+);
 
 fs.writeFileSync(
   path.join('kai-docs-temp', 'src', 'pages', 'index.module.css'),
