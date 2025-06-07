@@ -138,6 +138,7 @@ const config = {
         docs: {
           sidebarPath: "./sidebars.js",
           routeBasePath: "readme",
+          sidebarCollapsed: false,
         },
         blog: false,
         theme: {
