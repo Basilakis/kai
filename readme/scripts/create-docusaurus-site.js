@@ -87,7 +87,7 @@ const sidebars = {
     },
     {
       type: "category",
-      label: "GitHub Actions",
+      label: "Deploy Automations",
       items: [
         "github-actions-overview",
         "docs-pr-creator-workflow",
@@ -95,7 +95,7 @@ const sidebars = {
     },
     {
       type: "category",
-      label: "RooCommander",
+      label: "Roo Dev",
       items: [
         "roocommander-overview",
         "roocommander-integration",

@@ -34,15 +34,41 @@ template_schema_doc = ".ruru/templates/toml-md/25_workflow_step_standard.md" # (
 ## Actions
 
 1.  Receive inputs: `task_directory`, `task_name`, `source_list`, `final_source_paths`, `generation_summary`, `generated_code_artifact_paths`, `repomix_config_used`.
-2.  Construct Markdown content for `README.md` including: Original sources (`source_list`), final paths used (`final_source_paths`), task name, task directory, generated artifacts (`generated_code_artifact_paths`), summary (`generation_summary`), and key parameters from `repomix_config_used` (like chunking strategy).
-3.  Define `readme_path` as `[task_directory]/README.md`.
-4.  Use `write_to_file` to save the content to `readme_path`.
+
+2.  **Check for existing README files in `/readme/` folder:**
+    *   Use `list_files` to scan the `/readme/` directory for existing README files
+    *   Look for files that might be related to the current task based on:
+        *   Similar naming patterns (e.g., matching `task_name` or related keywords)
+        *   Content relevance (if file names suggest relation to current work)
+    *   If related README files are found, note their paths for potential updates
+
+3.  **Determine README strategy:**
+    *   **If related existing README found:** Update the existing file by merging new information with existing content
+    *   **If no related README found:** Create a new README file in the `/readme/` folder
+
+4.  **Construct README content:**
+    *   For **new README:** Create Markdown content including: Original sources (`source_list`), final paths used (`final_source_paths`), task name, task directory, generated artifacts (`generated_code_artifact_paths`), summary (`generation_summary`), and key parameters from `repomix_config_used` (like chunking strategy)
+    *   For **existing README update:** Merge new information with existing content, preserving valuable existing documentation while adding new sections or updating relevant sections
+
+5.  **Define README path:**
+    *   **For new README:** Define `readme_path` as `/readme/[task_name]-[timestamp].md` or `/readme/[descriptive_name].md`
+    *   **For existing README:** Use the path of the existing file to be updated
+
+6.  **Save README file:**
+    *   Use `write_to_file` (for new files) or `apply_diff` (for updates) to save content to `readme_path`
+    *   Ensure the `/readme/` directory exists, create if necessary
 
 ## Acceptance Criteria
 
-*   `README.md` is successfully created at `readme_path`.
-*   The `readme_path` output is generated.
+*   Existing README files in `/readme/` folder are checked for relevance
+*   Related existing README files are updated with new information when found
+*   New README files are created in `/readme/` folder (not in root or `/docs`)
+*   The `readme_path` output points to the final README location in `/readme/` folder
+*   README content appropriately reflects either new creation or thoughtful update of existing content
 
 ## Error Handling
 
-*   If `write_to_file` fails, proceed to `EE_handle_error.md` or report failure.
+*   If `/readme/` directory doesn't exist, create it before proceeding
+*   If `list_files` fails on `/readme/` directory, proceed with new file creation
+*   If `write_to_file` or `apply_diff` fails, proceed to `EE_handle_error.md` or report failure
+*   If existing file update fails, fall back to creating a new file with timestamped name
