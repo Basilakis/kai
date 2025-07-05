@@ -10,8 +10,28 @@ import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../../utils/logger';
 import { QueueAdapter } from '../messaging/queueAdapter';
-import mongoose from 'mongoose';
-import SearchIndex, { SearchIndexDocument } from '../../models/searchIndex.model';
+import { supabaseClient } from '../../../../shared/src/services/supabase/supabaseClient';
+
+// TypeScript interfaces to replace MongoDB schema types
+interface SearchIndexDocument {
+  id: string;
+  name: string;
+  type: 'text' | 'vector' | 'hybrid';
+  entityType: string;
+  categoryId?: string;
+  config: {
+    fields?: string[];
+    vectorDimensions?: number;
+    similarity?: string;
+    [key: string]: any;
+  };
+  status: 'active' | 'inactive' | 'building' | 'error';
+  createdAt: string;
+  updatedAt: string;
+  lastIndexedAt?: string;
+  documentCount?: number;
+  metadata?: Record<string, any>;
+}
 
 // Queue Job Status Types
 export type IndexJobStatus = 
@@ -134,8 +154,13 @@ export class SearchIndexQueue {
     }
   ): Promise<string> {
     // Validate index exists
-    const index = await SearchIndex.findOne({ id: indexId });
-    if (!index) {
+    const { data: index, error } = await supabaseClient.getClient()
+      .from('search_indexes')
+      .select('*')
+      .eq('id', indexId)
+      .single();
+    
+    if (error || !index) {
       throw new Error(`Search index not found: ${indexId}`);
     }
 
@@ -195,8 +220,13 @@ export class SearchIndexQueue {
     }
   ): Promise<string> {
     // Validate index exists
-    const index = await SearchIndex.findOne({ id: indexId });
-    if (!index) {
+    const { data: index, error } = await supabaseClient.getClient()
+      .from('search_indexes')
+      .select('*')
+      .eq('id', indexId)
+      .single();
+    
+    if (error || !index) {
       throw new Error(`Search index not found: ${indexId}`);
     }
 
@@ -254,8 +284,8 @@ export class SearchIndexQueue {
     }
   ): Promise<string> {
     // Validate required fields
-    if (!indexData.name || !indexData.entityType || !indexData.indexType) {
-      throw new Error('Index name, entityType, and indexType are required');
+    if (!indexData.name || !indexData.entityType || !indexData.type) {
+      throw new Error('Index name, entityType, and type are required');
     }
 
     // Create a temporary ID for the index (will be replaced during processing)
@@ -636,14 +666,23 @@ export class SearchIndexQueue {
     }
 
     // Get the search index
-    const index = await SearchIndex.findOne({ id: job.indexId });
-    if (!index) {
+    const { data: index, error: indexError } = await supabaseClient.getClient()
+      .from('search_indexes')
+      .select('*')
+      .eq('id', job.indexId)
+      .single();
+    
+    if (indexError || !index) {
       throw new Error(`Search index not found: ${job.indexId}`);
     }
 
-    // Get entity model and entity
-    const Model = mongoose.model(job.entityType.charAt(0).toUpperCase() + job.entityType.slice(1));
-    const entity = await Model.findOne({ id: job.entityId });
+    // Get entity data from the appropriate table
+    const entityTableName = job.entityType.toLowerCase() + 's'; // Convert entityType to table name
+    const { data: entity, error: _entityError } = await supabaseClient.getClient()
+      .from(entityTableName)
+      .select('*')
+      .eq('id', job.entityId)
+      .single();
     
     if (!entity) {
       throw new Error(`Entity not found: ${job.entityId}`);
@@ -681,13 +720,17 @@ export class SearchIndexQueue {
     }
 
     // Update index status
-    await SearchIndex.updateOne(
-      { id: job.indexId },
-      { 
-        lastUpdateTime: new Date(),
-        $inc: { documentCount: 0 } // No change in document count for updates
-      }
-    );
+    const { error: updateError } = await supabaseClient.getClient()
+      .from('search_indexes')
+      .update({
+        lastUpdateTime: new Date().toISOString()
+        // Note: documentCount remains unchanged for updates
+      })
+      .eq('id', job.indexId);
+
+    if (updateError) {
+      throw new Error(`Failed to update search index status: ${updateError.message}`);
+    }
 
     // Update progress
     job.progress.indexed = 1;
@@ -707,30 +750,48 @@ export class SearchIndexQueue {
 
   /**
    * Process a rebuild job
-   * 
+   *
    * @param job Job to process
    */
   private async processRebuildJob(job: IndexQueueJob): Promise<void> {
     // Get the search index
-    const index = await SearchIndex.findOne({ id: job.indexId });
-    if (!index) {
+    const { data: index, error: indexError } = await supabaseClient.getClient()
+      .from('search_indexes')
+      .select('*')
+      .eq('id', job.indexId)
+      .single();
+
+    if (indexError || !index) {
       throw new Error(`Search index not found: ${job.indexId}`);
     }
 
     // Update index status to building
-    await SearchIndex.updateOne(
-      { id: job.indexId },
-      { 
+    const { error: updateError } = await supabaseClient.getClient()
+      .from('search_indexes')
+      .update({
         status: 'building',
-        lastUpdateTime: new Date()
-      }
-    );
+        lastUpdateTime: new Date().toISOString()
+      })
+      .eq('id', job.indexId);
 
-    // Get entity model
-    const Model = mongoose.model(job.entityType.charAt(0).toUpperCase() + job.entityType.slice(1));
+    if (updateError) {
+      throw new Error(`Failed to update search index status: ${updateError.message}`);
+    }
+
+    // Get entity table name
+    const tableName = job.entityType.toLowerCase() + 's';
     
-    // Count entities
-    const totalEntities = await Model.countDocuments();
+    // Count entities using proper Supabase count syntax
+    const { count, error: countError } = await supabaseClient.getClient()
+      .from(tableName)
+      .select('id')
+      .then(({ data, error }) => ({ count: data?.length || 0, error }));
+
+    if (countError) {
+      throw new Error(`Failed to count entities in table ${tableName}: ${countError.message}`);
+    }
+
+    const totalEntities = count || 0;
     
     // Update progress
     job.progress = {
@@ -760,13 +821,21 @@ export class SearchIndexQueue {
     const batchCount = Math.ceil(totalEntities / batchSize);
     
     for (let batchIndex = 0; batchIndex < batchCount; batchIndex++) {
-      // Get a batch of entities
-      const entities = await Model.find({})
-        .skip(batchIndex * batchSize)
-        .limit(batchSize);
+      // Get a batch of entities with pagination
+      const startIndex = batchIndex * batchSize;
+      const endIndex = startIndex + batchSize - 1;
+      
+      const { data: entities, error: entitiesError } = await supabaseClient.getClient()
+        .from(tableName)
+        .select('*')
+        .range(startIndex, endIndex);
+      
+      if (entitiesError) {
+        throw new Error(`Failed to fetch entities: ${entitiesError.message}`);
+      }
       
       // Process each entity in the batch
-      for (const entity of entities) {
+      for (const entity of entities || []) {
         try {
           // Process entity based on index type
           switch (index.indexType) {
@@ -813,15 +882,19 @@ export class SearchIndexQueue {
     }
 
     // Update index status to ready
-    await SearchIndex.updateOne(
-      { id: job.indexId },
-      { 
+    const { error: finalUpdateError } = await supabaseClient.getClient()
+      .from('search_indexes')
+      .update({
         status: 'ready',
-        lastBuildTime: new Date(),
-        lastUpdateTime: new Date(),
-        documentCount: indexedCount
-      }
-    );
+        last_build_time: new Date().toISOString(),
+        last_update_time: new Date().toISOString(),
+        document_count: indexedCount
+      })
+      .eq('id', job.indexId);
+
+    if (finalUpdateError) {
+      throw new Error(`Failed to update search index: ${finalUpdateError.message}`);
+    }
 
     // Final progress update
     job.progress = {
@@ -858,17 +931,26 @@ export class SearchIndexQueue {
 
     // Create the search index
     const indexId = uuidv4();
-    const searchIndex = await SearchIndex.create({
-      id: indexId,
-      name: indexData.name,
-      entityType: indexData.entityType,
-      indexType: indexData.indexType,
-      status: 'building',
-      createdAt: new Date(),
-      lastUpdateTime: new Date(),
-      documentCount: 0,
-      ...indexData
-    });
+    const { data: searchIndex, error: createError } = await supabaseClient.getClient()
+      .from('search_indexes')
+      .insert({
+        id: indexId,
+        name: indexData.name,
+        entity_type: indexData.entityType,
+        type: indexData.type,
+        status: 'building',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        document_count: 0,
+        config: indexData.config || {},
+        metadata: indexData.metadata || {}
+      })
+      .select()
+      .single();
+
+    if (createError) {
+      throw new Error(`Failed to create search index: ${createError.message}`);
+    }
 
     // Update the job with the new index ID
     job.indexId = indexId;
@@ -885,11 +967,19 @@ export class SearchIndexQueue {
     });
 
     // Now perform a full build of the index (similar to rebuild job)
-    // Get entity model
-    const Model = mongoose.model(job.entityType.charAt(0).toUpperCase() + job.entityType.slice(1));
+    // Get table name for entity type
+    const tableName = job.entityType.toLowerCase() + 's';
     
-    // Count entities
-    const totalEntities = await Model.countDocuments();
+    // Count entities using Supabase
+    const { count, error: countError } = await supabaseClient.getClient()
+      .from(tableName)
+      .select('*', { count: 'exact', head: true });
+
+    if (countError) {
+      throw new Error(`Failed to count entities: ${countError.message}`);
+    }
+
+    const totalEntities = count || 0;
     
     // Update progress
     job.progress = {
@@ -920,9 +1010,13 @@ export class SearchIndexQueue {
     
     for (let batchIndex = 0; batchIndex < batchCount; batchIndex++) {
       // Get a batch of entities
-      const entities = await Model.find({})
-        .skip(batchIndex * batchSize)
-        .limit(batchSize);
+      const { data: entities, error: entitiesError } = await supabaseClient.getClient()
+        .from(tableName)
+        .select('*');
+      
+      if (entitiesError) {
+        throw new Error(`Failed to fetch entities: ${entitiesError.message}`);
+      }
       
       // Process each entity in the batch
       for (const entity of entities) {
@@ -975,15 +1069,19 @@ export class SearchIndexQueue {
     }
 
     // Update index status to ready
-    await SearchIndex.updateOne(
-      { id: job.indexId },
-      { 
+    const { error: finalUpdateError } = await supabaseClient.getClient()
+      .from('search_indexes')
+      .update({
         status: 'ready',
-        lastBuildTime: new Date(),
-        lastUpdateTime: new Date(),
-        documentCount: indexedCount
-      }
-    );
+        last_build_time: new Date().toISOString(),
+        last_update_time: new Date().toISOString(),
+        document_count: indexedCount
+      })
+      .eq('id', job.indexId);
+
+    if (finalUpdateError) {
+      throw new Error(`Failed to update search index status: ${finalUpdateError.message}`);
+    }
 
     // Final progress update
     job.progress = {

@@ -93,7 +93,7 @@ export async function processPdfCatalog(
     userId: string;
     catalogName: string;
     manufacturer?: string;
-    factoryId?: string; // Added factoryId
+    factoryId: string; // Made factoryId mandatory
     extractImages?: boolean;
     extractText?: boolean;
     associateTextWithImages?: boolean;
@@ -112,6 +112,11 @@ export async function processPdfCatalog(
   };
 
   try {
+    // Validate factory selection is provided
+    if (!options.factoryId || options.factoryId.trim() === '') {
+      throw new ApiError(400, 'Factory selection is required for catalog import');
+    }
+
     // Validate file exists
     if (!fs.existsSync(filePath)) {
       throw new ApiError(404, `PDF file not found: ${filePath}`);
@@ -535,47 +540,132 @@ function extractMaterialProperties(text: string): any {
     };
   }
 
-  // Extract color
-  const colorMatch = text.match(/colou?r:?\s*([a-zA-Z\s]+)/i);
-  if (colorMatch) {
-    properties.color = {
-      name: colorMatch[1]?.trim() || 'Unknown',
-      primary: true
-    };
-    properties.tags.push(colorMatch[1]?.trim().toLowerCase() || 'unknown');
-  }
+  // Use NLP matching service for intelligent tag extraction
+  try {
+    const { tagMatchingService } = await import('../nlp/tagMatchingService');
+    
+    // Find matching tags across all categories using NLP
+    const tagMatches = await tagMatchingService.findTagsForAllCategories(text,
+      ['colors', 'material_types', 'finishes', 'collections', 'technical_specs'],
+      {
+        minConfidence: 0.7,
+        enableFuzzyMatching: true,
+        enableSynonymMatching: true
+      }
+    );
 
-  // Extract material type
-  const materialTypes = ['ceramic', 'porcelain', 'natural stone', 'glass', 'metal', 'concrete', 'terrazzo', 'mosaic'];
-  for (const type of materialTypes) {
-    if (text.toLowerCase().includes(type)) {
-      properties.materialType = type === 'natural stone' ? 'stone' : type;
-      properties.tags.push(type);
-      break;
+    // Process color matches
+    if (tagMatches.colors && tagMatches.colors.length > 0) {
+      const bestColorMatch = tagMatches.colors[0];
+      properties.color = {
+        name: bestColorMatch.tagName,
+        primary: true
+      };
+      properties.tags.push(bestColorMatch.tagName.toLowerCase());
+      
+      // Log the tag matching for analytics
+      await tagMatchingService.logTagMatching({
+        extractedText: text.substring(0, 200), // Limit text length for logging
+        matchedTagId: bestColorMatch.tagId,
+        confidenceScore: bestColorMatch.confidenceScore,
+        matchingMethod: bestColorMatch.matchingMethod,
+        categoryName: 'colors'
+      });
     }
-  }
 
-  // Extract finish
-  const finishes = ['matte', 'glossy', 'polished', 'honed', 'textured', 'brushed', 'lappato', 'satin'];
-  for (const finish of finishes) {
-    if (text.toLowerCase().includes(finish)) {
-      properties.finish = finish;
-      properties.tags.push(finish);
-      break;
+    // Process material type matches
+    if (tagMatches.material_types && tagMatches.material_types.length > 0) {
+      const bestMaterialMatch = tagMatches.material_types[0];
+      properties.materialType = bestMaterialMatch.tagName.toLowerCase();
+      properties.tags.push(bestMaterialMatch.tagName.toLowerCase());
+      
+      await tagMatchingService.logTagMatching({
+        extractedText: text.substring(0, 200),
+        matchedTagId: bestMaterialMatch.tagId,
+        confidenceScore: bestMaterialMatch.confidenceScore,
+        matchingMethod: bestMaterialMatch.matchingMethod,
+        categoryName: 'material_types'
+      });
     }
-  }
 
-  // Extract collection/series
-  const collectionMatch = text.match(/collection:?\s*([a-zA-Z\s]+)/i);
-  if (collectionMatch) {
-    properties.collection = collectionMatch[1]?.trim() || '';
-    properties.tags.push(collectionMatch[1]?.trim().toLowerCase() || '');
-  }
+    // Process finish matches
+    if (tagMatches.finishes && tagMatches.finishes.length > 0) {
+      const bestFinishMatch = tagMatches.finishes[0];
+      properties.finish = bestFinishMatch.tagName.toLowerCase();
+      properties.tags.push(bestFinishMatch.tagName.toLowerCase());
+      
+      await tagMatchingService.logTagMatching({
+        extractedText: text.substring(0, 200),
+        matchedTagId: bestFinishMatch.tagId,
+        confidenceScore: bestFinishMatch.confidenceScore,
+        matchingMethod: bestFinishMatch.matchingMethod,
+        categoryName: 'finishes'
+      });
+    }
 
-  const seriesMatch = text.match(/series:?\s*([a-zA-Z\s]+)/i);
-  if (seriesMatch) {
-    properties.series = seriesMatch[1]?.trim() || '';
-    properties.tags.push(seriesMatch[1]?.trim().toLowerCase() || '');
+    // Process collection matches
+    if (tagMatches.collections && tagMatches.collections.length > 0) {
+      const bestCollectionMatch = tagMatches.collections[0];
+      properties.collection = bestCollectionMatch.tagName;
+      properties.tags.push(bestCollectionMatch.tagName.toLowerCase());
+      
+      await tagMatchingService.logTagMatching({
+        extractedText: text.substring(0, 200),
+        matchedTagId: bestCollectionMatch.tagId,
+        confidenceScore: bestCollectionMatch.confidenceScore,
+        matchingMethod: bestCollectionMatch.matchingMethod,
+        categoryName: 'collections'
+      });
+    }
+
+    // Process technical specifications matches
+    if (tagMatches.technical_specs && tagMatches.technical_specs.length > 0) {
+      // Add all technical specs as tags (they don't map to specific properties)
+      for (const techMatch of tagMatches.technical_specs) {
+        properties.tags.push(techMatch.tagName.toLowerCase());
+        
+        await tagMatchingService.logTagMatching({
+          extractedText: text.substring(0, 200),
+          matchedTagId: techMatch.tagId,
+          confidenceScore: techMatch.confidenceScore,
+          matchingMethod: techMatch.matchingMethod,
+          categoryName: 'technical_specs'
+        });
+      }
+    }
+
+  } catch (error) {
+    console.error('Error using NLP tag matching service:', error);
+    
+    // Fallback to basic pattern matching if NLP service fails
+    const colorMatch = text.match(/colou?r:?\s*([a-zA-Z\s]+)/i);
+    if (colorMatch) {
+      properties.color = {
+        name: colorMatch[1]?.trim() || 'Unknown',
+        primary: true
+      };
+      properties.tags.push(colorMatch[1]?.trim().toLowerCase() || 'unknown');
+    }
+
+    // Basic material type fallback
+    const materialTypes = ['ceramic', 'porcelain', 'natural stone', 'glass', 'metal', 'concrete', 'terrazzo', 'mosaic'];
+    for (const type of materialTypes) {
+      if (text.toLowerCase().includes(type)) {
+        properties.materialType = type === 'natural stone' ? 'stone' : type;
+        properties.tags.push(type);
+        break;
+      }
+    }
+
+    // Basic finish fallback
+    const finishes = ['matte', 'glossy', 'polished', 'honed', 'textured', 'brushed', 'lappato', 'satin'];
+    for (const finish of finishes) {
+      if (text.toLowerCase().includes(finish)) {
+        properties.finish = finish;
+        properties.tags.push(finish);
+        break;
+      }
+    }
   }
 
   // Extract technical specifications

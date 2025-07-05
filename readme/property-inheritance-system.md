@@ -105,7 +105,7 @@ Property inheritance is automatically applied when creating or updating material
 
 ### Property Template Model
 
-The Property Template model is implemented as a Mongoose schema in `packages/server/src/models/propertyTemplate.model.ts`.
+The Property Template model is implemented using Supabase PostgreSQL in `packages/server/src/models/propertyTemplate.model.ts`.
 
 ### Property Inheritance Service
 

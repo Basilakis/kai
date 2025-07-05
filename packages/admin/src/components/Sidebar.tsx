@@ -51,6 +51,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, closeSidebar }) => {
     { name: 'Training Monitor', href: '/training', icon: ChartBarIcon },
     { name: 'Training Status', href: '/training-status', icon: ChartBarIcon },
     { name: 'Datasets', href: '/datasets', icon: DatabaseIcon },
+    { name: 'Hugging Face Training', href: '/huggingface-training', icon: ServerIcon },
     { name: 'Deployment', href: '/deployment', icon: ServerIcon },
     { name: 'Grafana Dashboards', href: '/monitoring/grafana', icon: ChartBarIcon },
     { name: 'Dependency Management', href: '/dependency-management', icon: CogIcon },

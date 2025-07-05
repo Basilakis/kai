@@ -1,14 +1,15 @@
 /**
  * Entity Linking Service
- * 
+ *
  * This service detects and links entities (materials, collections, properties)
  * mentioned in material descriptions, allowing for automatic cross-referencing
  * and enhanced relationships between knowledge base entities.
+ *
+ * Migrated from MongoDB to Supabase/PostgreSQL.
  */
 
-import mongoose from 'mongoose';
 import { logger } from '../../utils/logger';
-import { createMaterialRelationship } from '../../models/materialRelationship.model';
+import { supabaseClient } from '../supabase/supabaseClient';
 
 // Interface for entity detection results
 interface DetectedEntity {
@@ -113,14 +114,21 @@ export class EntityLinkingService {
    */
   private async refreshMaterialNamesCache(): Promise<void> {
     try {
-      const Material = mongoose.model('Material');
+      const client = supabaseClient.getClient();
       
-      // Get all material names and IDs
-      const materials = await Material.find({}, { id: 1, name: 1 });
+      // Get all material names and IDs from Supabase
+      const { data: materials, error } = await client
+        .from('materials')
+        .select('id, name')
+        .not('name', 'is', null);
+      
+      if (error) {
+        throw new Error(`Supabase error: ${error.message}`);
+      }
       
       // Clear and rebuild cache
       this.materialNamesCache.clear();
-      materials.forEach((material: any) => {
+      materials?.forEach((material: any) => {
         if (material.name && material.name.length > 2) {
           this.materialNamesCache.set(material.name.toLowerCase(), material.id);
         }
@@ -137,14 +145,21 @@ export class EntityLinkingService {
    */
   private async refreshCollectionNamesCache(): Promise<void> {
     try {
-      const Collection = mongoose.model('Collection');
+      const client = supabaseClient.getClient();
       
-      // Get all collection names and IDs
-      const collections = await Collection.find({}, { id: 1, name: 1 });
+      // Get all collection names and IDs from Supabase
+      const { data: collections, error } = await client
+        .from('collections')
+        .select('id, name')
+        .not('name', 'is', null);
+      
+      if (error) {
+        throw new Error(`Supabase error: ${error.message}`);
+      }
       
       // Clear and rebuild cache
       this.collectionNamesCache.clear();
-      collections.forEach((collection: any) => {
+      collections?.forEach((collection: any) => {
         if (collection.name && collection.name.length > 2) {
           this.collectionNamesCache.set(collection.name.toLowerCase(), collection.id);
         }
@@ -449,20 +464,27 @@ export class EntityLinkingService {
       for (const entity of entities) {
         if (entity.type === 'material' && entity.id && entity.id !== materialId) {
           try {
-            // Create a relationship between the materials
-            await createMaterialRelationship({
-              sourceMaterialId: materialId,
-              targetMaterialId: entity.id,
-              relationshipType: relationshipType as any,
-              strength: entity.confidence,
-              bidirectional: true,
-              createdBy: userId,
-              metadata: {
-                description: `Detected reference to ${entity.text} in material description`,
-                detectionConfidence: entity.confidence,
-                autoDetected: true
-              }
-            });
+            // Create a relationship between the materials using Supabase
+            const client = supabaseClient.getClient();
+            const { error } = await client
+              .from('material_relationships')
+              .insert({
+                source_material_id: materialId,
+                target_material_id: entity.id,
+                relationship_type: relationshipType,
+                strength: entity.confidence,
+                bidirectional: true,
+                created_by: userId,
+                metadata: {
+                  description: `Detected reference to ${entity.text} in material description`,
+                  detectionConfidence: entity.confidence,
+                  autoDetected: true
+                }
+              });
+            
+            if (error) {
+              throw new Error(`Supabase error: ${error.message}`);
+            }
             
             relationships.push({
               sourceMaterialId: materialId,
@@ -521,19 +543,30 @@ export class EntityLinkingService {
       let entitiesDetected = 0;
       let relationshipsCreated = 0;
       
-      // Get Material model
-      const Material = mongoose.model('Material');
+      // Get Supabase client
+      const client = supabaseClient.getClient();
       
       // Count total materials to process
-      const totalMaterials = await Material.countDocuments(filter);
+      const { count: totalMaterials, error: countError } = await client
+        .from('materials')
+        .select('*', { count: 'exact', head: true });
+      
+      if (countError) {
+        throw new Error(`Failed to count materials: ${countError.message}`);
+      }
       
       // Process in batches
-      for (let skip = 0; skip < totalMaterials; skip += batchSize) {
-        // Get batch of materials
-        const materials = await Material.find(
-          filter,
-          { id: 1, description: 1 }
-        ).skip(skip).limit(batchSize);
+      for (let skip = 0; skip < (totalMaterials || 0); skip += batchSize) {
+        // Get batch of materials from Supabase
+        const { data: materials, error } = await client
+          .from('materials')
+          .select('id, description')
+          .not('description', 'is', null)
+          .range(skip, skip + batchSize - 1);
+        
+        if (error) {
+          throw new Error(`Failed to fetch materials batch: ${error.message}`);
+        }
         
         // Process each material
         for (const material of materials) {

@@ -357,6 +357,18 @@ router.post('/:id/start', authMiddleware, authorizeRoles(['admin']), asyncHandle
   if (!config) {
     throw new ApiError(404, `Crawler configuration not found with id ${req.params.id}`);
   }
+
+  // Validate that factoryId is provided in the request body
+  const { factoryId } = req.body;
+  if (!factoryId || factoryId.trim() === '') {
+    throw new ApiError(400, 'Factory selection is required for web crawling operations');
+  }
+
+  // Create updated config with factoryId
+  const configWithFactory = {
+    ...config,
+    factoryId: factoryId.trim()
+  };
   
   // Get job options from request
   const options: QueueJobOptions = {
@@ -368,7 +380,7 @@ router.post('/:id/start', authMiddleware, authorizeRoles(['admin']), asyncHandle
   };
   
   // Add the job to the queue
-  const jobId = await crawlerQueue.addJob(config, options);
+  const jobId = await crawlerQueue.addJob(configWithFactory, options);
   
   res.status(200).json({
     success: true,

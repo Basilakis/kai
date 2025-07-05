@@ -98,34 +98,6 @@ declare module '@supabase/supabase-js' {
 }
 
 // Node.js module declarations
-declare module 'mongoose' {
-  export interface Connection {
-    readyState: number;
-  }
-
-  export interface Model<T> {
-    find(conditions?: any): Query<T[], T>;
-    findOne(conditions?: any): Query<T | null, T>;
-    findById(id: any): Query<T | null, T>;
-    countDocuments(conditions?: any): Promise<number>;
-    create(doc: any): Promise<T>;
-    updateOne(conditions: any, doc: any): Promise<any>;
-    deleteOne(conditions: any): Promise<any>;
-  }
-
-  export interface Query<ResultType, DocType> {
-    where(path: string): any;
-    gt(val: any): this;
-    skip(val: number): this;
-    limit(val: number): this;
-    lean(): this;
-    exec(): Promise<ResultType>;
-  }
-
-  export function connect(uri: string, options?: any): Promise<any>;
-  export function model<T>(name: string, schema: any): Model<T>;
-  export default mongoose;
-}
 
 // Stream module
 declare module 'stream' {
@@ -150,25 +122,4 @@ declare module 'fs' {
   export function unlinkSync(path: string): void;
   export function createReadStream(path: string, options?: any): NodeJS.ReadableStream;
   export const constants: { F_OK: number; R_OK: number; W_OK: number; X_OK: number };
-}
-
-// Model imports
-declare module '../../models/material.model' {
-  import { Model } from 'mongoose';
-  export const MaterialModel: Model<any>;
-}
-
-declare module '../../models/collection.model' {
-  import { Model } from 'mongoose';
-  export const CollectionModel: Model<any>;
-}
-
-declare module '../../models/metadataField.model' {
-  import { Model } from 'mongoose';
-  export const MetadataFieldModel: Model<any>;
-}
-
-declare module '../../models/version.model' {
-  import { Model } from 'mongoose';
-  export const VersionModel: Model<any>;
 }

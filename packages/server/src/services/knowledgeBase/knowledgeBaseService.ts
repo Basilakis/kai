@@ -6,7 +6,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import mongoose from 'mongoose';
+import { supabaseClient } from '../supabase/supabaseClient';
 import { logger } from '../../utils/logger';
 import { messageBrokerFactory } from '../messaging/messageBrokerFactory';
 import { entityLinkingService } from './entityLinking.service';
@@ -192,7 +192,7 @@ export class KnowledgeBaseService {
 
   /**
    * Execute standard (non-vector) search
-   * 
+   *
    * @param options Search options
    * @param strategy Search strategy to use
    * @param paginationOptions Pagination options
@@ -206,20 +206,20 @@ export class KnowledgeBaseService {
     // Build search filter based on criteria
     const searchFilter = this.buildSearchFilter(options, strategy);
 
-    // Get the Material model
-    const Material = mongoose.model('Material');
+    // Get Supabase client
+    const supabase = supabaseClient.getClient();
 
     // Execute the search with proper pagination and projection
     const { materials, total } = await this.executeSearch(
-      Material, 
-      searchFilter, 
+      supabase,
+      searchFilter,
       paginationOptions
     );
 
     // Calculate facets if metadata or combined search strategy is used
     let facets: Record<string, any> | undefined;
     if (
-      strategy === SearchStrategy.METADATA || 
+      strategy === SearchStrategy.METADATA ||
       strategy === SearchStrategy.COMBINED
     ) {
       facets = await this.calculateFacets(searchFilter);
@@ -229,14 +229,66 @@ export class KnowledgeBaseService {
   }
 
   /**
+   * Build Supabase query with filters applied
+   *
+   * @param query Base Supabase query builder
+   * @param filter MongoDB-style filter object
+   * @returns Supabase query with filters applied
+   */
+  private buildSupabaseQuery(query: any, filter: Record<string, any>): any {
+    let supabaseQuery = query;
+
+    // Apply each filter condition
+    Object.entries(filter).forEach(([key, value]) => {
+      if (value === null || value === undefined) return;
+
+      if (key === '$text' && value.$search) {
+        // Convert MongoDB text search to Supabase text search
+        const searchTerm = value.$search;
+        supabaseQuery = supabaseQuery.or(`name.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%`);
+      } else if (key === '$or' && Array.isArray(value)) {
+        // Convert MongoDB $or to Supabase or conditions
+        const orConditions = value.map((condition: any) => {
+          return Object.entries(condition).map(([field, val]: [string, any]) => {
+            if (val.$regex) {
+              return `${field}.ilike.%${val.$regex}%`;
+            } else if (val.$in && Array.isArray(val.$in)) {
+              return `${field}.in.(${val.$in.join(',')})`;
+            }
+            return `${field}.eq.${val}`;
+          }).join(',');
+        }).join(',');
+        supabaseQuery = supabaseQuery.or(orConditions);
+      } else if (typeof value === 'object' && value !== null) {
+        // Handle MongoDB operators
+        if (value.$in && Array.isArray(value.$in)) {
+          supabaseQuery = supabaseQuery.in(key, value.$in);
+        } else if (value.$all && Array.isArray(value.$all)) {
+          // For arrays that must contain all values
+          value.$all.forEach((item: any) => {
+            supabaseQuery = supabaseQuery.contains(key, [item]);
+          });
+        } else if (value.$regex) {
+          supabaseQuery = supabaseQuery.ilike(key, `%${value.$regex}%`);
+        }
+      } else {
+        // Simple equality
+        supabaseQuery = supabaseQuery.eq(key, value);
+      }
+    });
+
+    return supabaseQuery;
+  }
+
+  /**
    * Build search filter based on search criteria
-   * 
+   *
    * @param options Search options
    * @param strategy The search strategy being used
    * @returns MongoDB query filter
    */
   private buildSearchFilter(
-    options: MaterialSearchOptions, 
+    options: MaterialSearchOptions,
     strategy: SearchStrategy = SearchStrategy.TEXT
   ): Record<string, any> {
     const {
@@ -419,50 +471,116 @@ export class KnowledgeBaseService {
 
   /**
    * Calculate facets for a search query
-   * 
+   *
    * @param filter Search filter
    * @returns Facet values
    */
   private async calculateFacets(filter: Record<string, any>): Promise<Record<string, any>> {
     try {
-      // Get the Material model
-      const Material = mongoose.model('Material');
+      // Get Supabase client
+      const supabase = supabaseClient.getClient();
 
-      // Perform facet aggregation
-      const facetAggregation = await Material.aggregate([
-        { $match: filter },
-        {
-          $facet: {
-            materialTypes: [
-              { $group: { _id: '$materialType', count: { $sum: 1 } } },
-              { $sort: { count: -1 } }
-            ],
-            manufacturers: [
-              { $group: { _id: '$manufacturer', count: { $sum: 1 } } },
-              { $sort: { count: -1 } },
-              { $limit: 20 }
-            ],
-            colors: [
-              { $group: { _id: '$color.name', count: { $sum: 1 } } },
-              { $sort: { count: -1 } },
-              { $limit: 20 }
-            ],
-            finishes: [
-              { $group: { _id: '$finish', count: { $sum: 1 } } },
-              { $sort: { count: -1 } },
-              { $limit: 20 }
-            ],
-            tags: [
-              { $unwind: '$tags' },
-              { $group: { _id: '$tags', count: { $sum: 1 } } },
-              { $sort: { count: -1 } },
-              { $limit: 30 }
-            ]
-          }
-        }
+      // Convert MongoDB filter to Supabase query conditions
+      const supabaseQuery = this.buildSupabaseQuery(supabase.from('materials'), filter);
+
+      // Execute individual queries for each facet (replacing MongoDB $facet aggregation)
+      const [materialTypesResult, manufacturersResult, colorsResult, finishesResult, tagsResult] = await Promise.all([
+        // Material types facet
+        supabaseQuery
+          .select('materialType')
+          .then(({ data }) => {
+            if (!data) return [];
+            const counts = data.reduce((acc: Record<string, number>, item: any) => {
+              if (item.materialType) {
+                acc[item.materialType] = (acc[item.materialType] || 0) + 1;
+              }
+              return acc;
+            }, {});
+            return Object.entries(counts)
+              .map(([_id, count]) => ({ _id, count }))
+              .sort((a, b) => b.count - a.count);
+          }),
+
+        // Manufacturers facet
+        supabaseQuery
+          .select('manufacturer')
+          .then(({ data }) => {
+            if (!data) return [];
+            const counts = data.reduce((acc: Record<string, number>, item: any) => {
+              if (item.manufacturer) {
+                acc[item.manufacturer] = (acc[item.manufacturer] || 0) + 1;
+              }
+              return acc;
+            }, {});
+            return Object.entries(counts)
+              .map(([_id, count]) => ({ _id, count }))
+              .sort((a, b) => b.count - a.count)
+              .slice(0, 20);
+          }),
+
+        // Colors facet
+        supabaseQuery
+          .select('color')
+          .then(({ data }) => {
+            if (!data) return [];
+            const counts = data.reduce((acc: Record<string, number>, item: any) => {
+              if (item.color?.name) {
+                acc[item.color.name] = (acc[item.color.name] || 0) + 1;
+              }
+              return acc;
+            }, {});
+            return Object.entries(counts)
+              .map(([_id, count]) => ({ _id, count }))
+              .sort((a, b) => b.count - a.count)
+              .slice(0, 20);
+          }),
+
+        // Finishes facet
+        supabaseQuery
+          .select('finish')
+          .then(({ data }) => {
+            if (!data) return [];
+            const counts = data.reduce((acc: Record<string, number>, item: any) => {
+              if (item.finish) {
+                acc[item.finish] = (acc[item.finish] || 0) + 1;
+              }
+              return acc;
+            }, {});
+            return Object.entries(counts)
+              .map(([_id, count]) => ({ _id, count }))
+              .sort((a, b) => b.count - a.count)
+              .slice(0, 20);
+          }),
+
+        // Tags facet
+        supabaseQuery
+          .select('tags')
+          .then(({ data }) => {
+            if (!data) return [];
+            const counts = data.reduce((acc: Record<string, number>, item: any) => {
+              if (item.tags && Array.isArray(item.tags)) {
+                item.tags.forEach((tag: string) => {
+                  if (tag) {
+                    acc[tag] = (acc[tag] || 0) + 1;
+                  }
+                });
+              }
+              return acc;
+            }, {});
+            return Object.entries(counts)
+              .map(([_id, count]) => ({ _id, count }))
+              .sort((a, b) => b.count - a.count)
+              .slice(0, 30);
+          })
       ]);
 
-      return facetAggregation[0];
+      return {
+        materialTypes: materialTypesResult,
+        manufacturers: manufacturersResult,
+        colors: colorsResult,
+        finishes: finishesResult,
+        tags: tagsResult
+      };
     } catch (err) {
       logger.error(`Failed to calculate facets: ${err}`);
       return {};
@@ -494,9 +612,8 @@ export class KnowledgeBaseService {
         sort = { name: 1 }
       } = options;
 
-      // Get Mongoose models
-      const Collection = mongoose.model('Collection');
-      const Material = mongoose.model('Material'); // Needed for lookup
+      // Get Supabase client
+      const supabase = supabaseClient.getClient();
 
       // Base filter for collections
       const matchFilter: Record<string, any> = {};
@@ -506,61 +623,78 @@ export class KnowledgeBaseService {
         matchFilter.parentId = { $exists: false }; // Top-level collections
       }
 
-      // Define base aggregation pipeline stages (before filtering empty and pagination)
-      const basePipeline: any[] = [
-        { $match: matchFilter }, // Filter collections first
-        {
-          $lookup: { // Join with materials to count them
-            from: Material.collection.name, // Use actual collection name from model
-            localField: 'id', // Assuming 'id' is the field in Collection model
-            foreignField: 'collectionId', // Assuming 'collectionId' is the field in Material model
-            as: 'materials'
-          }
-        },
-        {
-          $addFields: { // Calculate materialCount
-            materialCount: { $size: '$materials' }
-          }
-        },
-        { $project: { materials: 0 } } // Remove the joined materials array
-      ];
+      // Convert MongoDB aggregation to Supabase queries
+      // First, get collections with basic filtering
+      let collectionsQuery = supabase
+        .from('collections')
+        .select('*');
 
-      // Define pipeline for counting total matching collections (respecting includeEmpty)
-      const countPipeline: any[] = [...basePipeline];
-      if (!includeEmpty) {
-        // Apply the empty filter *before* counting
-        countPipeline.push({ $match: { materialCount: { $gt: 0 } } });
+      // Apply parentId filter
+      if (parentId) {
+        collectionsQuery = collectionsQuery.eq('parentId', parentId);
+      } else {
+        collectionsQuery = collectionsQuery.is('parentId', null); // Top-level collections
       }
-      countPipeline.push({ $count: 'total' });
 
-      // Define pipeline for fetching paginated results
-      const resultsPipeline: any[] = [...basePipeline];
-      if (!includeEmpty) {
-        // Apply the empty filter before pagination
-        resultsPipeline.push({ $match: { materialCount: { $gt: 0 } } });
+      // Get collections data
+      const { data: collections, error: collectionsError } = await collectionsQuery;
+      
+      if (collectionsError) {
+        throw new Error(`Failed to fetch collections: ${collectionsError.message}`);
       }
-      // Apply sorting, skipping, limiting
-      resultsPipeline.push({ $sort: sort });
-      resultsPipeline.push({ $skip: skip });
-      resultsPipeline.push({ $limit: limit });
 
-      // Execute both pipelines (count and results)
-      // Using $facet might be slightly more efficient if DB supports it well,
-      // but running two separate aggregations is often clearer.
-      const [totalResult, collectionsWithCount] = await Promise.all([
-        Collection.aggregate(countPipeline),
-        Collection.aggregate(resultsPipeline)
-      ]);
+      if (!collections || collections.length === 0) {
+        return { collections: [], total: 0 };
+      }
 
-      const total = totalResult.length > 0 ? totalResult[0].total : 0;
+      // Get material counts for each collection
+      const collectionIds = collections.map(c => c.id);
+      const { data: materialCounts, error: countsError } = await supabase
+        .from('materials')
+        .select('collectionId')
+        .in('collectionId', collectionIds);
 
-      // Ensure the result type matches the expected return type
-      // Mongoose aggregate returns plain objects, not full documents by default
-      // If full document methods are needed later, consider hydrating the results
-      const typedCollections = collectionsWithCount as Array<CollectionDocument & { materialCount: number }>;
+      if (countsError) {
+        throw new Error(`Failed to fetch material counts: ${countsError.message}`);
+      }
+
+      // Calculate material count for each collection
+      const countMap = (materialCounts || []).reduce((acc: Record<string, number>, material: any) => {
+        acc[material.collectionId] = (acc[material.collectionId] || 0) + 1;
+        return acc;
+      }, {});
+
+      // Add materialCount to each collection
+      const collectionsWithCount = collections.map(collection => ({
+        ...collection,
+        materialCount: countMap[collection.id] || 0
+      }));
+
+      // Filter out empty collections if needed
+      let filteredCollections = collectionsWithCount;
+      if (!includeEmpty) {
+        filteredCollections = collectionsWithCount.filter(c => c.materialCount > 0);
+      }
+
+      // Apply sorting
+      const sortField = Object.keys(sort)[0];
+      const sortDirection = sort[sortField];
+      filteredCollections.sort((a, b) => {
+        const aVal = a[sortField];
+        const bVal = b[sortField];
+        if (sortDirection === 1) {
+          return aVal > bVal ? 1 : aVal < bVal ? -1 : 0;
+        } else {
+          return aVal < bVal ? 1 : aVal > bVal ? -1 : 0;
+        }
+      });
+
+      // Apply pagination
+      const total = filteredCollections.length;
+      const paginatedCollections = filteredCollections.slice(skip, skip + limit);
 
       return {
-        collections: typedCollections,
+        collections: paginatedCollections,
         total
       };
     } catch (err) {
@@ -585,45 +719,59 @@ export class KnowledgeBaseService {
     userId: string
   ): Promise<MaterialType> {
     try {
-      // Get the Material model
-      const Material = mongoose.model('Material');
-      const Version = mongoose.model('Version');
+      // Get Supabase client
+      const supabase = supabaseClient.getClient();
       
       // Find current material
-      const currentMaterial = await Material.findOne({ id: materialId });
+      const { data: currentMaterial, error: materialError } = await supabase
+        .from('materials')
+        .select('*')
+        .eq('id', materialId)
+        .single();
+      
+      if (materialError) {
+        throw new Error(`Failed to fetch material: ${materialError.message}`);
+      }
       if (!currentMaterial) {
         throw new Error(`Material not found: ${materialId}`);
       }
       
       // Create version record
       const versionId = uuidv4();
-      const version = new Version({
-        id: versionId,
-        entityId: materialId,
-        entityType: 'material',
-        previousData: currentMaterial.toObject(),
-        createdBy: userId,
-        changeDescription: updateData.metadata?.changeDescription || 'Material updated'
-      });
+      const { error: versionError } = await supabase
+        .from('versions')
+        .insert({
+          id: versionId,
+          entityId: materialId,
+          entityType: 'material',
+          previousData: currentMaterial,
+          createdBy: userId,
+          changeDescription: updateData.metadata?.changeDescription || 'Material updated'
+        });
       
-      await version.save();
+      if (versionError) {
+        throw new Error(`Failed to create version: ${versionError.message}`);
+      }
       
-      // Update material and add version reference
-      const updatedMaterial = await Material.findOneAndUpdate(
-        { id: materialId },
-        { 
+      // Update material with version reference
+      const { data: updatedMaterial, error: updateError } = await supabase
+        .from('materials')
+        .update({
           ...updateData,
-          updatedAt: new Date(),
-          $push: { 
-            versions: {
-              versionId,
-              createdAt: new Date(),
-              createdBy: userId
-            }
-          }
-        },
-        { new: true }
-      );
+          updatedAt: new Date().toISOString(),
+          versions: [...(currentMaterial.versions || []), {
+            versionId,
+            createdAt: new Date().toISOString(),
+            createdBy: userId
+          }]
+        })
+        .eq('id', materialId)
+        .select()
+        .single();
+      
+      if (updateError) {
+        throw new Error(`Failed to update material: ${updateError.message}`);
+      }
       
       // Update search indexes
       await this.updateSearchIndexes('material', materialId);
@@ -649,54 +797,70 @@ export class KnowledgeBaseService {
     userId: string
   ): Promise<MaterialType> {
     try {
-      // Get the Material and Version models
-      const Material = mongoose.model('Material');
-      const Version = mongoose.model('Version');
+      const supabase = supabaseClient.getClient();
       
       // Find version to revert to
-      const version = await Version.findOne({ id: versionId, entityId: materialId });
-      if (!version) {
+      const { data: version, error: versionError } = await supabase
+        .from('versions')
+        .select('*')
+        .eq('id', versionId)
+        .eq('entityId', materialId)
+        .single();
+
+      if (versionError || !version) {
         throw new NotFoundError('Version', versionId, { materialId });
       }
       
       // Find current material
-      const currentMaterial = await Material.findOne({ id: materialId });
-      if (!currentMaterial) {
+      const { data: currentMaterial, error: materialError } = await supabase
+        .from('materials')
+        .select('*')
+        .eq('id', materialId)
+        .single();
+
+      if (materialError || !currentMaterial) {
         throw new NotFoundError('Material', materialId);
       }
       
       // Create new version record for the revert operation
       const newVersionId = uuidv4();
-      const newVersion = new Version({
-        id: newVersionId,
-        entityId: materialId,
-        entityType: 'material',
-        previousData: currentMaterial.toObject(),
-        createdBy: userId,
-        changeDescription: `Reverted to version ${versionId}`
-      });
-      
-      await newVersion.save();
+      const { error: newVersionError } = await supabase
+        .from('versions')
+        .insert({
+          id: newVersionId,
+          entityId: materialId,
+          entityType: 'material',
+          previousData: currentMaterial,
+          createdBy: userId,
+          changeDescription: `Reverted to version ${versionId}`
+        });
+
+      if (newVersionError) {
+        throw new Error(`Failed to create revert version: ${newVersionError.message}`);
+      }
       
       // Extract previous data, but preserve certain fields
       const previousData = version.previousData as Record<string, any>;
       
       // Update material and add version reference
-      const updatedMaterial = await Material.findOneAndUpdate(
-        { id: materialId },
-        { 
+      const { data: updatedMaterial, error: updateError } = await supabase
+        .from('materials')
+        .update({
           ...previousData,
-          updatedAt: new Date(),
-          $push: { 
-            versions: {
-              versionId: newVersionId,
-              createdAt: new Date(),
-              createdBy: userId
-            }
-          }
-        },
-        { new: true }
-      );
+          updatedAt: new Date().toISOString(),
+          versions: [...(currentMaterial.versions || []), {
+            versionId: newVersionId,
+            createdAt: new Date().toISOString(),
+            createdBy: userId
+          }]
+        })
+        .eq('id', materialId)
+        .select()
+        .single();
+
+      if (updateError) {
+        throw new Error(`Failed to revert material: ${updateError.message}`);
+      }
       
       // Update search indexes
       await this.updateSearchIndexes('material', materialId);
@@ -717,14 +881,19 @@ export class KnowledgeBaseService {
    */
   public async getMaterialVersionHistory(materialId: string): Promise<VersionDocument[]> {
     try {
-      // Get the Version model
-      const Version = mongoose.model('Version');
+      const supabase = supabaseClient.getClient();
       
       // Find all versions for this material
-      const versions = await Version.find({ 
-        entityId: materialId,
-        entityType: 'material'
-      }).sort({ createdAt: -1 });
+      const { data: versions, error } = await supabase
+        .from('versions')
+        .select('*')
+        .eq('entityId', materialId)
+        .eq('entityType', 'material')
+        .order('createdAt', { ascending: false });
+
+      if (error) {
+        throw new Error(`Failed to get material version history: ${error.message}`);
+      }
       
       return versions as VersionDocument[];
     } catch (err) {
@@ -1003,8 +1172,7 @@ export class KnowledgeBaseService {
         batchSize = 100 // Default batch size
       } = options;
       
-      // Get the Material model
-      const Material = mongoose.model('Material');
+      const supabase = supabaseClient.getClient();
       
       // Initialize results
       const results = {
@@ -1082,10 +1250,30 @@ export class KnowledgeBaseService {
             }
             
             if (query.$or.length > 0) {
-              const existingDocs = await Material.find(query);
+              // Convert MongoDB $or query to Supabase query
+              const orConditions = query.$or;
+              let supabaseQuery = supabase.from('materials').select('*');
+              
+              // For duplicate detection, we need to query by id or name
+              const ids = orConditions.filter((cond: any) => cond.id).map((cond: any) => cond.id);
+              const names = orConditions.filter((cond: any) => cond.name).map((cond: any) => cond.name);
+              
+              if (ids.length > 0 && names.length > 0) {
+                supabaseQuery = supabaseQuery.or(`id.in.(${ids.join(',')}),name.in.(${names.join(',')})`);
+              } else if (ids.length > 0) {
+                supabaseQuery = supabaseQuery.in('id', ids);
+              } else if (names.length > 0) {
+                supabaseQuery = supabaseQuery.in('name', names);
+              }
+              
+              const { data: existingDocs, error } = await supabaseQuery;
+              
+              if (error) {
+                throw new Error(`Failed to query existing materials: ${error.message}`);
+              }
               
               // Create lookup maps for fast access
-              existingMaterials = existingDocs.reduce((acc: Record<string, MaterialType>, doc: MaterialType) => {
+              existingMaterials = (existingDocs || []).reduce((acc: Record<string, MaterialType>, doc: MaterialType) => {
                 acc[doc.id] = doc;
                 acc[doc.name] = doc;
                 return acc;
@@ -1187,7 +1375,34 @@ export class KnowledgeBaseService {
           
           // Step 3: Execute bulk operation if there are operations
           if (bulkOperations.length > 0) {
-            await Material.bulkWrite(bulkOperations, { ordered: false });
+            // Convert MongoDB bulkWrite to Supabase batch operations
+            const insertOperations = bulkOperations.filter(op => op.insertOne);
+            const updateOperations = bulkOperations.filter(op => op.updateOne);
+            
+            // Process inserts
+            if (insertOperations.length > 0) {
+              const insertData = insertOperations.map(op => op.insertOne!.document);
+              const { error: insertError } = await supabase
+                .from('materials')
+                .insert(insertData);
+              
+              if (insertError) {
+                throw new Error(`Failed to insert materials: ${insertError.message}`);
+              }
+            }
+            
+            // Process updates
+            for (const updateOp of updateOperations) {
+              const { filter, update } = updateOp.updateOne!;
+              const { error: updateError } = await supabase
+                .from('materials')
+                .update(update)
+                .match(filter);
+              
+              if (updateError) {
+                throw new Error(`Failed to update material: ${updateError.message}`);
+              }
+            }
           }
           
           // Step 4: Process collection memberships in batch (if needed)
@@ -1324,13 +1539,17 @@ export class KnowledgeBaseService {
     materialIds: string[];
   }> {
     try {
-      // Get the Material model
-      const Material = mongoose.model('Material');
+      // Find matching materials using Supabase
+      const supabase = supabaseClient.getClient();
+      const supabaseQuery = this.buildSupabaseQuery(supabase.from('materials').select('id'), filter);
+      const { data: matchingMaterials, error } = await supabaseQuery;
       
-      // Find matching materials
-      const matchingMaterials = await Material.find(filter, { id: 1 });
+      if (error) {
+        throw new Error(`Failed to find matching materials: ${error.message}`);
+      }
+      
       // Add explicit type to map parameter
-      const materialIds = matchingMaterials.map((m: MaterialType) => m.id);
+      const materialIds = (matchingMaterials || []).map((m: MaterialType) => m.id);
       
       // Skip if no materials match
       if (materialIds.length === 0) {
@@ -1343,11 +1562,15 @@ export class KnowledgeBaseService {
         updatedAt: new Date()
       };
       
-      // Apply update
-      const result = await Material.updateMany(
-        { id: { $in: materialIds } },
-        { $set: updateData }
-      );
+      // Apply update using Supabase
+      const { error: updateError } = await supabase
+        .from('materials')
+        .update(updateData)
+        .in('id', materialIds);
+      
+      if (updateError) {
+        throw new Error(`Failed to update materials: ${updateError.message}`);
+      }
       
       // Send real-time notifications for each updated material
       for (const materialId of materialIds) {
@@ -1373,9 +1596,9 @@ export class KnowledgeBaseService {
         }
       }
       
-      return { 
-        matched: result.matchedCount || 0,
-        updated: result.modifiedCount || 0,
+      return {
+        matched: materialIds.length,
+        updated: materialIds.length,
         materialIds
       };
     } catch (err) {
@@ -1401,7 +1624,7 @@ export class KnowledgeBaseService {
   }> {
     try {
       // Get the Material model
-      const Material = mongoose.model('Material');
+      const supabase = supabaseClient.getClient();
       
       let idsToDelete: string[] = [];
       
@@ -1409,7 +1632,14 @@ export class KnowledgeBaseService {
       if (materialIds && materialIds.length > 0) {
         idsToDelete = materialIds;
       } else if (filter) {
-        const matchingMaterials = await Material.find(filter, { id: 1 });
+        const { data: matchingMaterials, error } = await supabase
+          .from('materials')
+          .select('id')
+          .match(filter);
+        
+        if (error) {
+          throw new Error(`Failed to find matching materials: ${error.message}`);
+        }
         // Add explicit type to map parameter
         idsToDelete = matchingMaterials.map((m: MaterialType) => m.id);
       } else {
@@ -1422,7 +1652,14 @@ export class KnowledgeBaseService {
       }
       
       // Delete materials
-      const result = await Material.deleteMany({ id: { $in: idsToDelete } });
+      const { error: deleteError } = await supabase
+        .from('materials')
+        .delete()
+        .in('id', idsToDelete);
+      
+      if (deleteError) {
+        throw new Error(`Failed to delete materials: ${deleteError.message}`);
+      }
       
       // Send real-time notifications for each deleted material
       for (const materialId of idsToDelete) {
@@ -1431,8 +1668,8 @@ export class KnowledgeBaseService {
         });
       }
       
-      return { 
-        deleted: result.deletedCount || 0,
+      return {
+        deleted: idsToDelete.length,
         materialIds: idsToDelete
       };
     } catch (err) {
@@ -1468,11 +1705,17 @@ export class KnowledgeBaseService {
       } = options;
       
       // Get the Material model
-      const Material = mongoose.model('Material');
+      const supabase = supabaseClient.getClient();
       
       // Get materials
       const projection = includeVersions ? {} : { versions: 0 };
-      const materials = await Material.find(filter, projection);
+      const query = supabase.from('materials').select('*');
+      const builtQuery = this.buildSupabaseQuery(query, filter);
+      const { data: materials, error } = await builtQuery;
+      
+      if (error) {
+        throw new Error(`Failed to fetch materials: ${error.message}`);
+      }
       
       // Get relationships if requested
       let materialsWithRelationships = materials;
@@ -1678,8 +1921,7 @@ export class KnowledgeBaseService {
   }> {
     try {
       // Get models
-      const Material = mongoose.model('Material');
-      const Collection = mongoose.model('Collection');
+      const supabase = supabaseClient.getClient();
       
       // Get counts
       const materialCount = await Material.countDocuments();

@@ -1,358 +1,233 @@
-# Vercel Deployment Guide for Kai
+# Vercel Deployment Guide
 
-This guide provides detailed instructions for deploying the Kai application's frontend components to Vercel, including the Next.js admin panel and Gatsby client application.
+This guide covers deploying the frontend packages (client and admin) to Vercel while keeping backend services on Digital Ocean.
 
-## Table of Contents
+## Architecture Overview
 
-- [Prerequisites](#prerequisites)
-- [Vercel Account Setup](#vercel-account-setup)
-- [Admin Panel Deployment (Next.js)](#admin-panel-deployment-nextjs)
-- [Client App Deployment (Gatsby)](#client-app-deployment-gatsby)
-- [Environment Variables](#environment-variables)
-- [Custom Domain Configuration](#custom-domain-configuration)
-- [Deployment Settings](#deployment-settings)
-- [Preview Deployments](#preview-deployments)
-- [Monitoring and Analytics](#monitoring-and-analytics)
-- [Troubleshooting](#troubleshooting)
+- **Frontend (Vercel)**: 
+  - `packages/client` - Gatsby-based public website
+  - `packages/admin` - Next.js admin panel
+- **Backend (Digital Ocean Kubernetes)**: 
+  - API services, ML processing, analytics, etc.
 
 ## Prerequisites
 
-Before proceeding with Vercel deployment, ensure you have:
+1. Vercel account with CLI installed
+2. Access to environment variables for both applications
+3. Backend services running on Digital Ocean
 
-- A GitHub account with the Kai repository
-- A Vercel account
-- Supabase project already set up (see the [Supabase Setup Guide](./supabase-setup-guide.md))
-- Backend services deployed to Digital Ocean Kubernetes (see the [Digital Ocean Kubernetes Setup Guide](./digital-ocean-kubernetes-setup.md))
-- Domain name(s) for your application
+## Environment Variables Setup
 
-## Vercel Account Setup
+### Client Application (Gatsby)
 
-### Step 1: Create a Vercel Account
+Required environment variables in Vercel:
 
-If you don't have a Vercel account, create one at [https://vercel.com/signup](https://vercel.com/signup). It's recommended to sign up using your GitHub account for seamless integration.
-
-### Step 2: Connect GitHub Repository
-
-1. After signing in to Vercel, click **Add New...** → **Project**
-2. Select your GitHub account
-3. Find and select the Kai repository
-4. If you don't see your repository, click **Adjust GitHub App Permissions** and grant Vercel access to the repository
-
-## Admin Panel Deployment (Next.js)
-
-The admin panel is a Next.js application located in `packages/admin`.
-
-### Step 1: Import Project
-
-1. Click **Import** on the Kai repository
-2. Configure the project settings:
-   - **Framework Preset**: Next.js
-   - **Root Directory**: `packages/admin`
-   - **Build Command**: `yarn build` (default)
-   - **Output Directory**: `.next` (default for Next.js)
-   - **Install Command**: `cd ../.. && yarn install`
-
-### Step 2: Configure Environment Variables
-
-Add the following environment variables:
-
-```
-NEXT_PUBLIC_API_URL=https://api.kai.yourdomain.com
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
-```
-
-For more detailed environment variables, see the [Environment Variables](#environment-variables) section below.
-
-### Step 3: Deploy the Admin Panel
-
-1. Click **Deploy**
-2. Wait for the build and deployment to complete
-3. Once deployed, you'll receive a URL like `kai-admin.vercel.app`
-
-## Client App Deployment (Gatsby)
-
-The client application is a Gatsby app located in `packages/client`.
-
-### Step 1: Import Project
-
-1. Click **Add New...** → **Project**
-2. Select your GitHub account and the Kai repository again
-3. Configure the project settings:
-   - **Framework Preset**: Gatsby
-   - **Root Directory**: `packages/client`
-   - **Build Command**: `yarn build` (default)
-   - **Output Directory**: `public` (default for Gatsby)
-   - **Install Command**: `cd ../.. && yarn install`
-
-### Step 2: Configure Environment Variables
-
-Add the following environment variables:
-
-```
-GATSBY_API_URL=https://api.kai.yourdomain.com
+```bash
+GATSBY_API_URL=https://api.your-domain.com
 GATSBY_SUPABASE_URL=https://your-project.supabase.co
 GATSBY_SUPABASE_ANON_KEY=your-supabase-anon-key
-GATSBY_STORAGE_URL=https://your-s3-bucket.s3.amazonaws.com
 ```
 
-For more detailed environment variables, see the [Environment Variables](#environment-variables) section below.
+### Admin Application (Next.js)
 
-### Step 3: Deploy the Client App
+Required environment variables in Vercel:
 
-1. Click **Deploy**
-2. Wait for the build and deployment to complete
-3. Once deployed, you'll receive a URL like `kai-client.vercel.app`
+```bash
+NEXTAUTH_URL=https://admin.your-domain.com
+NEXTAUTH_SECRET=your-nextauth-secret
+NEXT_PUBLIC_API_URL=https://api.your-domain.com
+DATABASE_URL=your-database-connection-string
+```
 
-## Environment Variables
+## Deployment Steps
 
-### Admin Panel Environment Variables
+### 1. Install Vercel CLI
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `NEXT_PUBLIC_API_URL` | URL of your backend API | `https://api.kai.yourdomain.com` |
-| `NEXT_PUBLIC_SUPABASE_URL` | URL of your Supabase project | `https://your-project.supabase.co` |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anonymous key | `eyJhbGciOiJIUzI1NiIsImtpZCI6...` |
-| `NEXT_PUBLIC_APP_ENV` | Environment name | `production` |
-| `NEXT_PUBLIC_STORAGE_URL` | URL for S3 storage | `https://your-s3-bucket.s3.amazonaws.com` |
-| `NEXT_PUBLIC_ENABLE_ANALYTICS` | Enable analytics | `true` |
+```bash
+npm install -g vercel
+```
 
-### Client App Environment Variables
+### 2. Login to Vercel
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `GATSBY_API_URL` | URL of your backend API | `https://api.kai.yourdomain.com` |
-| `GATSBY_SUPABASE_URL` | URL of your Supabase project | `https://your-project.supabase.co` |
-| `GATSBY_SUPABASE_ANON_KEY` | Supabase anonymous key | `eyJhbGciOiJIUzI1NiIsImtpZCI6...` |
-| `GATSBY_STORAGE_URL` | URL for S3 storage | `https://your-s3-bucket.s3.amazonaws.com` |
-| `GATSBY_DEFAULT_LOCALE` | Default locale | `en` |
-| `GATSBY_ENABLE_OFFLINE` | Enable offline support | `true` |
-| `GATSBY_GOOGLE_ANALYTICS_ID` | Google Analytics ID | `G-XXXXXXXXXX` |
+```bash
+vercel login
+```
 
-## Custom Domain Configuration
+### 3. Deploy Client Application
 
-### Step 1: Add Custom Domains
+```bash
+cd packages/client
+vercel --prod
+```
 
-For both the admin panel and client app projects:
+Follow the prompts:
+- Link to existing project or create new one
+- Set project name: `kai-client`
+- Configure build settings (should auto-detect Gatsby)
 
-1. Go to the project in the Vercel dashboard
-2. Navigate to **Settings** → **Domains**
-3. Click **Add**
-4. Enter the domain:
-   - Admin Panel: `admin.kai.yourdomain.com`
-   - Client App: `kai.yourdomain.com`
-5. Click **Add**
+### 4. Deploy Admin Application
 
-### Step 2: Configure DNS
+```bash
+cd packages/admin
+vercel --prod
+```
 
-Vercel will provide instructions for configuring your DNS settings. You have two options:
+Follow the prompts:
+- Link to existing project or create new one
+- Set project name: `kai-admin`
+- Configure build settings (should auto-detect Next.js)
 
-**Option 1: Using Vercel as the DNS provider**
-1. Click **Manage DNS on Vercel** in the domain settings
-2. Add any additional DNS records as needed
+### 5. Configure Environment Variables
 
-**Option 2: Using your own DNS provider**
-1. Add a CNAME record pointing to `cname.vercel-dns.com`:
-   - Admin Panel: `admin.kai` → `cname.vercel-dns.com`
-   - Client App: `kai` → `cname.vercel-dns.com`
-2. Verify the domain in Vercel
+For each project in Vercel dashboard:
 
-### Step 3: SSL Configuration
+1. Go to Project Settings → Environment Variables
+2. Add all required variables for the respective application
+3. Set them for Production, Preview, and Development environments
 
-Vercel automatically provisions and renews SSL certificates for your domains. No additional configuration is required.
+## Domain Configuration
 
-## Deployment Settings
+### Custom Domains
 
-### Build & Development Settings
+1. In Vercel dashboard, go to Project Settings → Domains
+2. Add your custom domains:
+   - Client: `your-domain.com`
+   - Admin: `admin.your-domain.com`
+3. Configure DNS records as instructed by Vercel
 
-For optimal performance in a monorepo setup:
+### SSL Certificates
 
-1. Go to **Settings** → **General** → **Build & Development Settings**
-2. Configure the following:
-   - **Framework Preset**: Next.js (admin) or Gatsby (client)
-   - **Node.js Version**: 16.x
-   - **Include source files outside of the Root Directory in the Build Step**: Yes
-   - **Install Command**: `cd ../.. && yarn install`
+Vercel automatically provisions SSL certificates for custom domains.
 
-### Build Cache
+## Build Configuration
 
-Enable build cache to speed up deployments:
+### Client (Gatsby) Build Settings
 
-1. Go to **Settings** → **General** → **Build & Development Settings**
-2. Ensure **Cache** is turned on
+The `vercel.json` configuration handles:
+- Static build using `@vercel/static-build`
+- Output directory: `public`
+- SPA routing fallback to `index.html`
 
-### Production Branch
+### Admin (Next.js) Build Settings
 
-Configure which branch triggers production deployments:
+The `vercel.json` configuration handles:
+- Next.js build using `@vercel/next`
+- Automatic API routes deployment
+- Environment variable injection
 
-1. Go to **Settings** → **Git**
-2. Set **Production Branch** to `main` or `master`
+## Monitoring and Logs
 
-## Preview Deployments
+### Vercel Dashboard
 
-Vercel automatically creates preview deployments for each pull request:
+- Monitor deployments in real-time
+- View build logs and runtime logs
+- Set up deployment notifications
 
-### Branch Previews
+### Analytics
 
-1. Go to **Settings** → **Git**
-2. Ensure **Preview Deployment for Pull Requests** is enabled
-
-### Preview URLs
-
-Preview deployments will have URLs like:
-- Admin Panel: `kai-admin-git-feature-branch-username.vercel.app`
-- Client App: `kai-client-git-feature-branch-username.vercel.app`
-
-### Environment Variables for Previews
-
-You can configure different environment variables for preview deployments:
-
-1. Go to **Settings** → **Environment Variables**
-2. Add the variables you want to override in preview environments
-3. Select **Preview** from the environment dropdown
-
-## Monitoring and Analytics
-
-### Performance Monitoring
-
-Vercel provides built-in analytics and performance monitoring:
-
-1. Go to the project dashboard
-2. Navigate to **Analytics**
-3. View metrics such as:
-   - Web Vitals (LCP, CLS, FID)
-   - Page views
-   - API response times
-   - Error rates
-
-### Error Tracking
-
-To set up error tracking:
-
-1. Go to **Settings** → **Integrations**
-2. Add an error tracking integration:
-   - Sentry
-   - Datadog
-   - New Relic
-   - LogRocket
-
-### Real User Monitoring
-
-Enable Real User Monitoring (RUM) for detailed performance insights:
-
-1. Go to **Settings** → **Analytics**
-2. Enable **Real User Monitoring**
+Enable Vercel Analytics for performance monitoring:
+1. Go to Project Settings → Analytics
+2. Enable Web Analytics
+3. Add analytics script to your applications
 
 ## Troubleshooting
 
-### Build Failures
+### Common Issues
 
-If your build fails, check the following:
+1. **Build Failures**
+   - Check build logs in Vercel dashboard
+   - Verify all dependencies are in `package.json`
+   - Ensure environment variables are set correctly
 
-1. **Environment Variables**: Ensure all required variables are set
-2. **Dependencies**: Check for missing or incompatible dependencies
-   - Examine the build logs in the Vercel dashboard
-   - Verify that all dependencies are properly declared in package.json
+2. **API Connection Issues**
+   - Verify `GATSBY_API_URL` and `NEXT_PUBLIC_API_URL` point to correct backend
+   - Check CORS settings on backend services
+   - Ensure backend services are accessible from Vercel's edge network
 
-3. **Build Command**: Verify the build command is correct
-   - For Next.js admin: `yarn build`
-   - For Gatsby client: `yarn build`
+3. **Authentication Issues**
+   - Verify `NEXTAUTH_URL` matches the deployed domain
+   - Check `NEXTAUTH_SECRET` is set and secure
+   - Ensure callback URLs are configured correctly
 
-4. **Monorepo Issues**: If you're having issues with dependencies in the monorepo:
-   - Ensure you're using `cd ../.. && yarn install` as the install command
-   - Check that your package.json workspaces are properly configured
+### Performance Optimization
 
-### Deployment Issues
+1. **Image Optimization**
+   - Use Vercel's built-in image optimization
+   - Configure `next/image` for Next.js admin panel
+   - Use Gatsby's image plugins for client application
 
-If your deployment succeeds but the application doesn't work correctly:
+2. **Caching**
+   - Configure appropriate cache headers
+   - Use Vercel's Edge Network for static assets
+   - Implement ISR (Incremental Static Regeneration) where applicable
 
-1. **API Connection**: Check that the application can connect to your API
-   - Verify the API URL in environment variables
-   - Ensure CORS is properly configured on your API
+## Continuous Deployment
 
-2. **Supabase Connection**: Verify Supabase connectivity
-   - Check Supabase URL and anon key in environment variables
-   - Ensure the Supabase project is running and accessible
+### Git Integration
 
-3. **Browser Console Errors**: Inspect the browser console for JavaScript errors
-   - Use browser developer tools to diagnose client-side issues
+1. Connect repositories to Vercel projects
+2. Configure automatic deployments on push to main branch
+3. Set up preview deployments for pull requests
 
-### Domain Issues
+### Deployment Hooks
 
-If your custom domain isn't working:
+Configure webhooks for:
+- Content management system updates
+- Database schema changes
+- Backend service deployments
 
-1. **DNS Propagation**: DNS changes can take up to 48 hours to propagate
-   - Use `dig` or `nslookup` to check if DNS records have propagated
+## Security Considerations
 
-2. **SSL Certificate**: Ensure SSL certificate is properly provisioned
-   - Vercel should automatically provision certificates
-   - Check for SSL errors in the Vercel dashboard
+1. **Environment Variables**
+   - Never commit sensitive variables to git
+   - Use Vercel's encrypted environment variables
+   - Rotate secrets regularly
 
-3. **Domain Configuration**: Verify domain settings in Vercel
-   - Ensure your DNS records match Vercel's recommendations
+2. **CORS Configuration**
+   - Configure backend CORS to allow Vercel domains
+   - Use specific origins instead of wildcards in production
 
-## Automatic Deployments
+3. **Authentication**
+   - Implement proper session management
+   - Use secure cookie settings
+   - Configure CSP headers
 
-Vercel automatically deploys your application when you push to the production branch (main/master). To set up additional deployment controls:
+## Rollback Procedures
 
-### Github Actions Integration
+### Quick Rollback
 
-For more advanced deployment workflows, integrate with GitHub Actions:
+1. Go to Vercel dashboard → Deployments
+2. Find the last known good deployment
+3. Click "Promote to Production"
 
-1. Add a GitHub Actions workflow file at `.github/workflows/vercel-deploy.yml`:
+### Manual Rollback
 
-```yaml
-name: Deploy Frontend to Vercel
-
-on:
-  push:
-    branches: [ main, master ]
-    paths:
-      - 'packages/admin/**'
-      - 'packages/client/**'
-      - 'packages/shared/**'
-  workflow_dispatch:
-
-jobs:
-  deploy-admin:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Deploy Admin to Vercel
-        uses: amondnet/vercel-action@v25
-        with:
-          vercel-token: {% raw %}${{ secrets.VERCEL_TOKEN }}{% endraw %}
-          github-token: {% raw %}${{ secrets.GITHUB_TOKEN }}{% endraw %}
-          vercel-org-id: {% raw %}${{ secrets.VERCEL_ORG_ID }}{% endraw %}
-          vercel-project-id: {% raw %}${{ secrets.VERCEL_ADMIN_PROJECT_ID }}{% endraw %}
-          working-directory: ./packages/admin
-          vercel-args: '--prod'
-
-  deploy-client:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Deploy Client to Vercel
-        uses: amondnet/vercel-action@v25
-        with:
-          vercel-token: {% raw %}${{ secrets.VERCEL_TOKEN }}{% endraw %}
-          github-token: {% raw %}${{ secrets.GITHUB_TOKEN }}{% endraw %}
-          vercel-org-id: {% raw %}${{ secrets.VERCEL_ORG_ID }}{% endraw %}
-          vercel-project-id: {% raw %}${{ secrets.VERCEL_CLIENT_PROJECT_ID }}{% endraw %}
-          working-directory: ./packages/client
-          vercel-args: '--prod'
+```bash
+vercel rollback [deployment-url]
 ```
 
-2. Configure required secrets in GitHub:
-   - `VERCEL_TOKEN`: API token from Vercel
-   - `VERCEL_ORG_ID`: Organization ID from Vercel
-   - `VERCEL_ADMIN_PROJECT_ID`: Project ID for admin panel
-   - `VERCEL_CLIENT_PROJECT_ID`: Project ID for client app
+## Monitoring and Alerts
 
-## Conclusion
+### Set up monitoring for:
 
-Following this guide, you've successfully deployed the Kai application's frontend components to Vercel. The Next.js admin panel and Gatsby client application are now accessible via their respective domains and integrated with your backend services on Digital Ocean Kubernetes and Supabase.
+1. **Uptime monitoring**
+2. **Performance metrics**
+3. **Error tracking**
+4. **Build failure notifications**
 
-Remember to regularly monitor your deployments for performance issues, error rates, and resource usage. As your application evolves, you may need to adjust build settings, environment variables, and integration points.
+## Cost Optimization
+
+1. **Optimize bundle sizes**
+2. **Use appropriate caching strategies**
+3. **Monitor bandwidth usage**
+4. **Consider Vercel Pro features for team collaboration**
+
+## Next Steps
+
+After successful deployment:
+
+1. Update DNS records to point to Vercel
+2. Configure monitoring and alerting
+3. Set up automated testing for deployments
+4. Document any custom deployment procedures
+5. Train team on Vercel dashboard usage

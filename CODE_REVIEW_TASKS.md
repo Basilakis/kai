@@ -13,20 +13,6 @@ These issues significantly impact core functionality or security and should be p
     *   **Action:** Install the actual `jsonwebtoken` and `jwks-rsa` libraries, remove mocks, and ensure they are correctly imported and used for JWT verification.
     *   **Priority:** Critical
 
-2.  **Architectural Inconsistency: Material Data Storage (MongoDB Mongoose Model vs. Supabase/PostgreSQL):**
-    *   **Files:** [`packages/server/src/models/`](packages/server/src/models) directory (contains numerous Mongoose models like [`material.model.ts`](packages/server/src/models/material.model.ts:1), [`searchIndex.model.ts`](packages/server/src/models/searchIndex.model.ts:1), etc.), [`packages/server/src/services/supabase/supabase-schema.md`](packages/server/src/services/supabase/supabase-schema.md:1) (defines PostgreSQL schema), Supabase-specific services (e.g., [`SupabaseMaterialService`](packages/server/src/services/supabase/supabase-material-service.ts:1)).
-    *   **Issue:** There's a fundamental contradiction regarding the primary database. The entire `packages/server/src/models/` directory appears to consist of Mongoose models for MongoDB, while many services and schema documents point to Supabase/PostgreSQL as the target database for the same entities (e.g., materials, API keys, user sessions).
-    *   **Impact:** This is a major architectural conflict. If services are using different data sources for the same core entity (`materials`), it will lead to data divergence, incorrect application behavior, and significant maintenance issues. Vector search implementations will also target different databases with different capabilities.
-    *   **Action:**
-        1.  **Immediately clarify the definitive source of truth for `materials` data and other entities.**
-        2.  If Supabase/PostgreSQL is the target (strongly suggested by overall architecture):
-            *   The entire Mongoose-based `packages/server/src/models/` directory should be considered **legacy and be scheduled for deprecation/removal.**
-            *   All data entity operations (CRUD, queries) must be consistently routed through Supabase-compatible services or a new Supabase-based data access layer/repository pattern if preferred over direct client use in services.
-            *   Any data currently in MongoDB for these entities needs a comprehensive migration strategy to Supabase/PostgreSQL.
-            *   Functionality embedded in Mongoose models (like text extraction in `material.model.ts` or index management in `searchIndex.model.ts`) needs to be re-evaluated and re-implemented in a Supabase-compatible way if still required.
-        3.  If MongoDB is (for some reason) intentionally used for a subset of data alongside Supabase for others (a hybrid approach), this architecture must be explicitly documented, its rationale clarified, and services must be very clear about which data store they target for each entity. The current state suggests an incomplete migration or conflicting development efforts.
-    *   **Priority:** Critical (Fundamental architectural decision)
-
 3.  **Inefficient/Incorrect Vector Search Implementations (Multiple Locations):**
     *   **File 1 (Legacy Mongoose Model):** [`packages/server/src/models/material.model.ts`](packages/server/src/models/material.model.ts:591-657) (method `findSimilarMaterials`)
         *   **Issue:** Performs manual client-side cosine similarity on MongoDB data. Does not scale.
@@ -262,6 +248,12 @@ These issues significantly impact core functionality or security and should be p
     *   **Impact:** Inconsistent session data management.
     *   **Action:** Clarify session store. If Supabase, deprecate Mongoose model, refactor.
     *   **Priority:** Critical (Linked to #2)
+35. **Missing `email.service.ts` File:**
+    *   **Files:** [`packages/server/src/services/credit/alertManager.service.ts`](packages/server/src/services/credit/alertManager.service.ts:15), [`packages/server/src/services/auth/twoFactor.service.ts`](packages/server/src/services/auth/twoFactor.service.ts:22)
+    *   **Issue:** The `email.service.ts` file is imported but does not exist in `packages/server/src/services/email/`.
+    *   **Impact:** This will cause a runtime error when any service attempts to use `emailService`, breaking critical features like two-factor authentication and credit alerts.
+    *   **Action:** Create a placeholder `email.service.ts` with a basic structure and a clear "Not Implemented" warning. This will allow the application to compile and run, although email-related functionality will not work until a proper email provider (e.g., SendGrid, Postmark) is integrated.
+    *   **Priority:** Critical
 
 ## II. High Priority Issues
 
@@ -473,46 +465,218 @@ These issues significantly impact core functionality or security and should be p
     *   **File:** [`packages/server/src/services/ai/promptOptimizationService.ts`](packages/server/src/services/ai/promptOptimizationService.ts:1)
     *   **Action:** Implement logic for placeholder rule types.
     *   **Priority:** High
-
-42. **Potential Bug in `PromptService.renderPrompt` by Name:**
-    *   **File:** [`packages/server/src/services/ai/promptService.ts`](packages/server/src/services/ai/promptService.ts:582)
-    *   **Action:** Update `PromptRenderOptions` or remove logic path.
-    *   **Priority:** High
-
-43. **Incorrect Categorical Feature Encoding in `RelationshipAwareTrainingService`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1356)
-    *   **Action:** Implement proper encoding.
-    *   **Priority:** High (Bug affecting core ML)
-
-44. **Supabase Client Import Path in `RelationshipAwareTrainingService`:**
-    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:10)
-    *   **Action:** Standardize Supabase client import paths.
-    *   **Priority:** High
-
-45. **Client Dependencies for `ContextAssembler` (`context_assembler.py`):**
-    *   **File:** [`packages/ml/python/context_assembler.py`](packages/ml/python/context_assembler.py:1)
-    *   **Action:** Review actual client implementations.
-    *   **Priority:** High
-
-46. **Configuration for `CLIENT_URL` in `passwordReset.controller.ts`:**
-    *   **File:** [`packages/server/src/controllers/auth/passwordReset.controller.ts`](packages/server/src/controllers/auth/passwordReset.controller.ts:61)
-    *   **Issue:** Uses `process.env.CLIENT_URL` directly.
-    *   **Impact:** Bypasses centralized configuration management.
-    *   **Action:** Source `CLIENT_URL` from `UnifiedConfig` for consistency.
+46. **Missing `password_reset_tokens` Table Schema:**
+    *   **File:** [`packages/server/src/controllers/auth/passwordReset.controller.ts`](packages/server/src/controllers/auth/passwordReset.controller.ts:46)
+    *   **Issue:** The controller interacts with a `password_reset_tokens` table, but there is no corresponding migration file in `packages/server/src/services/supabase/migrations/` to define its schema.
+    *   **Impact:** Password reset functionality will fail due to the missing table.
+    *   **Action:** Create a new SQL migration file to define the `password_reset_tokens` table, including columns for `userId`, `token`, `expiresAt`, and `isUsed`.
     *   **Priority:** High
 
 47. **Logger Inconsistency in `passwordReset.controller.ts`:**
     *   **File:** [`packages/server/src/controllers/auth/passwordReset.controller.ts`](packages/server/src/controllers/auth/passwordReset.controller.ts:9)
+    *   **Issue:** Uses a logger from `../../utils/logger` instead of the standardized `unified-logger`.
+    *   **Impact:** Inconsistent logging practices.
+    *   **Action:** Refactor to use `unified-logger`.
+    *   **Priority:** High
+
+48. **Direct `process.env` Access in `passwordReset.controller.ts`:**
+    *   **File:** [`packages/server/src/controllers/auth/passwordReset.controller.ts`](packages/server/src/controllers/auth/passwordReset.controller.ts:61)
+    *   **Issue:** Accesses `process.env.CLIENT_URL` directly, bypassing the `UnifiedConfig` service.
+    *   **Impact:** Bypasses centralized configuration management.
+    *   **Action:** Refactor to get `CLIENT_URL` from `UnifiedConfig`.
+    *   **Priority:** High
+
+42. **Potential Bug in `PromptService.renderPrompt` by Name:**
+    *   **File:** [`packages/server/src/services/ai/promptService.ts`](packages/server/src/services/ai/promptService.ts:582)
+    *   **Action:** Update `PromptRenderOptions` or remove logic path.
+49. **Mongoose Model Dependency in `twoFactor.controller.ts`:**
+    *   **File:** [`packages/server/src/controllers/auth/twoFactor.controller.ts`](packages/server/src/controllers/auth/twoFactor.controller.ts:12)
+    *   **Issue:** The controller imports and uses functions from `../../models/twoFactor.model.ts`, which is a Mongoose model. This is inconsistent with the Supabase-centric architecture.
+    *   **Impact:** Two-factor authentication data will be stored in MongoDB, while other user data is in Supabase, leading to data divergence.
+    *   **Action:** Refactor the controller to use a Supabase-based service for managing two-factor authentication data. Deprecate the `twoFactor.model.ts` Mongoose model.
+    *   **Priority:** High
+
+50. **Logger Inconsistency in `twoFactor.controller.ts`:**
+    *   **File:** [`packages/server/src/controllers/auth/twoFactor.controller.ts`](packages/server/src/controllers/auth/twoFactor.controller.ts:9)
+    *   **Issue:** Uses a logger from `../../utils/logger` and a `securityLogger` from `../../utils/securityLogger` instead of the standardized `unified-logger`.
+    *   **Impact:** Inconsistent logging practices.
+    *   **Action:** Refactor to use `unified-logger`.
+    *   **Priority:** High
+
+51. **Missing `two_factor_settings` Table Schema:**
+    *   **File:** [`packages/server/src/controllers/auth/twoFactor.controller.ts`](packages/server/src/controllers/auth/twoFactor.controller.ts:29)
+    *   **Issue:** The controller interacts with a `two_factor_settings` table, but there is no corresponding migration file in `packages/server/src/services/supabase/migrations/` to define its schema.
+    *   **Impact:** Two-factor authentication functionality will fail due to the missing table.
+    *   **Action:** Create a new SQL migration file to define the `two_factor_settings` table, including columns for `userId`, `method`, `secret`, `isVerified`, `isEnabled`, `phoneNumber`, `email`, `backupCodes`, `lastUsedAt`.
+    *   **Priority:** High
+    *   **Priority:** High
+
+52. **Placeholder Implementations in `core_models.py`:**
+    *   **File:** [`packages/ml/python/core_models.py`](packages/ml/python/core_models.py)
+    *   **Issue:** The `RoomAnalysisPipeline` and all the classes it depends on (`HorizonNetLayout`, `CubeMapGenerator`, `YOLOv8ObjectDetector`, `MiDaSDepthEstimator`, `SAMSegmenter`) are just placeholders. All the core methods are not implemented.
+    *   **Impact:** The entire room analysis pipeline is non-functional.
+    *   **Action:** Implement the core methods in all the classes in `core_models.py`. This includes loading the actual models, preprocessing the images, running the models, and post-processing the results.
+    *   **Priority:** Critical
+43. **Incorrect Categorical Feature Encoding in `RelationshipAwareTrainingService`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:1356)
+    *   **Action:** Implement proper encoding.
+    *   **Priority:** High (Bug affecting core ML)
+53. **Placeholder Implementation in `unified_pipeline.py`:**
+    *   **File:** [`packages/ml/python/unified_pipeline.py`](packages/ml/python/unified_pipeline.py:86)
+    *   **Issue:** The `refine_result` method in `UnifiedVisualizationPipeline` has a placeholder for refining image-based results.
+    *   **Impact:** The refinement functionality for image-based results is not implemented.
+    *   **Action:** Implement the refinement logic for image-based results. This could involve using a generative model to modify the image based on the feedback, or re-running parts of the pipeline with different parameters.
+    *   **Priority:** High
+
+44. **Supabase Client Import Path in `RelationshipAwareTrainingService`:**
+    *   **File:** [`packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts`](packages/server/src/services/ai/relationship-aware-training/relationshipAwareTrainingService.ts:10)
+    *   **Action:** Standardize Supabase client import paths.
+54. **Placeholder Implementations in `nerf_integration.py`:**
+    *   **File:** [`packages/ml/python/nerf_integration.py`](packages/ml/python/nerf_integration.py)
+    *   **Issue:** The `NeRFPipeline` and all the classes it depends on (`NerfStudioModel`, `InstantNGP`, `CubeMapGenerator`, `HorizonNetRoom`) are just placeholders. All the core methods are not implemented.
+    *   **Impact:** The entire room reconstruction pipeline is non-functional.
+    *   **Action:** Implement the core methods in all the classes in `nerf_integration.py`. This includes loading the actual models, processing the images, and generating the reconstructions.
+    *   **Priority:** Critical
+    *   **Priority:** High
+
+45. **Client Dependencies for `ContextAssembler` (`context_assembler.py`):**
+    *   **File:** [`packages/ml/python/context_assembler.py`](packages/ml/python/context_assembler.py:1)
+55. **Bugs and Missing Implementations in `text_to_3d.py`:**
+    *   **File:** [`packages/ml/python/text_to_3d.py`](packages/ml/python/text_to_3d.py)
+    *   **Issues:**
+        1.  The `refine_shape` method in `ShapEModel` calls the `model` with an `input_mesh` parameter, but the `ShapEPipeline` from `diffusers` does not accept this parameter.
+        2.  The `apply_textures_to_mesh` method in `TextureGenerator` calls a `_generate_uvs` method, but this method is not defined in the class.
+        3.  The `TextTo3DConfig` mentions `GET3D` and `DiffuScene` models, but there are no corresponding implementations in the file.
+    *   **Impact:** The text-to-3D pipeline will fail at runtime due to these bugs and missing implementations.
+    *   **Action:**
+        1.  Remove the `input_mesh` parameter from the `refine_shape` method in `ShapEModel`.
+        2.  Implement the `_generate_uvs` method in `TextureGenerator`.
+        3.  Implement the `GET3D` and `DiffuScene` models, or remove them from the `TextTo3DConfig`.
+    *   **Priority:** High
+    *   **Action:** Review actual client implementations.
+    *   **Priority:** High
+
+46. **Configuration for `CLIENT_URL` in `passwordReset.controller.ts`:**
+56. **Placeholder Implementations in `scene_understanding.py`:**
+    *   **File:** [`packages/ml/python/scene_understanding.py`](packages/ml/python/scene_understanding.py)
+    *   **Issue:** The `UnifiedSceneAnalyzer` and all the classes it depends on (`SceneUnderstandingPipeline`, `YOLOv8Detector`, `MiDaSDepthEstimator`, `SAMSegmenter`, `MaterialRecognizer`) are just placeholders. All the core methods are not implemented.
+    *   **Impact:** The entire scene understanding pipeline is non-functional.
+    *   **Action:** Implement the core methods in all the classes in `scene_understanding.py`. This includes loading the actual models, processing the images, and generating the scene analysis.
+    *   **Priority:** Critical
+    *   **File:** [`packages/server/src/controllers/auth/passwordReset.controller.ts`](packages/server/src/controllers/auth/passwordReset.controller.ts:61)
+    *   **Issue:** Uses `process.env.CLIENT_URL` directly.
+    *   **Impact:** Bypasses centralized configuration management.
+    *   **Action:** Source `CLIENT_URL` from `UnifiedConfig` for consistency.
+57. **Mock Data in `DashboardStats.tsx`:**
+    *   **File:** [`packages/client/src/components/DashboardStats.tsx`](packages/client/src/components/DashboardStats.tsx:44)
+    *   **Issue:** The component uses mock data to display dashboard statistics.
+    *   **Impact:** The dashboard does not display real data.
+    *   **Action:** Replace the mock data with an API call to fetch real statistics from the backend.
+    *   **Priority:** High
+    *   **Priority:** High
+
+47. **Logger Inconsistency in `passwordReset.controller.ts`:**
+    *   **File:** [`packages/server/src/controllers/auth/passwordReset.controller.ts`](packages/server/src/controllers/auth/passwordReset.controller.ts:9)
+59. **Hardcoded Navigation Items in `Header.tsx`:**
+    *   **File:** [`packages/client/src/components/Header.tsx`](packages/client/src/components/Header.tsx:16)
+    *   **Issue:** The `navItems` are hardcoded in the component.
+    *   **Impact:** This makes it difficult to manage the navigation items, especially if they need to be changed based on user roles or other conditions.
+    *   **Action:** Move the navigation items to a separate configuration file or fetch them from an API.
+    *   **Priority:** Medium
+
+60. **Redundant Navigation Links in `Header.tsx`:**
+    *   **File:** [`packages/client/src/components/Header.tsx`](packages/client/src/components/Header.tsx:74)
+61. **Placeholder Hero Image in `Hero.tsx`:**
+    *   **File:** [`packages/client/src/components/Hero.tsx`](packages/client/src/components/Hero.tsx:75)
+    *   **Issue:** The hero image is a placeholder.
+    *   **Impact:** The hero section is incomplete.
+    *   **Action:** Replace the placeholder with a real image or a more sophisticated animation.
+    *   **Priority:** Low
+    *   **Issue:** The navigation links are rendered twice, once in the `main-nav` and once in the `mobile-menu-button`.
+    *   **Impact:** This is not a major issue, but it could be improved by creating a separate component for the navigation links and reusing it in both places.
+62. **Missing Dependencies and Simulated Logic in `MaterialViewer.tsx`:**
+    *   **File:** [`packages/client/src/components/MaterialViewer.tsx`](packages/client/src/components/MaterialViewer.tsx)
+    *   **Issues:**
+        1.  The component imports `materialRecognitionProvider` from `@kai/shared/services/recognition/materialProvider`, but this file does not exist.
+        2.  The component imports `ExtractedColor`, `MaterialRecognitionOptions`, `MaterialRecognitionMatch`, and `RecognitionResult` types from `@kai/shared/services/recognition/types`, but this file does not exist.
+        3.  The `extractColorsFromImage` method simulates color extraction.
+        4.  The component uses sample detected areas when none are provided.
+        5.  The comparison slider logic is complex and could be simplified.
+    *   **Impact:** The component will not compile and the color extraction and detected areas features are not functional.
+    *   **Action:**
+        1.  Create the `materialProvider.ts` and `types.ts` files in `packages/shared/services/recognition/` and define the required provider and types.
+        2.  Implement the color extraction logic.
+        3.  Remove the sample detected areas and fetch real data from an API.
+        4.  Refactor the comparison slider logic to be simpler and more maintainable.
+    *   **Priority:** High
+    *   **Action:** Create a new component for the navigation links and reuse it in the `Header` component.
+63. **Missing `location` prop in `PrivateRoute`:**
+    *   **File:** [`packages/client/src/components/PrivateRoute.tsx`](packages/client/src/components/PrivateRoute.tsx:22)
+    *   **Issue:** The component uses the `location` prop, but it's not passed to the component in the `gatsby-browser.js` file.
+    *   **Impact:** This will cause a runtime error.
+    *   **Action:** Pass the `location` prop to the `PrivateRoute` component in the `gatsby-browser.js` file.
+    *   **Priority:** High
+    *   **Priority:** Low
     *   **Issue:** Uses `logger` from `../../utils/logger`.
+64. **Missing Dependencies and Inconsistent Error Handling in `login.tsx`:**
+    *   **File:** [`packages/client/src/pages/login.tsx`](packages/client/src/pages/login.tsx)
+    *   **Issues:**
+        1.  The page imports functions from `../services/supabaseAuth.service`, but this file does not exist.
+        2.  The page uses `showSuccessToast` and `showErrorToast` from `../providers/ToastProvider`, but this file does not exist.
+        3.  The `handleLogin` and `handleSocialLogin` functions have inconsistent error handling.
+    *   **Impact:** The page will not compile and the login functionality will not work.
+    *   **Action:**
+        1.  Create the `supabaseAuth.service.ts` file in `packages/client/src/services/` and define the required functions.
+        2.  Create the `ToastProvider.tsx` file in `packages/client/src/providers/` and define the required functions.
+        3.  Refactor the error handling in the `handleLogin` and `handleSocialLogin` functions to be consistent.
+    *   **Priority:** Critical
     *   **Impact:** Inconsistent logging practices.
     *   **Action:** Refactor to use the project's standard `unified-logger`.
     *   **Priority:** High
 
+65. **Missing Dependencies and Inconsistent Error Handling in `register.tsx`:**
+    *   **File:** [`packages/client/src/pages/register.tsx`](packages/client/src/pages/register.tsx)
+    *   **Issues:**
+        1.  The page imports functions from `../services/supabaseAuth.service`, but this file does not exist.
+        2.  The page does not use the `ToastProvider` to show success or error messages.
+        3.  The `handleRegister` and `handleSocialRegister` functions have inconsistent error handling.
+    *   **Impact:** The page will not compile and the registration functionality will not work.
+    *   **Action:**
+        1.  Create the `supabaseAuth.service.ts` file in `packages/client/src/services/` and define the required functions.
+        2.  Use the `ToastProvider` to show success and error messages.
+        3.  Refactor the error handling in the `handleRegister` and `handleSocialRegister` functions to be consistent.
+    *   **Priority:** Critical
 48. **Supabase Client Import in `passwordReset.controller.ts`:**
     *   **File:** [`packages/server/src/controllers/auth/passwordReset.controller.ts`](packages/server/src/controllers/auth/passwordReset.controller.ts:11)
     *   **Issue:** Imports `supabaseClient` from `../../services/supabase/supabaseClient`.
     *   **Impact:** Potential inconsistency if this doesn't align with the project-wide standardized Supabase client.
+66. **Missing Dependencies and Mock Data in `profile.tsx`:**
+    *   **File:** [`packages/client/src/pages/profile.tsx`](packages/client/src/pages/profile.tsx)
+    *   **Issues:**
+        1.  The page imports functions from `../services/moodboard.service`, but this file does not exist.
+        2.  The page imports `ClientMoodBoard` and `CreateMoodBoardInput` types from `../types/moodboard`, but this file does not exist.
+        3.  The page uses mock data for subscription and API usage.
+        4.  The page uses `alert` to show error messages instead of the `ToastProvider`.
+    *   **Impact:** The page will not compile and the mood board and subscription functionality will not work.
+    *   **Action:**
+        1.  Create the `moodboard.service.ts` file in `packages/client/src/services/` and define the required functions.
+        2.  Create the `moodboard.ts` file in `packages/client/src/types/` and define the required types.
+        3.  Replace the mock data with API calls to fetch real subscription and API usage data from the backend.
+        4.  Use the `ToastProvider` to show error messages.
+    *   **Priority:** Critical
     *   **Action:** Verify and align with the standard Supabase client import path.
+    *   **Priority:** High
+67. **Mock Data and Missing Dependencies in `upload.tsx`:**
+    *   **File:** [`packages/client/src/pages/upload.tsx`](packages/client/src/pages/upload.tsx)
+    *   **Issues:**
+        1.  The `handleProcessFile` function uses mock data to display recognition results.
+        2.  The page defines a `RecognitionResult` type, but it's not imported from a shared types file.
+        3.  The `handleAddToComparison` function uses `alert` to show a success message instead of the `ToastProvider`.
+    *   **Impact:** The page does not display real recognition results and the `RecognitionResult` type is not shared with other components.
+    *   **Action:**
+        1.  Replace the mock data with an API call to fetch real recognition results from the backend.
+        2.  Move the `RecognitionResult` type to a shared types file and import it in the `upload.tsx` file.
+        3.  Use the `ToastProvider` to show a success message when a material is added to the comparison.
     *   **Priority:** High
 
 49. **Logger Inconsistency in `session.controller.ts`:**
@@ -525,12 +689,48 @@ These issues significantly impact core functionality or security and should be p
 50. **Password Validation in `session.controller.ts` (`registerUser`):**
     *   **File:** [`packages/server/src/controllers/auth/session.controller.ts`](packages/server/src/controllers/auth/session.controller.ts:45)
     *   **Issue:** Contains password validation regex.
+68. **Duplicate Interfaces and Missing Import in Shared `Header.tsx`:**
+    *   **File:** [`packages/shared/src/components/ui/Header.tsx`](packages/shared/src/components/ui/Header.tsx)
+    *   **Issues:**
+        1.  The `NavItem` and `HeaderProps` interfaces are defined in both `packages/shared/src/components/ui/Header.tsx` and `packages/shared/src/components/interfaces/HeaderInterfaces.ts`.
+        2.  The component uses `React.useState` and `React.useEffect` but doesn't import `React` itself, only `ReactNode`.
+    *   **Impact:** The duplicate interfaces could lead to inconsistencies, and the missing `React` import will cause a compilation error.
+    *   **Action:**
+        1.  Remove the `NavItem` and `HeaderProps` interfaces from `packages/shared/src/components/ui/Header.tsx` and import them from `packages/shared/src/components/interfaces/HeaderInterfaces.ts`.
+        2.  Add `import React from 'react';` to the top of the file.
+    *   **Priority:** High
     *   **Impact:** Duplicates validation logic if also handled by Supabase Auth or a shared utility.
     *   **Action:** If custom registration logic is retained (unlikely given Supabase Auth integration - see Critical Issue #33), centralize password validation. Otherwise, this will be removed when refactoring to Supabase Auth.
     *   **Priority:** High (Contingent on Critical Issue #33 resolution)
 
 51. **Logger Inconsistency in `twoFactor.controller.ts`:**
     *   **File:** [`packages/server/src/controllers/auth/twoFactor.controller.ts`](packages/server/src/controllers/auth/twoFactor.controller.ts:9)
+## III. Summary of New Findings
+
+This code review has uncovered a number of additional issues, primarily related to missing files, mock data, and inconsistent coding practices. The most critical issues are the missing `email.service.ts`, `supabaseAuth.service.ts`, `moodboard.service.ts`, and `ToastProvider.tsx` files, which will prevent the application from compiling and running. The use of mock data in several components is also a high-priority issue, as it prevents the application from being used with real data.
+
+The following is a summary of the new findings:
+
+*   **Critical Issues:**
+    *   Missing `email.service.ts` file
+    *   Missing `supabaseAuth.service.ts` file
+    *   Missing `moodboard.service.ts` file
+    *   Missing `ToastProvider.tsx` file
+*   **High Priority Issues:**
+    *   Mock data in `DashboardStats.tsx`
+    *   Missing `HeaderInterfaces` in `Header.tsx`
+    *   Hardcoded navigation items in `Header.tsx`
+    *   Missing dependencies and simulated logic in `MaterialViewer.tsx`
+    *   Missing `location` prop in `PrivateRoute`
+    *   Missing dependencies and inconsistent error handling in `login.tsx`
+    *   Missing dependencies and inconsistent error handling in `register.tsx`
+    *   Missing dependencies and mock data in `profile.tsx`
+    *   Mock data and missing dependencies in `upload.tsx`
+    *   Duplicate interfaces and missing import in shared `Header.tsx`
+*   **Medium Priority Issues:**
+    *   Redundant navigation links in `Header.tsx`
+*   **Low Priority Issues:**
+    *   Placeholder hero image in `Hero.tsx`
     *   **Issue:** Uses `logger` from `../../utils/logger`.
     *   **Impact:** Inconsistent logging practices.
     *   **Action:** Refactor to use the project's standard `unified-logger`.
@@ -695,6 +895,69 @@ These issues significantly impact core functionality or security and should be p
     *   **Issue:** Imports `supabaseClient` from `../supabase/supabaseClient`.
     *   **Impact:** Needs to align with the standardized Supabase client instance.
     *   **Action:** Verify and align with the standard Supabase client import path.
+    *   **Priority:** High
+
+75. **Mock Implementation of `databaseService.ts`:**
+    *   **File:** [`packages/server/src/services/database/databaseService.ts`](packages/server/src/services/database/databaseService.ts:1)
+    *   **Issue:** The entire service is a placeholder using a `MockDatabaseConnection`. It does not connect to or interact with any real database.
+    *   **Impact:** Any feature relying on this service is non-functional. This represents a significant piece of unimplemented core infrastructure.
+    *   **Action:** Replace `MockDatabaseConnection` with a real database connection implementation (e.g., using the project's standard Supabase/Prisma client). This is a foundational task.
+    *   **Priority:** Critical
+
+76. **Logger Inconsistency in `databaseService.ts`:**
+    *   **File:** [`packages/server/src/services/database/databaseService.ts`](packages/server/src/services/database/databaseService.ts:8)
+    *   **Issue:** Uses `logger` from `../../utils/logger`.
+    *   **Impact:** Inconsistent logging practices.
+    *   **Action:** Refactor to use the project's standard `unified-logger`.
+    *   **Priority:** High
+
+77. **Configuration Dependency in `databaseService.ts`:**
+    *   **File:** [`packages/server/src/services/database/databaseService.ts`](packages/server/src/services/database/databaseService.ts:9)
+    *   **Issue:** Uses a separate `config` from `../../config/config`, which is likely redundant with `unified-config.ts`.
+    *   **Impact:** Inconsistent configuration management.
+    *   **Action:** Refactor to use `UnifiedConfig` for all database configuration.
+    *   **Priority:** High (Linked to existing issue #28)
+
+78. **Placeholder Implementations for Core Features in `dataset-management.service.ts`:**
+    *   **File:** [`packages/server/src/services/datasets/dataset-management.service.ts`](packages/server/src/services/datasets/dataset-management.service.ts:1)
+    *   **Issue:** Many advanced features are placeholders (e.g., `detectDuplicateImages`, `detectCorruptedImages`, `generateAugmentations`, `startDatasetTrainingJob`).
+    *   **Impact:** The core value proposition of this advanced service is non-functional.
+    *   **Action:** Implement these placeholder methods, which will require significant development effort involving image processing, ML libraries, and/or external services.
+    *   **Priority:** Critical
+
+79. **Logger Inconsistency in `dataset-management.service.ts`:**
+    *   **File:** [`packages/server/src/services/datasets/dataset-management.service.ts`](packages/server/src/services/datasets/dataset-management.service.ts:9)
+    *   **Issue:** Uses `logger` from `../../utils/logger`.
+    *   **Impact:** Inconsistent logging practices.
+    *   **Action:** Refactor to use the project's standard `unified-logger`.
+    *   **Priority:** High
+
+80. **Configuration Dependency in `dataset-management.service.ts`:**
+    *   **File:** [`packages/server/src/services/datasets/dataset-management.service.ts`](packages/server/src/services/datasets/dataset-management.service.ts:9)
+    *   **Issue:** Uses a separate `config` from `../../config/config`.
+    *   **Impact:** Inconsistent configuration management.
+    *   **Action:** Refactor to use `UnifiedConfig`.
+    *   **Priority:** High (Linked to existing issue #28)
+
+81. **Supabase Client Import in `dataset-management.service.ts`:**
+    *   **File:** [`packages/server/src/services/datasets/dataset-management.service.ts`](packages/server/src/services/datasets/dataset-management.service.ts:11-12)
+    *   **Issue:** Imports `supabaseClient` and `supabase`.
+    *   **Impact:** Needs to be consolidated to a single, standardized Supabase client instance.
+    *   **Action:** Verify and align with the standard Supabase client import path.
+    *   **Priority:** High
+
+82. **Database Model Dependency in `dataset-management.service.ts`:**
+    *   **File:** [`packages/server/src/services/datasets/dataset-management.service.ts`](packages/server/src/services/datasets/dataset-management.service.ts:10)
+    *   **Issue:** Relies on `supabaseDatasetService`.
+    *   **Impact:** Functionality depends entirely on the correctness of `supabaseDatasetService` and its alignment with the primary database.
+    *   **Action:** Ensure `supabaseDatasetService` is thoroughly reviewed and aligned with the project's primary database strategy.
+    *   **Priority:** High (Linked to Critical Issue #2)
+
+83. **Local Filesystem Usage in `dataset-management.service.ts`:**
+    *   **File:** [`packages/server/src/services/datasets/dataset-management.service.ts`](packages/server/src/services/datasets/dataset-management.service.ts:14-15)
+    *   **Issue:** Imports `fs` and `path`, suggesting potential local filesystem use.
+    *   **Impact:** Any use for persistent storage is problematic for server environments.
+    *   **Action:** Investigate usage. If not for temporary, request-scoped operations, refactor to use shared object storage.
     *   **Priority:** High
 
 ## III. Medium Priority Issues & Refinements
@@ -1020,6 +1283,81 @@ These issues significantly impact core functionality or security and should be p
     *   **Impact:** Limits multi-currency support for direct payments.
     *   **Action:** If multi-currency is a requirement, this needs to be handled more dynamically (e.g., from package data or user settings). Document if USD is the only supported currency for now.
     *   **Priority:** Low
+    *   **File:** [`packages/server/src/services/credit/bulkPurchase.service.ts`](packages/server/src/services/credit/bulkPurchase.service.ts:1)
+    *   **Issue:** Logs and re-throws original errors.
+    *   **Impact:** May obscure specific error context.
+    *   **Action:** Consider more specific custom error types (e.g., `PurchaseError`, `PackageNotFoundError`).
+    *   **Priority:** Medium
+
+89. **Input Validation for `stripePriceId` in `bulkPurchase.service.ts`:**
+    *   **File:** [`packages/server/src/services/credit/bulkPurchase.service.ts`](packages/server/src/services/credit/bulkPurchase.service.ts:1) (method `createBulkCreditPackage`)
+    *   **Issue:** `stripePriceId` is optional and not validated for format if provided.
+    *   **Impact:** Minor, as Stripe would reject an invalid ID.
+    *   **Action:** Consider adding format validation if a known pattern exists for Stripe Price IDs.
+    *   **Priority:** Low
+
+90. **Currency Handling in `bulkPurchase.service.ts`:**
+    *   **File:** [`packages/server/src/services/credit/bulkPurchase.service.ts`](packages/server/src/services/credit/bulkPurchase.service.ts:1) (methods `purchaseCredits`, `purchaseCreditPackage`)
+    *   **Issue:** 'USD' is hardcoded for Stripe payments if not using a `stripePriceId`.
+    *   **Impact:** Limits multi-currency support for direct payments.
+    *   **Action:** If multi-currency is a requirement, this needs to be handled more dynamically (e.g., from package data or user settings). Document if USD is the only supported currency for now.
+    *   **Priority:** Low
+
+91. **Inefficient `findUserByEmail` in `transfer.service.ts`:**
+    *   **File:** [`packages/server/src/services/credit/transfer.service.ts`](packages/server/src/services/credit/transfer.service.ts:301)
+    *   **Issue:** Lists all users to find one by email, which is highly inefficient.
+    *   **Impact:** Poor performance that will not scale with the number of users.
+    *   **Action:** Replace with `supabaseClient.getClient().auth.admin.getUserByEmail(email)`.
+    *   **Priority:** Medium
+
+92. **Authorization for Transfers in `transfer.service.ts`:**
+    *   **File:** [`packages/server/src/services/credit/transfer.service.ts`](packages/server/src/services/credit/transfer.service.ts:1)
+    *   **Issue:** The service does not check if the user initiating the transfer is authorized to do so (i.e., if `fromUserId` matches the authenticated user's ID).
+    *   **Impact:** Potential for unauthorized credit transfers if not checked in the calling controller.
+    *   **Action:** Ensure controllers calling `transferCredits` verify that the authenticated user is `fromUserId` or has administrative privileges.
+    *   **Priority:** Medium
+
+93. **Return Type of `getTransferHistory` and `getTransferById` in `transfer.service.ts`:**
+    *   **File:** [`packages/server/src/services/credit/transfer.service.ts`](packages/server/src/services/credit/transfer.service.ts:1) (methods `getTransferHistory` [line 181](packages/server/src/services/credit/transfer.service.ts:181), `getTransferById` [line 245](packages/server/src/services/credit/transfer.service.ts:245))
+    *   **Issue:** Both functions return `Promise<any[]>` or `Promise<any>`.
+    *   **Impact:** Lack of type safety.
+    *   **Action:** Define a proper interface for the formatted transfer record (including nested user details) and use it as the return type.
+    *   **Priority:** Low
+
+94. **Atomicity of `processTopup` in `autoTopup.service.ts`:**
+    *   **File:** [`packages/server/src/services/credit/autoTopup.service.ts`](packages/server/src/services/credit/autoTopup.service.ts:129)
+    *   **Issue:** Performs multiple critical steps (DB writes, Stripe payment, credit provisioning) sequentially. Failure after payment but before credit grant is a key risk.
+    *   **Impact:** Potential for inconsistent state and user billing issues.
+    *   **Action:** Implement robust distributed transaction patterns (e.g., transactional outbox, reliable queues with retries/DLQ for the credit granting step) or ensure idempotent operations with clear reconciliation processes for failures.
+    *   **Priority:** Medium
+
+95. **Error Handling in `autoTopup.service.ts`:**
+    *   **File:** [`packages/server/src/services/credit/autoTopup.service.ts`](packages/server/src/services/credit/autoTopup.service.ts:1)
+    *   **Issue:** Logs and re-throws original errors.
+    *   **Impact:** May obscure specific error context.
+    *   **Action:** Consider more specific custom error types from this service and its dependencies.
+    *   **Priority:** Medium
+
+96. **Input Validation for `paymentMethodId` in `autoTopup.service.ts`:**
+    *   **File:** [`packages/server/src/services/credit/autoTopup.service.ts`](packages/server/src/services/credit/autoTopup.service.ts:48)
+    *   **Issue:** `paymentMethodId` is not validated for format or existence before use (though Stripe would reject an invalid one).
+    *   **Impact:** Minor, as Stripe handles final validation.
+    *   **Action:** Consider adding format validation if a known pattern exists.
+    *   **Priority:** Medium
+
+97. **`processAllTopups` Scalability in `autoTopup.service.ts`:**
+    *   **File:** [`packages/server/src/services/credit/autoTopup.service.ts`](packages/server/src/services/credit/autoTopup.service.ts:270)
+    *   **Issue:** Fetches all users needing top-up then processes sequentially.
+    *   **Impact:** Potential performance issues with many users.
+    *   **Action:** Acceptable for now. Consider batching or more targeted queries if it becomes a bottleneck.
+    *   **Priority:** Medium
+
+98. **`setInterval` for `scheduleTopupChecks` in `autoTopup.service.ts`:**
+    *   **File:** [`packages/server/src/services/credit/autoTopup.service.ts`](packages/server/src/services/credit/autoTopup.service.ts:303)
+    *   **Issue:** Uses `setInterval` for periodic checks.
+    *   **Impact:** Can be less reliable than cron jobs in production.
+    *   **Action:** Consider a robust cron job system for production; `setInterval` is acceptable for now.
+    *   **Priority:** Medium
 
 ## IV. Low Priority & Code Quality Refinements
 
@@ -1117,4 +1455,108 @@ These issues significantly impact core functionality or security and should be p
     *   **Issue:** The `saveComparisonResult` method is a placeholder.
     *   **Impact:** Comparison results are not persisted.
     *   **Action:** Implement the database insertion logic using Prisma to save the `ComparisonResult` to the `comparison_results` table (or equivalent).
+57. **Missing Edge Functions Implementation:**
+    *   **File:** `packages/server/src/services/supabase/` (missing edge-functions directory)
+    *   **Issue:** No Edge Functions found despite Supabase setup - missing serverless function implementations
+    *   **Impact:** Limited server-side processing capabilities, potential performance bottlenecks
+    *   **Action:** Implement Edge Functions for data processing, webhooks, and API integrations using TypeScript/Deno
+    *   **Priority:** Low
+
+58. **Incomplete Realtime Subscriptions Implementation:**
+    *   **File:** [`packages/shared/src/services/supabase/supabaseClient.ts`](packages/shared/src/services/supabase/supabaseClient.ts:25)
+    *   **Issue:** Realtime configuration present but limited subscription implementations found
+    *   **Impact:** Missing real-time features for collaborative editing and live updates
+    *   **Action:** Implement comprehensive Realtime subscriptions for materials, collections, and user activities
+    *   **Priority:** Low
+
+59. **Missing Storage Policies for Supabase Storage:**
+    *   **File:** [`packages/server/src/services/supabase/migrations/003_dataset_upload.sql`](packages/server/src/services/supabase/migrations/003_dataset_upload.sql:82-85)
+    *   **Issue:** Basic storage policies exist but lack granular access control and security policies
+    *   **Impact:** Potential security vulnerabilities in file access and storage management
+    *   **Action:** Implement comprehensive RLS policies for storage buckets with proper user-based access control
+    *   **Priority:** Low
+
+60. **Inconsistent Migration Naming and Structure:**
+    *   **File:** `packages/server/src/services/supabase/migrations/`
+    *   **Issue:** Migration files have inconsistent numbering (001, 002, 003, 004, 005 twice) and structure
+    *   **Impact:** Migration conflicts and deployment issues
+    *   **Action:** Standardize migration naming convention and ensure sequential numbering
+    *   **Priority:** Low
+
+61. **Missing Database Indexes for Performance:**
+    *   **File:** [`packages/server/src/services/supabase/migrations/001_initial_schema.sql`](packages/server/src/services/supabase/migrations/001_initial_schema.sql:29-34)
+    *   **Issue:** Limited indexes on frequently queried columns, missing composite indexes
+    *   **Impact:** Poor query performance on large datasets
+    *   **Action:** Add indexes for search patterns, foreign keys, and frequently filtered columns
+    *   **Priority:** Low
+
+62. **Incomplete Vector Search Implementation:**
+    *   **File:** [`packages/server/src/services/supabase/migrations/002_hybrid_search.sql`](packages/server/src/services/supabase/migrations/002_hybrid_search.sql:6-109)
+    *   **Issue:** Hybrid search function exists but lacks proper error handling and optimization
+    *   **Impact:** Unreliable vector similarity search functionality
+    *   **Action:** Enhance hybrid search with proper error handling, parameter validation, and performance optimization
+    *   **Priority:** Low
+
+63. **Missing Supabase CLI Configuration:**
+    *   **File:** Project root (missing `supabase/` directory)
+    *   **Issue:** No Supabase CLI configuration found for local development and migrations
+    *   **Impact:** Difficult local development setup and migration management
+    *   **Action:** Initialize Supabase CLI configuration with proper environment setup
+    *   **Priority:** Low
+
+64. **Hardcoded Supabase Configuration Values:**
+    *   **File:** [`packages/shared/src/utils/unified-config.ts`](packages/shared/src/utils/unified-config.ts:326-331)
+    *   **Issue:** Some Supabase configuration values are hardcoded instead of using environment variables
+    *   **Impact:** Deployment flexibility and security concerns
+    *   **Action:** Move all configuration to environment variables with proper validation
+    *   **Priority:** Low
+
+65. **Missing Row Level Security Policies:**
+    *   **File:** [`packages/server/src/services/supabase/migrations/001_initial_schema.sql`](packages/server/src/services/supabase/migrations/001_initial_schema.sql:35-46)
+    *   **Issue:** Basic RLS policies exist but lack comprehensive coverage for all tables and use cases
+    *   **Impact:** Potential data access security vulnerabilities
+    *   **Action:** Implement comprehensive RLS policies for all tables with proper user context and role-based access
+    *   **Priority:** Low
+
+66. **Incomplete Message Broker Realtime Integration:**
+    *   **File:** [`packages/server/src/services/messaging/enhancedMessageBroker.ts`](packages/server/src/services/messaging/enhancedMessageBroker.ts:420-440)
+    *   **Issue:** Message broker has Supabase Realtime integration but lacks proper error handling and reconnection logic
+    *   **Impact:** Unreliable real-time messaging and potential message loss
+    *   **Action:** Enhance Realtime integration with proper error handling, reconnection, and message persistence
+    *   **Priority:** Low
+
+67. **Missing Supabase Function Definitions:**
+    *   **File:** [`packages/server/src/services/supabase/migrations/`](packages/server/src/services/supabase/migrations/)
+    *   **Issue:** SQL functions are defined but lack comprehensive input validation and error handling
+    *   **Impact:** Potential SQL injection vulnerabilities and runtime errors
+    *   **Action:** Add proper input validation, error handling, and security checks to all SQL functions
+    *   **Priority:** Low
+
+68. **Inconsistent Supabase Client Usage:**
+    *   **File:** Multiple files using `supabase.getClient()`
+    *   **Issue:** Inconsistent patterns for accessing Supabase client across different services
+    *   **Impact:** Code maintainability and potential connection management issues
+    *   **Action:** Standardize Supabase client access patterns and implement proper connection pooling
+    *   **Priority:** Low
+
+69. **Missing Supabase Storage Integration Tests:**
+    *   **File:** [`packages/shared/src/services/storage/supabaseStorageProvider.ts`](packages/shared/src/services/storage/supabaseStorageProvider.ts:1)
+    *   **Issue:** Storage provider implementation lacks comprehensive integration tests
+    *   **Impact:** Potential storage functionality issues in production
+    *   **Action:** Implement comprehensive integration tests for storage operations including upload, download, and deletion
+    *   **Priority:** Low
+
+70. **Incomplete Subscription Management System:**
+    *   **File:** Multiple subscription-related files
+    *   **Issue:** Complex subscription system with potential race conditions and state management issues
+    *   **Impact:** Billing inconsistencies and subscription state corruption
+    *   **Action:** Implement proper state machine for subscription management with atomic operations
+    *   **Priority:** Low
+
+---
+
+*Total Issues Identified: 282+ across Critical (35+), High Priority (83+), Medium Priority (98+), and Low Priority (70+) categories*
+
+*Last Updated: [Current Date]*
+*Review Status: Comprehensive scan completed including Supabase-specific components - requires systematic resolution*
     *   **Priority:** Low

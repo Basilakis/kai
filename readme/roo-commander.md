@@ -104,6 +104,178 @@ The governance framework ensures that modes will request clarification for poorl
 
 ---
 
+## Memory System Architecture
+
+### Overview
+
+Roo Commander implements a sophisticated four-layer memory system that provides persistent context and gets reviewed before taking any actions. This memory system ensures continuity, traceability, and informed decision-making across all interactions.
+
+### Four-Layer Memory Architecture
+
+#### 1. **Session Management V7**
+- **Purpose**: Tracks overall user interaction narratives and goals
+- **Components**:
+  - **Session Log** (`session_log.md`): TOML+Markdown format with timestamped events
+  - **Artifact Management**: Organized contextual notes in standardized subdirectories
+  - **Session Directory Structure**: `.ruru/sessions/SESSION-[Goal]-[Timestamp]/`
+- **Memory Persistence**:
+  - Chronological event logging with timestamps
+  - Links to related tasks and artifacts
+  - Structured metadata for easy retrieval
+- **Review Process**: Active session context is automatically loaded and referenced before actions
+
+#### 2. **MDTM (Markdown-Driven Task Management)**
+- **Purpose**: Tracks specific work units and their progress
+- **Components**:
+  - **Task Files**: TOML+Markdown format with structured metadata
+  - **Progress Tracking**: Checklist items with completion status
+  - **Task Relationships**: Links between related tasks and coordinators
+- **Memory Persistence**:
+  - Task status and progress history
+  - Decision records and implementation notes
+  - Cross-references to related documentation
+- **Review Process**: Task context and history reviewed before continuing work
+
+#### 3. **Knowledge Base & Rules System**
+- **Purpose**: Stores operational procedures, best practices, and domain knowledge
+- **Components**:
+  - **Rules** (`.roo/rules/`): Standardized procedures and workflows
+  - **Mode Knowledge Bases** (`.ruru/modes/[mode]/kb/`): Specialist domain knowledge
+  - **Templates** (`.ruru/templates/`): Structured document templates
+- **Memory Persistence**:
+  - Versioned rule sets with change tracking
+  - Mode-specific expertise and procedures
+  - Reusable templates for consistent documentation
+- **Review Process**: Relevant rules and KB articles consulted before task execution
+
+#### 4. **Documentation & Decisions**
+- **Purpose**: Maintains architectural decisions and project documentation
+- **Components**:
+  - **ADRs** (Architecture Decision Records): Formal decision documentation
+  - **Project Documentation**: Technical specifications and guides
+  - **Context Sources**: External references and research
+- **Memory Persistence**:
+  - Immutable decision records with rationale
+  - Versioned documentation with change history
+  - Searchable knowledge repository
+- **Review Process**: Historical decisions and documentation reviewed for consistency
+
+### Memory Review Process
+
+Before taking any action, Roo Commander modes follow this memory review workflow:
+
+#### 1. **Context Loading**
+- Load active session information if available
+- Retrieve relevant MDTM task context
+- Identify applicable rules and procedures
+- Gather related documentation and decisions
+
+#### 2. **Relevance Assessment**
+- Analyze current request against historical context
+- Identify potential conflicts or dependencies
+- Determine if previous decisions impact current work
+- Assess if existing patterns or solutions apply
+
+#### 3. **Informed Decision Making**
+- Synthesize current request with historical context
+- Apply relevant rules and best practices
+- Consider architectural decisions and constraints
+- Plan approach based on accumulated knowledge
+
+#### 4. **Action Execution**
+- Execute planned actions with full context awareness
+- Update relevant memory systems with new information
+- Log decisions and outcomes for future reference
+- Maintain consistency with established patterns
+
+### Memory System Benefits
+
+#### **Continuity**
+- Seamless handoffs between sessions and modes
+- Preserved context across interruptions
+- Consistent approach to similar problems
+
+#### **Traceability**
+- Complete audit trail of decisions and actions
+- Clear relationships between tasks and outcomes
+- Searchable history for debugging and analysis
+
+#### **Learning**
+- Accumulated expertise from previous interactions
+- Pattern recognition for improved efficiency
+- Continuous improvement of procedures and approaches
+
+#### **Quality Assurance**
+- Consistency with established standards
+- Validation against previous decisions
+- Prevention of contradictory implementations
+
+### Activating Memory Features
+
+#### **Session Management**
+```bash
+# Sessions are automatically initiated by coordinator modes
+# when complex, multi-step work is detected
+```
+
+#### **MDTM Task Tracking**
+```bash
+# Tasks are created automatically for:
+# - Complex implementations
+# - Multi-specialist coordination
+# - High-risk changes
+# - Auditable work
+```
+
+#### **Knowledge Base Access**
+```bash
+# Rules and KB articles are automatically consulted
+# based on task type and mode specialization
+```
+
+### Memory System Files and Locations
+
+#### **Session Files**
+- **Session Logs**: `.ruru/sessions/SESSION-[ID]/session_log.md`
+- **Artifacts**: `.ruru/sessions/SESSION-[ID]/artifacts/[type]/`
+- **Templates**: `.ruru/templates/toml-md/19_mdtm_session.md`
+
+#### **Task Management**
+- **Task Files**: `.ruru/tasks/[CATEGORY]/TASK-[ID].md`
+- **Templates**: `.ruru/templates/toml-md/01_mdtm_feature.md`
+
+#### **Knowledge Base**
+- **Global Rules**: `.roo/rules/`
+- **Mode Knowledge**: `.ruru/modes/[mode-slug]/kb/`
+- **Templates**: `.ruru/templates/toml-md/`
+
+#### **Documentation**
+- **ADRs**: `.ruru/docs/decisions/`
+- **Project Docs**: `.ruru/docs/`
+- **Context Sources**: `.ruru/docs/context/`
+
+### Best Practices for Memory Usage
+
+#### **For Users**
+1. **Provide Clear Goals**: Help the system understand your objectives for better context building
+2. **Reference Previous Work**: Mention related previous sessions or tasks when relevant
+3. **Review Session Summaries**: Check session artifacts to understand what was accomplished
+4. **Maintain Consistency**: Use established patterns and decisions when possible
+
+#### **For Coordinators**
+1. **Session Initiation**: Start sessions for complex or long-running work
+2. **Context Linking**: Connect related tasks and decisions explicitly
+3. **Progress Logging**: Maintain detailed logs of significant events and decisions
+4. **Knowledge Updates**: Update rules and KB articles based on learnings
+
+#### **For Specialists**
+1. **Context Review**: Always review relevant memory before starting work
+2. **Progress Updates**: Keep MDTM tasks and session logs current
+3. **Decision Documentation**: Record significant decisions and rationale
+4. **Pattern Recognition**: Leverage previous solutions for similar problems
+
+---
+
 ## Usage Guide
 
 ### Core Concepts

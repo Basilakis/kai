@@ -111,9 +111,14 @@ router.post(
       throw new ApiError(400, 'No PDF file uploaded');
     }
     
+    // Validate that factoryId is provided and not empty
+    const { factoryId } = req.body;
+    if (!factoryId || factoryId.trim() === '') {
+      throw new ApiError(400, 'Factory selection is required for catalog import');
+    }
+    
     const catalogName = req.body.name || path.basename(req.file.originalname, path.extname(req.file.originalname));
     const manufacturer = req.body.manufacturer || 'Unknown';
-    const factoryId = req.body.factoryId || req.user?.id; // Use factoryId from request or default to current user
     
     // Create a job to process the catalog asynchronously
     res.status(202).json({
@@ -134,7 +139,7 @@ router.post(
       userId: req.user?.id || 'system',
       catalogName,
       manufacturer,
-      factoryId, // Add factoryId to processing options
+      factoryId: factoryId.trim(), // Use validated factoryId
       extractImages: true,
       extractText: true,
       associateTextWithImages: true,
@@ -155,10 +160,15 @@ router.post(
   authMiddleware,
   authorizeRoles(['admin', 'manager']),
   asyncHandler(async (req: Request, res: Response) => {
-    const { filePath, catalogName, manufacturer } = req.body;
+    const { filePath, catalogName, manufacturer, factoryId } = req.body;
     
     if (!filePath) {
       throw new ApiError(400, 'File path is required');
+    }
+    
+    // Validate that factoryId is provided and not empty
+    if (!factoryId || factoryId.trim() === '') {
+      throw new ApiError(400, 'Factory selection is required for catalog processing');
     }
     
     if (!fs.existsSync(filePath)) {
@@ -212,6 +222,11 @@ router.post(
     for (const catalog of catalogs) {
       if (!catalog.filePath) {
         throw new ApiError(400, 'File path is required for each catalog');
+      }
+      
+      // Validate that factoryId is provided and not empty for each catalog
+      if (!catalog.factoryId || catalog.factoryId.trim() === '') {
+        throw new ApiError(400, 'Factory selection is required for each catalog in batch processing');
       }
       
       if (!fs.existsSync(catalog.filePath)) {

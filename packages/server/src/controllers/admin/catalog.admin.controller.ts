@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+timport { Request, Response } from 'express';
 import { getCatalogs, getCatalogById } from '../../models/catalog.model';
 import { getMaterialsByCatalogId } from '../../models/material.model';
 import { ApiError } from '../../middleware/error.middleware';
@@ -311,9 +311,26 @@ export async function generateFilteredMaterialsXml(req: Request, res: Response) 
   }
 }
 
-// Helper function to get materials by filter (placeholder - needs implementation)
+// Helper function to get materials by filter using Supabase material service
 async function getMaterialsByFilter(filter: Record<string, any>): Promise<any[]> {
-  // This function needs to be implemented based on your materials model
-  // It should return materials that match the specified filters
-  throw new Error('getMaterialsByFilter function not implemented');
+  try {
+    // Map filter parameters to search options for the Supabase material service
+    const searchOptions = {
+      manufacturer: filter.manufacturer || undefined,
+      finish: filter.finish || undefined,
+      materialType: filter.materialType || undefined,
+      color: filter.color || undefined,
+      tags: filter.tags || undefined,
+      query: filter.query || undefined
+    };
+
+    // Use the Supabase material service to search for materials
+    const materials = await SupabaseMaterialService.searchMaterials(searchOptions);
+    
+    console.log(`Found ${materials.length} materials matching filter criteria`);
+    return materials;
+  } catch (error) {
+    console.error('Error in getMaterialsByFilter:', error);
+    throw error;
+  }
 }

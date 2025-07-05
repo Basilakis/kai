@@ -5,9 +5,7 @@
  * Allows defining access controls at collection, material, and operation levels.
  */
 
-import mongoose from 'mongoose';
-import type { Document } from 'mongoose';
-import { Schema } from 'mongoose';
+import { supabaseClient } from '../../../../shared/src/services/supabase/supabaseClient';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../../utils/logger';
 
@@ -58,92 +56,23 @@ export enum KnowledgeBaseRole {
 }
 
 /**
- * Knowledge base user permission document interface
+ * Knowledge base user permission document interface for Supabase
  */
-export interface KnowledgeBasePermissionDocument extends Document {
+export interface KnowledgeBasePermissionDocument {
   id: string;                    // Unique permission ID
   userId: string;                // User ID
   role: KnowledgeBaseRole;       // User's role
   rules: PermissionRule[];       // Permission rules
-  createdAt: Date;               // Creation timestamp
-  updatedAt: Date;               // Update timestamp
+  createdAt: string;             // Creation timestamp (ISO string)
+  updatedAt: string;             // Update timestamp (ISO string)
   createdBy: string;             // User who created the permission
-  expiry?: Date;                 // Optional expiry date
+  expiry?: string;               // Optional expiry date (ISO string)
   metadata?: Record<string, any>; // Additional metadata
 }
 
 /**
- * Knowledge base permission schema
- */
-const knowledgeBasePermissionSchema = new Schema<KnowledgeBasePermissionDocument>(
-  {
-    id: {
-      type: String,
-      required: true,
-      unique: true,
-      default: () => uuidv4()
-    },
-    userId: {
-      type: String,
-      required: true,
-      index: true
-    },
-    role: {
-      type: String,
-      required: true,
-      enum: Object.values(KnowledgeBaseRole),
-      default: KnowledgeBaseRole.VIEWER
-    },
-    rules: [{
-      scope: {
-        type: String,
-        required: true,
-        enum: Object.values(PermissionScope)
-      },
-      entityId: {
-        type: String
-      },
-      level: {
-        type: String,
-        required: true,
-        enum: Object.values(PermissionLevel)
-      },
-      operations: [String],
-      conditions: Schema.Types.Mixed
-    }],
-    createdBy: {
-      type: String,
-      required: true
-    },
-    expiry: {
-      type: Date
-    },
-    metadata: {
-      type: Schema.Types.Mixed,
-      default: {}
-    }
-  },
-  {
-    timestamps: true
-  }
-);
-
-// Create indexes
-knowledgeBasePermissionSchema.index({ userId: 1 });
-knowledgeBasePermissionSchema.index({ 'rules.scope': 1, 'rules.entityId': 1 });
-knowledgeBasePermissionSchema.index({ updatedAt: -1 });
-
-/**
- * Knowledge base permission model
- */
-const KnowledgeBasePermission = mongoose.model<KnowledgeBasePermissionDocument>(
-  'KnowledgeBasePermission', 
-  knowledgeBasePermissionSchema
-);
-
-/**
  * Create a new permission
- * 
+ *
  * @param permissionData Permission data
  * @returns Created permission document
  */
@@ -152,13 +81,30 @@ export async function createPermission(
 ): Promise<KnowledgeBasePermissionDocument> {
   try {
     // Ensure the permission has an ID
-    permissionData.id = permissionData.id || uuidv4();
+    const id = permissionData.id || uuidv4();
     
-    // Create the permission
-    const permission = new KnowledgeBasePermission(permissionData);
-    await permission.save();
+    // Prepare data for Supabase
+    const now = new Date().toISOString();
+    const insertData = {
+      ...permissionData,
+      id,
+      createdAt: now,
+      updatedAt: now,
+      metadata: permissionData.metadata || {}
+    };
     
-    return permission;
+    // Create the permission in Supabase
+    const { data, error } = await supabaseClient.getClient()
+      .from('knowledge_base_permissions')
+      .insert(insertData)
+      .select()
+      .single();
+    
+    if (error) {
+      throw error;
+    }
+    
+    return data;
   } catch (err) {
     logger.error(`Failed to create knowledge base permission: ${err}`);
     throw new Error(`Failed to create knowledge base permission: ${err instanceof Error ? err.message : String(err)}`);
@@ -167,13 +113,27 @@ export async function createPermission(
 
 /**
  * Get a permission by ID
- * 
+ *
  * @param id Permission ID
  * @returns Permission document
  */
 export async function getPermissionById(id: string): Promise<KnowledgeBasePermissionDocument | null> {
   try {
-    return await KnowledgeBasePermission.findOne({ id });
+    const { data, error } = await supabaseClient.getClient()
+      .from('knowledge_base_permissions')
+      .select('*')
+      .eq('id', id)
+      .single();
+    
+    if (error) {
+      if (error.code === 'PGRST116') {
+        // No rows returned
+        return null;
+      }
+      throw error;
+    }
+    
+    return data;
   } catch (err) {
     logger.error(`Failed to get knowledge base permission: ${err}`);
     throw new Error(`Failed to get knowledge base permission: ${err instanceof Error ? err.message : String(err)}`);
@@ -182,13 +142,22 @@ export async function getPermissionById(id: string): Promise<KnowledgeBasePermis
 
 /**
  * Get user's permissions
- * 
+ *
  * @param userId User ID
  * @returns Array of permission documents
  */
 export async function getUserPermissions(userId: string): Promise<KnowledgeBasePermissionDocument[]> {
   try {
-    return await KnowledgeBasePermission.find({ userId });
+    const { data, error } = await supabaseClient.getClient()
+      .from('knowledge_base_permissions')
+      .select('*')
+      .eq('userId', userId);
+    
+    if (error) {
+      throw error;
+    }
+    
+    return data || [];
   } catch (err) {
     logger.error(`Failed to get user permissions: ${err}`);
     throw new Error(`Failed to get user permissions: ${err instanceof Error ? err.message : String(err)}`);
@@ -197,27 +166,42 @@ export async function getUserPermissions(userId: string): Promise<KnowledgeBaseP
 
 /**
  * Update a permission
- * 
+ *
  * @param id Permission ID
  * @param updateData Update data
  * @returns Updated permission document
  */
 export async function updatePermission(
-  id: string, 
+  id: string,
   updateData: Partial<KnowledgeBasePermissionDocument>
 ): Promise<KnowledgeBasePermissionDocument | null> {
   try {
     // Ensure we don't update the ID
-    if (updateData.id) {
-      delete updateData.id;
-    }
+    const { id: _, ...dataToUpdate } = updateData;
+    
+    // Add updated timestamp
+    const updatePayload = {
+      ...dataToUpdate,
+      updatedAt: new Date().toISOString()
+    };
     
     // Update the permission
-    return await KnowledgeBasePermission.findOneAndUpdate(
-      { id },
-      { $set: updateData },
-      { new: true }
-    );
+    const { data, error } = await supabaseClient.getClient()
+      .from('knowledge_base_permissions')
+      .update(updatePayload)
+      .eq('id', id)
+      .select()
+      .single();
+    
+    if (error) {
+      if (error.code === 'PGRST116') {
+        // No rows returned
+        return null;
+      }
+      throw error;
+    }
+    
+    return data;
   } catch (err) {
     logger.error(`Failed to update knowledge base permission: ${err}`);
     throw new Error(`Failed to update knowledge base permission: ${err instanceof Error ? err.message : String(err)}`);
@@ -226,13 +210,28 @@ export async function updatePermission(
 
 /**
  * Delete a permission
- * 
+ *
  * @param id Permission ID
  * @returns Deleted permission document
  */
 export async function deletePermission(id: string): Promise<KnowledgeBasePermissionDocument | null> {
   try {
-    return await KnowledgeBasePermission.findOneAndDelete({ id });
+    const { data, error } = await supabaseClient.getClient()
+      .from('knowledge_base_permissions')
+      .delete()
+      .eq('id', id)
+      .select()
+      .single();
+    
+    if (error) {
+      if (error.code === 'PGRST116') {
+        // No rows returned
+        return null;
+      }
+      throw error;
+    }
+    
+    return data;
   } catch (err) {
     logger.error(`Failed to delete knowledge base permission: ${err}`);
     throw new Error(`Failed to delete knowledge base permission: ${err instanceof Error ? err.message : String(err)}`);
@@ -251,10 +250,30 @@ export async function getEntityPermissions(
   entityId: string
 ): Promise<KnowledgeBasePermissionDocument[]> {
   try {
-    return await KnowledgeBasePermission.find({
-      'rules.scope': scope,
-      'rules.entityId': entityId
+    const { data: permissions, error } = await supabaseClient.getClient()
+      .from('knowledge_base_permissions')
+      .select('*');
+
+    if (error) {
+      logger.error(`Failed to get entity permissions: ${error.message}`);
+      throw new Error(`Failed to get entity permissions: ${error.message}`);
+    }
+
+    if (!permissions) {
+      return [];
+    }
+
+    // Filter permissions based on rules scope and entityId (client-side filtering for JSON fields)
+    const filteredPermissions = permissions.filter((permission: KnowledgeBasePermissionDocument) => {
+      if (permission.rules && Array.isArray(permission.rules)) {
+        return permission.rules.some((rule: PermissionRule) =>
+          rule.scope === scope && rule.entityId === entityId
+        );
+      }
+      return false;
     });
+
+    return filteredPermissions;
   } catch (err) {
     logger.error(`Failed to get entity permissions: ${err}`);
     throw new Error(`Failed to get entity permissions: ${err instanceof Error ? err.message : String(err)}`);
@@ -340,12 +359,32 @@ async function checkEntityBelongsToCategory(
 ): Promise<boolean> {
   try {
     if (scope === PermissionScope.MATERIAL) {
-      const Material = mongoose.model('Material');
-      const material = await Material.findOne({ id: entityId, categoryIds: categoryId });
+      const { data: material, error } = await supabaseClient.getClient()
+        .from('materials')
+        .select('id')
+        .eq('id', entityId)
+        .contains('categoryIds', [categoryId])
+        .single();
+
+      if (error && error.code !== 'PGRST116') {
+        logger.error(`Failed to check material belongs to category: ${error.message}`);
+        return false;
+      }
+
       return !!material;
     } else if (scope === PermissionScope.COLLECTION) {
-      const Collection = mongoose.model('Collection');
-      const collection = await Collection.findOne({ id: entityId, categoryIds: categoryId });
+      const { data: collection, error } = await supabaseClient.getClient()
+        .from('collections')
+        .select('id')
+        .eq('id', entityId)
+        .contains('categoryIds', [categoryId])
+        .single();
+
+      if (error && error.code !== 'PGRST116') {
+        logger.error(`Failed to check collection belongs to category: ${error.message}`);
+        return false;
+      }
+
       return !!collection;
     }
     
@@ -488,32 +527,56 @@ export async function getUsersWithPermission(
   level: PermissionLevel
 ): Promise<string[]> {
   try {
-    // Find permissions that match the criteria
-    const permissions = await KnowledgeBasePermission.find({
-      $or: [
-        { role: KnowledgeBaseRole.ADMIN },
-        {
-          rules: {
-            $elemMatch: {
-              $or: [
-                {
-                  scope: PermissionScope.GLOBAL,
-                  level: { $in: getEqualOrHigherLevels(level) }
-                },
-                {
-                  scope,
-                  entityId,
-                  level: { $in: getEqualOrHigherLevels(level) }
-                }
-              ]
-            }
+    const supabase = supabaseClient.getClient();
+    
+    // Get all permissions from Supabase
+    const { data: permissions, error } = await supabase
+      .from('knowledge_base_permissions')
+      .select('*');
+    
+    if (error) {
+      logger.error(`Failed to get users with permission: ${error.message}`);
+      return [];
+    }
+    
+    if (!permissions) {
+      return [];
+    }
+    
+    const equalOrHigherLevels = getEqualOrHigherLevels(level);
+    
+    // Filter permissions that match the criteria (client-side filtering for complex logic)
+    const matchingPermissions = permissions.filter((permission: KnowledgeBasePermissionDocument) => {
+      // Check if user has ADMIN role
+      if (permission.role === KnowledgeBaseRole.ADMIN) {
+        return true;
+      }
+      
+      // Check if user has matching rules
+      if (permission.rules && Array.isArray(permission.rules)) {
+        return permission.rules.some((rule: any) => {
+          // Check for global scope with sufficient level
+          if (rule.scope === PermissionScope.GLOBAL &&
+              equalOrHigherLevels.includes(rule.level)) {
+            return true;
           }
-        }
-      ]
+          
+          // Check for specific scope and entity with sufficient level
+          if (rule.scope === scope &&
+              rule.entityId === entityId &&
+              equalOrHigherLevels.includes(rule.level)) {
+            return true;
+          }
+          
+          return false;
+        });
+      }
+      
+      return false;
     });
     
     // Extract user IDs
-    return permissions.map((p: any) => p.userId);
+    return matchingPermissions.map((p: KnowledgeBasePermissionDocument) => p.userId);
   } catch (err) {
     logger.error(`Failed to get users with permission: ${err}`);
     return [];
@@ -601,6 +664,8 @@ export async function getUserAccessibleCollections(
   level: PermissionLevel = PermissionLevel.READ
 ): Promise<string[]> {
   try {
+    const supabase = supabaseClient.getClient();
+    
     // Get the user's permissions
     const permissions = await getUserPermissions(userId);
     
@@ -608,19 +673,33 @@ export async function getUserAccessibleCollections(
     for (const permission of permissions) {
       if (permission.role === KnowledgeBaseRole.ADMIN) {
         // Get all collection IDs
-        const Collection = mongoose.model('Collection');
-        const collections = await Collection.find({}, { id: 1 });
-        return collections.map((c: any) => c.id);
+        const { data: collections, error } = await supabase
+          .from('collections')
+          .select('id');
+        
+        if (error) {
+          logger.error(`Failed to get all collections: ${error.message}`);
+          return [];
+        }
+        
+        return collections ? collections.map((c: any) => c.id) : [];
       }
       
-      // Check for global edit permission
+      // Check for global permission
       for (const rule of permission.rules) {
-        if (rule.scope === PermissionScope.GLOBAL && 
+        if (rule.scope === PermissionScope.GLOBAL &&
             hasRequiredLevel(rule.level, level)) {
           // Get all collection IDs
-          const Collection = mongoose.model('Collection');
-          const collections = await Collection.find({}, { id: 1 });
-          return collections.map((c: any) => c.id);
+          const { data: collections, error } = await supabase
+            .from('collections')
+            .select('id');
+          
+          if (error) {
+            logger.error(`Failed to get all collections: ${error.message}`);
+            return [];
+          }
+          
+          return collections ? collections.map((c: any) => c.id) : [];
         }
       }
     }
@@ -630,7 +709,7 @@ export async function getUserAccessibleCollections(
     
     for (const permission of permissions) {
       for (const rule of permission.rules) {
-        if (rule.scope === PermissionScope.COLLECTION && 
+        if (rule.scope === PermissionScope.COLLECTION &&
             hasRequiredLevel(rule.level, level)) {
           if (rule.entityId) {
             collectionIds.add(rule.entityId);
@@ -642,18 +721,24 @@ export async function getUserAccessibleCollections(
     // Find collections the user has category-based access to
     for (const permission of permissions) {
       for (const rule of permission.rules) {
-        if (rule.scope === PermissionScope.CATEGORY && 
+        if (rule.scope === PermissionScope.CATEGORY &&
             hasRequiredLevel(rule.level, level)) {
           if (rule.entityId) {
-            // Find collections in this category
-            const Collection = mongoose.model('Collection');
-            const collections = await Collection.find(
-              { categoryIds: rule.entityId },
-              { id: 1 }
-            );
+            // Find collections in this category using Supabase
+            const { data: collections, error } = await supabase
+              .from('collections')
+              .select('id')
+              .contains('categoryIds', [rule.entityId]);
             
-            for (const collection of collections) {
-              collectionIds.add(collection.id);
+            if (error) {
+              logger.error(`Failed to get collections by category: ${error.message}`);
+              continue;
+            }
+            
+            if (collections) {
+              for (const collection of collections) {
+                collectionIds.add(collection.id);
+              }
             }
           }
         }
@@ -667,4 +752,4 @@ export async function getUserAccessibleCollections(
   }
 }
 
-export default KnowledgeBasePermission;
+// All functions are now exported individually - no default export needed

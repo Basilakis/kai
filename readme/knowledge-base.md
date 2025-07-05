@@ -325,7 +325,7 @@ The Knowledge Base uses the following core data models:
 The Knowledge Base implements search through several mechanisms:
 
 1. **Text Search**
-   - MongoDB text indexes for basic search
+   - Supabase PostgreSQL full-text search with GIN indexes
    - Custom tokenization and stemming
    - Boosting of key fields (name, description, tags)
    - Scoring function customization

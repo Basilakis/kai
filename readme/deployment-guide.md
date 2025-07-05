@@ -146,7 +146,7 @@ Before proceeding with deployment, ensure you have the following:
 - Digital Ocean account with API access
 - Domain name(s) for your deployment
 - OpenAI API key (for AI features)
-- MongoDB Atlas account (or other MongoDB provider)
+- Supabase account and project set up
 - Stripe account (if using payment features)
 
 You do not need to install any local tools as the entire deployment process is automated through GitHub Actions.
@@ -221,16 +221,15 @@ Before running the deployment workflow, you need to add the following secrets to
 - `BASE_URL`: Base URL for the application (e.g., "https://api.kai-platform.com")
 
 #### Database Secrets
-- `MONGODB_URI`: MongoDB connection string
-- `DATABASE_URL`: Database connection string (if using a different database)
-- `DATABASE_HOST`: Database host (if not using connection string)
-- `DATABASE_PORT`: Database port
-- `DATABASE_USER`: Database username
-- `DATABASE_PASSWORD`: Database password
-- `DATABASE_NAME`: Database name
-- `DATABASE_SSL`: Whether to use SSL for database connection (true/false)
-- `DATABASE_MAX_CONNECTIONS`: Maximum number of database connections
-- `DATABASE_CONNECTION_TIMEOUT`: Database connection timeout in milliseconds
+- `SUPABASE_URL`: Supabase project URL
+- `SUPABASE_KEY`: Supabase service role key
+- `SUPABASE_ANON_KEY`: Supabase anonymous key for client-side access
+- `SUPABASE_SERVICE_ROLE_KEY`: Supabase service role key for server-side access
+- `SUPABASE_JWT_SECRET`: Supabase JWT secret for token verification
+- `SUPABASE_DB_URL`: Direct PostgreSQL connection URL (optional)
+- `SUPABASE_STORAGE_BUCKET`: Supabase storage bucket name
+- `SUPABASE_MAX_CONNECTIONS`: Maximum number of database connections
+- `SUPABASE_CONNECTION_TIMEOUT`: Database connection timeout in milliseconds
 
 #### Authentication Secrets
 - `JWT_SECRET`: Secret for JWT tokens

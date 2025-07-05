@@ -11,7 +11,7 @@ import childProcess from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import { logger } from '../../utils/logger';
-import supabase from './supabaseClient'; // Corrected: Use default import
+import { supabaseClient } from './supabaseClient';
 import { handleSupabaseError } from '../../../../shared/src/utils/supabaseErrorHandler';
 import { KnowledgeBaseService } from '../knowledgeBase/knowledgeBaseService';
 import { ApiError } from '../../middleware/error.middleware'; // Import ApiError
@@ -39,17 +39,19 @@ export class EnhancedVectorServiceImpl implements IEnhancedVectorService {
   private pythonPath: string;
   private scriptPath: string;
   private configCache: Map<string, VectorSearchConfig> = new Map();
-  private knowledgeBaseService?: KnowledgeBaseService;
+  private __knowledgeBaseService?: KnowledgeBaseService;
+  private embeddingModelName: string;
 
   constructor(knowledgeBaseService?: KnowledgeBaseService) {
     this.pythonPath = process.env.PYTHON_PATH || 'python';
     this.scriptPath = path.resolve(process.cwd(), 'packages/ml/python/enhanced_text_embeddings.py');
+    this.embeddingModelName = process.env.EMBEDDING_MODEL_NAME || 'all-MiniLM-L6-v2';
 
     if (!fs.existsSync(this.scriptPath)) {
       logger.warn(`Enhanced text embeddings script not found at ${this.scriptPath}. Embedding generation might fail.`);
     }
 
-    this.knowledgeBaseService = knowledgeBaseService;
+    this.__knowledgeBaseService = knowledgeBaseService;
     // Load configs asynchronously, don't block constructor
     this.loadConfigsFromDatabase().catch(err => {
       logger.error('Failed initial config load:', err);
@@ -62,7 +64,7 @@ export class EnhancedVectorServiceImpl implements IEnhancedVectorService {
    * Set the knowledge base service instance.
    */
   public setKnowledgeBaseService(service: KnowledgeBaseService): void {
-    this.knowledgeBaseService = service;
+    this.__knowledgeBaseService = service;
     logger.info('KnowledgeBaseService injected into EnhancedVectorServiceImpl.');
   }
 
@@ -165,7 +167,7 @@ export class EnhancedVectorServiceImpl implements IEnhancedVectorService {
    */
   private async loadConfigsFromDatabase(): Promise<void> {
     try {
-      const { data, error } = await supabase.getClient()
+      const { data, error } = await supabaseClient.getClient()
         .from('vector_search_config')
         .select('*');
 
@@ -283,7 +285,7 @@ export class EnhancedVectorServiceImpl implements IEnhancedVectorService {
    */
   public async storeEmbedding(materialId: string, embeddingResult: EmbeddingResult, text: string): Promise<boolean> {
     try {
-      const { dense_vector, sparse_indices, sparse_values, dense_dimensions, sparse_dimensions, material_category, processing_time } = embeddingResult;
+      const { dense_vector, sparse_indices, sparse_values, sparse_dimensions, material_category, processing_time } = embeddingResult;
 
       let sparseEmbeddingJson = null;
       if (sparse_indices && sparse_values && sparse_dimensions) {
@@ -298,7 +300,7 @@ export class EnhancedVectorServiceImpl implements IEnhancedVectorService {
         timestamp: Date.now()
       };
 
-      const { error } = await supabase.getClient()
+      const { error } = await supabaseClient.getClient()
         .from('materials')
         .update({
           dense_embedding: dense_vector, // Assumes pgvector format '[1,2,3]'
@@ -337,12 +339,12 @@ export class EnhancedVectorServiceImpl implements IEnhancedVectorService {
        const embeddingType = sparse_indices && dense_vector ? 'hybrid' : (dense_vector ? 'dense' : 'sparse');
        const qualityScore = 1.0; // Placeholder
 
-       const { error } = await supabase.getClient()
+       const { error } = await supabaseClient.getClient()
          .from('embedding_metrics')
          .insert({
            material_id: materialId,
            embedding_type: embeddingType,
-           model_name: 'all-MiniLM-L6-v2', // TODO: Parameterize model name
+           model_name: this.embeddingModelName,
            dimensions: dense_dimensions,
            quality_score: qualityScore,
            processing_time_ms: processing_time ? processing_time * 1000 : null,
@@ -418,7 +420,7 @@ export class EnhancedVectorServiceImpl implements IEnhancedVectorService {
          };
       }
 
-      const { data, error } = await supabase.getClient().rpc(rpcFn, rpcParams);
+      const { data, error } = await supabaseClient.getClient().rpc(rpcFn, rpcParams);
 
       if (error) {
         // throw handleSupabaseError(error, `searchMaterials (RPC: ${rpcFn})`);
@@ -457,7 +459,7 @@ export class EnhancedVectorServiceImpl implements IEnhancedVectorService {
    */
   private async updateSearchMetrics(configId: string, queryTimeMs: number): Promise<void> {
      try {
-       const { data, error } = await supabase.getClient()
+       const { data, error } = await supabaseClient.getClient()
          .from('vector_search_config')
          .select('queries_count, average_query_time_ms')
          .eq('id', configId)
@@ -474,7 +476,7 @@ export class EnhancedVectorServiceImpl implements IEnhancedVectorService {
        const prevAverage = data?.average_query_time_ms || 0;
        const newAverage = prevCount > 0 ? ((prevAverage * prevCount) + queryTimeMs) / (prevCount + 1) : queryTimeMs;
 
-       const { error: updateError } = await supabase.getClient()
+       const { error: updateError } = await supabaseClient.getClient()
          .from('vector_search_config')
          .update({
            queries_count: prevCount + 1,
@@ -511,7 +513,7 @@ export class EnhancedVectorServiceImpl implements IEnhancedVectorService {
          denseWeight // Allow override from options? Interface doesn't specify.
        } = options;
 
-       const { data: material, error: materialError } = await supabase.getClient()
+       const { data: material, error: materialError } = await supabaseClient.getClient()
          .from('materials')
          .select('id, name, material_type, dense_embedding, sparse_embedding')
          .eq('id', materialId)
@@ -531,7 +533,7 @@ export class EnhancedVectorServiceImpl implements IEnhancedVectorService {
        config = this.getConfig('default', material.material_type);
        const effectiveDenseWeight = denseWeight !== undefined ? denseWeight : config.denseWeight;
 
-       const { data, error } = await supabase.getClient()
+       const { data, error } = await supabaseClient.getClient()
          .rpc('find_similar_materials_hybrid', {
            dense_query_vector: material.dense_embedding,
            sparse_query_vector: material.sparse_embedding, // Can be null
@@ -790,7 +792,7 @@ export class EnhancedVectorServiceImpl implements IEnhancedVectorService {
    /**
     * Create a default semantic organization (internal helper).
      */
-    private createDefaultSemanticOrganization(knowledgeEntries: KnowledgeEntry[], query: string): SemanticKnowledgeOrganization {
+    private createDefaultSemanticOrganization(knowledgeEntries: KnowledgeEntry[], _query: string): SemanticKnowledgeOrganization {
       const entriesByMaterial: Record<string, string[]> = {};
       knowledgeEntries.forEach(entry => {
         // Initialize array if it doesn't exist
@@ -813,7 +815,7 @@ export class EnhancedVectorServiceImpl implements IEnhancedVectorService {
 
   public async refreshVectorViews(): Promise<boolean> {
     try {
-      const { error } = await supabase.getClient().rpc('refresh_vector_materialized_views');
+      const { error } = await supabaseClient.getClient().rpc('refresh_vector_materialized_views');
       if (error) {
         // throw handleSupabaseError(error, 'refreshVectorViews');
         throw new ApiError(500, `Supabase error in refreshVectorViews: ${error.message}`);
@@ -829,7 +831,7 @@ export class EnhancedVectorServiceImpl implements IEnhancedVectorService {
 
   public async getPerformanceStats(): Promise<any> { // Return type 'any' for now
     try {
-      const { data, error } = await supabase.getClient()
+      const { data, error } = await supabaseClient.getClient()
         .from('vector_search_performance') // Assuming this table exists
         .select('*');
 
@@ -860,7 +862,7 @@ export class EnhancedVectorServiceImpl implements IEnhancedVectorService {
       };
 
       // Use upsert for simplicity: insert if not exists, update if exists
-      const { data, error } = await supabase.getClient()
+      const { data, error } = await supabaseClient.getClient()
         .from('vector_search_config')
         .upsert(dbConfig, { onConflict: 'name' }) // Upsert based on unique name
         .select()
@@ -903,7 +905,7 @@ export class EnhancedVectorServiceImpl implements IEnhancedVectorService {
         throw new ApiError(400, 'Cannot delete the default configuration.');
       }
 
-      const { error, count } = await supabase.getClient()
+      const { error, count } = await supabaseClient.getClient()
         .from('vector_search_config')
         .delete()
         .eq('name', configName);

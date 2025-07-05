@@ -136,7 +136,7 @@ CREATE POLICY "Admins can view all profiles"
 
 ### Setting Up Materials Management Tables
 
-Create tables for storing materials metadata (if not using MongoDB for this):
+Create tables for storing materials metadata (now using Supabase PostgreSQL):
 
 ```sql
 -- Materials table

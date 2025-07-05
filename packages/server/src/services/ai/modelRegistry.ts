@@ -10,7 +10,6 @@
 
 import { logger } from '../../utils/logger';
 import { supabase } from '../supabase/supabaseClient'; // Import Supabase client
-import { PostgrestError } from '@supabase/supabase-js';
 
 export type ModelProvider = 'openai' | 'anthropic' | 'huggingface' | 'local';
 
@@ -285,8 +284,9 @@ export class ModelRegistry {
     const { taskType, preferredProvider, maxLatency, minAccuracy, costSensitive } = options;
     const client = supabase.getClient();
 
-    // Get all performance metrics for this task type
-    // TODO: Consider fetching only recent metrics or a summary to avoid large data transfers
+    // Get recent performance metrics for this task type (optimized for performance)
+    // Fetch only the most recent metrics per model to avoid large data transfers
+    const metricsLimit = parseInt(process.env.MODEL_METRICS_LIMIT || '100', 10);
     const { data: taskMetricsData, error: metricsError } = await client
       .from('model_performance_metrics')
       .select(`
@@ -295,9 +295,12 @@ export class ModelRegistry {
         accuracy,
         latency_ms,
         cost_per_token,
-        token_count
+        token_count,
+        created_at
       `)
-      .eq('task_type', taskType);
+      .eq('task_type', taskType)
+      .order('created_at', { ascending: false })
+      .limit(metricsLimit);
 
     if (metricsError) {
       logger.error(`Error fetching performance metrics for ${taskType}:`, metricsError);

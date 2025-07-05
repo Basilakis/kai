@@ -9,6 +9,7 @@ export interface CrawlerConfig {
   name: string;
   description?: string;
   url: string;
+  factoryId: string; // Added mandatory factoryId for catalog import
   selectors?: {
     title?: string;
     content?: string;

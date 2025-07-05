@@ -80,7 +80,7 @@ The Kai system is designed as a microservices architecture where each package pl
    - Train models
    - Process PDFs
 
-4. **Server → Database**: The server stores and retrieves data using MongoDB models for:
+4. **Server → Database**: The server stores and retrieves data using Supabase PostgreSQL for:
    - Materials
    - Collections
    - Users
@@ -135,8 +135,8 @@ The Kai system is deployed as a set of services:
    - ML services deployed on specialized compute instances
 
 3. **Databases**:
-   - MongoDB for primary data storage
-   - Vector database for similarity search
+   - Supabase PostgreSQL for primary data storage
+   - pgvector extension for similarity search
 
 4. **Infrastructure Services**:
    - AWS S3 for file storage

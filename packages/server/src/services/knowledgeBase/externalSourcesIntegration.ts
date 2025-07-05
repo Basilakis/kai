@@ -9,7 +9,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
-import mongoose from 'mongoose';
+import { supabaseClient } from '../../../../shared/src/services/supabase/supabaseClient';
 import { logger } from '../../utils/logger';
 import { knowledgeBaseService } from './knowledgeBaseService';
 import { entityLinkingService } from './entityLinking.service';
@@ -59,7 +59,7 @@ class Cache {
 const cache = new Cache();
 
 // External source endpoint configuration
-export interface ExternalSourceEndpoint {
+export interface SupabaseExternalSourceEndpoint {
   path: string;
   method: 'GET' | 'POST' | 'PUT' | 'DELETE';
   description: string;
@@ -78,7 +78,7 @@ export interface ExternalSourceConfig {
   baseUrl: string;
   description: string;
   authType: 'basic' | 'oauth2' | 'api_key' | 'api_key_secret' | 'bearer' | 'custom';
-  endpoints: Record<string, ExternalSourceEndpoint>;
+  endpoints: Record<string, SupabaseExternalSourceEndpoint>;
   defaultSyncInterval: number;
   defaultBatchSize: number;
   enabled: boolean;
@@ -105,163 +105,73 @@ export interface ExternalSourceConfig {
   customConfig?: Record<string, any>;
 }
 
-// Source configuration schema
-const externalSourceSchema = new mongoose.Schema({
-  id: {
-    type: String,
-    required: true,
-    unique: true,
-    default: () => uuidv4()
-  },
-  name: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  type: {
-    type: String,
-    required: true
-  },
-  description: {
-    type: String,
-    required: true
-  },
-  authType: {
-    type: String,
-    required: true,
-    enum: ['basic', 'oauth2', 'api_key', 'api_key_secret', 'bearer', 'custom']
-  },
-  endpoints: {
-    type: Map,
-    of: new mongoose.Schema({
-      path: String,
-      method: {
-        type: String,
-        enum: ['GET', 'POST', 'PUT', 'DELETE']
-      },
-      description: String,
-      parameters: {
-        type: Map,
-        of: new mongoose.Schema({
-          type: String,
-          required: Boolean,
-          description: String
-        })
-      }
-    }),
-    required: true
-  },
-  defaultSyncInterval: {
-    type: Number,
-    required: true,
-    default: 60
-  },
-  defaultBatchSize: {
-    type: Number,
-    required: true,
-    default: 100
-  },
-  baseUrl: {
-    type: String,
-    required: true
-  },
-  enabled: {
-    type: Boolean,
-    default: true
-  },
-  syncInterval: {
-    type: Number,
-    required: true
-  },
-  lastSyncTimestamp: Date,
-  nextSyncTimestamp: Date,
-  apiKey: String,
-  apiSecret: String,
-  oauthConfig: {
-    clientId: String,
-    clientSecret: String,
-    tokenUrl: String,
-    accessToken: String,
-    refreshToken: String,
-    expiresAt: Date
-  },
-  mappings: {
-    idField: {
-      type: String,
-      required: true
-    },
-    nameField: {
-      type: String,
-      required: true
-    },
-    descriptionField: String,
-    propertiesMap: {
-      type: Map,
-      of: String,
-      default: {}
-    }
-  },
-  headers: {
-    type: Map,
-    of: String
-  },
-  customConfig: {
-    type: Map,
-    of: mongoose.Schema.Types.Mixed
-  },
-  stats: {
-    totalMaterials: {
-      type: Number,
-      default: 0
-    },
-    lastSyncDuration: Number,
-    lastSyncSuccess: Boolean,
-    materialsCreated: {
-      type: Number,
-      default: 0
-    },
-    materialsUpdated: {
-      type: Number,
-      default: 0
-    },
-    errors: [{
-      timestamp: Date,
-      message: String
-    }]
-  }
-}, {
-  timestamps: true,
-  strict: false // Allow additional fields for custom sources
-});
+// External source configuration interfaces for Supabase
+interface ExternalSourceOAuthConfig {
+  clientId?: string;
+  clientSecret?: string;
+  tokenUrl?: string;
+  accessToken?: string;
+  refreshToken?: string;
+  expiresAt?: string; // ISO date string for Supabase
+}
 
-// Add indexes
-externalSourceSchema.index({ type: 1 });
-externalSourceSchema.index({ enabled: 1 });
-externalSourceSchema.index({ nextSyncTimestamp: 1 });
+interface ExternalSourceMappings {
+  idField: string;
+  nameField: string;
+  descriptionField?: string;
+  propertiesMap?: Record<string, string>;
+}
 
-// Add methods
-externalSourceSchema.methods.updateNextSync = function() {
+interface ExternalSourceStats {
+  totalMaterials?: number;
+  lastSyncDuration?: number;
+  lastSyncSuccess?: boolean;
+  materialsCreated?: number;
+  materialsUpdated?: number;
+  errors?: Array<{
+    timestamp: string; // ISO date string for Supabase
+    message: string;
+  }>;
+}
+
+// Extended ExternalSourceConfig interface for Supabase
+interface ExternalSourceRecord extends ExternalSourceConfig {
+  created_at?: string;
+  updated_at?: string;
+}
+
+// Helper functions for external source operations
+function updateNextSync(syncInterval: number): string {
   const now = new Date();
-  this.nextSyncTimestamp = new Date(now.getTime() + (this.syncInterval * 60 * 1000));
-};
+  return new Date(now.getTime() + (syncInterval * 60 * 1000)).toISOString();
+}
 
-externalSourceSchema.methods.recordSyncResult = function(success: boolean, duration: number, error?: string) {
-  this.stats.lastSyncSuccess = success;
-  this.stats.lastSyncDuration = duration;
+function recordSyncResult(
+  currentStats: ExternalSourceStats,
+  success: boolean,
+  duration: number,
+  error?: string
+): { stats: ExternalSourceStats; lastSyncTimestamp: string; nextSyncTimestamp: string } {
+  const updatedStats = {
+    ...currentStats,
+    lastSyncSuccess: success,
+    lastSyncDuration: duration,
+    errors: currentStats.errors || []
+  };
   
   if (!success && error) {
-    this.stats.errors.push({
-      timestamp: new Date(),
+    updatedStats.errors.push({
+      timestamp: new Date().toISOString(),
       message: error
     });
   }
   
-  this.lastSyncTimestamp = new Date();
-  this.updateNextSync();
-};
-
-// Create model
-const ExternalSource = mongoose.model<mongoose.Document & ExternalSourceConfig>('ExternalSource', externalSourceSchema);
+  return {
+    stats: updatedStats,
+    lastSyncTimestamp: new Date().toISOString(),
+    nextSyncTimestamp: updateNextSync(60) // Default sync interval
+  };
+}
 
 /**
  * Interface for external source adapters
@@ -449,16 +359,22 @@ export class ExternalSourceAdapter implements IExternalSourceAdapter {
       }
 
       const now = new Date();
-      await ExternalSource.updateOne(
-        { id: this.config.id },
-        { 
-          lastSyncTimestamp: now,
-          'stats.lastSyncDuration': Date.now() - (lastSyncDate?.getTime() || 0),
-          'stats.lastSyncSuccess': true,
-          'stats.materialsCreated': result.itemsCreated,
-          'stats.materialsUpdated': result.itemsUpdated
-        }
-      );
+      const { error: updateError } = await supabaseClient.getClient()
+        .from('external_sources')
+        .update({
+          last_sync_timestamp: now.toISOString(),
+          stats: {
+            last_sync_duration: Date.now() - (lastSyncDate?.getTime() || 0),
+            last_sync_success: true,
+            materials_created: result.itemsCreated,
+            materials_updated: result.itemsUpdated
+          }
+        })
+        .eq('id', this.config.id);
+
+      if (updateError) {
+        throw new Error(`Failed to update external source sync stats: ${updateError.message}`);
+      }
 
       // Send sync completion event
       await broker.publish('system', 'knowledge-base-event', {
@@ -512,7 +428,15 @@ export class ExternalSourceAdapter implements IExternalSourceAdapter {
 export async function createExternalSource(sourceData: Partial<ExternalSourceConfig>): Promise<ExternalSourceConfig> {
   try {
     sourceData.id = sourceData.id || uuidv4();
-    const source = await ExternalSource.create(sourceData);
+    const { data: source, error: createError } = await supabaseClient.getClient()
+      .from('external_sources')
+      .insert(sourceData)
+      .select()
+      .single();
+
+    if (createError) {
+      throw new Error(`Failed to create external source: ${createError.message}`);
+    }
     return source.toObject();
   } catch (err) {
     logger.error(`Failed to create external source: ${err}`);
@@ -525,8 +449,16 @@ export async function createExternalSource(sourceData: Partial<ExternalSourceCon
  */
 export async function getExternalSources(filter: Record<string, any> = {}): Promise<ExternalSourceConfig[]> {
   try {
-    const sources = await ExternalSource.find(filter);
-    return sources.map((source: mongoose.Document) => source.toObject());
+    const { data: sources, error: findError } = await supabaseClient.getClient()
+      .from('external_sources')
+      .select('*')
+      .match(filter);
+
+    if (findError) {
+      throw new Error(`Failed to fetch external sources: ${findError.message}`);
+    }
+
+    return sources || [];
   } catch (err) {
     logger.error(`Failed to get external sources: ${err}`);
     throw new Error(`Failed to get external sources: ${err instanceof Error ? err.message : String(err)}`);
@@ -538,7 +470,15 @@ export async function getExternalSources(filter: Record<string, any> = {}): Prom
  */
 export async function getExternalSourceById(id: string): Promise<ExternalSourceConfig | null> {
   try {
-    const source = await ExternalSource.findOne({ id });
+    const { data: source, error: findError } = await supabaseClient.getClient()
+      .from('external_sources')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (findError) {
+      throw new Error(`Failed to find external source: ${findError.message}`);
+    }
     return source ? source.toObject() : null;
   } catch (err) {
     logger.error(`Failed to get external source: ${err}`);
@@ -554,11 +494,16 @@ export async function updateExternalSource(
   updateData: Partial<ExternalSourceConfig>
 ): Promise<ExternalSourceConfig | null> {
   try {
-    const source = await ExternalSource.findOneAndUpdate(
-      { id },
-      updateData,
-      { new: true }
-    );
+    const { data: source, error: updateError } = await supabaseClient.getClient()
+      .from('external_sources')
+      .update(updateData)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (updateError) {
+      throw new Error(`Failed to update external source: ${updateError.message}`);
+    }
     return source ? source.toObject() : null;
   } catch (err) {
     logger.error(`Failed to update external source: ${err}`);
@@ -571,7 +516,14 @@ export async function updateExternalSource(
  */
 export async function deleteExternalSource(id: string): Promise<boolean> {
   try {
-    const result = await ExternalSource.deleteOne({ id });
+    const { error: deleteError } = await supabaseClient.getClient()
+      .from('external_sources')
+      .delete()
+      .eq('id', id);
+
+    if (deleteError) {
+      throw new Error(`Failed to delete external source: ${deleteError.message}`);
+    }
     return result.deletedCount === 1;
   } catch (err) {
     logger.error(`Failed to delete external source: ${err}`);

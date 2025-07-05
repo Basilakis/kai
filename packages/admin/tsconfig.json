@@ -18,13 +18,13 @@
     "incremental": true,
     "allowSyntheticDefaultImports": true,
     "paths": {
-      "@kai/shared/*": ["../shared/*"]
+      "@kai/shared/*": ["../shared/src/*"]
     },
     "typeRoots": [ // Explicitly add typeRoots
       "./node_modules/@types",
       "../../node_modules/@types"
     ]
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", "**/*.d.ts", "../shared/src/types/*.ts", "../shared/src/utils/*.ts", "../shared/src/components/**/*.ts", "../shared/src/components/**/*.tsx", "src/types/**/*.d.ts", "src/custom.d.ts", "src/react-app-env.d.ts"],
+  "include": ["next-env.d.ts", "src/**/*.ts", "src/**/*.tsx", "src/**/*.d.ts", "../shared/src/**/*.ts", "../shared/src/**/*.tsx"],
   "exclude": ["node_modules"]
 }

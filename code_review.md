@@ -155,6 +155,39 @@
 - [ ] Add/expand health checks and monitoring for Redis connectivity (redisClient.ts, rateLimiter.service.ts)
 - [ ] Consider supporting additional rate limiting strategies (rateLimiter.service.ts)
 
+#### Recommendation Services
+
+- [ ] Consolidate and document recommendation service interfaces and responsibilities (property-recommendation.service.ts, recommendation-engine.ts)
+- [ ] Audit and document all integration points with vector search, Supabase, and Prisma (all files)
+- [ ] Add/expand input validation and type safety for all recommendation options and results (all files)
+- [ ] Standardize and document error handling and fallback logic (all files)
+- [ ] Add/expand unit and integration tests for all recommendation methods (all files)
+- [ ] Refactor repeated logic for scoring, explanation generation, and vector math (both services)
+- [ ] Audit and document all side effects and external dependencies (all files)
+- [ ] Add/expand health checks and monitoring for recommendation services and integrations (all files)
+
+#### Recognition Services
+
+- [ ] Consolidate and document recognition service interfaces and responsibilities (all files)
+- [ ] Audit and document all integration points with external libraries and simulated ML/vision (all files)
+- [ ] Add/expand input validation and type safety for all recognition options and results (all files)
+- [ ] Standardize and document error handling and fallback logic (all files)
+- [ ] Add/expand unit and integration tests for all recognition methods (all files)
+- [ ] Refactor repeated logic for feature extraction, quality scoring, and pattern classification (all files)
+- [ ] Audit and document all side effects and external dependencies (all files)
+- [ ] Add/expand health checks and monitoring for recognition services and integrations (all files)
+
+#### Monitoring Services
+
+- [ ] Consolidate and document health check service interfaces and responsibilities (healthCheck.service.ts)
+- [ ] Audit and document all integration points with system/process APIs and external services (healthCheck.service.ts)
+- [ ] Add/expand input validation and type safety for all health check options and results (healthCheck.service.ts)
+- [ ] Standardize and document error handling and fallback logic (healthCheck.service.ts)
+- [ ] Add/expand unit and integration tests for all health check methods (healthCheck.service.ts)
+- [ ] Refactor repeated logic for trend analysis and system metrics (healthCheck.service.ts)
+- [ ] Audit and document all side effects and external dependencies (healthCheck.service.ts)
+- [ ] Add/expand health checks and monitoring for all critical dependencies (healthCheck.service.ts)
+
 
 ## 3. Frontend/Client
 

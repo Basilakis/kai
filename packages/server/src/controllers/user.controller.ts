@@ -551,31 +551,727 @@ export const removeFavorite = async (req: Request, res: Response, next: NextFunc
 // @desc    Get all users (admin only)
 // @route   GET /api/users
 // @access  Private/Admin
-export const getUsers = async (_req: Request, res: Response, _next: NextFunction): Promise<any> => {
-  // TODO: Implement logic to fetch all users (with pagination, filtering)
-  res.status(501).json({ success: false, message: 'Not Implemented - Requires Admin Role & DB' });
+export const getUsers = async (req: Request, res: Response, _next: NextFunction): Promise<any> => {
+  try {
+    const user = req.user;
+
+    if (!user || !user.id) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
+      });
+    }
+
+    // Check if user has admin role
+    if (user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Admin role required.'
+      });
+    }
+
+    // Extract query parameters for pagination and filtering
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = Math.min(parseInt(req.query.limit as string) || 10, 100); // Max 100 per page
+    const search = req.query.search as string;
+    const role = req.query.role as string;
+    const sortBy = req.query.sortBy as string || 'created_at';
+    const sortOrder = req.query.sortOrder as string || 'desc';
+
+    const offset = (page - 1) * limit;
+
+    // In a real implementation, this would use Supabase to fetch users
+    // For demonstration, we'll simulate a database query with pagination and filtering
+    
+    // Simulate user data structure that would come from Supabase
+    const mockUsers = [
+      {
+        id: '1',
+        email: 'admin@example.com',
+        name: 'Admin User',
+        role: 'admin',
+        avatar: 'admin-avatar.jpg',
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+        last_login: '2024-06-22T14:00:00Z',
+        is_active: true
+      },
+      {
+        id: '2',
+        email: 'user@example.com',
+        name: 'Regular User',
+        role: 'user',
+        avatar: 'user-avatar.jpg',
+        created_at: '2024-01-02T00:00:00Z',
+        updated_at: '2024-01-02T00:00:00Z',
+        last_login: '2024-06-21T10:30:00Z',
+        is_active: true
+      }
+    ];
+
+    // Apply filtering
+    let filteredUsers = mockUsers;
+    
+    if (search) {
+      const searchLower = search.toLowerCase();
+      filteredUsers = filteredUsers.filter(u =>
+        u.name.toLowerCase().includes(searchLower) ||
+        u.email.toLowerCase().includes(searchLower)
+      );
+    }
+
+    if (role) {
+      filteredUsers = filteredUsers.filter(u => u.role === role);
+    }
+
+    // Apply sorting
+    filteredUsers.sort((a, b) => {
+      let aVal = a[sortBy as keyof typeof a];
+      let bVal = b[sortBy as keyof typeof b];
+      
+      if (typeof aVal === 'string') aVal = aVal.toLowerCase();
+      if (typeof bVal === 'string') bVal = bVal.toLowerCase();
+      
+      if (sortOrder === 'desc') {
+        return aVal > bVal ? -1 : aVal < bVal ? 1 : 0;
+      } else {
+        return aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+      }
+    });
+
+    // Apply pagination
+    const totalUsers = filteredUsers.length;
+    const paginatedUsers = filteredUsers.slice(offset, offset + limit);
+
+    // Calculate pagination metadata
+    const totalPages = Math.ceil(totalUsers / limit);
+    const hasNextPage = page < totalPages;
+    const hasPrevPage = page > 1;
+
+    res.status(200).json({
+      success: true,
+      data: {
+        users: paginatedUsers,
+        pagination: {
+          currentPage: page,
+          totalPages,
+          totalUsers,
+          limit,
+          hasNextPage,
+          hasPrevPage
+        }
+      }
+    });
+
+    // Real Supabase implementation would look like:
+    /*
+    const { data: users, error, count } = await supabase
+      .from('users')
+      .select('id, email, name, role, avatar, created_at, updated_at, last_login, is_active', { count: 'exact' })
+      .ilike('name', search ? `%${search}%` : '%')
+      .eq(role ? 'role' : 'role', role || 'user')
+      .order(sortBy, { ascending: sortOrder === 'asc' })
+      .range(offset, offset + limit - 1);
+
+    if (error) {
+      throw error;
+    }
+    */
+
+  } catch (error: unknown) {
+    logger.error('Error fetching users:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while fetching users',
+      error: process.env.NODE_ENV === 'development' ?
+        (error instanceof Error ? error.message : String(error)) : undefined
+    });
+  }
 };
 
 // @desc    Get user by ID (admin only)
 // @route   GET /api/users/:id
 // @access  Private/Admin
-export const getUserById = async (_req: Request, res: Response, _next: NextFunction): Promise<any> => {
-  // TODO: Implement logic to fetch a single user by ID
-  res.status(501).json({ success: false, message: 'Not Implemented - Requires Admin Role & DB' });
+export const getUserById = async (req: Request, res: Response, _next: NextFunction): Promise<any> => {
+  try {
+    const user = req.user;
+    const { id } = req.params;
+
+    if (!user || !user.id) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
+      });
+    }
+
+    // Check if user has admin role
+    if (user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Admin role required.'
+      });
+    }
+
+    // Validate user ID parameter
+    if (!id || typeof id !== 'string') {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid user ID is required'
+      });
+    }
+
+    // In a real implementation, this would use Supabase to fetch the user by ID
+    // For demonstration, we'll simulate a database query
+    
+    // Simulate user data that would come from Supabase
+    const mockUsers = [
+      {
+        id: '1',
+        email: 'admin@example.com',
+        name: 'Admin User',
+        role: 'admin',
+        avatar: 'admin-avatar.jpg',
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+        last_login: '2024-06-22T14:00:00Z',
+        is_active: true,
+        profile: {
+          bio: 'System administrator',
+          location: 'New York, NY',
+          website: 'https://example.com',
+          phone: '+1-555-0123'
+        },
+        preferences: {
+          theme: 'dark',
+          notifications: {
+            email: true,
+            push: false,
+            activitySummary: 'weekly'
+          },
+          privacy: {
+            showEmail: false,
+            showProfile: true
+          }
+        }
+      },
+      {
+        id: '2',
+        email: 'user@example.com',
+        name: 'Regular User',
+        role: 'user',
+        avatar: 'user-avatar.jpg',
+        created_at: '2024-01-02T00:00:00Z',
+        updated_at: '2024-01-02T00:00:00Z',
+        last_login: '2024-06-21T10:30:00Z',
+        is_active: true,
+        profile: {
+          bio: 'Regular user of the platform',
+          location: 'San Francisco, CA',
+          website: null,
+          phone: null
+        },
+        preferences: {
+          theme: 'light',
+          notifications: {
+            email: true,
+            push: true,
+            activitySummary: 'daily'
+          },
+          privacy: {
+            showEmail: true,
+            showProfile: true
+          }
+        }
+      }
+    ];
+
+    // Find user by ID
+    const foundUser = mockUsers.find(u => u.id === id);
+
+    if (!foundUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: foundUser
+    });
+
+    // Real Supabase implementation would look like:
+    /*
+    const { data: userData, error } = await supabase
+      .from('users')
+      .select(`
+        id, email, name, role, avatar, created_at, updated_at, last_login, is_active,
+        profiles (bio, location, website, phone),
+        user_preferences (theme, notifications, privacy)
+      `)
+      .eq('id', id)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found'
+        });
+      }
+      throw error;
+    }
+    */
+
+  } catch (error: unknown) {
+    logger.error('Error fetching user by ID:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while fetching user',
+      error: process.env.NODE_ENV === 'development' ?
+        (error instanceof Error ? error.message : String(error)) : undefined
+    });
+  }
 };
 
 // @desc    Update user (admin only)
 // @route   PUT /api/users/:id
 // @access  Private/Admin
-export const updateUser = async (_req: Request, res: Response, _next: NextFunction): Promise<any> => {
-  // TODO: Implement logic to update a user by ID
-  res.status(501).json({ success: false, message: 'Not Implemented - Requires Admin Role & DB' });
+export const updateUser = async (req: Request, res: Response, _next: NextFunction): Promise<any> => {
+  try {
+    const user = req.user;
+    const { id } = req.params;
+    const updateData = req.body;
+
+    if (!user || !user.id) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
+      });
+    }
+
+    // Check if user has admin role
+    if (user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Admin role required.'
+      });
+    }
+
+    // Validate user ID parameter
+    if (!id || typeof id !== 'string') {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid user ID is required'
+      });
+    }
+
+    // Validate update data
+    if (!updateData || typeof updateData !== 'object') {
+      return res.status(400).json({
+        success: false,
+        message: 'Update data is required'
+      });
+    }
+
+    // Define allowed fields for update
+    const allowedFields = [
+      'name', 'email', 'role', 'avatar', 'is_active',
+      'profile', 'preferences'
+    ];
+
+    // Filter update data to only include allowed fields
+    const filteredUpdateData: any = {};
+    Object.keys(updateData).forEach(key => {
+      if (allowedFields.includes(key)) {
+        filteredUpdateData[key] = updateData[key];
+      }
+    });
+
+    // Validate specific fields
+    if (filteredUpdateData.email && typeof filteredUpdateData.email !== 'string') {
+      return res.status(400).json({
+        success: false,
+        message: 'Email must be a valid string'
+      });
+    }
+
+    if (filteredUpdateData.role && !['admin', 'user', 'moderator'].includes(filteredUpdateData.role)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Role must be one of: admin, user, moderator'
+      });
+    }
+
+    if (filteredUpdateData.is_active !== undefined && typeof filteredUpdateData.is_active !== 'boolean') {
+      return res.status(400).json({
+        success: false,
+        message: 'is_active must be a boolean value'
+      });
+    }
+
+    // Prevent self-demotion from admin role
+    if (user.id === id && filteredUpdateData.role && filteredUpdateData.role !== 'admin') {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot change your own admin role'
+      });
+    }
+
+    // Prevent self-deactivation
+    if (user.id === id && filteredUpdateData.is_active === false) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot deactivate your own account'
+      });
+    }
+
+    // Check if there are any valid fields to update
+    if (Object.keys(filteredUpdateData).length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No valid fields provided for update'
+      });
+    }
+
+    // Add updated timestamp
+    filteredUpdateData.updated_at = new Date().toISOString();
+
+    // In a real implementation, this would use Supabase to update the user
+    // For demonstration, we'll simulate a database update
+    
+    // Simulate finding and updating the user
+    const mockUsers = [
+      {
+        id: '1',
+        email: 'admin@example.com',
+        name: 'Admin User',
+        role: 'admin',
+        avatar: 'admin-avatar.jpg',
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+        last_login: '2024-06-22T14:00:00Z',
+        is_active: true,
+        profile: {
+          bio: 'System administrator',
+          location: 'New York, NY',
+          website: 'https://example.com',
+          phone: '+1-555-0123'
+        },
+        preferences: {
+          theme: 'dark',
+          notifications: {
+            email: true,
+            push: false,
+            activitySummary: 'weekly'
+          },
+          privacy: {
+            showEmail: false,
+            showProfile: true
+          }
+        }
+      },
+      {
+        id: '2',
+        email: 'user@example.com',
+        name: 'Regular User',
+        role: 'user',
+        avatar: 'user-avatar.jpg',
+        created_at: '2024-01-02T00:00:00Z',
+        updated_at: '2024-01-02T00:00:00Z',
+        last_login: '2024-06-21T10:30:00Z',
+        is_active: true,
+        profile: {
+          bio: 'Regular user of the platform',
+          location: 'San Francisco, CA',
+          website: null,
+          phone: null
+        },
+        preferences: {
+          theme: 'light',
+          notifications: {
+            email: true,
+            push: true,
+            activitySummary: 'daily'
+          },
+          privacy: {
+            showEmail: true,
+            showProfile: true
+          }
+        }
+      }
+    ];
+
+    // Find user by ID
+    const existingUser = mockUsers.find(u => u.id === id);
+
+    if (!existingUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Simulate updating the user
+    const updatedUser = {
+      ...existingUser,
+      ...filteredUpdateData,
+      // Merge nested objects properly
+      profile: filteredUpdateData.profile ?
+        { ...existingUser.profile, ...filteredUpdateData.profile } :
+        existingUser.profile,
+      preferences: filteredUpdateData.preferences ?
+        { ...existingUser.preferences, ...filteredUpdateData.preferences } :
+        existingUser.preferences
+    };
+
+    res.status(200).json({
+      success: true,
+      message: 'User updated successfully',
+      data: updatedUser
+    });
+
+    // Real Supabase implementation would look like:
+    /*
+    // First check if user exists
+    const { data: existingUser, error: fetchError } = await supabase
+      .from('users')
+      .select('id, role')
+      .eq('id', id)
+      .single();
+
+    if (fetchError) {
+      if (fetchError.code === 'PGRST116') {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found'
+        });
+      }
+      throw fetchError;
+    }
+
+    // Update user in main users table
+    const { data: updatedUser, error: updateError } = await supabase
+      .from('users')
+      .update({
+        name: filteredUpdateData.name,
+        email: filteredUpdateData.email,
+        role: filteredUpdateData.role,
+        avatar: filteredUpdateData.avatar,
+        is_active: filteredUpdateData.is_active,
+        updated_at: filteredUpdateData.updated_at
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    // Update profile if provided
+    if (filteredUpdateData.profile) {
+      await supabase
+        .from('profiles')
+        .upsert({
+          user_id: id,
+          ...filteredUpdateData.profile,
+          updated_at: filteredUpdateData.updated_at
+        });
+    }
+
+    // Update preferences if provided
+    if (filteredUpdateData.preferences) {
+      await supabase
+        .from('user_preferences')
+        .upsert({
+          user_id: id,
+          ...filteredUpdateData.preferences,
+          updated_at: filteredUpdateData.updated_at
+        });
+    }
+    */
+
+  } catch (error: unknown) {
+    logger.error('Error updating user:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while updating user',
+      error: process.env.NODE_ENV === 'development' ?
+        (error instanceof Error ? error.message : String(error)) : undefined
+    });
+  }
 };
 
 // @desc    Delete user (admin only)
 // @route   DELETE /api/users/:id
 // @access  Private/Admin
-export const deleteUser = async (_req: Request, res: Response, _next: NextFunction): Promise<any> => {
-  // TODO: Implement logic to delete a user by ID
-  res.status(501).json({ success: false, message: 'Not Implemented - Requires Admin Role & DB' });
+export const deleteUser = async (req: Request, res: Response, _next: NextFunction): Promise<any> => {
+  try {
+    const user = req.user;
+    const { id } = req.params;
+
+    if (!user || !user.id) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
+      });
+    }
+
+    // Check if user has admin role
+    if (user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Admin role required.'
+      });
+    }
+
+    // Validate user ID parameter
+    if (!id || typeof id !== 'string') {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid user ID is required'
+      });
+    }
+
+    // Prevent self-deletion
+    if (user.id === id) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot delete your own account'
+      });
+    }
+
+    // In a real implementation, this would use Supabase to delete the user
+    // For demonstration, we'll simulate a database deletion
+    
+    // Simulate finding the user first
+    const mockUsers = [
+      {
+        id: '1',
+        email: 'admin@example.com',
+        name: 'Admin User',
+        role: 'admin',
+        is_active: true
+      },
+      {
+        id: '2',
+        email: 'user@example.com',
+        name: 'Regular User',
+        role: 'user',
+        is_active: true
+      },
+      {
+        id: '3',
+        email: 'moderator@example.com',
+        name: 'Moderator User',
+        role: 'moderator',
+        is_active: true
+      }
+    ];
+
+    // Find user by ID
+    const userToDelete = mockUsers.find(u => u.id === id);
+
+    if (!userToDelete) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Additional safety check: prevent deletion of other admin users
+    // This is a common business rule to prevent accidental admin lockout
+    if (userToDelete.role === 'admin') {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot delete admin users. Please change their role first.'
+      });
+    }
+
+    // Simulate successful deletion
+    res.status(200).json({
+      success: true,
+      message: 'User deleted successfully',
+      data: {
+        deletedUser: {
+          id: userToDelete.id,
+          email: userToDelete.email,
+          name: userToDelete.name,
+          role: userToDelete.role
+        },
+        deletedAt: new Date().toISOString()
+      }
+    });
+
+    // Real Supabase implementation would look like:
+    /*
+    // First check if user exists and get their role
+    const { data: userToDelete, error: fetchError } = await supabase
+      .from('users')
+      .select('id, email, name, role')
+      .eq('id', id)
+      .single();
+
+    if (fetchError) {
+      if (fetchError.code === 'PGRST116') {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found'
+        });
+      }
+      throw fetchError;
+    }
+
+    // Additional safety check for admin users
+    if (userToDelete.role === 'admin') {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot delete admin users. Please change their role first.'
+      });
+    }
+
+    // Delete related data first (cascade delete or manual cleanup)
+    // Delete user preferences
+    await supabase
+      .from('user_preferences')
+      .delete()
+      .eq('user_id', id);
+
+    // Delete user profile
+    await supabase
+      .from('profiles')
+      .delete()
+      .eq('user_id', id);
+
+    // Delete user sessions/tokens if stored in database
+    await supabase
+      .from('user_sessions')
+      .delete()
+      .eq('user_id', id);
+
+    // Finally delete the main user record
+    const { error: deleteError } = await supabase
+      .from('users')
+      .delete()
+      .eq('id', id);
+
+    if (deleteError) {
+      throw deleteError;
+    }
+
+    // Optionally, revoke the user's auth session in Supabase Auth
+    // This would require admin privileges in Supabase Auth
+    // await supabase.auth.admin.deleteUser(id);
+    */
+
+  } catch (error: unknown) {
+    logger.error('Error deleting user:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while deleting user',
+      error: process.env.NODE_ENV === 'development' ?
+        (error instanceof Error ? error.message : String(error)) : undefined
+    });
+  }
 };

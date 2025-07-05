@@ -249,6 +249,11 @@ export class CrawlerQueue {
    * @returns Job ID
    */
   public async addJob(config: CrawlerConfig, options: QueueJobOptions = {}): Promise<string> {
+    // Validate factory selection is provided
+    if (!config.factoryId || config.factoryId.trim() === '') {
+      throw new Error('Factory selection is required for web crawling operations');
+    }
+
     // Validate the config with the appropriate service
     try {
       const service = await crawlerServiceFactory.getServiceForConfig(config);
