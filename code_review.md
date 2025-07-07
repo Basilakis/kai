@@ -191,15 +191,43 @@
 
 ## 3. Frontend/Client
 
-*(To be filled in next step)*
+### Actionable Items / Refactoring Checklist
+
+- [ ] Audit and document all API/service integration points (src/services/, src/api/, src/hooks/, src/providers/)
+- [ ] Add/expand input validation and type safety for all forms and user input (src/components/, src/pages/, src/services/)
+- [ ] Standardize and document error handling and user feedback (all files)
+- [ ] Add/expand unit and integration tests for all critical UI and business logic (all files)
+- [ ] Refactor repeated logic for state management, API calls, and UI patterns (all files)
+- [ ] Audit and document all side effects and external dependencies (all files)
+- [ ] Add/expand accessibility (a11y) checks and improvements (all files)
+- [ ] Add/expand performance optimizations and lazy loading (all files)
+- [ ] Review and document all configuration, theming, and environment usage (src/theme/, src/config.ts, .env.example, gatsby-config.js, etc.)
 
 ## 4. ML/Agents/Admin
 
-*(To be filled in next step)*
+### Actionable Items / Refactoring Checklist
+
+- [ ] Audit and document all Python/TypeScript integration points (src/, python/, scripts/, bridges)
+- [ ] Add/expand input validation and type safety for all ML pipelines and bridges (all files)
+- [ ] Standardize and document error handling and fallback logic (all files)
+- [ ] Add/expand unit and integration tests for all ML pipelines, bridges, and admin tools (all files)
+- [ ] Refactor repeated logic for data loading, preprocessing, and evaluation (all files)
+- [ ] Audit and document all side effects and external dependencies (all files)
+- [ ] Add/expand health checks and monitoring for ML pipelines and agent orchestration (all files)
+- [ ] Review and document all configuration, secrets, and environment usage (requirements.txt, Dockerfile*, .env, config files, etc.)
 
 ## 5. General/Infrastructure
 
-*(To be filled in next step)*
+### Actionable Items / Refactoring Checklist
+
+- [ ] Audit and document all configuration, secrets, and environment usage (all config, .env, Dockerfile*, etc.)
+- [ ] Review and enforce naming conventions and project structure (all files)
+- [ ] Remove dead code, unused files, and outdated scripts (all files)
+- [ ] Pin dependency versions and audit for vulnerabilities (package.json, requirements.txt, Dockerfile*)
+- [ ] Standardize and document logging, monitoring, and error boundaries (src/utils/logger.ts, src/middleware/, src/services/monitoring/, etc.)
+- [ ] Add/expand onboarding and documentation (README.md, docs/, readme/)
+- [ ] Review and document all scripts and automation (scripts/, Dockerfile*, CI/CD configs)
+- [ ] Audit and document all side effects and external dependencies (all files)
 
 ---
 

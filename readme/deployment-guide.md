@@ -220,16 +220,11 @@ Before running the deployment workflow, you need to add the following secrets to
 - `ADMIN_EMAIL`: Email for SSL certificate notifications
 - `BASE_URL`: Base URL for the application (e.g., "https://api.kai-platform.com")
 
-#### Database Secrets
-- `SUPABASE_URL`: Supabase project URL
-- `SUPABASE_KEY`: Supabase service role key
-- `SUPABASE_ANON_KEY`: Supabase anonymous key for client-side access
-- `SUPABASE_SERVICE_ROLE_KEY`: Supabase service role key for server-side access
-- `SUPABASE_JWT_SECRET`: Supabase JWT secret for token verification
-- `SUPABASE_DB_URL`: Direct PostgreSQL connection URL (optional)
-- `SUPABASE_STORAGE_BUCKET`: Supabase storage bucket name
-- `SUPABASE_MAX_CONNECTIONS`: Maximum number of database connections
-- `SUPABASE_CONNECTION_TIMEOUT`: Database connection timeout in milliseconds
+#### Database Secrets (Supabase)
+- `SUPABASE_URL`: Main Supabase project URL for backend services
+- `SUPABASE_KEY`: Main Supabase service role key for backend operations
+- `SUPABASE_STORAGE_BUCKET`: Supabase storage bucket name for file uploads (e.g., "materials")
+- `SUPABASE_SERVICE_ROLE_KEY`: Service role key specifically for edge functions and server-side operations
 
 #### Authentication Secrets
 - `JWT_SECRET`: Secret for JWT tokens
@@ -275,18 +270,11 @@ Before running the deployment workflow, you need to add the following secrets to
 - `REDIS_SSL`: Whether to use SSL for Redis connection (true/false)
 - `REDIS_DB`: Redis database number
 
-#### Supabase Secrets - Staging
-- `SUPABASE_URL_STAGING`: Your Supabase staging project URL
-- `SUPABASE_KEY_STAGING`: Your Supabase staging service key
-- `SUPABASE_ANON_KEY_STAGING`: Your Supabase staging anonymous key
-- `SUPABASE_SERVICE_ROLE_KEY_STAGING`: Supabase service role key for staging
-
-#### Supabase Secrets - Production
-- `SUPABASE_URL_PRODUCTION`: Your Supabase production project URL
-- `SUPABASE_KEY_PRODUCTION`: Your Supabase production service key
-- `SUPABASE_ANON_KEY_PRODUCTION`: Your Supabase production anonymous key
-- `SUPABASE_SERVICE_ROLE_KEY_PRODUCTION`: Supabase service role key for production
-- `SUPABASE_STORAGE_BUCKET`: Supabase storage bucket name (e.g., "materials")
+#### Environment-Specific Supabase Secrets
+- `SUPABASE_URL_STAGING`: Supabase project URL for staging environment
+- `SUPABASE_KEY_STAGING`: Supabase service role key for staging environment
+- `SUPABASE_URL_PRODUCTION`: Supabase project URL for production environment
+- `SUPABASE_KEY_PRODUCTION`: Supabase service role key for production environment
 
 #### Stripe Payment Secrets
 - `STRIPE_SECRET_KEY`: Stripe secret key
@@ -332,15 +320,15 @@ Before running the deployment workflow, you need to add the following secrets to
 #### Frontend Configuration
 - `GATSBY_API_URL`: API URL for frontend to connect to backend services
 - `GATSBY_WS_URL`: WebSocket URL for real-time communication
-- `GATSBY_SUPABASE_URL`: Supabase URL for client
-- `GATSBY_SUPABASE_ANON_KEY`: Supabase anonymous key for client
+- `GATSBY_SUPABASE_URL`: Supabase project URL for client-side access (public)
+- `GATSBY_SUPABASE_ANON_KEY`: Supabase anonymous key for client-side authentication (public)
 - `GATSBY_STORAGE_URL`: Storage URL for frontend assets
-- `GATSBY_DEFAULT_LOCALE`: Default locale
-- `GATSBY_ENABLE_OFFLINE_MODE`: Enable offline mode (true/false)
-- `GATSBY_GOOGLE_ANALYTICS_ID`: Google Analytics ID
-- `REACT_APP_VERSION`: App version
-- `GATSBY_APP_NAME`: App name
-- `GATSBY_STRIPE_PUBLISHABLE_KEY`: Stripe publishable key for frontend
+- `GATSBY_DEFAULT_LOCALE`: Default locale for internationalization
+- `GATSBY_ENABLE_OFFLINE_MODE`: Enable offline mode functionality (true/false)
+- `GATSBY_GOOGLE_ANALYTICS_ID`: Google Analytics tracking ID
+- `REACT_APP_VERSION`: Application version number
+- `GATSBY_APP_NAME`: Application display name
+- `GATSBY_STRIPE_PUBLISHABLE_KEY`: Stripe publishable key for frontend payment processing
 
 #### Monitoring Configuration
 - `HEALTH_CHECK_INTERVAL`: Health check interval in milliseconds
