@@ -207,8 +207,10 @@ The deployment system consists of several reusable workflows:
 
 Before running the deployment workflow, you need to add the following secrets to your GitHub repository:
 
-#### Digital Ocean / Infrastructure Secrets
+#### Digital Ocean Secrets
 - `DIGITALOCEAN_ACCESS_TOKEN`: Your Digital Ocean API token with write access
+- `DIGITALOCEAN_SPACES_KEY`: Digital Ocean Spaces access key
+- `DIGITALOCEAN_SPACES_SECRET`: Digital Ocean Spaces secret key
 - `CLUSTER_NAME`: Base name for your Kubernetes cluster (e.g., "kai")
 - `DO_REGION`: Region for your cluster (e.g., "ams3")
 
@@ -284,10 +286,6 @@ Before running the deployment workflow, you need to add the following secrets to
 - `STRIPE_API_VERSION`: Stripe API version (e.g., "2023-10-16")
 - `STRIPE_TEST_MODE`: Whether to use Stripe in test mode (true/false)
 
-#### Digital Ocean Secrets
-- `DIGITALOCEAN_ACCESS_TOKEN`: Your Digital Ocean API token
-- `DIGITALOCEAN_SPACES_KEY`: Digital Ocean Spaces access key
-- `DIGITALOCEAN_SPACES_SECRET`: Digital Ocean Spaces secret key
 
 #### Model Selection Configuration
 - `MODEL_EVALUATION_STANDARD_CYCLE`: Number of standard operations before evaluation
