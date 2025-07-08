@@ -287,6 +287,18 @@ Before running the deployment workflow, you need to add the following secrets to
 - `STRIPE_TEST_MODE`: Whether to use Stripe in test mode (true/false)
 
 
+#### Frontend/Client Environment Variables (Gatsby)
+- `GATSBY_API_URL`: API URL for frontend to connect to backend services
+- `GATSBY_WS_URL`: WebSocket URL for real-time communication
+- `GATSBY_SUPABASE_URL`: Supabase project URL for client-side access (public)
+- `GATSBY_SUPABASE_ANON_KEY`: Supabase anonymous key for client-side authentication (public)
+- `GATSBY_STORAGE_URL`: Storage URL for frontend assets
+- `GATSBY_DEFAULT_LOCALE`: Default locale for internationalization
+- `GATSBY_ENABLE_OFFLINE_MODE`: Enable offline mode functionality (true/false)
+- `GATSBY_GOOGLE_ANALYTICS_ID`: Google Analytics tracking ID
+- `REACT_APP_VERSION`: Application version number
+- `GATSBY_APP_NAME`: Application display name
+
 #### Model Selection Configuration
 - `MODEL_EVALUATION_STANDARD_CYCLE`: Number of standard operations before evaluation
 - `MODEL_EVALUATION_TEST_CYCLE`: Number of evaluation operations
