@@ -138,7 +138,7 @@ spec:
         valueFrom:
           path: /tmp/quality-assessment/quality-level.txt
     container:
-      image: ${REGISTRY_URL}/kai/quality-assessment:latest
+      image: ghcr.io/basilakis/kai/kai/quality-assessment:latest
       command: [python, /app/assess_quality.py]
       args:
       - --input-images={{inputs.parameters.input-images}}
@@ -330,7 +330,7 @@ spec:
         valueFrom:
           path: /tmp/preprocessing/preprocessed-images.json
     container:
-      image: ${REGISTRY_URL}/kai/image-preprocessing:latest
+      image: ghcr.io/basilakis/kai/kai/image-preprocessing:latest
       command: [python, /app/preprocess_images.py]
       args:
       - --input-images={{inputs.parameters.input-images}}
@@ -358,7 +358,7 @@ spec:
         valueFrom:
           path: /tmp/camera-poses/camera-poses.json
     container:
-      image: ${REGISTRY_URL}/kai/colmap-sfm:latest
+      image: ghcr.io/basilakis/kai/kai/colmap-sfm:latest
       command: [python, /app/colmap_sfm_service.py]
       args:
       - --preprocessed-images={{inputs.parameters.preprocessed-images}}
@@ -386,7 +386,7 @@ spec:
         valueFrom:
           path: /tmp/camera-poses/camera-poses.json
     container:
-      image: ${REGISTRY_URL}/kai/colmap-sfm:latest
+      image: ghcr.io/basilakis/kai/kai/colmap-sfm:latest
       command: [python, /app/colmap_sfm_service.py]
       args:
       - --preprocessed-images={{inputs.parameters.preprocessed-images}}
@@ -414,7 +414,7 @@ spec:
         valueFrom:
           path: /tmp/camera-poses/camera-poses.json
     container:
-      image: ${REGISTRY_URL}/kai/colmap-sfm:latest
+      image: ghcr.io/basilakis/kai/kai/colmap-sfm:latest
       command: [python, /app/colmap_sfm_service.py]
       args:
       - --preprocessed-images={{inputs.parameters.preprocessed-images}}
@@ -443,7 +443,7 @@ spec:
         valueFrom:
           path: /tmp/point-cloud/point-cloud-path.txt
     container:
-      image: ${REGISTRY_URL}/kai/point-cloud:latest
+      image: ghcr.io/basilakis/kai/kai/point-cloud:latest
       command: [python, /app/point_cloud_service.py]
       args:
       - --camera-poses={{inputs.parameters.camera-poses}}
@@ -476,7 +476,7 @@ spec:
         valueFrom:
           path: /tmp/reconstruction/model-path.txt
     container:
-      image: ${REGISTRY_URL}/kai/model-generator:latest
+      image: ghcr.io/basilakis/kai/kai/model-generator:latest
       command: [python, /app/generate_model.py]
       args:
       - --camera-poses={{inputs.parameters.camera-poses}}
@@ -506,7 +506,7 @@ spec:
         valueFrom:
           path: /tmp/reconstruction/model-path.txt
     container:
-      image: ${REGISTRY_URL}/kai/model-generator:latest
+      image: ghcr.io/basilakis/kai/kai/model-generator:latest
       command: [python, /app/generate_model.py]
       args:
       - --point-cloud={{inputs.parameters.point-cloud}}
@@ -541,7 +541,7 @@ spec:
         valueFrom:
           path: /tmp/nerf/nerf-model-path.txt
     container:
-      image: ${REGISTRY_URL}/kai/diffusion-nerf:latest
+      image: ghcr.io/basilakis/kai/kai/diffusion-nerf:latest
       command: [python, /app/diffusion_nerf_service.py]
       args:
       - --point-cloud={{inputs.parameters.point-cloud}}
@@ -576,7 +576,7 @@ spec:
         valueFrom:
           path: /tmp/reconstruction/model-path.txt
     container:
-      image: ${REGISTRY_URL}/kai/nerf-mesh-extractor:latest
+      image: ghcr.io/basilakis/kai/kai/nerf-mesh-extractor:latest
       command: [python, /app/extract_mesh.py]
       args:
       - --nerf-model={{inputs.parameters.nerf-model}}
@@ -608,7 +608,7 @@ spec:
         valueFrom:
           path: /tmp/conversion/output-url.txt
     container:
-      image: ${REGISTRY_URL}/kai/format-converter:latest
+      image: ghcr.io/basilakis/kai/kai/format-converter:latest
       command: [python, /app/convert_format.py]
       args:
       - --input-model={{inputs.parameters.input-model}}
@@ -632,7 +632,7 @@ spec:
       - name: user-id
       - name: output-url
     container:
-      image: ${REGISTRY_URL}/kai/workflow-finalizer:latest
+      image: ghcr.io/basilakis/kai/kai/workflow-finalizer:latest
       command: [python, /app/finalize.py]
       args:
       - --user-id={{inputs.parameters.user-id}}

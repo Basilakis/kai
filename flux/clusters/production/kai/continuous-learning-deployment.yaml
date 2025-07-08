@@ -28,7 +28,7 @@ spec:
     spec:
       containers:
         - name: continuous-learning
-          image: ${DOCKER_REGISTRY}/continuous-learning:${IMAGE_TAG}
+          image: ghcr.io/basilakis/kai/continuous-learning:${IMAGE_TAG}
           imagePullPolicy: Always
           resources:
             requests:

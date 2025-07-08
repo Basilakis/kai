@@ -4,8 +4,11 @@
 global:
   environment: "production"
   namespace: "kai-system"
+  registry:
+    url: "ghcr.io"
+    username: "basilakis"
   image:
-    tag: "latest"  # Will be overridden by CI/CD pipeline
+    tag: "latest"  # Default fallback tag, will be overridden by CI/CD pipeline
   labels:
     environment: "production"
   resourceMultiplier: 2  # Higher resources for production

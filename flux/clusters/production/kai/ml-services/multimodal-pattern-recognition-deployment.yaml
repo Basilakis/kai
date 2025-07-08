@@ -244,7 +244,7 @@ spec:
     spec:
       containers:
       - name: multimodal-pattern-training
-        image: ${REGISTRY_URL}/kai/multimodal-pattern-training:latest
+        image: ghcr.io/basilakis/kai/kai/multimodal-pattern-training:latest
         resources:
           requests:
             cpu: "8"

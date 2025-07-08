@@ -111,7 +111,7 @@ spec:
       - name: input-data-path
       - name: user-id
     container:
-      image: ${REGISTRY}/pattern-validation:latest
+      image: ghcr.io/basilakis/kai/pattern-validation:latest
       command: ["/bin/sh", "-c"]
       args: ["python /app/validate_inputs.py --input-path {{inputs.parameters.input-data-path}} --user-id {{inputs.parameters.user-id}}"]
       resources:
@@ -135,7 +135,7 @@ spec:
         valueFrom:
           path: /tmp/prepared-data-path.txt
     container:
-      image: ${REGISTRY}/pattern-data-prep:latest
+      image: ghcr.io/basilakis/kai/pattern-data-prep:latest
       command: ["/bin/sh", "-c"]
       args: ["python /app/prepare_data.py --input-path {{inputs.parameters.input-data-path}} --pattern-type {{inputs.parameters.pattern-type}} --job-id {{inputs.parameters.job-id}} --output-path-file /tmp/prepared-data-path.txt"]
       volumeMounts:
@@ -161,7 +161,7 @@ spec:
         valueFrom:
           path: /tmp/selected-model-path.txt
     container:
-      image: ${REGISTRY}/pattern-model-selector:latest
+      image: ghcr.io/basilakis/kai/pattern-model-selector:latest
       command: ["/bin/sh", "-c"]
       args: ["python /app/select_model.py --quality-tier {{inputs.parameters.quality-tier}} --pattern-type {{inputs.parameters.pattern-type}} --output-file /tmp/selected-model-path.txt"]
       resources:
@@ -187,7 +187,7 @@ spec:
         valueFrom:
           path: /tmp/raw-results-path.txt
     container:
-      image: ${REGISTRY}/multimodal-pattern-recognizer:latest
+      image: ghcr.io/basilakis/kai/multimodal-pattern-recognizer:latest
       command: ["/bin/sh", "-c"]
       args: ["python /app/run_recognition.py --model-path {{inputs.parameters.model-path}} --data-path {{inputs.parameters.prepared-data-path}} --confidence {{inputs.parameters.confidence-threshold}} --text-query \"{{inputs.parameters.text-query}}\" --output-file /tmp/raw-results-path.txt"]
       volumeMounts:
@@ -216,7 +216,7 @@ spec:
         valueFrom:
           path: /tmp/processed-results-path.txt
     container:
-      image: ${REGISTRY}/pattern-results-processor:latest
+      image: ghcr.io/basilakis/kai/pattern-results-processor:latest
       command: ["/bin/sh", "-c"]
       args: ["python /app/post_process.py --input-path {{inputs.parameters.raw-results-path}} --confidence {{inputs.parameters.confidence-threshold}} --output-file /tmp/processed-results-path.txt"]
       volumeMounts:
@@ -238,7 +238,7 @@ spec:
       - name: user-id
       - name: job-id
     container:
-      image: ${REGISTRY}/pattern-results-storage:latest
+      image: ghcr.io/basilakis/kai/pattern-results-storage:latest
       command: ["/bin/sh", "-c"]
       args: ["python /app/store_results.py --input-path {{inputs.parameters.processed-results-path}} --user-id {{inputs.parameters.user-id}} --job-id {{inputs.parameters.job-id}}"]
       volumeMounts:

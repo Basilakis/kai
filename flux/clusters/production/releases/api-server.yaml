@@ -10,8 +10,8 @@ spec:
       chart: api-server # Name of the subchart
       version: ">=0.1.0" # Use version 0.1.0 or newer
       sourceRef:
-        kind: HelmRepository
-        name: kai-charts # Reference the HelmRepository source defined in sources/
+        kind: GitRepository
+        name: kai-charts # Reference the GitRepository source defined in sources/
         namespace: flux-system
       interval: 1m # Check for new chart versions every minute
   # Values passed to the api-server subchart

@@ -28,7 +28,7 @@ spec:
     spec:
       containers:
       - name: relationship-aware-training
-        image: ${REGISTRY_URL}/kai/relationship-aware-training:latest
+        image: ghcr.io/basilakis/kai/kai/relationship-aware-training:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 8000

@@ -28,7 +28,7 @@ spec:
       serviceAccountName: coordinator-service-account  # Service account with permissions to create workflows
       containers:
       - name: coordinator
-        image: ${REGISTRY_URL}/kai/coordinator-service:latest
+        image: ghcr.io/basilakis/kai/coordinator-service:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 8080

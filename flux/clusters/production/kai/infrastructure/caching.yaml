@@ -264,7 +264,7 @@ spec:
     spec:
       containers:
       - name: cache-manager
-        image: ${REGISTRY_URL}/kai/cache-manager:latest
+        image: ghcr.io/basilakis/kai/cache-manager:latest
         resources:
           requests:
             cpu: 200m

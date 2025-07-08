@@ -27,7 +27,7 @@ spec:
     spec:
       containers:
       - name: webhook-service
-        image: ${REGISTRY_URL}/kai/webhook-service:latest
+        image: ghcr.io/basilakis/kai/webhook-service:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 3100

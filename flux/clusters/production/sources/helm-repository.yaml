@@ -1,12 +1,16 @@
-apiVersion: source.toolkit.fluxcd.io/v1beta2
-kind: HelmRepository
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
 metadata:
   name: kai-charts
   namespace: flux-system
 spec:
   interval: 5m
-  url: https://kai-platform.github.io/helm-charts/
-  timeout: 3m
+  ref:
+    branch: main
+  url: https://github.com/Basilakis/kai
+  ignore: |
+    /*
+    !/helm-charts/
 ---
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository

@@ -27,7 +27,7 @@ spec:
     spec:
       containers:
       - name: notification-service
-        image: ${REGISTRY_URL}/kai/notification-service:latest
+        image: ghcr.io/basilakis/kai/notification-service:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 3000

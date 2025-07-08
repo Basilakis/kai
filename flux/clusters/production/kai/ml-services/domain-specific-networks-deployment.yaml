@@ -28,7 +28,7 @@ spec:
     spec:
       containers:
       - name: domain-specific-networks
-        image: ${REGISTRY_URL}/kai/domain-specific-networks:latest
+        image: ghcr.io/basilakis/kai/kai/domain-specific-networks:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 8100
@@ -291,7 +291,7 @@ spec:
     spec:
       containers:
       - name: domain-specific-networks-training
-        image: ${REGISTRY_URL}/kai/domain-specific-networks-training:latest
+        image: ghcr.io/basilakis/kai/kai/domain-specific-networks-training:latest
         resources:
           requests:
             cpu: "4"

@@ -4,8 +4,11 @@
 global:
   environment: "staging"
   namespace: "kai-system-staging"
+  registry:
+    url: "ghcr.io"
+    username: "basilakis"
   image:
-    tag: "staging"  # Will be overridden by CI/CD pipeline
+    tag: "staging"  # Default fallback tag, will be overridden by CI/CD pipeline
   labels:
     environment: "staging"
   resourceMultiplier: 1  # Base resources for staging

@@ -124,7 +124,7 @@ spec:
       - name: input-texture-path
       - name: user-id
     container:
-      image: ${REGISTRY}/texture-validation:latest
+      image: ghcr.io/basilakis/kai/texture-validation:latest
       command: ["/bin/sh", "-c"]
       args: ["python /app/validate_texture_inputs.py --input-path {{inputs.parameters.input-texture-path}} --user-id {{inputs.parameters.user-id}}"]
       resources:
@@ -147,7 +147,7 @@ spec:
         valueFrom:
           path: /tmp/extracted-textures-path.txt
     container:
-      image: ${REGISTRY}/texture-extractor:latest
+      image: ghcr.io/basilakis/kai/texture-extractor:latest
       command: ["/bin/sh", "-c"]
       args: ["python /app/extract_textures.py --input-path {{inputs.parameters.input-texture-path}} --job-id {{inputs.parameters.job-id}} --output-path-file /tmp/extracted-textures-path.txt"]
       volumeMounts:
@@ -173,7 +173,7 @@ spec:
         valueFrom:
           path: /tmp/detected-domain.txt
     container:
-      image: ${REGISTRY}/domain-classifier:latest
+      image: ghcr.io/basilakis/kai/domain-classifier:latest
       command: ["/bin/sh", "-c"]
       args: ["python /app/classify_domain.py --textures-path {{inputs.parameters.extracted-textures-path}} --material-hint {{inputs.parameters.material-type}} --output-file /tmp/detected-domain.txt"]
       volumeMounts:
@@ -204,7 +204,7 @@ spec:
         valueFrom:
           path: /tmp/model-path.txt
     container:
-      image: ${REGISTRY}/domain-model-selector:latest
+      image: ghcr.io/basilakis/kai/domain-model-selector:latest
       command: ["/bin/sh", "-c"]
       args: ["python /app/select_domain_model.py --domain {{inputs.parameters.domain-type}} --quality-tier {{inputs.parameters.quality-tier}} --process-type {{inputs.parameters.process-type}} --output-file /tmp/model-path.txt"]
       resources:
@@ -230,7 +230,7 @@ spec:
         valueFrom:
           path: /tmp/raw-results-path.txt
     container:
-      image: ${REGISTRY}/domain-specific-network:latest
+      image: ghcr.io/basilakis/kai/domain-specific-network:latest
       command: ["/bin/sh", "-c"]
       args: ["python /app/run_domain_network.py --model-path {{inputs.parameters.model-path}} --textures-path {{inputs.parameters.textures-path}} --domain-type {{inputs.parameters.domain-type}} --quality-tier {{inputs.parameters.quality-tier}} --process-type {{inputs.parameters.process-type}} --output-file /tmp/raw-results-path.txt"]
       volumeMounts:
@@ -260,7 +260,7 @@ spec:
         valueFrom:
           path: /tmp/processed-results-path.txt
     container:
-      image: ${REGISTRY}/domain-results-processor:latest
+      image: ghcr.io/basilakis/kai/domain-results-processor:latest
       command: ["/bin/sh", "-c"]
       args: ["python /app/process_domain_results.py --input-path {{inputs.parameters.raw-results-path}} --output-format {{inputs.parameters.output-format}} --process-type {{inputs.parameters.process-type}} --output-file /tmp/processed-results-path.txt"]
       volumeMounts:
@@ -283,7 +283,7 @@ spec:
       - name: job-id
       - name: domain-type
     container:
-      image: ${REGISTRY}/domain-results-storage:latest
+      image: ghcr.io/basilakis/kai/domain-results-storage:latest
       command: ["/bin/sh", "-c"]
       args: ["python /app/store_domain_results.py --input-path {{inputs.parameters.processed-results-path}} --user-id {{inputs.parameters.user-id}} --job-id {{inputs.parameters.job-id}} --domain-type {{inputs.parameters.domain-type}}"]
       volumeMounts:

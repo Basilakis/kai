@@ -10,15 +10,15 @@ spec:
       chart: coordinator
       version: ">=1.0.0"
       sourceRef:
-        kind: HelmRepository
+        kind: GitRepository
         name: kai-charts
         namespace: flux-system
       interval: 1m
   values:
     replicaCount: 3
     image:
-      repository: "${REGISTRY_URL}/coordinator"
-      tag: "${IMAGE_TAG}"
+      repository: "{{ .Values.global.registry.url }}/{{ .Values.global.registry.username }}/kai/coordinator-service"
+      tag: "{{ .Values.global.image.tag | default \"production\" }}"
     resources:
       limits:
         cpu: 2000m

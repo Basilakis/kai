@@ -27,7 +27,7 @@ spec:
     spec:
       containers:
       - name: material-property-analytics
-        image: ${REGISTRY_URL}/kai/material-property-analytics:latest
+        image: "{{ .Values.global.registry.url }}/{{ .Values.global.registry.username }}/kai/material-property-analytics:{{ .Values.image.tag | default "latest" }}"
         imagePullPolicy: Always
         ports:
         - containerPort: 8000

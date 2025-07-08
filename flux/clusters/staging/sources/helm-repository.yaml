@@ -1,9 +1,0 @@
-apiVersion: source.toolkit.fluxcd.io/v1beta2
-kind: HelmRepository
-metadata:
-  name: kai-charts
-  namespace: flux-system
-spec:
-  interval: 5m
-  url: https://kai-platform.github.io/helm-charts/
-  timeout: 3m
