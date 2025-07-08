@@ -13,7 +13,7 @@ on:
         type: string
         default: ''
     secrets:
-      github_token:
+      github_access_token:
         required: true
       github_repository:
         required: false
@@ -39,7 +39,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
-          password: ${{ secrets.github_token }}
+          password: ${{ secrets.github_access_token }}
 
       - name: Prepare tags
         id: prep
@@ -81,7 +81,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
-          password: ${{ secrets.github_token }}
+          password: ${{ secrets.github_access_token }}
 
       - name: Prepare tags
         id: prep
@@ -123,7 +123,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
-          password: ${{ secrets.github_token }}
+          password: ${{ secrets.github_access_token }}
 
       - name: Prepare tags
         id: prep
@@ -204,7 +204,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
-          password: ${{ secrets.github_token }}
+          password: ${{ secrets.github_access_token }}
 
       - name: Prepare tags
         id: prep
