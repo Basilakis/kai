@@ -37,8 +37,6 @@ on:
 # - SUPABASE_URL_PRODUCTION, SUPABASE_KEY_PRODUCTION, SUPABASE_ANON_KEY_PRODUCTION: Supabase production credentials
 # - SUPABASE_URL_STAGING, SUPABASE_KEY_STAGING, SUPABASE_ANON_KEY_STAGING: Supabase staging credentials
 # - STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY: Stripe payment credentials (optional)
-# - VERCEL_TOKEN, VERCEL_ORG_ID: Vercel credentials
-# - VERCEL_PROJECT_ID_CLIENT, VERCEL_PROJECT_ID_ADMIN: Vercel project IDs
 # - SLACK_WEBHOOK: Slack notification webhook URL
 
 jobs:
@@ -63,7 +61,7 @@ jobs:
       environment: ${{ github.ref == 'refs/heads/main' || github.event.inputs.environment == 'production' && 'production' || 'staging' }}
       tag-suffix: ${{ github.ref == 'refs/heads/main' || github.event.inputs.environment == 'production' && 'latest' || 'staging' }}
     secrets:
-      github_token: ${{ secrets.GITHUB_TOKEN }}
+      github_access_token: ${{ secrets.GITHUB_TOKEN }}
       github_repository: ${{ github.repository }}
 
   # Provision infrastructure if needed
@@ -155,7 +153,7 @@ jobs:
       domain: 'staging.${{ secrets.DOMAIN_NAME }}'
       sha: ${{ github.sha }}
     secrets:
-      github_token: ${{ secrets.GITHUB_TOKEN }}
+      github_access_token: ${{ secrets.GITHUB_TOKEN }}
       github_repository: ${{ secrets.GITHUB_REPOSITORY || github.repository }}
       slack_webhook: ${{ secrets.SLACK_WEBHOOK }}
 
@@ -171,50 +169,10 @@ jobs:
       domain: ${{ secrets.DOMAIN_NAME }}
       sha: ${{ github.sha }}
     secrets:
-      github_token: ${{ secrets.GITHUB_TOKEN }}
+      github_access_token: ${{ secrets.GITHUB_TOKEN }}
       github_repository: ${{ secrets.GITHUB_REPOSITORY || github.repository }}
       slack_webhook: ${{ secrets.SLACK_WEBHOOK }}
 
-  # Deploy frontend to Vercel
-  deploy-frontend-staging:
-    name: Deploy Frontend to Staging
-    needs: deploy-application-staging
-    if: |
-      (github.ref == 'refs/heads/staging') ||
-      (github.event.inputs.environment == 'staging')
-    uses: ./.github/workflows/deploy-frontend.yml
-    with:
-      environment: 'staging'
-      api_url: 'https://api.staging.${{ secrets.DOMAIN_NAME }}'
-    secrets:
-      vercel_token: ${{ secrets.VERCEL_TOKEN }}
-      vercel_org_id: ${{ secrets.VERCEL_ORG_ID }}
-      vercel_project_id_client: ${{ secrets.VERCEL_PROJECT_ID_CLIENT }}
-      vercel_project_id_admin: ${{ secrets.VERCEL_PROJECT_ID_ADMIN }}
-      supabase_url: ${{ secrets.SUPABASE_URL_STAGING }}
-      supabase_anon_key: ${{ secrets.SUPABASE_ANON_KEY_STAGING }}
-      stripe_publishable_key: ${{ secrets.STRIPE_PUBLISHABLE_KEY }}
-      slack_webhook: ${{ secrets.SLACK_WEBHOOK }}
-
-  deploy-frontend-production:
-    name: Deploy Frontend to Production
-    needs: deploy-application-production
-    if: |
-      (github.ref == 'refs/heads/main') ||
-      (github.event.inputs.environment == 'production')
-    uses: ./.github/workflows/deploy-frontend.yml
-    with:
-      environment: 'production'
-      api_url: 'https://api.${{ secrets.DOMAIN_NAME }}'
-    secrets:
-      vercel_token: ${{ secrets.VERCEL_TOKEN }}
-      vercel_org_id: ${{ secrets.VERCEL_ORG_ID }}
-      vercel_project_id_client: ${{ secrets.VERCEL_PROJECT_ID_CLIENT }}
-      vercel_project_id_admin: ${{ secrets.VERCEL_PROJECT_ID_ADMIN }}
-      supabase_url: ${{ secrets.SUPABASE_URL_PRODUCTION }}
-      supabase_anon_key: ${{ secrets.SUPABASE_ANON_KEY_PRODUCTION }}
-      stripe_publishable_key: ${{ secrets.STRIPE_PUBLISHABLE_KEY }}
-      slack_webhook: ${{ secrets.SLACK_WEBHOOK }}
 
   # Verify deployment
   verify-deployment-staging:

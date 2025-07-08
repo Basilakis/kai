@@ -191,13 +191,9 @@ The deployment system consists of several reusable workflows:
    - Deploys the application using Helm
    - Runs database migrations
    - Verifies the deployment
+   - Frontend deployment is handled as part of the main application deployment
 
-7. **Frontend Deployment (`deploy-frontend.yml`)**:
-   - Deploys the client frontend to Digital Ocean App Platform
-   - Deploys the admin panel to Digital Ocean App Platform
-   - Sets up environment variables
-
-8. **Deployment Verification (`verify-deployment.yml`)**:
+7. **Deployment Verification (`verify-deployment.yml`)**:
    - Performs comprehensive health checks
    - Verifies API availability
    - Checks SSL certificate validity

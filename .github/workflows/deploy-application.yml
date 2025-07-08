@@ -20,7 +20,7 @@ on:
         required: false
       docker_username:
         required: false
-      github_token:
+      github_access_token:
         required: true
       github_repository:
         required: false
@@ -51,7 +51,7 @@ jobs:
             kubectl create secret docker-registry github-container-registry \
               --docker-server=ghcr.io \
               --docker-username=${{ github.repository_owner }} \
-              --docker-password=${{ secrets.github_token }} \
+              --docker-password=${{ secrets.github_access_token }} \
               --docker-email=${{ github.actor }}@users.noreply.github.com \
               -n kai-system
             echo "Created GitHub Container Registry secret"
@@ -60,7 +60,7 @@ jobs:
             kubectl create secret docker-registry github-container-registry \
               --docker-server=ghcr.io \
               --docker-username=${{ github.repository_owner }} \
-              --docker-password=${{ secrets.github_token }} \
+              --docker-password=${{ secrets.github_access_token }} \
               --docker-email=${{ github.actor }}@users.noreply.github.com \
               -n kai-system \
               --dry-run=client -o yaml | kubectl apply -f -
