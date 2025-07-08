@@ -105,8 +105,8 @@ jobs:
     uses: ./.github/workflows/setup-kubernetes.yml
     with:
       environment: 'staging'
-      domain: 'staging.${{ secrets.DOMAIN_NAME }}'
     secrets:
+      domain_name: ${{ secrets.DOMAIN_NAME }}
       admin_email: ${{ secrets.ADMIN_EMAIL }}
       mongodb_uri: ${{ secrets.MONGODB_URI }}
       jwt_secret: ${{ secrets.JWT_SECRET }}
@@ -127,8 +127,8 @@ jobs:
     uses: ./.github/workflows/setup-kubernetes.yml
     with:
       environment: 'production'
-      domain: ${{ secrets.DOMAIN_NAME }}
     secrets:
+      domain_name: ${{ secrets.DOMAIN_NAME }}
       admin_email: ${{ secrets.ADMIN_EMAIL }}
       mongodb_uri: ${{ secrets.MONGODB_URI }}
       jwt_secret: ${{ secrets.JWT_SECRET }}

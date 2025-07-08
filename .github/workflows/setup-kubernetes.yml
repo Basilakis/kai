@@ -7,11 +7,9 @@ on:
         description: 'Environment to setup (production or staging)'
         required: true
         type: string
-      domain:
-        description: 'Domain name for the environment'
-        required: true
-        type: string
     secrets:
+      domain_name:
+        required: true
       admin_email:
         required: true
       mongodb_uri:
@@ -67,7 +65,7 @@ jobs:
           SUPABASE_KEY=${{ secrets.supabase_key }}
           
           # Frontend URLs
-          GATSBY_API_URL=https://api.${{ inputs.domain }}
+          GATSBY_API_URL=https://api.${{ inputs.environment == 'staging' && format('staging.{0}', secrets.domain_name) || secrets.domain_name }}
           GATSBY_SUPABASE_URL=${{ secrets.supabase_url }}
           GATSBY_SUPABASE_ANON_KEY=${{ secrets.supabase_anon_key }}
           
