@@ -1,0 +1,33 @@
+# Digital Ocean App Platform Configuration for Kai Admin (Next.js)
+name: kai-admin
+services:
+- name: admin
+  source_dir: /packages/admin
+  github:
+    repo: your-username/kai
+    branch: main
+    deploy_on_push: true
+  build_command: npm run build
+  run_command: npm start
+  environment_slug: node-js
+  instance_count: 1
+  instance_size_slug: basic-xxs
+  http_port: 3000
+  routes:
+  - path: /
+  envs:
+  - key: NEXTAUTH_URL
+    scope: RUN_AND_BUILD_TIME
+    type: SECRET
+  - key: NEXTAUTH_SECRET
+    scope: RUN_AND_BUILD_TIME
+    type: SECRET
+  - key: NEXT_PUBLIC_API_URL
+    scope: RUN_AND_BUILD_TIME
+    type: SECRET
+  - key: DATABASE_URL
+    scope: RUN_AND_BUILD_TIME
+    type: SECRET
+  - key: NODE_ENV
+    scope: RUN_AND_BUILD_TIME
+    value: production

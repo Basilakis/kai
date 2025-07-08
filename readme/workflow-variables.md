@@ -10,7 +10,7 @@ These variables are set during workflow execution:
 |----------|-------------|---------------|
 | `DEPLOY_ENV` | Deployment environment | `staging` or `production` |
 | `TAG_SUFFIX` | Docker image tag suffix | `latest` or `staging` |
-| `VERCEL_ARGS` | Arguments for Vercel deployment | `--prod` |
+| `DO_APP_ARGS` | Arguments for Digital Ocean App Platform deployment | `--prod` |
 | `API_URL` | URL for API testing | `https://api.kai.example.com` |
 | `TEST_SCRIPT` | Test script to run | `test:e2e` |
 | `KUBE_CONTEXT` | Kubernetes context name | `kubernetes-cluster1` |
@@ -31,11 +31,10 @@ These secrets need to be configured in the repository settings:
 - `SUPABASE_URL_STAGING`: Supabase staging URL
 - `SUPABASE_KEY_STAGING`: Supabase staging API key
 
-### Vercel Deployment
-- `VERCEL_TOKEN`: Vercel API token
-- `VERCEL_ORG_ID`: Vercel organization ID
-- `VERCEL_PROJECT_ID_CLIENT`: Vercel project ID for client
-- `VERCEL_PROJECT_ID_ADMIN`: Vercel project ID for admin
+### Digital Ocean App Platform Deployment
+- `DO_API_TOKEN`: Digital Ocean API token
+- `DO_APP_ID_CLIENT`: Digital Ocean App Platform app ID for client
+- `DO_APP_ID_ADMIN`: Digital Ocean App Platform app ID for admin
 
 ### Notifications
 - `SLACK_WEBHOOK`: Slack notification webhook URL

@@ -1,0 +1,29 @@
+# Digital Ocean App Platform Configuration for Kai Client (Gatsby)
+name: kai-client
+services:
+- name: client
+  source_dir: /packages/client
+  github:
+    repo: your-username/kai
+    branch: main
+    deploy_on_push: true
+  build_command: npm run build
+  environment_slug: node-js
+  instance_count: 1
+  instance_size_slug: basic-xxs
+  http_port: 8080
+  routes:
+  - path: /
+  envs:
+  - key: GATSBY_API_URL
+    scope: RUN_AND_BUILD_TIME
+    type: SECRET
+  - key: GATSBY_SUPABASE_URL
+    scope: RUN_AND_BUILD_TIME
+    type: SECRET
+  - key: GATSBY_SUPABASE_ANON_KEY
+    scope: RUN_AND_BUILD_TIME
+    type: SECRET
+  - key: NODE_ENV
+    scope: RUN_AND_BUILD_TIME
+    value: production

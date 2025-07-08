@@ -16,7 +16,7 @@ This comprehensive guide covers the fully automated deployment process for the K
   - [Node Pool Configuration](#node-pool-configuration)
   - [Resource Allocation](#resource-allocation)
 - [SSL Certificate Management](#ssl-certificate-management)
-- [Frontend Deployment to Vercel](#frontend-deployment-to-vercel)
+- [Frontend Deployment to Digital Ocean App Platform](#frontend-deployment-to-digital-ocean-app-platform)
 - [Environment Variables and Secrets](#environment-variables-and-secrets)
 - [Deployment Verification and Monitoring](#deployment-verification-and-monitoring)
 - [Maintenance and Updates](#maintenance-and-updates)
@@ -47,7 +47,8 @@ The Kai application consists of several components deployed across different pla
                              │                                    │
 ┌────────────────────────┐   │  ┌────────────────┐  ┌───────────┐│
 │                        │   │  │                │  │           ││
-│  Vercel                │   │  │  API Server    │  │ Redis     ││
+│  Digital Ocean         │   │  │  API Server    │  │ Redis     ││
+│  App Platform          │   │  │                │  │           ││
 │  ───────────────────   │   │  │                │  │           ││
 │  - Admin Panel (Next)  │───┼─▶│                │  │           ││
 │  - Client App (Gatsby) │   │  └────────┬───────┘  └───────────┘│
@@ -142,7 +143,7 @@ Before proceeding with deployment, ensure you have the following:
 
 - GitHub account with administrator access to the repository
 - Supabase account and project set up
-- Vercel account with projects created for frontend and admin panel
+- Digital Ocean account with API access and App Platform enabled
 - Digital Ocean account with API access
 - Domain name(s) for your deployment
 - OpenAI API key (for AI features)
@@ -153,7 +154,7 @@ You do not need to install any local tools as the entire deployment process is a
 
 ## Automated Deployment with GitHub Actions
 
-The KAI platform uses GitHub Actions to fully automate the deployment process, from building and testing code to provisioning infrastructure and deploying to Kubernetes and Vercel. Our approach uses modular, reusable workflows for better maintainability and flexibility.
+The KAI platform uses GitHub Actions to fully automate the deployment process, from building and testing code to provisioning infrastructure and deploying to Kubernetes and Digital Ocean App Platform. Our approach uses modular, reusable workflows for better maintainability and flexibility.
 
 ### Workflow Architecture
 
@@ -192,8 +193,8 @@ The deployment system consists of several reusable workflows:
    - Verifies the deployment
 
 7. **Frontend Deployment (`deploy-frontend.yml`)**:
-   - Deploys the client frontend to Vercel
-   - Deploys the admin panel to Vercel
+   - Deploys the client frontend to Digital Ocean App Platform
+   - Deploys the admin panel to Digital Ocean App Platform
    - Sets up environment variables
 
 8. **Deployment Verification (`verify-deployment.yml`)**:
@@ -283,11 +284,10 @@ Before running the deployment workflow, you need to add the following secrets to
 - `STRIPE_API_VERSION`: Stripe API version (e.g., "2023-10-16")
 - `STRIPE_TEST_MODE`: Whether to use Stripe in test mode (true/false)
 
-#### Vercel Secrets
-- `VERCEL_TOKEN`: Your Vercel API token
-- `VERCEL_ORG_ID`: Your Vercel organization ID
-- `VERCEL_PROJECT_ID_CLIENT`: Vercel project ID for client frontend
-- `VERCEL_PROJECT_ID_ADMIN`: Vercel project ID for admin panel
+#### Digital Ocean Secrets
+- `DIGITALOCEAN_ACCESS_TOKEN`: Your Digital Ocean API token
+- `DIGITALOCEAN_SPACES_KEY`: Digital Ocean Spaces access key
+- `DIGITALOCEAN_SPACES_SECRET`: Digital Ocean Spaces secret key
 
 #### Model Selection Configuration
 - `MODEL_EVALUATION_STANDARD_CYCLE`: Number of standard operations before evaluation
@@ -824,7 +824,7 @@ jobs:
           SLACK_COLOR: {% raw %}${{ job.status == 'success' && 'good' || 'danger' }}{% endraw %}
 
   deploy-frontend:
-    name: Deploy Frontend to Vercel
+    name: Deploy Frontend to Digital Ocean App Platform
     needs: deploy-kubernetes
     runs-on: ubuntu-latest
     steps:
@@ -840,23 +840,19 @@ jobs:
       - name: Install dependencies
         run: yarn install --frozen-lockfile
 
-      - name: Deploy to Vercel
-        uses: amondnet/vercel-action@v20
+      - name: Deploy Client to Digital Ocean App Platform
+        uses: digitalocean/app_action@v1.1.5
         with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID_CLIENT }}
-          working-directory: ./packages/client
-          vercel-args: '--prod'
+          app_name: kai-client
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          app_spec_location: ./packages/client/.do/app.yaml
 
-      - name: Deploy admin panel to Vercel
-        uses: amondnet/vercel-action@v20
+      - name: Deploy Admin to Digital Ocean App Platform
+        uses: digitalocean/app_action@v1.1.5
         with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID_ADMIN }}
-          working-directory: ./packages/admin
-          vercel-args: '--prod'
+          app_name: kai-admin
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          app_spec_location: ./packages/admin/.do/app.yaml
 
   verify-deployment:
     name: Verify Full Deployment
@@ -923,8 +919,8 @@ The GitHub Actions workflow above automates the entire deployment process:
    - Runs database migrations
 
 5. **Deploy Frontend**:
-   - Deploys the client frontend to Vercel
-   - Deploys the admin panel to Vercel
+   - Deploys the client frontend to Digital Ocean App Platform
+   - Deploys the admin panel to Digital Ocean App Platform
 
 6. **Verify Full Deployment**:
    - Performs comprehensive health checks
@@ -1047,53 +1043,76 @@ kubectl get certificaterequests -n kai-system
 kubectl describe certificate kai-tls-cert -n kai-system
 ```
 
-## Frontend Deployment to Vercel
+## Frontend Deployment to Digital Ocean App Platform
 
-The KAI platform frontend applications are deployed to Vercel for optimal performance and reliability.
+The KAI platform frontend applications are deployed to Digital Ocean App Platform for optimal performance, reliability, and seamless integration with the existing Digital Ocean infrastructure.
 
-### Vercel Projects Setup
+### Digital Ocean App Platform Setup
 
-Before running the GitHub Actions workflow, you need to set up two projects in Vercel:
+The frontend applications are configured using Digital Ocean App Platform's YAML-based configuration files located in each package directory:
 
 1. **Client Frontend** (Gatsby):
-   - Create a new project in Vercel
-   - Connect to your GitHub repository
-   - Configure the project:
-     - Framework Preset: Gatsby
-     - Root Directory: `packages/client`
-     - Build Command: `yarn build`
-     - Output Directory: `public`
-   - Note the Project ID for the GitHub secret `VERCEL_PROJECT_ID_CLIENT`
+   - Configuration file: `packages/client/.do/app.yaml`
+   - Framework: Gatsby with Node.js environment
+   - Build Command: `npm run build`
+   - Output Directory: `public`
+   - Port: 8080
+   - Instance Size: basic-xxs
 
 2. **Admin Panel** (Next.js):
-   - Create a new project in Vercel
-   - Connect to your GitHub repository
-   - Configure the project:
-     - Framework Preset: Next.js
-     - Root Directory: `packages/admin`
-     - Build Command: `yarn build`
-     - Output Directory: `out`
-   - Note the Project ID for the GitHub secret `VERCEL_PROJECT_ID_ADMIN`
+   - Configuration file: `packages/admin/.do/app.yaml`
+   - Framework: Next.js with Node.js environment
+   - Build Command: `npm run build`
+   - Run Command: `npm start`
+   - Port: 3000
+   - Instance Size: basic-xxs
 
-### Vercel Environment Variables
+### Digital Ocean App Platform Environment Variables
 
-The GitHub Actions workflow automatically sets the required environment variables for your Vercel deployments, including:
+Both applications are configured with the necessary environment variables as secrets in Digital Ocean App Platform:
 
-- API URL
-- Supabase configuration
-- Stripe keys (if using payments)
-- Other application-specific settings
+**Client Frontend Environment Variables:**
+- `GATSBY_API_URL`: API endpoint URL
+- `GATSBY_SUPABASE_URL`: Supabase project URL
+- `GATSBY_SUPABASE_ANON_KEY`: Supabase anonymous key
+
+**Admin Panel Environment Variables:**
+- `NEXTAUTH_URL`: NextAuth.js URL for authentication
+- `NEXTAUTH_SECRET`: NextAuth.js secret for JWT signing
+- `NEXT_PUBLIC_API_URL`: Public API endpoint URL
+- `DATABASE_URL`: Database connection string
+
+### Deployment Process
+
+Digital Ocean App Platform automatically deploys from your GitHub repository:
+
+1. **Automatic Deployment**: Apps are configured to deploy automatically from the `main` branch
+2. **Build Process**: Each app uses its respective build configuration defined in the `.do/app.yaml` files
+3. **Environment Management**: Environment variables are managed as secrets in the Digital Ocean control panel
+4. **Scaling**: Apps can be scaled horizontally based on traffic demands
 
 ### Custom Domain Configuration
 
-After the first deployment, you should configure custom domains in Vercel:
+After the first deployment, configure custom domains in Digital Ocean App Platform:
 
-1. Go to your Vercel project settings
-2. Navigate to the "Domains" section
-3. Add your custom domains:
+1. Go to your Digital Ocean App Platform dashboard
+2. Select your app and navigate to the "Settings" tab
+3. In the "Domains" section, add your custom domains:
    - `app.yourdomain.com` for the client frontend
    - `admin.yourdomain.com` for the admin panel
-4. Configure DNS records as instructed by Vercel
+4. Configure DNS records as instructed by Digital Ocean:
+   - Add CNAME records pointing to your app's Digital Ocean URL
+   - Ensure SSL certificates are automatically provisioned
+
+### Integration with Digital Ocean Infrastructure
+
+The frontend deployment integrates seamlessly with the existing Digital Ocean infrastructure:
+
+- **VPC Integration**: Apps can be configured to run within the same VPC as your DOKS cluster
+- **Load Balancing**: Digital Ocean's built-in load balancing for high availability
+- **CDN Integration**: Automatic CDN distribution for static assets
+- **Monitoring**: Built-in application monitoring and logging
+- **Cost Optimization**: Unified billing and resource management across all Digital Ocean services
 
 ## Environment Variables and Secrets
 
@@ -1196,7 +1215,7 @@ All sensitive information is stored as GitHub Secrets and injected into the depl
 - Database credentials
 - JWT secrets
 - Supabase credentials
-- Vercel tokens
+- Digital Ocean API tokens
 - Docker registry credentials
 
 ### Kubernetes Secrets
@@ -1600,8 +1619,8 @@ To get started with the automated deployment system, follow these steps:
    - Set up the necessary tables and storage buckets
    - Note the URLs and API keys for the GitHub secrets
 
-2. **Set Up Vercel Projects**:
-   - Create a project for the client frontend
+2. **Set Up Digital Ocean App Platform**:
+   - Enable App Platform in your Digital Ocean account
      - Framework Preset: Gatsby
      - Root Directory: `packages/client`
    - Create a project for the admin panel
@@ -2991,14 +3010,14 @@ The system monitors several health metrics during the canary period:
 - Latency metrics
 - Resource utilization
 
-### Vercel Deployment
+### Digital Ocean App Platform Deployment
 
-Vercel is used to deploy the Next.js admin panel and the Gatsby client frontend.
+Digital Ocean App Platform is used to deploy the Next.js admin panel and the Gatsby client frontend.
 
 #### Admin Panel Deployment (Next.js)
 
-1. Log in to [Vercel](https://vercel.com/)
-2. Click "Add New" → "Project"
+1. Log in to [Digital Ocean](https://cloud.digitalocean.com/)
+2. Navigate to "Apps" in the sidebar
 3. Import your GitHub repository
 4. Configure the project:
    - Framework Preset: Next.js
@@ -3011,8 +3030,8 @@ Vercel is used to deploy the Next.js admin panel and the Gatsby client frontend.
 
 #### Client App Deployment (Gatsby)
 
-1. Log in to [Vercel](https://vercel.com/)
-2. Click "Add New" → "Project"
+1. Log in to [Digital Ocean](https://cloud.digitalocean.com/)
+2. Navigate to "Apps" in the sidebar
 3. Import your GitHub repository (if not already imported)
 4. Configure the project:
    - Framework Preset: Gatsby
@@ -3025,13 +3044,13 @@ Vercel is used to deploy the Next.js admin panel and the Gatsby client frontend.
 
 #### Custom Domain Configuration
 
-1. In the Vercel project settings, go to Domains
+1. In the Digital Ocean App Platform settings, go to Domains
 2. Add your custom domain(s):
    - Admin Panel: `admin.kai.yourdomain.com`
    - Client App: `kai.yourdomain.com`
-3. Configure DNS settings as instructed by Vercel
+3. Configure DNS settings as instructed by Digital Ocean App Platform
 
-#### Vercel Project Settings
+#### Digital Ocean App Platform Settings
 
 For both projects, configure these additional settings:
 
@@ -3297,7 +3316,7 @@ jobs:
             echo "API_URL=https://api.kai.yourdomain.com" >> $GITHUB_ENV
             echo "SUPABASE_URL=${{ secrets.SUPABASE_URL_PRODUCTION }}" >> $GITHUB_ENV
             echo "SUPABASE_KEY=${{ secrets.SUPABASE_KEY_PRODUCTION }}" >> $GITHUB_ENV
-            echo "VERCEL_ARGS=--prod" >> $GITHUB_ENV
+            echo "DO_APP_ARGS=--prod" >> $GITHUB_ENV
             echo "TEST_SCRIPT=test:smoke" >> $GITHUB_ENV
           else
             echo "DEPLOY_ENV=staging" >> $GITHUB_ENV
@@ -3305,7 +3324,7 @@ jobs:
             echo "API_URL=https://api-staging.kai.yourdomain.com" >> $GITHUB_ENV
             echo "SUPABASE_URL=${{ secrets.SUPABASE_URL_STAGING }}" >> $GITHUB_ENV
             echo "SUPABASE_KEY=${{ secrets.SUPABASE_KEY_STAGING }}" >> $GITHUB_ENV
-            echo "VERCEL_ARGS=" >> $GITHUB_ENV
+            echo "DO_APP_ARGS=" >> $GITHUB_ENV
             echo "TEST_SCRIPT=test:integration" >> $GITHUB_ENV
           fi
 
@@ -3437,10 +3456,9 @@ The pipeline uses the following secrets, which should be set in your GitHub repo
 
 - `GITHUB_TOKEN`: GitHub token with `write:packages` permission (automatically provided by GitHub Actions)
 - `KUBE_CONFIG_DATA`: Base64-encoded Kubernetes config file
-- `VERCEL_TOKEN`: Vercel API token
-- `VERCEL_ORG_ID`: Vercel organization ID
-- `VERCEL_PROJECT_ID_CLIENT`: Vercel project ID for the client app
-- `VERCEL_PROJECT_ID_ADMIN`: Vercel project ID for the admin panel
+- `DIGITALOCEAN_ACCESS_TOKEN`: Digital Ocean API token
+- `DIGITALOCEAN_SPACES_KEY`: Digital Ocean Spaces access key
+- `DIGITALOCEAN_SPACES_SECRET`: Digital Ocean Spaces secret key
 - `SUPABASE_URL_STAGING`: Supabase URL for staging
 - `SUPABASE_KEY_STAGING`: Supabase service role key for staging
 - `SUPABASE_URL_PRODUCTION`: Supabase URL for production
@@ -4005,7 +4023,7 @@ With the automated GitHub Actions workflow, updating the KAI platform is straigh
      - Runs tests
      - Builds new Docker images
      - Updates Kubernetes deployments
-     - Deploys frontend apps to Vercel
+     - Deploys frontend apps to Digital Ocean App Platform
 
 3. **Manual Deployment**:
    - You can also trigger a deployment manually:
@@ -4026,7 +4044,7 @@ The deployment process follows these steps:
 5. **Infrastructure is checked** and provisioned if needed
 6. **Kubernetes components are set up** (cert-manager, NGINX, Argo)
 7. **Application is deployed** using Helm charts
-8. **Frontend is deployed** to Vercel
+8. **Frontend is deployed** to Digital Ocean App Platform
 9. **Deployment is verified** with comprehensive health checks
 10. **Notification is sent** upon completion
 
@@ -4204,17 +4222,17 @@ This section provides solutions for common issues you might encounter during dep
    - Check if the cluster is under heavy load
    - Verify network connectivity to the cluster
 
-### Vercel Deployment Issues
+### Digital Ocean App Platform Deployment Issues
 
 1. **Build Failures**:
-   - Check the Vercel build logs
+   - Check the Digital Ocean App Platform build logs
    - Verify environment variables are correctly set
    - Ensure the project configuration is correct
 
 2. **Domain Configuration Issues**:
    - Verify DNS records are correctly configured
    - Check SSL certificate issuance
-   - Ensure custom domains are properly set up in Vercel
+   - Ensure custom domains are properly set up in Digital Ocean App Platform
 
 3. **Runtime Errors**:
    - Check the browser console for errors

@@ -221,16 +221,66 @@ The Hugging Face integration can be configured using the following environment v
 # Hugging Face Configuration
 HF_API_KEY=your_huggingface_api_key
 HF_ORGANIZATION_ID=your_organization_id (optional)
-HF_DEFAULT_TEXT_MODEL=google/flan-t5-xxl
+HF_DEFAULT_TEXT_MODEL=microsoft/DialoGPT-medium
 HF_DEFAULT_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
 HF_DEFAULT_IMAGE_MODEL=google/vit-base-patch16-224
 HF_MODEL_TIMEOUT=30000
 HF_USE_FAST_MODELS=true
+OCR_MODEL_PATH=./models/ocr/
+ML_MAX_PROCESSING_TIME=300000
+MODEL_CACHE_PATH=./cache/models/
 
 # Evaluation System Configuration
 MODEL_EVALUATION_STANDARD_CYCLE=10
 MODEL_EVALUATION_TEST_CYCLE=3
 MODEL_SELECTION_METRICS_WEIGHTS={"accuracy":0.6,"latency":0.2,"cost":0.2}
+```
+
+#### Model Selection Rationale for Material Recognition Platform
+
+The specific models configured above have been carefully selected for the Kai material recognition platform based on performance, accuracy, and resource optimization:
+
+**Text Generation Model: `microsoft/DialoGPT-medium`**
+- **Purpose**: Conversational AI for material descriptions, user queries, and agent interactions
+- **Rationale**:
+  - Optimized for dialogue and conversational responses, ideal for the agent-based system
+  - Medium size provides good balance between quality and inference speed
+  - Excellent for generating natural language descriptions of material properties
+  - Well-suited for the CrewAI agent system that requires conversational capabilities
+  - Lower resource requirements compared to larger models while maintaining quality
+
+**Embedding Model: `sentence-transformers/all-MiniLM-L6-v2`**
+- **Purpose**: Vector embeddings for similarity search, material matching, and RAG system
+- **Rationale**:
+  - Compact model (22MB) with excellent performance for semantic similarity
+  - 384-dimensional embeddings provide good balance between accuracy and storage efficiency
+  - Optimized for sentence-level embeddings, perfect for material descriptions
+  - Fast inference time crucial for real-time similarity searches
+  - Well-tested model with broad domain coverage including technical descriptions
+  - Compatible with FAISS vector database for efficient similarity search
+
+**Image Analysis Model: `google/vit-base-patch16-224`**
+- **Purpose**: Visual analysis of material samples, texture recognition, and image classification
+- **Rationale**:
+  - Vision Transformer architecture excellent for material texture analysis
+  - 224x224 input resolution optimal for material sample images
+  - Strong performance on fine-grained visual classification tasks
+  - Patch-based approach captures local texture patterns important for materials
+  - Good balance between model size and accuracy for production deployment
+  - Complements existing SIFT/SURF and neural network approaches
+
+**Performance Configuration**:
+- **HF_MODEL_TIMEOUT=30000**: 30-second timeout balances quality with responsiveness
+- **HF_USE_FAST_MODELS=true**: Enables optimized inference for production performance
+- **ML_MAX_PROCESSING_TIME=300000**: 5-minute maximum for complex ML operations
+- **MODEL_CACHE_PATH**: Local caching reduces latency and API costs
+- **OCR_MODEL_PATH**: Local OCR models for document processing and material specifications
+
+These models work synergistically with the platform's existing ML infrastructure:
+- Integration with MobileNetV2, ResNet, and EfficientNet for multi-strategy recognition
+- Compatibility with the adaptive model selection system for optimal performance
+- Support for the rotation-based evaluation system to continuously improve accuracy
+- Efficient resource utilization for the multi-agent CrewAI system
 ```
 
 ### Model Selection Strategy

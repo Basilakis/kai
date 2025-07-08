@@ -57,7 +57,7 @@ Welcome to the Kai documentation. This index provides links to all documentation
 - [Deployment & Development](./deployment-and-development.md) - Environment setup guide
 - [Deployment Guide](./deployment-guide.md) - Production deployment instructions
 - [Digital Ocean Kubernetes Setup](./digital-ocean-kubernetes-setup.md) - DO-specific deployment
-- [Vercel Deployment Guide](./vercel-deployment-guide.md) - Vercel-specific deployment
+- [Digital Ocean App Platform Deployment Guide](./digital-ocean-app-platform-deployment-guide.md) - Digital Ocean App Platform deployment
 
 ### Database & Storage
 

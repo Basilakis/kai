@@ -502,7 +502,7 @@ Add these keys to:
    - `SUPABASE_KEY` (service_role key)
    - `SUPABASE_ANON_KEY` (anon public key)
 
-2. Vercel Environment Variables:
+2. Digital Ocean App Platform Environment Variables:
    - For Admin Panel (Next.js):
      - `NEXT_PUBLIC_SUPABASE_URL`
      - `NEXT_PUBLIC_SUPABASE_ANON_KEY`

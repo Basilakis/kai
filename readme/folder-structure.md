@@ -127,8 +127,8 @@ The Kai system is designed as a microservices architecture where each package pl
 The Kai system is deployed as a set of services:
 
 1. **Frontend Services**:
-   - Client application deployed on Vercel
-   - Admin panel deployed on Vercel
+   - Client application deployed on Digital Ocean App Platform
+   - Admin panel deployed on Digital Ocean App Platform
 
 2. **Backend Services**:
    - API server deployed on cloud infrastructure

@@ -139,7 +139,7 @@ The CI/CD pipeline is now broken down into these reusable workflow files:
 3. **Deploy Staging Workflow** (`.github/workflows/deploy-staging.yml`)
    - Handles all staging-specific deployment steps
    - Updates GitOps repository with new image tags
-   - Deploys frontend applications to Vercel
+   - Deploys frontend applications to Digital Ocean App Platform
    - Runs database migrations for staging environment
 
 4. **Deploy Production Workflow** (`.github/workflows/deploy-production.yml`)
@@ -482,7 +482,7 @@ These environment variables are commonly used across workflows:
 |----------|-------------|---------------|
 | `DEPLOY_ENV` | Target deployment environment | `staging` or `production` |
 | `TAG_SUFFIX` | Suffix for Docker image tags | `staging` or `latest` |
-| `VERCEL_ARGS` | Arguments for Vercel deployments | `--prod` |
+| `DO_APP_ARGS` | Arguments for Digital Ocean App Platform deployments | `--prod` |
 | `API_URL` | URL for the API service | `https://api.kai.example.com` |
 | `TEST_SCRIPT` | Script to run for tests | `test:e2e` |
 | `KUBE_CONTEXT` | Kubernetes context to use | `kubernetes-cluster1` |
@@ -518,8 +518,8 @@ The following secrets should be configured in your GitHub repository:
 - `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`: Stripe payment credentials
 
 #### Frontend Deployment
-- `VERCEL_TOKEN`, `VERCEL_ORG_ID`: Vercel credentials
-- `VERCEL_PROJECT_ID_CLIENT`, `VERCEL_PROJECT_ID_ADMIN`: Vercel project IDs
+- `DO_API_TOKEN`: Digital Ocean API token for App Platform deployments
+- `DO_APP_ID_CLIENT`, `DO_APP_ID_ADMIN`: Digital Ocean App Platform application IDs
 
 #### Notifications
 - `SLACK_WEBHOOK`: Slack notification webhook URL
@@ -635,11 +635,10 @@ The Flux GitOps approach provides several advantages:
 
 The workflow requires the following secrets to be set in your GitHub repository:
 
-### Vercel Deployment Secrets
-- `VERCEL_TOKEN`: API token from Vercel
-- `VERCEL_ORG_ID`: Your Vercel organization ID
-- `VERCEL_PROJECT_ID_CLIENT`: Project ID for the client application
-- `VERCEL_PROJECT_ID_ADMIN`: Project ID for the admin application
+### Digital Ocean App Platform Deployment Secrets
+- `DO_API_TOKEN`: API token from Digital Ocean for App Platform deployments
+- `DO_APP_ID_CLIENT`: Application ID for the client application on Digital Ocean App Platform
+- `DO_APP_ID_ADMIN`: Application ID for the admin application on Digital Ocean App Platform
 
 ### GitOps Repository Access
 - `GITOPS_PAT`: Personal access token for the GitOps repository
@@ -662,7 +661,7 @@ To add these secrets to your repository:
 
 1. Go to your GitHub repository → Settings → Secrets and variables → Actions
 2. Click "New repository secret"
-3. Enter the secret name (e.g., `VERCEL_TOKEN`) and value
+3. Enter the secret name (e.g., `DO_API_TOKEN`) and value
 4. Click "Add secret"
 5. Repeat for all required secrets
 
