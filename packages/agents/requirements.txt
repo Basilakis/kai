@@ -1,0 +1,37 @@
+# CrewAI Core Dependencies
+crewai>=0.102.0
+crewai-tools>=0.17.0
+
+# LangChain Framework
+langchain>=0.1.0
+langchain-community>=0.0.20
+langchain-openai>=0.0.5
+
+# Environment and Configuration
+python-dotenv>=1.0.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+
+# HTTP and API clients
+requests>=2.31.0
+httpx>=0.24.0
+
+# Data Processing
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Logging and Monitoring
+structlog>=23.0.0
+rich>=13.0.0
+
+# Development and Testing (optional, can be moved to requirements-dev.txt)
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+black>=23.0.0
+flake8>=6.0.0
+mypy>=1.0.0
+
+# Additional tools for specific CrewAI capabilities
+beautifulsoup4>=4.12.0
+selenium>=4.15.0
+playwright>=1.40.0

@@ -69,12 +69,12 @@ The coordinator service is the central orchestration component that:
 - Provides API endpoints for system operations
 
 Deployment manifests:
-- `kubernetes/coordinator/rbac.yaml`: Service account and permissions
-- `kubernetes/coordinator/config.yaml`: Configuration parameters
-- `kubernetes/coordinator/service.yaml`: Service definition
-- `kubernetes/coordinator/deployment.yaml`: Pod deployment
-- `kubernetes/coordinator/hpa.yaml`: Horizontal Pod Autoscaler
-- `kubernetes/coordinator/pdb.yaml`: Pod Disruption Budget
+- `helm/charts/kai/charts/coordinator/rbac.yaml`: Service account and permissions
+- `helm/charts/kai/charts/coordinator/config.yaml`: Configuration parameters
+- `helm/charts/kai/charts/coordinator/service.yaml`: Service definition
+- `helm/charts/kai/charts/coordinator/deployment.yaml`: Pod deployment
+- `helm/charts/kai/charts/coordinator/hpa.yaml`: Horizontal Pod Autoscaler
+- `helm/charts/kai/charts/coordinator/pdb.yaml`: Pod Disruption Budget
 
 ### 2. Distributed Processing
 
@@ -85,9 +85,9 @@ Handles distributed workloads across the cluster:
 - Coordinates work distribution among worker nodes
 
 Deployment manifests:
-- `kubernetes/distributed-processing/deployment.yaml`: Worker pods
-- `kubernetes/distributed-processing/pdb.yaml`: Pod Disruption Budget
-- `kubernetes/distributed-processing/secret.yaml`: Processing secrets
+- `helm/charts/kai/charts/distributed-processing/deployment.yaml`: Worker pods
+- `helm/charts/kai/charts/distributed-processing/pdb.yaml`: Pod Disruption Budget
+- `helm/charts/kai/charts/distributed-processing/secret.yaml`: Processing secrets
 
 ### 3. ML Services (GPU)
 
@@ -98,8 +98,8 @@ Specialized GPU-accelerated services for ML model training and inference:
 - Real-time inference endpoints
 
 Deployment manifests:
-- `kubernetes/ml-services/domain-specific-networks-deployment.yaml`: Domain-specific ML network services
-- `kubernetes/ml-services/multimodal-pattern-recognition-deployment.yaml`: Pattern recognition services
+- `helm/charts/kai/charts/ml-services/domain-specific-networks-deployment.yaml`: Domain-specific ML network services
+- `helm/charts/kai/charts/ml-services/multimodal-pattern-recognition-deployment.yaml`: Pattern recognition services
 
 ### 4. Mobile Optimization
 
@@ -110,9 +110,9 @@ Specialized services for optimizing ML models for mobile deployment:
 - Draco mesh compression
 
 Deployment manifests:
-- `kubernetes/mobile-optimization/deployment.yaml`: Service pods
-- `kubernetes/mobile-optimization/hpa.yaml`: Horizontal Pod Autoscaler
-- `kubernetes/mobile-optimization/pdb.yaml`: Pod Disruption Budget
+- `helm/charts/kai/charts/mobile-optimization/deployment.yaml`: Service pods
+- `helm/charts/kai/charts/mobile-optimization/hpa.yaml`: Horizontal Pod Autoscaler
+- `helm/charts/kai/charts/mobile-optimization/pdb.yaml`: Pod Disruption Budget
 
 ### 5. WASM Compiler
 
@@ -123,9 +123,9 @@ WebAssembly compilation service for client-side ML models:
 - Manages versioning and compilation profiles
 
 Deployment manifests:
-- `kubernetes/wasm-compiler/deployment.yaml`: Compiler service
-- `kubernetes/wasm-compiler/hpa.yaml`: Horizontal Pod Autoscaler
-- `kubernetes/wasm-compiler/pdb.yaml`: Pod Disruption Budget
+- `helm/charts/kai/charts/wasm-compiler/deployment.yaml`: Compiler service
+- `helm/charts/kai/charts/wasm-compiler/hpa.yaml`: Horizontal Pod Autoscaler
+- `helm/charts/kai/charts/wasm-compiler/pdb.yaml`: Pod Disruption Budget
 
 ### 6. Workflow Templates
 
@@ -137,9 +137,9 @@ Argo Workflow templates for standard ML pipelines:
 - Data transformation workflows
 
 Deployment manifests:
-- `kubernetes/workflows/3d-reconstruction-template.yaml`: 3D reconstruction workflow
-- `kubernetes/workflows/domain-specific-networks-template.yaml`: Training workflow for domain-specific networks
-- `kubernetes/workflows/multimodal-pattern-recognition-template.yaml`: Processing workflow for pattern recognition
+- `helm/charts/kai/charts/workflows/3d-reconstruction-template.yaml`: 3D reconstruction workflow
+- `helm/charts/kai/charts/workflows/domain-specific-networks-template.yaml`: Training workflow for domain-specific networks
+- `helm/charts/kai/charts/workflows/multimodal-pattern-recognition-template.yaml`: Processing workflow for pattern recognition
 
 ## Namespace and Organization
 

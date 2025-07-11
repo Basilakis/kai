@@ -421,7 +421,7 @@ python test_integration.py --config path/to/config.json --setup
 
 ### Configuration
 
-The enhanced RAG system is configured using a JSON file. The default configuration is in `kubernetes/continuous-learning-deployment.yaml` under the `enhanced-rag-config` ConfigMap.
+The enhanced RAG system is configured using a JSON file. The default configuration is in `helm/charts/kai/charts/ml-services/templates/continuous-learning-deployment.yaml` under the `enhanced-rag-config` ConfigMap.
 
 You can customize the configuration by editing this file before deployment.
 

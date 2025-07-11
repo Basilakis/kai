@@ -63,7 +63,7 @@ spec:
         - name: REDIS_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: domain-specific-networks-secrets
+              name: kai-unified-secrets
               key: redis_password
         - name: MODEL_CACHE_DIR
           value: "/models/cache"

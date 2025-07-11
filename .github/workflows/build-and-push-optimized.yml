@@ -1,0 +1,337 @@
+name: Optimized Build and Push
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'src/**'
+      - 'Dockerfile*'
+      - 'package*.json'
+      - 'requirements*.txt'
+      - '.github/workflows/build-and-push-optimized.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'Dockerfile*'
+      - 'package*.json'
+      - 'requirements*.txt'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository }}
+  BUILDX_CACHE_FROM: type=gha
+  BUILDX_CACHE_TO: type=gha,mode=max
+
+jobs:
+  detect-changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      base-images: ${{ steps.changes.outputs.base-images }}
+      services: ${{ steps.changes.outputs.services }}
+      ml-services: ${{ steps.changes.outputs.ml-services }}
+      web-services: ${{ steps.changes.outputs.web-services }}
+      matrix: ${{ steps.generate-matrix.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect file changes
+        uses: dorny/paths-filter@v2
+        id: changes
+        with:
+          filters: |
+            base-images:
+              - 'Dockerfile.ml-base-optimized'
+              - 'Dockerfile.universal-base'
+              - 'healthcheck.sh'
+            services:
+              - 'src/**'
+              - 'services/**'
+            ml-services:
+              - 'src/ml/**'
+              - 'services/ml-*/**'
+            web-services:
+              - 'src/web/**'
+              - 'src/api/**'
+              - 'services/web-*/**'
+              - 'services/api-*/**'
+
+      - name: Generate build matrix
+        id: generate-matrix
+        run: |
+          # Generate dynamic build matrix based on changes
+          matrix='{"include":[]}'
+          
+          # Base images (always build if changed)
+          if [[ "${{ steps.changes.outputs.base-images }}" == "true" ]]; then
+            matrix=$(echo $matrix | jq '.include += [
+              {
+                "name": "ml-base",
+                "dockerfile": "Dockerfile.ml-base-optimized",
+                "context": ".",
+                "platforms": "linux/amd64",
+                "cache-key": "ml-base",
+                "push": true
+              },
+              {
+                "name": "universal-base", 
+                "dockerfile": "Dockerfile.universal-base",
+                "context": ".",
+                "platforms": "linux/amd64,linux/arm64",
+                "cache-key": "universal-base",
+                "push": true
+              }
+            ]')
+          fi
+          
+          # Service images (build if services changed)
+          if [[ "${{ steps.changes.outputs.services }}" == "true" ]]; then
+            # Add service builds based on detected services
+            for service in coordinator ml-worker web-frontend api-gateway data-processor; do
+              if [[ -d "services/$service" ]] || [[ -d "src/$service" ]]; then
+                base_image="universal-base"
+                platforms="linux/amd64,linux/arm64"
+                
+                # ML services use ML base
+                if [[ "$service" == *"ml"* ]]; then
+                  base_image="ml-base"
+                  platforms="linux/amd64"
+                fi
+                
+                matrix=$(echo $matrix | jq --arg name "$service" --arg base "$base_image" --arg platforms "$platforms" '.include += [{
+                  "name": $name,
+                  "dockerfile": "Dockerfile",
+                  "context": ("services/" + $name),
+                  "platforms": $platforms,
+                  "cache-key": $name,
+                  "base-image": $base,
+                  "push": true
+                }]')
+              fi
+            done
+          fi
+          
+          echo "matrix=$matrix" >> $GITHUB_OUTPUT
+          echo "Generated matrix: $matrix"
+
+  build-base-images:
+    name: Build Base Images
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.base-images == 'true'
+    strategy:
+      matrix:
+        include:
+          - name: ml-base
+            dockerfile: Dockerfile.ml-base-optimized
+            platforms: linux/amd64
+          - name: universal-base
+            dockerfile: Dockerfile.universal-base
+            platforms: linux/amd64,linux/arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            network=host
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.name }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push base image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: ${{ matrix.platforms }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: ${{ env.BUILDX_CACHE_FROM }},scope=${{ matrix.name }}
+          cache-to: ${{ env.BUILDX_CACHE_TO }},scope=${{ matrix.name }}
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+
+  build-services:
+    name: Build Services
+    runs-on: ubuntu-latest
+    needs: [detect-changes, build-base-images]
+    if: always() && needs.detect-changes.outputs.services == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.detect-changes.outputs.matrix) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.name }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Generate Dockerfile for service
+        run: |
+          mkdir -p /tmp/build-context
+          
+          # Copy service-specific files
+          if [[ -d "${{ matrix.context }}" ]]; then
+            cp -r ${{ matrix.context }}/* /tmp/build-context/
+          fi
+          
+          # Copy common files
+          cp healthcheck.sh /tmp/build-context/
+          
+          # Generate optimized Dockerfile
+          cat > /tmp/build-context/Dockerfile << 'EOF'
+          # Auto-generated optimized Dockerfile for ${{ matrix.name }}
+          ARG BASE_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.base-image || 'universal-base' }}:${{ github.ref_name }}
+          FROM ${BASE_IMAGE}
+          
+          # Service-specific environment
+          ENV SERVICE_NAME=${{ matrix.name }}
+          ENV SERVICE_TYPE=${{ matrix.service-type || 'web' }}
+          
+          # Copy service files
+          COPY --chown=appuser:appuser . /app/
+          
+          # Install service dependencies if package.json exists
+          RUN if [ -f package.json ]; then \
+                npm ci --only=production --silent && \
+                npm cache clean --force; \
+              fi
+          
+          # Install Python dependencies if requirements.txt exists
+          RUN if [ -f requirements.txt ]; then \
+                pip3 install --no-cache-dir -r requirements.txt; \
+              fi
+          
+          # Set executable permissions
+          RUN chmod +x /usr/local/bin/healthcheck.sh
+          
+          # Health check configuration
+          ENV HEALTH_CHECK_PORT=${PORT:-3000}
+          ENV PROCESS_NAME=${{ matrix.name }}
+          
+          # Default command (override in service-specific files)
+          CMD ["npm", "start"]
+          EOF
+
+      - name: Build and push service image
+        uses: docker/build-push-action@v5
+        with:
+          context: /tmp/build-context
+          platforms: ${{ matrix.platforms }}
+          push: ${{ matrix.push }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: ${{ env.BUILDX_CACHE_FROM }},scope=${{ matrix.name }}
+          cache-to: ${{ env.BUILDX_CACHE_TO }},scope=${{ matrix.name }}
+          build-args: |
+            BASE_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.base-image || 'universal-base' }}:${{ github.ref_name }}
+            BUILDKIT_INLINE_CACHE=1
+
+  update-gitops:
+    name: Update GitOps Repository
+    runs-on: ubuntu-latest
+    needs: [build-services]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - name: Checkout GitOps repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}-gitops
+          token: ${{ secrets.GITOPS_TOKEN || secrets.GITHUB_TOKEN }}
+          path: gitops
+
+      - name: Update image tags
+        run: |
+          cd gitops
+          
+          # Update Flux image automation annotations
+          find . -name "*.yaml" -type f -exec grep -l "image:" {} \; | while read file; do
+            # Extract current image references and update with new SHA
+            sed -i "s|image: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/\([^:]*\):.*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/\1:${{ github.ref_name }}-${{ github.sha }}|g" "$file"
+          done
+          
+          # Commit changes
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          if git diff --quiet; then
+            echo "No changes to commit"
+          else
+            git add .
+            git commit -m "Update image tags for commit ${{ github.sha }}"
+            git push
+          fi
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: build-services
+    if: github.event_name == 'pull_request'
+    strategy:
+      matrix: ${{ fromJson(needs.detect-changes.outputs.matrix) }}
+    steps:
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.name }}:${{ github.ref_name }}-${{ github.sha }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  notify-deployment:
+    name: Notify Deployment Ready
+    runs-on: ubuntu-latest
+    needs: [build-services, update-gitops]
+    if: always() && github.ref == 'refs/heads/main'
+    steps:
+      - name: Create deployment notification
+        run: |
+          echo "🚀 Deployment ready for commit ${{ github.sha }}"
+          echo "Images built and GitOps repository updated"
+          echo "Flux CD will automatically sync changes to cluster"

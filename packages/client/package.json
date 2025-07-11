@@ -17,7 +17,7 @@
     "@emotion/styled": "^11.11.0",
     "@heroui/react": "^1.0.0",
     "@heroui/themes": "^1.0.0",
-    "@kai/shared": "0.1.0",
+    "@kai/shared": "*",
     "@supabase/supabase-js": "^2.39.0",
     "axios": "^1.4.0",
     "formik": "^2.4.2",

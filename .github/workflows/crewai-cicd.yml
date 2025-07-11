@@ -1,0 +1,438 @@
+name: CrewAI CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'packages/agents/**'
+      - 'flux/clusters/production/kai/**'
+      - '.github/workflows/crewai-cicd.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'packages/agents/**'
+      - 'flux/clusters/production/kai/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      force_deploy:
+        description: 'Force deployment even if tests fail'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/crewai-agents
+  PYTHON_VERSION: '3.11'  # CrewAI requires >=3.10 and <3.14
+  NODE_VERSION: '18'
+
+jobs:
+  # Phase 1: Environment Setup and Validation
+  setup-and-validate:
+    name: Setup Environment & Validate
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            shell: bash
+            python-cmd: python3
+            pip-cmd: pip3
+          - os: windows-latest
+            shell: pwsh
+            python-cmd: python
+            pip-cmd: pip
+          - os: macos-latest
+            shell: bash
+            python-cmd: python3
+            pip-cmd: pip3
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    
+    outputs:
+      python-version: ${{ steps.setup-python.outputs.python-version }}
+      node-version: ${{ steps.setup-node.outputs.node-version }}
+      uv-version: ${{ steps.setup-uv.outputs.uv-version }}
+      
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        id: setup-node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: 'packages/agents/package-lock.json'
+
+      - name: Setup Python
+        id: setup-python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv (Unix-like)
+        if: runner.os != 'Windows'
+        id: setup-uv-unix
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          uv --version
+          echo "uv-version=$(uv --version | cut -d' ' -f2)" >> $GITHUB_OUTPUT
+
+      - name: Install uv (Windows)
+        if: runner.os == 'Windows'
+        id: setup-uv-windows
+        run: |
+          irm https://astral.sh/uv/install.ps1 | iex
+          $env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"
+          uv --version
+          $uvVersion = (uv --version).Split(' ')[1]
+          echo "uv-version=$uvVersion" >> $env:GITHUB_OUTPUT
+
+      - name: Set uv version output
+        id: setup-uv
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            echo "uv-version=${{ steps.setup-uv-windows.outputs.uv-version }}" >> $GITHUB_OUTPUT
+          else
+            echo "uv-version=${{ steps.setup-uv-unix.outputs.uv-version }}" >> $GITHUB_OUTPUT
+          fi
+        shell: bash
+
+      - name: Verify Python version compatibility
+        run: |
+          python_version=$(${{ matrix.python-cmd }} --version | cut -d' ' -f2)
+          echo "Python version: $python_version"
+          
+          # Check if Python version is >= 3.10 and < 3.14 (CrewAI requirement)
+          if ${{ matrix.python-cmd }} -c "import sys; exit(0 if (3, 10) <= sys.version_info < (3, 14) else 1)"; then
+            echo "✅ Python version $python_version is compatible with CrewAI"
+          else
+            echo "❌ Python version $python_version is not compatible with CrewAI (requires >=3.10 and <3.14)"
+            exit 1
+          fi
+
+      - name: Install Node.js dependencies
+        working-directory: packages/agents
+        run: npm ci
+
+      - name: Create Python virtual environment with uv
+        working-directory: packages/agents
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            uv venv .venv --python ${{ matrix.python-cmd }}
+          else
+            uv venv .venv --python ${{ matrix.python-cmd }}
+          fi
+        shell: bash
+
+      - name: Activate virtual environment and install dependencies (Unix-like)
+        if: runner.os != 'Windows'
+        working-directory: packages/agents
+        run: |
+          source .venv/bin/activate
+          uv pip install crewai crewai-tools
+          uv pip install pytest pytest-cov python-dotenv
+          echo "VIRTUAL_ENV=$PWD/.venv" >> $GITHUB_ENV
+          echo "$PWD/.venv/bin" >> $GITHUB_PATH
+
+      - name: Activate virtual environment and install dependencies (Windows)
+        if: runner.os == 'Windows'
+        working-directory: packages/agents
+        run: |
+          .\.venv\Scripts\Activate.ps1
+          uv pip install crewai crewai-tools
+          uv pip install pytest pytest-cov python-dotenv
+          echo "VIRTUAL_ENV=$PWD\.venv" >> $env:GITHUB_ENV
+          echo "$PWD\.venv\Scripts" >> $env:GITHUB_PATH
+
+      - name: Run existing verification script
+        working-directory: packages/agents
+        run: node scripts/verify-setup.js
+
+      - name: Validate CrewAI installation
+        working-directory: packages/agents
+        run: |
+          ${{ matrix.python-cmd }} -c "
+          import crewai
+          import crewai_tools
+          print(f'✅ CrewAI version: {crewai.__version__}')
+          print(f'✅ CrewAI Tools version: {crewai_tools.__version__}')
+          print('✅ CrewAI installation validated successfully')
+          "
+
+      - name: Cache Python dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            packages/agents/.venv
+          key: ${{ runner.os }}-python-${{ env.PYTHON_VERSION }}-uv-${{ hashFiles('packages/agents/pyproject.toml', 'packages/agents/requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-python-${{ env.PYTHON_VERSION }}-uv-
+
+  # Phase 2: Testing and Quality Assurance
+  test-and-qa:
+    name: Test & Quality Assurance
+    needs: setup-and-validate
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: 'packages/agents/package-lock.json'
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Restore Python dependencies cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            packages/agents/.venv
+          key: ${{ runner.os }}-python-${{ env.PYTHON_VERSION }}-uv-${{ hashFiles('packages/agents/pyproject.toml', 'packages/agents/requirements*.txt') }}
+
+      - name: Install dependencies
+        working-directory: packages/agents
+        run: |
+          npm ci
+          uv venv .venv --python python3
+          source .venv/bin/activate
+          uv pip install crewai crewai-tools pytest pytest-cov python-dotenv
+
+      - name: Run Node.js tests
+        working-directory: packages/agents
+        run: npm test
+
+      - name: Run Python tests
+        working-directory: packages/agents
+        run: |
+          source .venv/bin/activate
+          # Create basic test structure if it doesn't exist
+          mkdir -p tests
+          if [ ! -f tests/test_crewai_integration.py ]; then
+            cat > tests/test_crewai_integration.py << 'EOF'
+          import pytest
+          import crewai
+          import crewai_tools
+
+          def test_crewai_import():
+              """Test that CrewAI can be imported successfully."""
+              assert crewai.__version__ is not None
+
+          def test_crewai_tools_import():
+              """Test that CrewAI Tools can be imported successfully."""
+              assert crewai_tools.__version__ is not None
+
+          def test_basic_agent_creation():
+              """Test basic agent creation functionality."""
+              from crewai import Agent
+              
+              agent = Agent(
+                  role="Test Agent",
+                  goal="Test basic functionality",
+                  backstory="A test agent for CI/CD validation",
+                  verbose=False
+              )
+              
+              assert agent.role == "Test Agent"
+              assert agent.goal == "Test basic functionality"
+          EOF
+          fi
+          
+          pytest tests/ -v --cov=. --cov-report=xml --cov-report=term
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v3
+        with:
+          file: packages/agents/coverage.xml
+          flags: crewai-agents
+          name: crewai-agents-coverage
+
+  # Phase 3: Build Container Images
+  build-images:
+    name: Build Container Images
+    needs: [setup-and-validate, test-and-qa]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+      image-tag: ${{ steps.meta.outputs.tags }}
+      
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: packages/agents
+          file: packages/agents/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
+  # Phase 4: Deploy to Kubernetes via Flux GitOps
+  deploy-gitops:
+    name: Deploy via Flux GitOps
+    needs: [build-images]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Kustomize
+        uses: imranismail/setup-kustomize@v2
+
+      - name: Update Kustomization with new image
+        run: |
+          cd flux/clusters/production/kai
+          
+          # Update the image tag in the kustomization
+          if [ -f crewai-agents/kustomization.yaml ]; then
+            kustomize edit set image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}=${{ needs.build-images.outputs.image-tag }}
+          else
+            echo "Creating CrewAI agents kustomization directory"
+            mkdir -p crewai-agents
+            cat > crewai-agents/kustomization.yaml << EOF
+          apiVersion: kustomize.config.k8s.io/v1beta1
+          kind: Kustomization
+          
+          resources:
+            - deployment.yaml
+            - service.yaml
+            - configmap.yaml
+          
+          images:
+            - name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+              newTag: ${{ github.sha }}
+          EOF
+          fi
+
+      - name: Commit and push changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add flux/clusters/production/kai/
+          git diff --staged --quiet || git commit -m "🚀 Update CrewAI agents image to ${{ github.sha }}"
+          git push
+
+  # Phase 5: Post-deployment validation
+  validate-deployment:
+    name: Validate Deployment
+    needs: [deploy-gitops]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Wait for Flux reconciliation
+        run: |
+          echo "⏳ Waiting for Flux to reconcile the deployment..."
+          sleep 60  # Give Flux time to detect and apply changes
+
+      - name: Validate deployment (placeholder)
+        run: |
+          echo "🔍 Deployment validation would check:"
+          echo "  - Kubernetes deployment status"
+          echo "  - Pod health checks"
+          echo "  - Service connectivity"
+          echo "  - CrewAI agent functionality"
+          echo "✅ Validation placeholder completed"
+
+  # Phase 6: Notification and reporting
+  notify:
+    name: Notify Results
+    needs: [setup-and-validate, test-and-qa, build-images, deploy-gitops, validate-deployment]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Determine overall status
+        id: status
+        run: |
+          if [ "${{ needs.setup-and-validate.result }}" = "success" ] && \
+             [ "${{ needs.test-and-qa.result }}" = "success" ] && \
+             [ "${{ needs.build-images.result }}" = "success" ] && \
+             [ "${{ needs.deploy-gitops.result }}" = "success" ] && \
+             [ "${{ needs.validate-deployment.result }}" = "success" ]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "message=🎉 CrewAI CI/CD pipeline completed successfully!" >> $GITHUB_OUTPUT
+          else
+            echo "status=failure" >> $GITHUB_OUTPUT
+            echo "message=❌ CrewAI CI/CD pipeline failed. Check the logs for details." >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create deployment summary
+        run: |
+          echo "## 🚀 CrewAI CI/CD Pipeline Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Phase | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Setup & Validate | ${{ needs.setup-and-validate.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Test & QA | ${{ needs.test-and-qa.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build Images | ${{ needs.build-images.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Deploy GitOps | ${{ needs.deploy-gitops.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Validate Deployment | ${{ needs.validate-deployment.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Overall Status:** ${{ steps.status.outputs.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.status.outputs.message }}" >> $GITHUB_STEP_SUMMARY

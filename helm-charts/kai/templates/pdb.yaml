@@ -1,0 +1,35 @@
+{{- range $serviceName, $serviceConfig := .Values.services }}
+{{- if and $serviceConfig.enabled $serviceConfig.podDisruptionBudget.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $serviceName }}-pdb
+  namespace: {{ $.Values.global.namespace }}
+  labels:
+    {{- include "kai.serviceLabels" (dict "Values" (merge $serviceConfig (dict "serviceName" $serviceName "component" $serviceConfig.component)) "Chart" $.Chart "Release" $.Release) | nindent 4 }}
+  annotations:
+    {{- if $serviceConfig.podDisruptionBudget.annotations }}
+    {{- toYaml $serviceConfig.podDisruptionBudget.annotations | nindent 4 }}
+    {{- end }}
+spec:
+  {{- if $serviceConfig.podDisruptionBudget.minAvailable }}
+  minAvailable: {{ $serviceConfig.podDisruptionBudget.minAvailable }}
+  {{- else if $serviceConfig.podDisruptionBudget.maxUnavailable }}
+  maxUnavailable: {{ $serviceConfig.podDisruptionBudget.maxUnavailable }}
+  {{- else }}
+  {{- /* Default to ensuring at least 1 pod is available for services with multiple replicas */}}
+  {{- if gt (int ($serviceConfig.replicaCount | default 1)) 1 }}
+  minAvailable: 1
+  {{- else }}
+  maxUnavailable: 0
+  {{- end }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "kai.serviceSelectorLabels" (dict "Values" (merge $serviceConfig (dict "serviceName" $serviceName)) "Release" $.Release) | nindent 6 }}
+  {{- if $serviceConfig.podDisruptionBudget.unhealthyPodEvictionPolicy }}
+  unhealthyPodEvictionPolicy: {{ $serviceConfig.podDisruptionBudget.unhealthyPodEvictionPolicy }}
+  {{- end }}
+{{- end }}
+{{- end }}

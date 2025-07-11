@@ -13,64 +13,220 @@ global:
     environment: "production"
   resourceMultiplier: 2  # Higher resources for production
 
-# Production-specific component settings
-coordinator:
-  replicaCount: 3
-  minReplicas: 2
-  maxReplicas: 10
-  pdbMinAvailable: 2
-  resources:
-    requests:
-      cpu: "500m"
-      memory: "1Gi"
-    limits:
-      cpu: "2000m"
-      memory: "4Gi"
+# Service configurations for unified template approach
+services:
+  coordinator:
+    enabled: true
+    component: coordinator
+    replicaCount: 3
+    image:
+      repository: ghcr.io/kai/coordinator
+      tag: latest
+    service:
+      enabled: true
+      type: ClusterIP
+      port: 80
+      targetPort: 8080
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "2000m"
+        memory: "4Gi"
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 10
+      targetCPUUtilizationPercentage: 70
+    healthCheck:
+      enabled: true
+      liveness:
+        path: /health
+        port: 8080
+      readiness:
+        path: /health/ready
+        port: 8080
+    podDisruptionBudget:
+      enabled: true
+      minAvailable: 2
+    configMap:
+      enabled: true
+      data:
+        COORDINATOR_PORT: "8080"
+        COORDINATOR_MODE: "production"
+    env:
+      - name: NODE_ENV
+        value: "production"
+      - name: PORT
+        value: "8080"
 
-infrastructure:
-  caching:
-    redis:
-      replicaCount: 3
-      persistence:
-        size: 20Gi
+  api-server:
+    enabled: true
+    component: api
+    replicaCount: 3
+    image:
+      repository: ghcr.io/kai/api-server
+      tag: latest
+    service:
+      enabled: true
+      type: ClusterIP
+      port: 80
+      targetPort: 3000
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "2000m"
+        memory: "4Gi"
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 10
+      targetCPUUtilizationPercentage: 80
+    healthCheck:
+      enabled: true
+      liveness:
+        path: /api/health
+        port: 3000
+      readiness:
+        path: /api/health/ready
+        port: 3000
+    podDisruptionBudget:
+      enabled: true
+      minAvailable: 2
+    configMap:
+      enabled: true
+      data:
+        API_PORT: "3000"
+        API_VERSION: "v1"
+    env:
+      - name: NODE_ENV
+        value: "production"
+      - name: PORT
+        value: "3000"
 
-mobile-optimization:
-  replicaCount: 2
-  minReplicas: 2
-  maxReplicas: 8
-  pdbMinAvailable: 2
-  resources:
-    requests:
-      cpu: "1000m"
-      memory: "2Gi"
-    limits:
-      cpu: "4000m"
-      memory: "8Gi"
+  infrastructure:
+    enabled: true
+    component: infrastructure
+    replicaCount: 1
+    image:
+      repository: ghcr.io/kai/infrastructure
+      tag: latest
+    service:
+      enabled: true
+      type: ClusterIP
+      port: 80
+      targetPort: 8080
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "256Mi"
+      limits:
+        cpu: "500m"
+        memory: "1Gi"
+    autoscaling:
+      enabled: false
+    healthCheck:
+      enabled: true
+    podDisruptionBudget:
+      enabled: false
+    configMap:
+      enabled: true
+      data:
+        INFRA_MODE: "production"
+        REDIS_REPLICAS: "3"
+        REDIS_STORAGE_SIZE: "20Gi"
 
-# API Server production settings
-api-server:
-  enabled: true
-  replicaCount: 3
-  minReplicas: 2
-  maxReplicas: 10
-  pdbMinAvailable: 2
-  resources:
-    requests:
-      cpu: "500m"  # Example: 200m * 2 (multiplier) + base
-      memory: "1Gi" # Example: 512Mi * 2 (multiplier) + base
-    limits:
-      cpu: "2000m" # Example: 1000m * 2 (multiplier)
-      memory: "4Gi"  # Example: 2Gi * 2 (multiplier)
+  mobile-optimization:
+    enabled: true
+    component: mobile-optimization
+    replicaCount: 2
+    image:
+      repository: ghcr.io/kai/mobile-optimization
+      tag: latest
+    service:
+      enabled: true
+      type: ClusterIP
+      port: 80
+      targetPort: 8080
+    resources:
+      requests:
+        cpu: "1000m"
+        memory: "2Gi"
+      limits:
+        cpu: "4000m"
+        memory: "8Gi"
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 8
+      targetCPUUtilizationPercentage: 75
+    healthCheck:
+      enabled: true
+      liveness:
+        path: /health
+        port: 8080
+      readiness:
+        path: /health/ready
+        port: 8080
+    podDisruptionBudget:
+      enabled: true
+      minAvailable: 2
+    configMap:
+      enabled: true
+      data:
+        MOBILE_OPT_PORT: "8080"
+        MOBILE_OPT_MODE: "production"
+    env:
+      - name: NODE_ENV
+        value: "production"
+      - name: PORT
+        value: "8080"
 
-wasm-compiler:
-  replicaCount: 2
-  minReplicas: 2
-  maxReplicas: 6
-  pdbMinAvailable: 2
-  resources:
-    requests:
-      cpu: "1000m"
-      memory: "2Gi"
-    limits:
-      cpu: "4000m"
-      memory: "8Gi"
+  wasm-compiler:
+    enabled: true
+    component: wasm-compiler
+    replicaCount: 2
+    image:
+      repository: ghcr.io/kai/wasm-compiler
+      tag: latest
+    service:
+      enabled: true
+      type: ClusterIP
+      port: 80
+      targetPort: 8080
+    resources:
+      requests:
+        cpu: "1000m"
+        memory: "2Gi"
+      limits:
+        cpu: "4000m"
+        memory: "8Gi"
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 6
+      targetCPUUtilizationPercentage: 75
+    healthCheck:
+      enabled: true
+      liveness:
+        path: /health
+        port: 8080
+      readiness:
+        path: /health/ready
+        port: 8080
+    podDisruptionBudget:
+      enabled: true
+      minAvailable: 2
+    configMap:
+      enabled: true
+      data:
+        WASM_COMPILER_PORT: "8080"
+        WASM_COMPILER_MODE: "production"
+    env:
+      - name: NODE_ENV
+        value: "production"
+      - name: PORT
+        value: "8080"

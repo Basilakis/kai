@@ -62,12 +62,12 @@ spec:
         - name: DATABASE_URL
           valueFrom:
             secretKeyRef:
-              name: parameter-registry-secrets
+              name: kai-unified-secrets
               key: database_url
         - name: REDIS_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: parameter-registry-secrets
+              name: kai-unified-secrets
               key: redis_password
         - name: SUPABASE_URL
           valueFrom:
@@ -77,7 +77,7 @@ spec:
         - name: SUPABASE_SERVICE_ROLE_KEY
           valueFrom:
             secretKeyRef:
-              name: parameter-registry-secrets
+              name: kai-unified-secrets
               key: supabase_service_role_key
         livenessProbe:
           httpGet:
@@ -256,12 +256,12 @@ spec:
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
-                  name: parameter-registry-secrets
+                  name: kai-unified-secrets
                   key: aws_access_key_id
             - name: AWS_SECRET_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
-                  name: parameter-registry-secrets
+                  name: kai-unified-secrets
                   key: aws_secret_access_key
             volumeMounts:
             - name: parameter-storage

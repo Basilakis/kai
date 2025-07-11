@@ -15,7 +15,7 @@
     "predict": "python src/python/predict.py"
   },
   "dependencies": {
-    "@kai/shared": "0.1.0",
+    "@kai/shared": "*",
     "child_process": "^1.0.2",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",

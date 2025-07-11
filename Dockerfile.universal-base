@@ -1,0 +1,86 @@
+# Universal Base Image - Consolidates common dependencies for all services
+# Multi-stage build for optimized caching and reduced image size
+
+# Stage 1: Base system setup
+FROM node:18-alpine AS base
+
+# Set environment variables
+ENV NODE_ENV=production
+ENV NPM_CONFIG_CACHE=/tmp/.npm
+ENV PYTHONUNBUFFERED=1
+
+# Install system dependencies
+RUN apk add --no-cache \
+    python3 \
+    py3-pip \
+    make \
+    g++ \
+    git \
+    curl \
+    bash \
+    ca-certificates \
+    tzdata \
+    && rm -rf /var/cache/apk/*
+
+# Stage 2: Node.js dependencies
+FROM base AS node-deps
+
+# Create app directory
+WORKDIR /app
+
+# Copy package files for better caching
+COPY package*.json ./
+
+# Install Node.js dependencies with optimizations
+RUN npm ci --only=production --silent \
+    && npm cache clean --force \
+    && rm -rf /tmp/.npm
+
+# Stage 3: Python environment (for services that need both)
+FROM node-deps AS python-env
+
+# Install common Python packages
+RUN pip3 install --no-cache-dir --upgrade pip \
+    && pip3 install --no-cache-dir \
+        requests==2.31.0 \
+        pyyaml==6.0.1 \
+        python-dotenv==1.0.0 \
+        psutil==5.9.5 \
+        redis==4.6.0 \
+        celery==5.3.1
+
+# Stage 4: Final optimized image
+FROM python-env AS final
+
+# Create non-root user for security
+RUN addgroup -g 1001 -S appuser \
+    && adduser -S appuser -u 1001 -G appuser
+
+# Set up application directories
+RUN mkdir -p /app /data /logs \
+    && chown -R appuser:appuser /app /data /logs
+
+# Switch to non-root user
+USER appuser
+
+# Set working directory
+WORKDIR /app
+
+# Add health check script
+COPY --chown=appuser:appuser healthcheck.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/healthcheck.sh
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD /usr/local/bin/healthcheck.sh || exit 1
+
+# Default command
+CMD ["node", "--version"]
+
+# Labels for metadata
+LABEL maintainer="kai-project"
+LABEL version="1.0.0"
+LABEL description="Universal base image with Node.js and Python support"
+LABEL base.type="universal"
+LABEL node.version="18"
+LABEL python.version="3.11"

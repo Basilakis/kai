@@ -1,0 +1,239 @@
+{{- range $serviceName, $serviceConfig := .Values.services }}
+{{- if $serviceConfig.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $serviceName }}-deployment
+  namespace: {{ $.Values.global.namespace }}
+  labels:
+    {{- include "kai.serviceLabels" (dict "Values" (merge $serviceConfig (dict "serviceName" $serviceName "component" $serviceConfig.component)) "Chart" $.Chart "Release" $.Release) | nindent 4 }}
+    {{- include "kai.canaryLabels" $.Values | nindent 4 }}
+  annotations:
+    deployment.kubernetes.io/revision: "{{ $.Values.global.deploymentRevision | default "1" }}"
+    {{- if $.Values.global.canary.enabled }}
+    flagger.app/load-tester: "wrk"
+    {{- end }}
+    {{- with $serviceConfig.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  {{- if not $.Values.global.autoscaling.enabled }}
+  replicas: {{ $serviceConfig.replicaCount | default 2 }}
+  {{- end }}
+  strategy:
+    type: {{ $serviceConfig.strategy.type | default "RollingUpdate" }}
+    {{- if eq ($serviceConfig.strategy.type | default "RollingUpdate") "RollingUpdate" }}
+    rollingUpdate:
+      maxUnavailable: {{ $serviceConfig.strategy.maxUnavailable | default "25%" }}
+      maxSurge: {{ $serviceConfig.strategy.maxSurge | default "25%" }}
+    {{- end }}
+  selector:
+    matchLabels:
+      {{- include "kai.serviceSelectorLabels" (dict "Values" (merge $serviceConfig (dict "serviceName" $serviceName "component" $serviceConfig.component)) "Chart" $.Chart "Release" $.Release) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "kai.serviceLabels" (dict "Values" (merge $serviceConfig (dict "serviceName" $serviceName "component" $serviceConfig.component)) "Chart" $.Chart "Release" $.Release) | nindent 8 }}
+        {{- include "kai.canaryLabels" $.Values | nindent 8 }}
+        version: {{ $.Values.global.image.tag | default $.Chart.AppVersion | default "latest" }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") $ | sha256sum }}
+        {{- include "kai.monitoringAnnotations" $serviceConfig | nindent 8 }}
+        {{- with $serviceConfig.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- include "kai.podSecurityContext" $serviceConfig | nindent 6 }}
+      serviceAccountName: {{ include "kai.serviceAccountName" $ }}
+      {{- if $serviceConfig.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml $serviceConfig.imagePullSecrets | nindent 8 }}
+      {{- else if $.Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml $.Values.global.imagePullSecrets | nindent 8 }}
+      {{- end }}
+      {{- include "kai.affinity" $serviceConfig | nindent 6 }}
+      {{- with $serviceConfig.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $serviceConfig.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if $serviceConfig.priorityClassName }}
+      priorityClassName: {{ $serviceConfig.priorityClassName }}
+      {{- end }}
+      {{- if $serviceConfig.terminationGracePeriodSeconds }}
+      terminationGracePeriodSeconds: {{ $serviceConfig.terminationGracePeriodSeconds }}
+      {{- end }}
+      {{- if $serviceConfig.initContainers }}
+      initContainers:
+        {{- range $initContainer := $serviceConfig.initContainers }}
+        - name: {{ $initContainer.name }}
+          image: {{ $initContainer.image }}
+          {{- if $initContainer.command }}
+          command:
+            {{- toYaml $initContainer.command | nindent 12 }}
+          {{- end }}
+          {{- if $initContainer.args }}
+          args:
+            {{- toYaml $initContainer.args | nindent 12 }}
+          {{- end }}
+          {{- if $initContainer.env }}
+          env:
+            {{- toYaml $initContainer.env | nindent 12 }}
+          {{- end }}
+          {{- if $initContainer.volumeMounts }}
+          volumeMounts:
+            {{- toYaml $initContainer.volumeMounts | nindent 12 }}
+          {{- end }}
+          {{- if $initContainer.resources }}
+          resources:
+            {{- toYaml $initContainer.resources | nindent 12 }}
+          {{- end }}
+        {{- end }}
+      {{- end }}
+      containers:
+      - name: {{ $serviceName }}
+        image: {{ include "kai.image" (merge $serviceConfig (dict "serviceName" $serviceName)) }}
+        imagePullPolicy: {{ $serviceConfig.imagePullPolicy | default $.Values.global.image.pullPolicy | default "IfNotPresent" }}
+        {{- if $serviceConfig.command }}
+        command:
+          {{- toYaml $serviceConfig.command | nindent 10 }}
+        {{- end }}
+        {{- if $serviceConfig.args }}
+        args:
+          {{- toYaml $serviceConfig.args | nindent 10 }}
+        {{- end }}
+        ports:
+        {{- range $port := $serviceConfig.ports }}
+        - name: {{ $port.name }}
+          containerPort: {{ $port.containerPort }}
+          protocol: {{ $port.protocol | default "TCP" }}
+        {{- end }}
+        env:
+        {{- include "kai.commonEnv" (merge $serviceConfig (dict "serviceName" $serviceName)) | nindent 8 }}
+        {{- if $serviceConfig.env }}
+        {{- range $env := $serviceConfig.env }}
+        - name: {{ $env.name }}
+          {{- if $env.value }}
+          value: {{ $env.value | quote }}
+          {{- else if $env.valueFrom }}
+          valueFrom:
+            {{- toYaml $env.valueFrom | nindent 12 }}
+          {{- end }}
+        {{- end }}
+        {{- end }}
+        {{- if $serviceConfig.envFrom }}
+        envFrom:
+          {{- toYaml $serviceConfig.envFrom | nindent 8 }}
+        {{- end }}
+        {{- include "kai.healthProbes" $serviceConfig | nindent 8 }}
+        {{- include "kai.resources" $serviceConfig | nindent 8 }}
+        {{- include "kai.securityContext" $serviceConfig | nindent 8 }}
+        {{- if or $serviceConfig.volumeMounts $.Values.global.volumes }}
+        volumeMounts:
+        {{- if $serviceConfig.volumeMounts }}
+        {{- toYaml $serviceConfig.volumeMounts | nindent 8 }}
+        {{- end }}
+        {{- if $.Values.global.volumes }}
+        {{- range $volume := $.Values.global.volumes }}
+        {{- if $volume.mountPath }}
+        - name: {{ $volume.name }}
+          mountPath: {{ $volume.mountPath }}
+          {{- if $volume.subPath }}
+          subPath: {{ $volume.subPath }}
+          {{- end }}
+          {{- if $volume.readOnly }}
+          readOnly: {{ $volume.readOnly }}
+          {{- end }}
+        {{- end }}
+        {{- end }}
+        {{- end }}
+        {{- end }}
+        {{- if $serviceConfig.lifecycle }}
+        lifecycle:
+          {{- toYaml $serviceConfig.lifecycle | nindent 10 }}
+        {{- end }}
+      {{- if $serviceConfig.sidecarContainers }}
+      {{- range $sidecar := $serviceConfig.sidecarContainers }}
+      - name: {{ $sidecar.name }}
+        image: {{ $sidecar.image }}
+        {{- if $sidecar.command }}
+        command:
+          {{- toYaml $sidecar.command | nindent 10 }}
+        {{- end }}
+        {{- if $sidecar.args }}
+        args:
+          {{- toYaml $sidecar.args | nindent 10 }}
+        {{- end }}
+        {{- if $sidecar.ports }}
+        ports:
+          {{- toYaml $sidecar.ports | nindent 8 }}
+        {{- end }}
+        {{- if $sidecar.env }}
+        env:
+          {{- toYaml $sidecar.env | nindent 8 }}
+        {{- end }}
+        {{- if $sidecar.volumeMounts }}
+        volumeMounts:
+          {{- toYaml $sidecar.volumeMounts | nindent 8 }}
+        {{- end }}
+        {{- if $sidecar.resources }}
+        resources:
+          {{- toYaml $sidecar.resources | nindent 10 }}
+        {{- end }}
+        {{- if $sidecar.securityContext }}
+        securityContext:
+          {{- toYaml $sidecar.securityContext | nindent 10 }}
+        {{- end }}
+      {{- end }}
+      {{- end }}
+      {{- if or $serviceConfig.volumes $.Values.global.volumes }}
+      volumes:
+      {{- if $serviceConfig.volumes }}
+      {{- toYaml $serviceConfig.volumes | nindent 6 }}
+      {{- end }}
+      {{- if $.Values.global.volumes }}
+      {{- range $volume := $.Values.global.volumes }}
+      - name: {{ $volume.name }}
+        {{- if $volume.configMap }}
+        configMap:
+          {{- toYaml $volume.configMap | nindent 10 }}
+        {{- else if $volume.secret }}
+        secret:
+          {{- toYaml $volume.secret | nindent 10 }}
+        {{- else if $volume.persistentVolumeClaim }}
+        persistentVolumeClaim:
+          {{- toYaml $volume.persistentVolumeClaim | nindent 10 }}
+        {{- else if $volume.emptyDir }}
+        emptyDir:
+          {{- toYaml $volume.emptyDir | nindent 10 }}
+        {{- else if $volume.hostPath }}
+        hostPath:
+          {{- toYaml $volume.hostPath | nindent 10 }}
+        {{- end }}
+      {{- end }}
+      {{- end }}
+      {{- end }}
+      {{- if $serviceConfig.dnsPolicy }}
+      dnsPolicy: {{ $serviceConfig.dnsPolicy }}
+      {{- end }}
+      {{- if $serviceConfig.dnsConfig }}
+      dnsConfig:
+        {{- toYaml $serviceConfig.dnsConfig | nindent 8 }}
+      {{- end }}
+      {{- if $serviceConfig.hostNetwork }}
+      hostNetwork: {{ $serviceConfig.hostNetwork }}
+      {{- end }}
+      {{- if $serviceConfig.hostPID }}
+      hostPID: {{ $serviceConfig.hostPID }}
+      {{- end }}
+      {{- if $serviceConfig.hostIPC }}
+      hostIPC: {{ $serviceConfig.hostIPC }}
+      {{- end }}
+      restartPolicy: {{ $serviceConfig.restartPolicy | default "Always" }}
+{{- end }}
+{{- end }}

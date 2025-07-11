@@ -63,7 +63,7 @@ spec:
         - name: REDIS_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: notification-secrets
+              name: kai-unified-secrets
               key: redis_password
         - name: EMAIL_SERVICE
           valueFrom:
@@ -93,12 +93,12 @@ spec:
         - name: EMAIL_USER
           valueFrom:
             secretKeyRef:
-              name: notification-secrets
+              name: kai-unified-secrets
               key: email_user
         - name: EMAIL_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: notification-secrets
+              name: kai-unified-secrets
               key: email_password
         - name: SMS_PROVIDER
           valueFrom:
@@ -113,12 +113,12 @@ spec:
         - name: SMS_ACCOUNT_SID
           valueFrom:
             secretKeyRef:
-              name: notification-secrets
+              name: kai-unified-secrets
               key: sms_account_sid
         - name: SMS_AUTH_TOKEN
           valueFrom:
             secretKeyRef:
-              name: notification-secrets
+              name: kai-unified-secrets
               key: sms_auth_token
         - name: WEBHOOK_TIMEOUT
           valueFrom:
@@ -143,7 +143,7 @@ spec:
         - name: SUPABASE_SERVICE_ROLE_KEY
           valueFrom:
             secretKeyRef:
-              name: notification-secrets
+              name: kai-unified-secrets
               key: supabase_service_role_key
         livenessProbe:
           httpGet:

@@ -63,7 +63,7 @@ spec:
         - name: REDIS_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: webhook-secrets
+              name: kai-unified-secrets
               key: redis_password
         - name: WEBHOOK_TIMEOUT
           valueFrom:
@@ -83,7 +83,7 @@ spec:
         - name: WEBHOOK_SIGNING_SECRET
           valueFrom:
             secretKeyRef:
-              name: webhook-secrets
+              name: kai-unified-secrets
               key: webhook_signing_secret
         - name: SUPABASE_URL
           valueFrom:
@@ -93,7 +93,7 @@ spec:
         - name: SUPABASE_SERVICE_ROLE_KEY
           valueFrom:
             secretKeyRef:
-              name: webhook-secrets
+              name: kai-unified-secrets
               key: supabase_service_role_key
         - name: KAFKA_BOOTSTRAP_SERVERS
           valueFrom:
@@ -108,12 +108,12 @@ spec:
         - name: KAFKA_USERNAME
           valueFrom:
             secretKeyRef:
-              name: webhook-secrets
+              name: kai-unified-secrets
               key: kafka_username
         - name: KAFKA_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: webhook-secrets
+              name: kai-unified-secrets
               key: kafka_password
         livenessProbe:
           httpGet:

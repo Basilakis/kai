@@ -104,175 +104,332 @@ The governance framework ensures that modes will request clarification for poorl
 
 ---
 
-## Memory System Architecture
+## Session Management V7 & Project-Wide Memory System
 
 ### Overview
 
-Roo Commander implements a sophisticated four-layer memory system that provides persistent context and gets reviewed before taking any actions. This memory system ensures continuity, traceability, and informed decision-making across all interactions.
+Roo Commander implements a comprehensive **Session Management V7** system with project-wide memory capabilities that provides persistent context, automatic memory consolidation, and intelligent context loading. This system ensures continuity, traceability, and informed decision-making across all interactions while maintaining a complete project memory that evolves over time.
 
-### Four-Layer Memory Architecture
+### Core Architecture: Four-Layer Memory System
 
-#### 1. **Session Management V7**
-- **Purpose**: Tracks overall user interaction narratives and goals
-- **Components**:
-  - **Session Log** (`session_log.md`): TOML+Markdown format with timestamped events
-  - **Artifact Management**: Organized contextual notes in standardized subdirectories
-  - **Session Directory Structure**: `.ruru/sessions/SESSION-[Goal]-[Timestamp]/`
-- **Memory Persistence**:
-  - Chronological event logging with timestamps
-  - Links to related tasks and artifacts
-  - Structured metadata for easy retrieval
-- **Review Process**: Active session context is automatically loaded and referenced before actions
+#### 1. **Session Management V7 (Active Memory)**
+**Purpose**: Tracks real-time user interactions and maintains active context
 
-#### 2. **MDTM (Markdown-Driven Task Management)**
-- **Purpose**: Tracks specific work units and their progress
-- **Components**:
-  - **Task Files**: TOML+Markdown format with structured metadata
-  - **Progress Tracking**: Checklist items with completion status
-  - **Task Relationships**: Links between related tasks and coordinators
-- **Memory Persistence**:
-  - Task status and progress history
-  - Decision records and implementation notes
-  - Cross-references to related documentation
-- **Review Process**: Task context and history reviewed before continuing work
+**Components**:
+- **Session Log** (`session_log.md`): TOML+Markdown format with timestamped events
+- **Artifact Management**: Organized contextual notes in 12 standardized subdirectories
+- **Session Directory Structure**: `.ruru/sessions/SESSION-[Goal]-[Timestamp]/`
+- **Session State Management**: Persistent tracking of active sessions via `.ruru/state/`
 
-#### 3. **Knowledge Base & Rules System**
-- **Purpose**: Stores operational procedures, best practices, and domain knowledge
-- **Components**:
-  - **Rules** (`.roo/rules/`): Standardized procedures and workflows
-  - **Mode Knowledge Bases** (`.ruru/modes/[mode]/kb/`): Specialist domain knowledge
-  - **Templates** (`.ruru/templates/`): Structured document templates
-- **Memory Persistence**:
-  - Versioned rule sets with change tracking
-  - Mode-specific expertise and procedures
-  - Reusable templates for consistent documentation
-- **Review Process**: Relevant rules and KB articles consulted before task execution
+**Memory Features**:
+- **Automatic Session Detection**: Coordinator modes detect when complex work requires session tracking
+- **Real-time Event Logging**: All significant events logged with timestamps and context
+- **Artifact Organization**: Structured storage in subdirectories (notes/, learnings/, environment/, docs/, research/, blockers/, questions/, snippets/, feedback/, features/, context/, deferred/)
+- **Cross-Session Linking**: Sessions can reference and build upon previous sessions
+- **Session State Persistence**: Active session information maintained across interactions
 
-#### 4. **Documentation & Decisions**
-- **Purpose**: Maintains architectural decisions and project documentation
-- **Components**:
-  - **ADRs** (Architecture Decision Records): Formal decision documentation
-  - **Project Documentation**: Technical specifications and guides
-  - **Context Sources**: External references and research
-- **Memory Persistence**:
-  - Immutable decision records with rationale
-  - Versioned documentation with change history
-  - Searchable knowledge repository
-- **Review Process**: Historical decisions and documentation reviewed for consistency
+#### 2. **Project Memory (Persistent Context)**
+**Purpose**: Maintains long-term project knowledge and patterns across sessions
 
-### Memory Review Process
+**Components**:
+- **Project Memory Store** (`.ruru/context/project_memory/`): Cross-session insights and patterns
+- **Memory Consolidation**: Automatic extraction of key insights from completed sessions
+- **Pattern Recognition**: Identification and storage of successful approaches and solutions
+- **Project Evolution Tracking**: Historical view of project development and decision evolution
 
-Before taking any action, Roo Commander modes follow this memory review workflow:
+**Memory Features**:
+- **Session Consolidation**: Key insights from sessions automatically extracted to project memory
+- **Pattern Storage**: Successful approaches and solutions stored for reuse
+- **Context Inheritance**: New sessions automatically load relevant project memory
+- **Decision Continuity**: Architectural and strategic decisions maintained across sessions
+- **Learning Accumulation**: Project-wide learning from all interactions and outcomes
 
-#### 1. **Context Loading**
-- Load active session information if available
-- Retrieve relevant MDTM task context
-- Identify applicable rules and procedures
-- Gather related documentation and decisions
+#### 3. **MDTM (Markdown-Driven Task Management)**
+**Purpose**: Tracks specific work units and their detailed progress
 
-#### 2. **Relevance Assessment**
-- Analyze current request against historical context
-- Identify potential conflicts or dependencies
-- Determine if previous decisions impact current work
-- Assess if existing patterns or solutions apply
+**Components**:
+- **Task Files**: TOML+Markdown format with structured metadata and progress tracking
+- **Task Relationships**: Links between related tasks, coordinators, and sessions
+- **Progress History**: Complete audit trail of task evolution and completion
+- **Cross-Task Dependencies**: Management of complex multi-task workflows
 
-#### 3. **Informed Decision Making**
-- Synthesize current request with historical context
-- Apply relevant rules and best practices
-- Consider architectural decisions and constraints
-- Plan approach based on accumulated knowledge
+**Memory Features**:
+- **Detailed Progress Tracking**: Checklist items with completion status and notes
+- **Task Context Preservation**: Full context maintained for task resumption
+- **Cross-Task Learning**: Insights from completed tasks inform future similar work
+- **Specialist Coordination**: Clear handoffs and context sharing between specialist modes
 
-#### 4. **Action Execution**
-- Execute planned actions with full context awareness
-- Update relevant memory systems with new information
-- Log decisions and outcomes for future reference
-- Maintain consistency with established patterns
+#### 4. **Knowledge Base & Rules System (Operational Memory)**
+**Purpose**: Stores operational procedures, best practices, and domain knowledge
+
+**Components**:
+- **Global Rules** (`.roo/rules/`): Workspace-wide procedures and standards
+- **Mode Knowledge Bases** (`.ruru/modes/[mode]/kb/`): Specialist domain expertise
+- **Templates** (`.ruru/templates/`): Structured document templates for consistency
+- **Mode-Specific Context** (`.ruru/modes/[mode]/context/`): Persistent mode memory
+
+**Memory Features**:
+- **Versioned Knowledge**: Rule sets and procedures with change tracking
+- **Specialist Expertise**: Mode-specific knowledge bases for domain specialization
+- **Template Standardization**: Consistent document structures across the project
+- **Contextual Guidance**: Relevant knowledge automatically consulted based on task type
+
+### Automatic Memory Operations
+
+#### **Session Initiation & Management**
+```
+1. Intent Detection: Coordinator modes detect complex/multi-step work
+2. User Prompting: Optional session creation with goal specification
+3. Session Creation: Automatic directory structure and artifact organization
+4. State Persistence: Active session tracking in .ruru/state/active_session.txt
+5. Context Loading: Previous relevant sessions and project memory loaded
+```
+
+#### **Real-Time Memory Updates**
+```
+1. Event Logging: All significant events logged to session_log.md
+2. Artifact Creation: Contextual notes organized in appropriate subdirectories
+3. Progress Tracking: MDTM task updates with completion status
+4. Cross-References: Automatic linking between related tasks and artifacts
+5. Memory Consolidation: Key insights extracted for project memory
+```
+
+#### **Context-Aware Decision Making**
+```
+1. Memory Review: Active session, project memory, and relevant knowledge consulted
+2. Pattern Recognition: Previous solutions and approaches identified
+3. Consistency Checking: Decisions validated against historical context
+4. Informed Planning: Approach planned based on accumulated knowledge
+5. Continuous Learning: Outcomes fed back into memory systems
+```
+
+### Manual Memory Addition Capabilities
+
+#### **1. Command-Based Memory Addition**
+**Session Memory Commands**:
+```bash
+/memory add note "Key insight about authentication implementation"
+/memory add learning "React hooks pattern works better than class components"
+/memory add decision "Chose PostgreSQL over MongoDB for data consistency"
+/memory add blocker "API rate limiting preventing bulk operations"
+/memory add research "Found better approach using WebSockets for real-time updates"
+```
+
+**Project Memory Commands**:
+```bash
+/memory project add pattern "Authentication flow using JWT + refresh tokens"
+/memory project add guideline "Always use TypeScript for new components"
+/memory project add lesson "Database migrations require careful rollback planning"
+/memory project add standard "Use Prettier + ESLint configuration from .eslintrc"
+```
+
+**Mode-Specific Memory Commands**:
+```bash
+/memory mode react add "Custom hooks should be prefixed with 'use'"
+/memory mode security add "Always validate input at API boundaries"
+/memory mode performance add "Use React.memo for expensive component renders"
+```
+
+#### **2. Interactive Memory Management**
+**Memory Addition Prompts**:
+- Coordinator modes can prompt users to add specific insights to memory
+- Context-aware suggestions based on current work and previous patterns
+- Guided memory creation with templates for different types of insights
+
+**Memory Review Sessions**:
+- Periodic prompts to review and consolidate session artifacts
+- Guided extraction of key learnings and patterns
+- User-directed memory organization and categorization
+
+#### **3. Template-Based Memory Creation**
+**Decision Templates**:
+```markdown
+# Decision: [Title]
+**Context**: What situation led to this decision
+**Options**: What alternatives were considered
+**Decision**: What was chosen and why
+**Rationale**: Detailed reasoning and trade-offs
+**Impact**: Expected effects and monitoring plan
+```
+
+**Learning Templates**:
+```markdown
+# Learning: [Title]
+**Situation**: What was being worked on
+**Challenge**: What problem was encountered
+**Solution**: How it was resolved
+**Insight**: What was learned for future reference
+**Applicability**: When this learning applies
+```
+
+**Pattern Templates**:
+```markdown
+# Pattern: [Title]
+**Problem**: What recurring issue this pattern solves
+**Solution**: The reusable approach or implementation
+**Context**: When and where to apply this pattern
+**Examples**: Specific instances where this was used
+**Variations**: Different ways to implement this pattern
+```
+
+#### **4. File-Based Direct Memory Addition**
+**Direct File Creation**:
+- Users can create memory files directly in appropriate directories
+- Automatic detection and integration of manually created memory files
+- Support for both structured (TOML+Markdown) and unstructured memory files
+
+**Memory File Locations**:
+```
+Session Memory:
+- .ruru/sessions/SESSION-[ID]/artifacts/notes/NOTE-[topic]-[timestamp].md
+- .ruru/sessions/SESSION-[ID]/artifacts/learnings/LEARNING-[topic]-[timestamp].md
+- .ruru/sessions/SESSION-[ID]/artifacts/decisions/DECISION-[topic]-[timestamp].md
+
+Project Memory:
+- .ruru/context/project_memory/patterns/PATTERN-[name]-[version].md
+- .ruru/context/project_memory/guidelines/GUIDELINE-[topic]-[version].md
+- .ruru/context/project_memory/lessons/LESSON-[topic]-[timestamp].md
+
+Mode Memory:
+- .ruru/modes/[mode-slug]/context/[topic]-[version].md
+```
+
+#### **5. Memory Search and Retrieval**
+**Search Commands**:
+```bash
+/memory search "authentication patterns"
+/memory find session "user management implementation"
+/memory lookup project "database migration strategies"
+/memory query mode react "state management approaches"
+```
+
+**Memory Analytics**:
+```bash
+/memory stats                    # Overall memory usage statistics
+/memory patterns                 # Most frequently used patterns
+/memory recent                   # Recently added memory items
+/memory gaps                     # Areas lacking documentation
+```
+
+### Project-Wide Memory Features
+
+#### **Memory Consolidation Workflow**
+1. **Session Completion**: When sessions end, key insights automatically extracted
+2. **Pattern Recognition**: Successful approaches identified and stored as reusable patterns
+3. **Knowledge Integration**: New insights integrated with existing project memory
+4. **Cross-Session Learning**: Patterns and solutions made available to future sessions
+5. **Memory Evolution**: Project memory continuously refined and improved
+
+#### **Context-Aware Session Initiation**
+1. **Historical Analysis**: Previous sessions and project memory analyzed for relevance
+2. **Pattern Matching**: Similar previous work identified and loaded as context
+3. **Continuity Planning**: Approach planned based on accumulated project knowledge
+4. **Intelligent Defaults**: Session configuration based on project patterns and preferences
+5. **Proactive Guidance**: Suggestions based on previous successful approaches
+
+#### **Multi-Layer Memory Integration**
+1. **Session ↔ Project**: Session insights feed into project memory; project memory informs sessions
+2. **Task ↔ Knowledge**: MDTM tasks reference and update knowledge base articles
+3. **Mode ↔ Global**: Mode-specific memory integrates with global project patterns
+4. **Decision ↔ Implementation**: Architectural decisions linked to implementation artifacts
+5. **Learning ↔ Practice**: Accumulated learnings automatically applied to new work
 
 ### Memory System Benefits
 
-#### **Continuity**
-- Seamless handoffs between sessions and modes
-- Preserved context across interruptions
-- Consistent approach to similar problems
+#### **Continuity & Context**
+- **Seamless Handoffs**: Complete context preservation between sessions and modes
+- **Interrupted Work Recovery**: Ability to resume complex work exactly where left off
+- **Cross-Session Learning**: Insights from previous work automatically available
+- **Pattern Reuse**: Successful approaches automatically suggested for similar work
 
-#### **Traceability**
-- Complete audit trail of decisions and actions
-- Clear relationships between tasks and outcomes
-- Searchable history for debugging and analysis
+#### **Traceability & Audit**
+- **Complete History**: Full audit trail of all decisions, actions, and outcomes
+- **Decision Rationale**: Clear reasoning preserved for all significant choices
+- **Change Tracking**: Evolution of project decisions and approaches over time
+- **Impact Analysis**: Understanding of how decisions affected project outcomes
 
-#### **Learning**
-- Accumulated expertise from previous interactions
-- Pattern recognition for improved efficiency
-- Continuous improvement of procedures and approaches
+#### **Learning & Improvement**
+- **Accumulated Expertise**: Project knowledge grows with each interaction
+- **Pattern Recognition**: Automatic identification of successful approaches
+- **Continuous Improvement**: Procedures and approaches refined based on outcomes
+- **Knowledge Sharing**: Insights available across all modes and specialists
 
-#### **Quality Assurance**
-- Consistency with established standards
-- Validation against previous decisions
-- Prevention of contradictory implementations
+#### **Quality & Consistency**
+- **Standard Adherence**: Automatic validation against established patterns
+- **Decision Consistency**: New decisions validated against historical context
+- **Best Practice Application**: Proven approaches automatically suggested
+- **Error Prevention**: Previous mistakes and solutions inform current work
 
-### Activating Memory Features
+### Memory System Implementation
 
-#### **Session Management**
-```bash
-# Sessions are automatically initiated by coordinator modes
-# when complex, multi-step work is detected
+#### **Session State Management**
+```
+Files:
+- .ruru/state/active_session.txt          # Current active session ID
+- .ruru/state/session_registry.json       # All sessions metadata
+- .ruru/state/memory_index.json           # Cross-references and search index
+
+Session Lifecycle:
+1. Detection → User Prompt → Creation → State Persistence → Context Loading
+2. Active Logging → Artifact Management → Progress Tracking → Cross-Linking
+3. Completion → Consolidation → Project Memory Update → State Cleanup
 ```
 
-#### **MDTM Task Tracking**
-```bash
-# Tasks are created automatically for:
-# - Complex implementations
-# - Multi-specialist coordination
-# - High-risk changes
-# - Auditable work
+#### **Project Memory Organization**
+```
+Structure:
+.ruru/context/project_memory/
+├── patterns/           # Reusable solution patterns
+├── guidelines/         # Project-specific guidelines
+├── lessons/           # Accumulated learnings
+├── decisions/         # Cross-session decision continuity
+├── standards/         # Established project standards
+├── workflows/         # Proven process workflows
+├── integrations/      # External system integration knowledge
+└── evolution/         # Project development history
+
+Consolidation Process:
+1. Session Analysis → Key Insight Extraction → Pattern Recognition
+2. Memory Integration → Conflict Resolution → Knowledge Refinement
+3. Index Updates → Cross-Reference Maintenance → Search Optimization
 ```
 
-#### **Knowledge Base Access**
-```bash
-# Rules and KB articles are automatically consulted
-# based on task type and mode specialization
+#### **Memory Access Patterns**
+```
+Automatic Loading:
+- Session initiation loads relevant project memory and previous session context
+- Task delegation includes applicable patterns and previous similar work
+- Decision points reference historical decisions and established patterns
+- Error handling consults previous solutions and troubleshooting approaches
+
+Manual Access:
+- Command-based memory search and retrieval
+- Interactive memory browsing and exploration
+- Template-guided memory creation and organization
+- Direct file-based memory management and editing
 ```
 
-### Memory System Files and Locations
+### Getting Started with Memory Features
 
-#### **Session Files**
-- **Session Logs**: `.ruru/sessions/SESSION-[ID]/session_log.md`
-- **Artifacts**: `.ruru/sessions/SESSION-[ID]/artifacts/[type]/`
-- **Templates**: `.ruru/templates/toml-md/19_mdtm_session.md`
+#### **For New Projects**
+1. **Initial Session**: Start with session creation to establish project memory foundation
+2. **Pattern Establishment**: Document initial patterns and approaches as they're developed
+3. **Decision Recording**: Capture architectural and strategic decisions with full context
+4. **Learning Documentation**: Record insights and lessons as the project evolves
 
-#### **Task Management**
-- **Task Files**: `.ruru/tasks/[CATEGORY]/TASK-[ID].md`
-- **Templates**: `.ruru/templates/toml-md/01_mdtm_feature.md`
+#### **For Existing Projects**
+1. **Memory Bootstrap**: Create initial project memory from existing documentation
+2. **Pattern Extraction**: Identify and document existing successful patterns
+3. **Decision Archaeology**: Capture historical decisions and their rationale
+4. **Knowledge Migration**: Move existing knowledge into structured memory format
 
-#### **Knowledge Base**
-- **Global Rules**: `.roo/rules/`
-- **Mode Knowledge**: `.ruru/modes/[mode-slug]/kb/`
-- **Templates**: `.ruru/templates/toml-md/`
+#### **For Daily Usage**
+1. **Session Awareness**: Let coordinator modes manage session creation automatically
+2. **Memory Contribution**: Add insights and learnings as they occur during work
+3. **Pattern Recognition**: Notice when previous solutions apply to current work
+4. **Memory Review**: Periodically review and organize accumulated memory
 
-#### **Documentation**
-- **ADRs**: `.ruru/docs/decisions/`
-- **Project Docs**: `.ruru/docs/`
-- **Context Sources**: `.ruru/docs/context/`
-
-### Best Practices for Memory Usage
-
-#### **For Users**
-1. **Provide Clear Goals**: Help the system understand your objectives for better context building
-2. **Reference Previous Work**: Mention related previous sessions or tasks when relevant
-3. **Review Session Summaries**: Check session artifacts to understand what was accomplished
-4. **Maintain Consistency**: Use established patterns and decisions when possible
-
-#### **For Coordinators**
-1. **Session Initiation**: Start sessions for complex or long-running work
-2. **Context Linking**: Connect related tasks and decisions explicitly
-3. **Progress Logging**: Maintain detailed logs of significant events and decisions
-4. **Knowledge Updates**: Update rules and KB articles based on learnings
-
-#### **For Specialists**
-1. **Context Review**: Always review relevant memory before starting work
-2. **Progress Updates**: Keep MDTM tasks and session logs current
-3. **Decision Documentation**: Record significant decisions and rationale
-4. **Pattern Recognition**: Leverage previous solutions for similar problems
+The Session Management V7 system with project-wide memory creates a comprehensive, intelligent memory system that learns and evolves with your project, providing unprecedented continuity, context awareness, and accumulated expertise for all development work.
 
 ---
 

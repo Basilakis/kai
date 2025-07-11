@@ -7,10 +7,6 @@ appVersion: "1.0.0"
 
 # Dependencies for subcharts
 dependencies:
-  - name: coordinator
-    version: 0.1.0
-    repository: "file://../coordinator"
-    condition: coordinator.enabled
   - name: infrastructure
     version: 0.1.0
     repository: "file://../infrastructure"
@@ -27,10 +23,6 @@ dependencies:
     version: 0.1.0
     repository: "file://../workflows"
     condition: workflows.enabled
-  - name: api-server
-    version: 0.1.0
-    repository: "file://../api-server"
-    condition: api-server.enabled
 
 maintainers:
   - name: Kai Platform Team

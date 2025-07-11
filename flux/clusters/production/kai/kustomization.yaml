@@ -5,7 +5,6 @@ resources:
   - ./namespace.yaml
   - ./gpu-requirements.yaml
   - ./continuous-learning-deployment.yaml
-  - ./coordinator/
   - ./distributed-processing/
   # - ./infrastructure/  this code is meant for gcp
   - ./jobs/
@@ -16,4 +15,3 @@ resources:
   - ./wasm-compiler/
   - ./workflows/
   - ./analytics/
-  - ./api-server/

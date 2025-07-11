@@ -1,0 +1,94 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crewai-agents
+  namespace: kai
+spec:
+  template:
+    spec:
+      containers:
+      - name: crewai-agents
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+            ephemeral-storage: "2Gi"
+          limits:
+            cpu: "2000m"
+            memory: "4Gi"
+            ephemeral-storage: "8Gi"
+        env:
+        - name: NODE_OPTIONS
+          value: "--max-old-space-size=3072"
+        - name: PYTHON_MEMORY_LIMIT
+          value: "2048"
+        - name: UV_CACHE_DIR
+          value: "/tmp/uv-cache"
+        - name: PIP_CACHE_DIR
+          value: "/tmp/pip-cache"
+        - name: PYTHONUNBUFFERED
+          value: "1"
+        - name: PYTHONDONTWRITEBYTECODE
+          value: "1"
+        volumeMounts:
+        - name: tmp-volume
+          mountPath: /tmp
+        - name: cache-volume
+          mountPath: /app/.cache
+        - name: uv-cache
+          mountPath: /tmp/uv-cache
+      volumes:
+      - name: tmp-volume
+        emptyDir:
+          sizeLimit: "2Gi"
+      - name: cache-volume
+        emptyDir:
+          sizeLimit: "1Gi"
+      - name: uv-cache
+        emptyDir:
+          sizeLimit: "1Gi"
+      nodeSelector:
+        node-type: "compute-optimized"
+        workload: "ai-agents"
+      tolerations:
+      - key: "ai-workload"
+        operator: "Equal"
+        value: "true"
+        effect: "NoSchedule"
+      - key: "high-memory"
+        operator: "Equal"
+        value: "true"
+        effect: "NoSchedule"
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: "instance-type"
+                operator: In
+                values: ["memory-optimized", "compute-optimized"]
+          - weight: 50
+            preference:
+              matchExpressions:
+              - key: "zone"
+                operator: In
+                values: ["us-west-2a", "us-west-2b", "us-west-2c"]
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values: ["crewai-agents"]
+              topologyKey: "kubernetes.io/hostname"
+          - weight: 50
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: component
+                  operator: In
+                  values: ["ai-agents"]
+              topologyKey: "topology.kubernetes.io/zone"

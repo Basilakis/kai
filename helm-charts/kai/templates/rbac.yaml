@@ -1,0 +1,121 @@
+{{- range $serviceName, $service := .Values.services }}
+{{- if and $service.enabled $service.rbac.enabled }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "kai.fullname" $ }}-{{ $serviceName }}
+  namespace: {{ include "kai.namespace" $ }}
+  labels:
+    {{- include "kai.labels" $ | nindent 4 }}
+    {{- include "kai.selectorLabels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $service.component | default $serviceName }}
+  {{- with $service.rbac.serviceAccount.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+automountServiceAccountToken: {{ $service.rbac.serviceAccount.automountServiceAccountToken | default true }}
+{{- if $service.rbac.serviceAccount.imagePullSecrets }}
+imagePullSecrets:
+  {{- toYaml $service.rbac.serviceAccount.imagePullSecrets | nindent 2 }}
+{{- end }}
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "kai.fullname" $ }}-{{ $serviceName }}
+  namespace: {{ include "kai.namespace" $ }}
+  labels:
+    {{- include "kai.labels" $ | nindent 4 }}
+    {{- include "kai.selectorLabels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $service.component | default $serviceName }}
+  {{- with $service.rbac.role.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+rules:
+{{- if $service.rbac.rules }}
+  {{- toYaml $service.rbac.rules | nindent 2 }}
+{{- else }}
+  # Default minimal permissions
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "list"]
+{{- end }}
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "kai.fullname" $ }}-{{ $serviceName }}
+  namespace: {{ include "kai.namespace" $ }}
+  labels:
+    {{- include "kai.labels" $ | nindent 4 }}
+    {{- include "kai.selectorLabels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $service.component | default $serviceName }}
+  {{- with $service.rbac.roleBinding.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "kai.fullname" $ }}-{{ $serviceName }}
+    namespace: {{ include "kai.namespace" $ }}
+roleRef:
+  kind: Role
+  name: {{ include "kai.fullname" $ }}-{{ $serviceName }}
+  apiGroup: rbac.authorization.k8s.io
+
+{{- if $service.rbac.clusterRole.enabled }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "kai.fullname" $ }}-{{ $serviceName }}
+  labels:
+    {{- include "kai.labels" $ | nindent 4 }}
+    {{- include "kai.selectorLabels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $service.component | default $serviceName }}
+  {{- with $service.rbac.clusterRole.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+rules:
+{{- if $service.rbac.clusterRules }}
+  {{- toYaml $service.rbac.clusterRules | nindent 2 }}
+{{- else }}
+  # Default cluster-level permissions
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list"]
+{{- end }}
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "kai.fullname" $ }}-{{ $serviceName }}
+  labels:
+    {{- include "kai.labels" $ | nindent 4 }}
+    {{- include "kai.selectorLabels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $service.component | default $serviceName }}
+  {{- with $service.rbac.clusterRoleBinding.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "kai.fullname" $ }}-{{ $serviceName }}
+    namespace: {{ include "kai.namespace" $ }}
+roleRef:
+  kind: ClusterRole
+  name: {{ include "kai.fullname" $ }}-{{ $serviceName }}
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}
+
+{{- end }}
+{{- end }}

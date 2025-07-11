@@ -1,0 +1,90 @@
+{{- range $serviceName, $serviceConfig := .Values.services }}
+{{- if and $serviceConfig.enabled $serviceConfig.configMap }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $serviceName }}-config
+  namespace: {{ $.Values.global.namespace }}
+  labels:
+    {{- include "kai.serviceLabels" (dict "Values" (merge $serviceConfig (dict "serviceName" $serviceName "component" $serviceConfig.component)) "Chart" $.Chart "Release" $.Release) | nindent 4 }}
+  annotations:
+    {{- if $serviceConfig.configMap.annotations }}
+    {{- toYaml $serviceConfig.configMap.annotations | nindent 4 }}
+    {{- end }}
+data:
+  {{- if $serviceConfig.configMap.data }}
+  {{- toYaml $serviceConfig.configMap.data | nindent 2 }}
+  {{- end }}
+  {{- if $serviceConfig.configMap.files }}
+  {{- range $fileName, $fileContent := $serviceConfig.configMap.files }}
+  {{ $fileName }}: |
+    {{- $fileContent | nindent 4 }}
+  {{- end }}
+  {{- end }}
+  # Common configuration for all services
+  NODE_ENV: {{ $.Values.global.environment | quote }}
+  LOG_LEVEL: {{ $serviceConfig.logLevel | default "info" | quote }}
+  SERVICE_NAME: {{ $serviceName | quote }}
+  CLUSTER_NAME: {{ $.Values.global.cluster.name | default "kai-cluster" | quote }}
+  {{- if $.Values.global.configMap.commonData }}
+  {{- toYaml $.Values.global.configMap.commonData | nindent 2 }}
+  {{- end }}
+{{- end }}
+{{- end }}
+
+{{- if .Values.global.configMap.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kai-global-config
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "kai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: global-config
+  annotations:
+    {{- if .Values.global.configMap.annotations }}
+    {{- toYaml .Values.global.configMap.annotations | nindent 4 }}
+    {{- end }}
+data:
+  # Global configuration shared across all services
+  ENVIRONMENT: {{ .Values.global.environment | quote }}
+  CLUSTER_NAME: {{ .Values.global.cluster.name | default "kai-cluster" | quote }}
+  NAMESPACE: {{ .Values.global.namespace | quote }}
+  REGISTRY_URL: {{ .Values.global.registry.url | default "ghcr.io" | quote }}
+  IMAGE_TAG: {{ .Values.global.image.tag | default .Chart.AppVersion | default "latest" | quote }}
+  
+  # Monitoring configuration
+  METRICS_ENABLED: {{ .Values.global.monitoring.enabled | default true | quote }}
+  METRICS_PORT: {{ .Values.global.monitoring.port | default "8080" | quote }}
+  METRICS_PATH: {{ .Values.global.monitoring.path | default "/metrics" | quote }}
+  
+  # Security configuration
+  SECURITY_CONTEXT_USER: {{ .Values.global.securityContext.runAsUser | default 1001 | quote }}
+  SECURITY_CONTEXT_GROUP: {{ .Values.global.securityContext.runAsGroup | default 1001 | quote }}
+  
+  # Health check configuration
+  HEALTH_CHECK_ENABLED: {{ .Values.global.healthCheck.enabled | default true | quote }}
+  HEALTH_CHECK_LIVENESS_PATH: {{ .Values.global.healthCheck.liveness.path | default "/health" | quote }}
+  HEALTH_CHECK_READINESS_PATH: {{ .Values.global.healthCheck.readiness.path | default "/health/ready" | quote }}
+  
+  # Canary deployment configuration
+  CANARY_ENABLED: {{ .Values.global.canary.enabled | default false | quote }}
+  {{- if .Values.global.canary.enabled }}
+  CANARY_WEIGHT: {{ .Values.global.canary.weight | default 10 | quote }}
+  CANARY_ANALYSIS_INTERVAL: {{ .Values.global.canary.analysis.interval | default "1m" | quote }}
+  CANARY_ANALYSIS_THRESHOLD: {{ .Values.global.canary.analysis.threshold | default 5 | quote }}
+  {{- end }}
+  
+  {{- if .Values.global.configMap.data }}
+  {{- toYaml .Values.global.configMap.data | nindent 2 }}
+  {{- end }}
+  
+  {{- if .Values.global.configMap.files }}
+  {{- range $fileName, $fileContent := .Values.global.configMap.files }}
+  {{ $fileName }}: |
+    {{- $fileContent | nindent 4 }}
+  {{- end }}
+  {{- end }}
+{{- end }}

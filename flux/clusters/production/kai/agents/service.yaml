@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: crewai-agents
+  namespace: kai
+  labels:
+    app: crewai-agents
+    component: ai-agents
+    environment: production
+    managed-by: flux
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
+    prometheus.io/path: "/metrics"
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: metrics
+    protocol: TCP
+  selector:
+    app: crewai-agents
+    component: ai-agents
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: crewai-agents-headless
+  namespace: kai
+  labels:
+    app: crewai-agents
+    component: ai-agents
+    environment: production
+    managed-by: flux
+    service-type: headless
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http
+    protocol: TCP
+  selector:
+    app: crewai-agents
+    component: ai-agents

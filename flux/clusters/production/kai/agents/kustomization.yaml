@@ -1,0 +1,49 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: crewai-agents
+  namespace: kai
+
+resources:
+  - deployment.yaml
+  - service.yaml
+  - configmap.yaml
+
+commonLabels:
+  app: crewai-agents
+  component: ai-agents
+  environment: production
+  managed-by: flux
+
+namespace: kai
+
+images:
+  - name: crewai-agents
+    newTag: latest
+
+patchesStrategicMerge:
+  - patches/resource-limits.yaml
+
+configMapGenerator:
+  - name: crewai-agents-config
+    files:
+      - config/agents.json
+      - config/logging.yaml
+    options:
+      disableNameSuffixHash: true
+
+# secretGenerator removed - using unified GitHub secrets via kubectl in CI/CD pipeline
+
+replicas:
+  - name: crewai-agents
+    count: 3
+
+vars:
+  - name: CREWAI_AGENTS_IMAGE
+    objref:
+      kind: Deployment
+      name: crewai-agents
+      apiVersion: apps/v1
+    fieldref:
+      fieldpath: spec.template.spec.containers[0].image

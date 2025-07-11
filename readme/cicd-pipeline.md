@@ -118,6 +118,15 @@ The CI/CD pipeline is now broken down into these reusable workflow files:
    - First builds the centralized ML base image
    - Then builds all service images in parallel using the matrix strategy
    - Accepts parameters for environment-specific configuration
+
+3. **CrewAI CI/CD Workflow** (`.github/workflows/crewai-cicd.yml`)
+   - Comprehensive 6-phase pipeline for CrewAI agent development and deployment
+   - Cross-platform matrix builds (Windows, macOS, Linux) with OS-aware command syntax
+   - Integrated uv dependency management for faster Python package installation
+   - Environment validation with comprehensive cross-platform validation scripts
+   - Docker containerization with multi-stage builds optimized for production
+   - Flux GitOps integration for automated Kubernetes deployment
+   - Supports Python 3.10-3.13 with CrewAI framework constraints
    - Passes the ML base image reference to service builds
 
    ```yaml
@@ -510,6 +519,12 @@ The following secrets should be configured in your GitHub repository:
 - `OPENAI_API_KEY`: OpenAI API key
 - `REDIS_PASSWORD`: Password for Redis
 
+#### CrewAI Agents
+- `CREWAI_API_KEY`: API key for CrewAI services (if using hosted services)
+- `CREWAI_LOG_LEVEL`: Logging level for CrewAI agents (default: "INFO")
+- `CREWAI_MAX_WORKERS`: Maximum number of concurrent agent workers (default: "4")
+- `CREWAI_TIMEOUT`: Timeout for agent operations in seconds (default: "300")
+
 #### Supabase
 - `SUPABASE_URL_PRODUCTION`, `SUPABASE_KEY_PRODUCTION`, `SUPABASE_ANON_KEY_PRODUCTION`: Supabase production credentials
 - `SUPABASE_URL_STAGING`, `SUPABASE_KEY_STAGING`, `SUPABASE_ANON_KEY_STAGING`: Supabase staging credentials
@@ -654,6 +669,14 @@ The workflow requires the following secrets to be set in your GitHub repository:
 - `SUPABASE_KEY_STAGING`: Supabase service role key for staging environment migrations
 - `SUPABASE_URL_PRODUCTION`: Supabase project URL for production environment migrations
 - `SUPABASE_KEY_PRODUCTION`: Supabase service role key for production environment migrations
+
+### CrewAI Agent Secrets
+- `CREWAI_API_KEY`: API key for CrewAI framework services (if using hosted services)
+- `OPENAI_API_KEY`: OpenAI API key for LLM integration with CrewAI agents
+- `ANTHROPIC_API_KEY`: Anthropic API key for Claude model integration (optional)
+- `GOOGLE_API_KEY`: Google API key for Gemini model integration (optional)
+- `SERPER_API_KEY`: Serper API key for web search capabilities in agents (optional)
+- `BROWSERLESS_API_KEY`: Browserless API key for web scraping tools (optional)
 
 ## Adding GitHub Secrets
 

@@ -1,0 +1,49 @@
+{{- range $serviceName, $service := .Values.services }}
+{{- if and $service.enabled $service.persistence.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "kai.fullname" $ }}-{{ $serviceName }}
+  namespace: {{ include "kai.namespace" $ }}
+  labels:
+    {{- include "kai.labels" $ | nindent 4 }}
+    {{- include "kai.selectorLabels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $service.component | default $serviceName }}
+  {{- with $service.persistence.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  accessModes:
+    {{- range $service.persistence.accessModes }}
+    - {{ . }}
+    {{- end }}
+  {{- if $service.persistence.storageClass }}
+  {{- if (eq "-" $service.persistence.storageClass) }}
+  storageClassName: ""
+  {{- else }}
+  storageClassName: {{ $service.persistence.storageClass }}
+  {{- end }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $service.persistence.size | quote }}
+  {{- if $service.persistence.selector }}
+  selector:
+    {{- toYaml $service.persistence.selector | nindent 4 }}
+  {{- end }}
+  {{- if $service.persistence.volumeMode }}
+  volumeMode: {{ $service.persistence.volumeMode }}
+  {{- end }}
+  {{- if $service.persistence.dataSource }}
+  dataSource:
+    {{- toYaml $service.persistence.dataSource | nindent 4 }}
+  {{- end }}
+  {{- if $service.persistence.dataSourceRef }}
+  dataSourceRef:
+    {{- toYaml $service.persistence.dataSourceRef | nindent 4 }}
+  {{- end }}
+
+{{- end }}
+{{- end }}

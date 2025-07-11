@@ -30,6 +30,65 @@ on:
         required: false
       stripe_publishable_key:
         required: false
+      # CrewAI Agent Secrets
+      anthropic_api_key:
+        required: false
+      google_api_key:
+        required: false
+      azure_openai_api_key:
+        required: false
+      azure_openai_endpoint:
+        required: false
+      huggingface_api_key:
+        required: false
+      pinecone_api_key:
+        required: false
+      weaviate_url:
+        required: false
+      weaviate_api_key:
+        required: false
+      qdrant_url:
+        required: false
+      qdrant_api_key:
+        required: false
+      elasticsearch_url:
+        required: false
+      elasticsearch_username:
+        required: false
+      elasticsearch_password:
+        required: false
+      serper_api_key:
+        required: false
+      tavily_api_key:
+        required: false
+      browserless_api_key:
+        required: false
+      firecrawl_api_key:
+        required: false
+      slack_bot_token:
+        required: false
+      discord_bot_token:
+        required: false
+      telegram_bot_token:
+        required: false
+      twilio_account_sid:
+        required: false
+      twilio_auth_token:
+        required: false
+      sendgrid_api_key:
+        required: false
+      aws_access_key_id:
+        required: false
+      aws_secret_access_key:
+        required: false
+      gcp_service_account_key:
+        required: false
+      azure_client_id:
+        required: false
+      azure_client_secret:
+        required: false
+      azure_tenant_id:
+        required: false
 
 jobs:
   setup-kubernetes:
@@ -78,23 +137,49 @@ jobs:
         run: |
           kubectl create namespace kai-system --dry-run=client -o yaml | kubectl apply -f -
       
-      - name: Create Kubernetes secrets
+      - name: Create unified Kubernetes secret
         run: |
-          # Create main secrets
-          kubectl create secret generic kai-secrets \
+          # Create unified secret containing all application and CrewAI agent secrets
+          kubectl create secret generic kai-unified-secrets \
             --namespace kai-system \
             --from-literal=mongodb-uri='${{ secrets.mongodb_uri }}' \
             --from-literal=jwt-secret='${{ secrets.jwt_secret }}' \
             --from-literal=openai-api-key='${{ secrets.openai_api_key }}' \
             --from-literal=supabase-url='${{ secrets.supabase_url }}' \
             --from-literal=supabase-key='${{ secrets.supabase_key }}' \
+            --from-literal=supabase-anon-key='${{ secrets.supabase_anon_key }}' \
             --from-literal=stripe-secret-key='${{ secrets.stripe_secret_key }}' \
-            --dry-run=client -o yaml | kubectl apply -f -
-          
-          # Create Redis password secret
-          kubectl create secret generic redis-password \
-            --namespace kai-system \
+            --from-literal=stripe-publishable-key='${{ secrets.stripe_publishable_key }}' \
             --from-literal=redis-password='${{ secrets.redis_password }}' \
+            --from-literal=anthropic-api-key='${{ secrets.anthropic_api_key }}' \
+            --from-literal=google-api-key='${{ secrets.google_api_key }}' \
+            --from-literal=azure-openai-api-key='${{ secrets.azure_openai_api_key }}' \
+            --from-literal=azure-openai-endpoint='${{ secrets.azure_openai_endpoint }}' \
+            --from-literal=huggingface-api-key='${{ secrets.huggingface_api_key }}' \
+            --from-literal=pinecone-api-key='${{ secrets.pinecone_api_key }}' \
+            --from-literal=weaviate-url='${{ secrets.weaviate_url }}' \
+            --from-literal=weaviate-api-key='${{ secrets.weaviate_api_key }}' \
+            --from-literal=qdrant-url='${{ secrets.qdrant_url }}' \
+            --from-literal=qdrant-api-key='${{ secrets.qdrant_api_key }}' \
+            --from-literal=elasticsearch-url='${{ secrets.elasticsearch_url }}' \
+            --from-literal=elasticsearch-username='${{ secrets.elasticsearch_username }}' \
+            --from-literal=elasticsearch-password='${{ secrets.elasticsearch_password }}' \
+            --from-literal=serper-api-key='${{ secrets.serper_api_key }}' \
+            --from-literal=tavily-api-key='${{ secrets.tavily_api_key }}' \
+            --from-literal=browserless-api-key='${{ secrets.browserless_api_key }}' \
+            --from-literal=firecrawl-api-key='${{ secrets.firecrawl_api_key }}' \
+            --from-literal=slack-bot-token='${{ secrets.slack_bot_token }}' \
+            --from-literal=discord-bot-token='${{ secrets.discord_bot_token }}' \
+            --from-literal=telegram-bot-token='${{ secrets.telegram_bot_token }}' \
+            --from-literal=twilio-account-sid='${{ secrets.twilio_account_sid }}' \
+            --from-literal=twilio-auth-token='${{ secrets.twilio_auth_token }}' \
+            --from-literal=sendgrid-api-key='${{ secrets.sendgrid_api_key }}' \
+            --from-literal=aws-access-key-id='${{ secrets.aws_access_key_id }}' \
+            --from-literal=aws-secret-access-key='${{ secrets.aws_secret_access_key }}' \
+            --from-literal=gcp-service-account-key='${{ secrets.gcp_service_account_key }}' \
+            --from-literal=azure-client-id='${{ secrets.azure_client_id }}' \
+            --from-literal=azure-client-secret='${{ secrets.azure_client_secret }}' \
+            --from-literal=azure-tenant-id='${{ secrets.azure_tenant_id }}' \
             --dry-run=client -o yaml | kubectl apply -f -
       
       - name: Check and Install cert-manager

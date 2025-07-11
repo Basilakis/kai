@@ -1,0 +1,86 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: crewai-agents-config
+  namespace: kai
+  labels:
+    app: crewai-agents
+    component: ai-agents
+    environment: production
+    managed-by: flux
+data:
+  # Application Configuration
+  NODE_ENV: "production"
+  LOG_LEVEL: "info"
+  PORT: "8080"
+  METRICS_PORT: "9090"
+  
+  # CrewAI Configuration
+  CREWAI_LOG_LEVEL: "INFO"
+  CREWAI_TELEMETRY_ENABLED: "false"
+  CREWAI_CACHE_ENABLED: "true"
+  CREWAI_CACHE_TTL: "3600"
+  CREWAI_MAX_EXECUTION_TIME: "300"
+  CREWAI_MAX_ITERATIONS: "10"
+  
+  # Agent Configuration
+  AGENT_TIMEOUT: "120"
+  AGENT_MAX_RETRIES: "3"
+  AGENT_RETRY_DELAY: "5"
+  AGENT_MEMORY_ENABLED: "true"
+  AGENT_VERBOSE: "false"
+  
+  # Task Configuration
+  TASK_TIMEOUT: "180"
+  TASK_MAX_RETRIES: "2"
+  TASK_PARALLEL_EXECUTION: "true"
+  TASK_MAX_PARALLEL: "4"
+  
+  # Tool Configuration
+  TOOL_TIMEOUT: "60"
+  TOOL_MAX_RETRIES: "2"
+  TOOL_RATE_LIMIT: "100"
+  
+  # Performance Configuration
+  WORKER_THREADS: "4"
+  MAX_MEMORY_MB: "1024"
+  GC_INTERVAL: "300"
+  
+  # Health Check Configuration
+  HEALTH_CHECK_INTERVAL: "30"
+  HEALTH_CHECK_TIMEOUT: "10"
+  READINESS_CHECK_DELAY: "15"
+  
+  # Monitoring Configuration
+  METRICS_ENABLED: "true"
+  TRACING_ENABLED: "true"
+  TRACING_SAMPLE_RATE: "0.1"
+  
+  # Security Configuration
+  CORS_ENABLED: "true"
+  CORS_ORIGINS: "https://kai.production.local"
+  RATE_LIMIT_ENABLED: "true"
+  RATE_LIMIT_WINDOW: "900"
+  RATE_LIMIT_MAX: "1000"
+  
+  # Database Configuration (if needed)
+  DB_POOL_MIN: "2"
+  DB_POOL_MAX: "10"
+  DB_TIMEOUT: "30"
+  DB_RETRY_ATTEMPTS: "3"
+  
+  # Cache Configuration
+  REDIS_POOL_SIZE: "10"
+  REDIS_TIMEOUT: "5"
+  REDIS_RETRY_ATTEMPTS: "3"
+  
+  # External Service Configuration
+  HTTP_TIMEOUT: "30"
+  HTTP_RETRIES: "3"
+  HTTP_RETRY_DELAY: "1"
+  
+  # Feature Flags
+  FEATURE_ANALYTICS_ENABLED: "true"
+  FEATURE_ADVANCED_REASONING: "true"
+  FEATURE_TOOL_VALIDATION: "true"
+  FEATURE_MEMORY_OPTIMIZATION: "true"

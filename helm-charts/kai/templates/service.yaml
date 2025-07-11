@@ -1,0 +1,79 @@
+{{- range $serviceName, $serviceConfig := .Values.services }}
+{{- if $serviceConfig.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $serviceName }}-service
+  namespace: {{ $.Values.global.namespace }}
+  labels:
+    {{- include "kai.serviceLabels" (dict "Values" (merge $serviceConfig (dict "serviceName" $serviceName "component" $serviceConfig.component)) "Chart" $.Chart "Release" $.Release) | nindent 4 }}
+    {{- include "kai.canaryLabels" $.Values | nindent 4 }}
+  annotations:
+    {{- include "kai.monitoringAnnotations" $serviceConfig | nindent 4 }}
+    {{- if $serviceConfig.service.annotations }}
+    {{- toYaml $serviceConfig.service.annotations | nindent 4 }}
+    {{- end }}
+    {{- if $.Values.global.canary.enabled }}
+    flagger.app/load-balancer: "nginx"
+    {{- end }}
+spec:
+  type: {{ $serviceConfig.service.type | default "ClusterIP" }}
+  {{- if and (eq ($serviceConfig.service.type | default "ClusterIP") "LoadBalancer") $serviceConfig.service.loadBalancerIP }}
+  loadBalancerIP: {{ $serviceConfig.service.loadBalancerIP }}
+  {{- end }}
+  {{- if and (eq ($serviceConfig.service.type | default "ClusterIP") "LoadBalancer") $serviceConfig.service.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+    {{- toYaml $serviceConfig.service.loadBalancerSourceRanges | nindent 4 }}
+  {{- end }}
+  {{- if and (eq ($serviceConfig.service.type | default "ClusterIP") "ClusterIP") $serviceConfig.service.clusterIP }}
+  clusterIP: {{ $serviceConfig.service.clusterIP }}
+  {{- end }}
+  {{- if $serviceConfig.service.externalIPs }}
+  externalIPs:
+    {{- toYaml $serviceConfig.service.externalIPs | nindent 4 }}
+  {{- end }}
+  {{- if $serviceConfig.service.externalName }}
+  externalName: {{ $serviceConfig.service.externalName }}
+  {{- end }}
+  {{- if $serviceConfig.service.sessionAffinity }}
+  sessionAffinity: {{ $serviceConfig.service.sessionAffinity }}
+  {{- if $serviceConfig.service.sessionAffinityConfig }}
+  sessionAffinityConfig:
+    {{- toYaml $serviceConfig.service.sessionAffinityConfig | nindent 4 }}
+  {{- end }}
+  {{- end }}
+  ports:
+  {{- range $port := $serviceConfig.ports }}
+  - port: {{ $port.port | default $port.containerPort }}
+    targetPort: {{ $port.name | default $port.containerPort }}
+    protocol: {{ $port.protocol | default "TCP" }}
+    name: {{ $port.name }}
+    {{- if and (or (eq ($serviceConfig.service.type | default "ClusterIP") "NodePort") (eq ($serviceConfig.service.type | default "ClusterIP") "LoadBalancer")) $port.nodePort }}
+    nodePort: {{ $port.nodePort }}
+    {{- end }}
+  {{- end }}
+  {{- if $serviceConfig.service.additionalPorts }}
+  {{- range $port := $serviceConfig.service.additionalPorts }}
+  - port: {{ $port.port }}
+    targetPort: {{ $port.targetPort | default $port.port }}
+    protocol: {{ $port.protocol | default "TCP" }}
+    name: {{ $port.name }}
+    {{- if and (or (eq ($serviceConfig.service.type | default "ClusterIP") "NodePort") (eq ($serviceConfig.service.type | default "ClusterIP") "LoadBalancer")) $port.nodePort }}
+    nodePort: {{ $port.nodePort }}
+    {{- end }}
+  {{- end }}
+  {{- end }}
+  selector:
+    {{- include "kai.serviceSelectorLabels" (dict "Values" (merge $serviceConfig (dict "serviceName" $serviceName "component" $serviceConfig.component)) "Chart" $.Chart "Release" $.Release) | nindent 4 }}
+  {{- if $serviceConfig.service.publishNotReadyAddresses }}
+  publishNotReadyAddresses: {{ $serviceConfig.service.publishNotReadyAddresses }}
+  {{- end }}
+  {{- if $serviceConfig.service.externalTrafficPolicy }}
+  externalTrafficPolicy: {{ $serviceConfig.service.externalTrafficPolicy }}
+  {{- end }}
+  {{- if $serviceConfig.service.healthCheckNodePort }}
+  healthCheckNodePort: {{ $serviceConfig.service.healthCheckNodePort }}
+  {{- end }}
+{{- end }}
+{{- end }}

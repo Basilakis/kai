@@ -7,15 +7,15 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "yarn workspaces run dev",
-    "build": "yarn workspaces run build",
-    "test": "yarn workspaces run test",
-    "lint": "yarn workspaces run lint",
-    "clean": "yarn workspaces run clean"
+    "dev": "npm run dev --workspaces",
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces",
+    "lint": "npm run lint --workspaces",
+    "clean": "npm run clean --workspaces"
   },
   "engines": {
     "node": ">=16.0.0",
-    "yarn": ">=1.22.0"
+    "npm": ">=7.0.0"
   },
   "dependencies": {
     "@mui/material": "^5.14.19",

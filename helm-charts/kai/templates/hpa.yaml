@@ -1,0 +1,108 @@
+{{- range $serviceName, $serviceConfig := .Values.services }}
+{{- if and $serviceConfig.enabled $serviceConfig.autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $serviceName }}-hpa
+  namespace: {{ $.Values.global.namespace }}
+  labels:
+    {{- include "kai.serviceLabels" (dict "Values" (merge $serviceConfig (dict "serviceName" $serviceName "component" $serviceConfig.component)) "Chart" $.Chart "Release" $.Release) | nindent 4 }}
+  annotations:
+    {{- if $serviceConfig.autoscaling.annotations }}
+    {{- toYaml $serviceConfig.autoscaling.annotations | nindent 4 }}
+    {{- end }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ $serviceName }}
+  minReplicas: {{ $serviceConfig.autoscaling.minReplicas | default 1 }}
+  maxReplicas: {{ $serviceConfig.autoscaling.maxReplicas | default 10 }}
+  metrics:
+    {{- if $serviceConfig.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ $serviceConfig.autoscaling.targetCPUUtilizationPercentage }}
+    {{- end }}
+    {{- if $serviceConfig.autoscaling.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ $serviceConfig.autoscaling.targetMemoryUtilizationPercentage }}
+    {{- end }}
+    {{- if $serviceConfig.autoscaling.customMetrics }}
+    {{- range $metric := $serviceConfig.autoscaling.customMetrics }}
+    - type: {{ $metric.type | default "Pods" }}
+      {{- if eq $metric.type "Pods" }}
+      pods:
+        metric:
+          name: {{ $metric.name }}
+          {{- if $metric.selector }}
+          selector:
+            {{- toYaml $metric.selector | nindent 12 }}
+          {{- end }}
+        target:
+          type: {{ $metric.targetType | default "AverageValue" }}
+          {{- if eq $metric.targetType "AverageValue" }}
+          averageValue: {{ $metric.targetValue }}
+          {{- else }}
+          value: {{ $metric.targetValue }}
+          {{- end }}
+      {{- else if eq $metric.type "Object" }}
+      object:
+        metric:
+          name: {{ $metric.name }}
+        describedObject:
+          apiVersion: {{ $metric.object.apiVersion }}
+          kind: {{ $metric.object.kind }}
+          name: {{ $metric.object.name }}
+        target:
+          type: {{ $metric.targetType | default "Value" }}
+          value: {{ $metric.targetValue }}
+      {{- else if eq $metric.type "External" }}
+      external:
+        metric:
+          name: {{ $metric.name }}
+          {{- if $metric.selector }}
+          selector:
+            {{- toYaml $metric.selector | nindent 12 }}
+          {{- end }}
+        target:
+          type: {{ $metric.targetType | default "Value" }}
+          value: {{ $metric.targetValue }}
+      {{- end }}
+    {{- end }}
+    {{- end }}
+  behavior:
+    {{- if $serviceConfig.autoscaling.behavior }}
+    {{- toYaml $serviceConfig.autoscaling.behavior | nindent 4 }}
+    {{- else }}
+    scaleDown:
+      stabilizationWindowSeconds: {{ $serviceConfig.autoscaling.scaleDownStabilizationWindowSeconds | default 300 }}
+      policies:
+      - type: Percent
+        value: {{ $serviceConfig.autoscaling.scaleDownPercent | default 10 }}
+        periodSeconds: {{ $serviceConfig.autoscaling.scaleDownPeriodSeconds | default 60 }}
+      - type: Pods
+        value: {{ $serviceConfig.autoscaling.scaleDownPods | default 2 }}
+        periodSeconds: {{ $serviceConfig.autoscaling.scaleDownPeriodSeconds | default 60 }}
+      selectPolicy: Min
+    scaleUp:
+      stabilizationWindowSeconds: {{ $serviceConfig.autoscaling.scaleUpStabilizationWindowSeconds | default 0 }}
+      policies:
+      - type: Percent
+        value: {{ $serviceConfig.autoscaling.scaleUpPercent | default 100 }}
+        periodSeconds: {{ $serviceConfig.autoscaling.scaleUpPeriodSeconds | default 15 }}
+      - type: Pods
+        value: {{ $serviceConfig.autoscaling.scaleUpPods | default 4 }}
+        periodSeconds: {{ $serviceConfig.autoscaling.scaleUpPeriodSeconds | default 15 }}
+      selectPolicy: Max
+    {{- end }}
+{{- end }}
+{{- end }}

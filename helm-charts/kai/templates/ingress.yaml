@@ -1,0 +1,58 @@
+{{- range $serviceName, $service := .Values.services }}
+{{- if and $service.enabled $service.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "kai.fullname" $ }}-{{ $serviceName }}
+  namespace: {{ include "kai.namespace" $ }}
+  labels:
+    {{- include "kai.labels" $ | nindent 4 }}
+    {{- include "kai.selectorLabels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $service.component | default $serviceName }}
+  {{- with $service.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if $service.ingress.className }}
+  ingressClassName: {{ $service.ingress.className }}
+  {{- end }}
+  {{- if $service.ingress.tls }}
+  tls:
+    {{- range $service.ingress.tls }}
+    - hosts:
+        {{- range .hosts }}
+        - {{ . | quote }}
+        {{- end }}
+      {{- if .secretName }}
+      secretName: {{ .secretName }}
+      {{- end }}
+    {{- end }}
+  {{- end }}
+  rules:
+    {{- range $service.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            {{- if .pathType }}
+            pathType: {{ .pathType }}
+            {{- else }}
+            pathType: Prefix
+            {{- end }}
+            backend:
+              service:
+                name: {{ include "kai.fullname" $ }}-{{ $serviceName }}
+                port:
+                  {{- if .port }}
+                  number: {{ .port }}
+                  {{- else }}
+                  number: {{ $service.service.port | default 80 }}
+                  {{- end }}
+          {{- end }}
+    {{- end }}
+
+{{- end }}
+{{- end }}
